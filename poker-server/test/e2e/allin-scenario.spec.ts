@@ -4,7 +4,7 @@ import { Card } from 'poker-types';
 
 /**
  * E2E Test: All-In Pre-Flop
- * 
+ *
  * Scenario: Both players go all-in pre-flop
  * Expected: All 5 community cards dealt immediately, hand goes to showdown
  * Chips conserved (total = 2000)
@@ -31,14 +31,14 @@ test.describe('Poker E2E - All-In Scenario', () => {
   test('Both players all-in pre-flop - all cards dealt immediately', async () => {
     // Predetermined deck: Player1 gets AA, Player2 gets KK
     const testDeck: Card[] = [
-      { suit: 'hearts', rank: 'A' },   // Player1 hole 1
-      { suit: 'spades', rank: 'K' },   // Player2 hole 1
+      { suit: 'hearts', rank: 'A' }, // Player1 hole 1
+      { suit: 'spades', rank: 'K' }, // Player2 hole 1
       { suit: 'diamonds', rank: 'A' }, // Player1 hole 2
-      { suit: 'clubs', rank: 'K' },    // Player2 hole 2
-      { suit: 'clubs', rank: '2' },    // Flop 1
+      { suit: 'clubs', rank: 'K' }, // Player2 hole 2
+      { suit: 'clubs', rank: '2' }, // Flop 1
       { suit: 'diamonds', rank: '5' }, // Flop 2
-      { suit: 'spades', rank: '8' },   // Flop 3
-      { suit: 'hearts', rank: 'J' },   // Turn
+      { suit: 'spades', rank: '8' }, // Flop 3
+      { suit: 'hearts', rank: 'J' }, // Turn
       { suit: 'diamonds', rank: '3' }, // River
     ];
 

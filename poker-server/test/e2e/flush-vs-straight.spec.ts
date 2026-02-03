@@ -4,7 +4,7 @@ import { Card } from 'poker-types';
 
 /**
  * E2E Test: Flush vs Straight
- * 
+ *
  * Scenario: Player1 makes a flush, Player2 makes a straight
  * Expected: Player1 wins (flush beats straight)
  */
@@ -33,14 +33,14 @@ test.describe('Poker E2E - Flush vs Straight', () => {
     // Player2: J♠ 10♠ (with community makes straight: 8-9-10-J-Q)
     // Community: 9♥ 8♥ 6♥ Q♣ 7♦
     const testDeck: Card[] = [
-      { suit: 'hearts', rank: 'K' },   // Player1 hole 1
-      { suit: 'spades', rank: 'J' },   // Player2 hole 1
-      { suit: 'hearts', rank: 'Q' },   // Player1 hole 2
-      { suit: 'spades', rank: '10' },  // Player2 hole 2
-      { suit: 'hearts', rank: '9' },   // Flop 1
-      { suit: 'hearts', rank: '8' },   // Flop 2
-      { suit: 'hearts', rank: '6' },   // Flop 3
-      { suit: 'clubs', rank: 'Q' },    // Turn
+      { suit: 'hearts', rank: 'K' }, // Player1 hole 1
+      { suit: 'spades', rank: 'J' }, // Player2 hole 1
+      { suit: 'hearts', rank: 'Q' }, // Player1 hole 2
+      { suit: 'spades', rank: '10' }, // Player2 hole 2
+      { suit: 'hearts', rank: '9' }, // Flop 1
+      { suit: 'hearts', rank: '8' }, // Flop 2
+      { suit: 'hearts', rank: '6' }, // Flop 3
+      { suit: 'clubs', rank: 'Q' }, // Turn
       { suit: 'diamonds', rank: '7' }, // River
     ];
 
@@ -87,13 +87,21 @@ test.describe('Poker E2E - Flush vs Straight', () => {
 
     // Play through - both players bet aggressively (they have strong hands)
     // PRE_FLOP
-    player1Socket.emit('playerAction', { roomId, action: 'raise', amount: 100 });
+    player1Socket.emit('playerAction', {
+      roomId,
+      action: 'raise',
+      amount: 100,
+    });
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'call' });
 
     // FLOP - Alice sees flush draw, Bob sees straight draw
     await new Promise((resolve) => setTimeout(resolve, 500));
-    player1Socket.emit('playerAction', { roomId, action: 'raise', amount: 200 });
+    player1Socket.emit('playerAction', {
+      roomId,
+      action: 'raise',
+      amount: 200,
+    });
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'call' });
 

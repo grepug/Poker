@@ -7,6 +7,7 @@ This poker application now supports **deterministic end-to-end testing** using P
 ## How It Works
 
 ### 1. Test Mode
+
 Set the `TEST_MODE` environment variable to enable test deck functionality:
 
 ```bash
@@ -15,18 +16,19 @@ npm run start:dev
 ```
 
 ### 2. Test Deck Injection
+
 Tests use the `setTestDeck` WebSocket event to inject predetermined cards:
 
 ```typescript
 const testDeck: Card[] = [
-  { suit: 'hearts', rank: 'A' },   // Player1 hole card 1
-  { suit: 'spades', rank: 'K' },   // Player2 hole card 1
+  { suit: 'hearts', rank: 'A' }, // Player1 hole card 1
+  { suit: 'spades', rank: 'K' }, // Player2 hole card 1
   { suit: 'diamonds', rank: 'A' }, // Player1 hole card 2
-  { suit: 'hearts', rank: 'Q' },   // Player2 hole card 2
-  { suit: 'clubs', rank: '2' },    // Flop card 1
+  { suit: 'hearts', rank: 'Q' }, // Player2 hole card 2
+  { suit: 'clubs', rank: '2' }, // Flop card 1
   { suit: 'diamonds', rank: '5' }, // Flop card 2
-  { suit: 'spades', rank: '8' },   // Flop card 3
-  { suit: 'hearts', rank: 'J' },   // Turn card
+  { suit: 'spades', rank: '8' }, // Flop card 3
+  { suit: 'hearts', rank: 'J' }, // Turn card
   { suit: 'diamonds', rank: '3' }, // River card
 ];
 
@@ -34,7 +36,9 @@ socket.emit('setTestDeck', { roomId, deck: testDeck });
 ```
 
 ### 3. Deck Order
+
 Cards are dealt in order from the test deck:
+
 1. **Hole cards**: Alternating between players (P1, P2, P1, P2...)
 2. **Flop**: Next 3 cards
 3. **Turn**: Next 1 card
@@ -43,17 +47,20 @@ Cards are dealt in order from the test deck:
 ## Running Tests
 
 ### Run all E2E tests:
+
 ```bash
 cd poker-server
 npm run test:e2e:playwright
 ```
 
 ### Run with UI (interactive):
+
 ```bash
 npm run test:e2e:ui
 ```
 
 ### Run specific test:
+
 ```bash
 TEST_MODE=true npx playwright test pair-vs-highcard
 ```
@@ -61,16 +68,19 @@ TEST_MODE=true npx playwright test pair-vs-highcard
 ## Example Tests
 
 ### ✅ Pair vs High Card
+
 - **File**: `test/e2e/pair-vs-highcard.spec.ts`
 - **Scenario**: Player1 has AA, Player2 has KQ
 - **Expected**: Player1 wins with pair of Aces
 
 ### ✅ All-In Scenario
+
 - **File**: `test/e2e/allin-scenario.spec.ts`
 - **Scenario**: Both players all-in pre-flop
 - **Expected**: All 5 community cards dealt immediately
 
 ### ✅ Flush vs Straight
+
 - **File**: `test/e2e/flush-vs-straight.spec.ts`
 - **Scenario**: Player1 makes flush, Player2 makes straight
 - **Expected**: Flush wins
@@ -84,6 +94,7 @@ TEST_MODE=true npx playwright test pair-vs-highcard
 5. **Assert expected outcomes** (winner, chip conservation, hand ranks)
 
 ### Template:
+
 ```typescript
 import { test, expect } from '@playwright/test';
 import { io, Socket } from 'socket.io-client';
@@ -112,18 +123,20 @@ test.describe('My Test', () => {
 ✅ **Comprehensive**: Test all hand matchups (pair vs high card, flush vs straight, etc.)  
 ✅ **Fast**: No need to wait for random shuffles to produce desired scenarios  
 ✅ **Reliable**: Eliminates flakiness from randomness  
-✅ **Debugging**: Exact scenarios can be recreated for bug investigation  
+✅ **Debugging**: Exact scenarios can be recreated for bug investigation
 
 ## Architecture
 
 ### Backend Changes
+
 - **TestDeckService**: Manages predetermined decks per room
 - **HandService**: Uses test deck when available (falls back to random)
 - **EventsGateway**: Exposes `setTestDeck` event (TEST_MODE only)
 
 ### Test Files
+
 - **playwright.config.ts**: Playwright configuration
-- **test/e2e/*.spec.ts**: E2E test scenarios
+- **test/e2e/\*.spec.ts**: E2E test scenarios
 
 ## Security
 
@@ -132,6 +145,7 @@ test.describe('My Test', () => {
 ## Chip Conservation
 
 All tests verify chip conservation:
+
 ```typescript
 const totalChips = result.players.reduce(
   (sum: number, p: any) => sum + p.chips,

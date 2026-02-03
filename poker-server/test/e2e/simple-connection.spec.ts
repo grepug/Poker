@@ -27,7 +27,10 @@ test.describe('Poker E2E - Basic Connectivity', () => {
 
     // Wait for connection
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Connection timeout')), 5000);
+      const timeout = setTimeout(
+        () => reject(new Error('Connection timeout')),
+        5000,
+      );
       player1Socket.on('connect', () => {
         clearTimeout(timeout);
         console.log('Player 1 connected:', player1Socket.id);
@@ -42,7 +45,10 @@ test.describe('Poker E2E - Basic Connectivity', () => {
     // Create room
     let roomId: string | undefined;
     const roomCreatedPromise = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Room creation timeout')), 5000);
+      const timeout = setTimeout(
+        () => reject(new Error('Room creation timeout')),
+        5000,
+      );
       player1Socket.once('ROOM_CREATED', (data: any) => {
         clearTimeout(timeout);
         console.log('Room created:', data);

@@ -4,7 +4,7 @@ import { Card } from 'poker-types';
 
 /**
  * E2E Test: Pair vs High Card
- * 
+ *
  * Scenario: Player1 has pocket Aces (pair), Player2 has K-Q (high card)
  * Community: 2♣ 5♦ 8♠ J♥ 3♦ (no help to either player)
  * Expected: Player1 wins with pair of Aces
@@ -33,14 +33,14 @@ test.describe('Poker E2E - Pair vs High Card', () => {
     // Create predetermined deck
     // Order: P1 card1, P2 card1, P1 card2, P2 card2, burn, flop1, flop2, flop3, burn, turn, burn, river
     const testDeck: Card[] = [
-      { suit: 'hearts', rank: 'A' },   // Player1 hole card 1
-      { suit: 'spades', rank: 'K' },   // Player2 hole card 1
+      { suit: 'hearts', rank: 'A' }, // Player1 hole card 1
+      { suit: 'spades', rank: 'K' }, // Player2 hole card 1
       { suit: 'diamonds', rank: 'A' }, // Player1 hole card 2
-      { suit: 'hearts', rank: 'Q' },   // Player2 hole card 2
-      { suit: 'clubs', rank: '2' },    // Flop card 1
+      { suit: 'hearts', rank: 'Q' }, // Player2 hole card 2
+      { suit: 'clubs', rank: '2' }, // Flop card 1
       { suit: 'diamonds', rank: '5' }, // Flop card 2
-      { suit: 'spades', rank: '8' },   // Flop card 3
-      { suit: 'hearts', rank: 'J' },   // Turn card
+      { suit: 'spades', rank: '8' }, // Flop card 3
+      { suit: 'hearts', rank: 'J' }, // Turn card
       { suit: 'diamonds', rank: '3' }, // River card
       // Rest of deck doesn't matter for this test
     ];
@@ -131,7 +131,7 @@ test.describe('Poker E2E - Pair vs High Card', () => {
     // Play hand - both players check through all rounds
     // PRE_FLOP: Player 1 is SB/Dealer, Player 2 is BB
     // First to act is Player 1 (heads-up, action starts at dealer)
-    
+
     // Track community cards
     let communityCards: Card[] = [];
     player1Socket.on('communityCardsDealt', (data: any) => {
@@ -141,28 +141,28 @@ test.describe('Poker E2E - Pair vs High Card', () => {
     // Check through all rounds
     await new Promise((resolve) => setTimeout(resolve, 200));
     player1Socket.emit('playerAction', { roomId, action: 'call' }); // Call BB
-    
+
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'check' }); // Check
 
     // FLOP - both check
     await new Promise((resolve) => setTimeout(resolve, 500));
     player1Socket.emit('playerAction', { roomId, action: 'check' });
-    
+
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'check' });
 
     // TURN - both check
     await new Promise((resolve) => setTimeout(resolve, 500));
     player1Socket.emit('playerAction', { roomId, action: 'check' });
-    
+
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'check' });
 
     // RIVER - both check
     await new Promise((resolve) => setTimeout(resolve, 500));
     player1Socket.emit('playerAction', { roomId, action: 'check' });
-    
+
     await new Promise((resolve) => setTimeout(resolve, 200));
     player2Socket.emit('playerAction', { roomId, action: 'check' });
 
@@ -187,7 +187,7 @@ test.describe('Poker E2E - Pair vs High Card', () => {
     expect(result.winners).toHaveLength(1);
     expect(result.winners[0].name).toBe('Alice');
     expect(result.winners[0].handRank).toBe('One Pair');
-    
+
     // Verify chip conservation (2000 total)
     const totalChips = result.players.reduce(
       (sum: number, p: any) => sum + p.chips,

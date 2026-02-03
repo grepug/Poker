@@ -73,14 +73,14 @@ export class HandService {
     // Deal cards - use test deck if available
     let deck: Card[];
     const testDeck = this.testDeckService.getDeck(room.id);
-    
+
     if (testDeck) {
       this.logger.debug(`Using test deck for room ${room.id}`);
       deck = testDeck;
     } else {
       deck = shuffleDeck(createDeck());
     }
-    
+
     const activePlayerIds = activePlayers.map((p) => p.id);
 
     for (const player of activePlayers) {
@@ -89,7 +89,7 @@ export class HandService {
       player.status = 'connected';
       deck = remaining;
     }
-    
+
     // Save remaining deck back to test service if in test mode
     if (testDeck) {
       this.testDeckService.setDeck(room.id, deck);
@@ -157,13 +157,13 @@ export class HandService {
     // Get deck - use test deck if available, otherwise create and shuffle
     let deck: Card[];
     const testDeck = this.testDeckService.getDeck(room.id);
-    
+
     if (testDeck) {
       this.logger.debug(`Using test deck for room ${room.id}`);
       deck = testDeck;
     } else {
       deck = shuffleDeck(createDeck());
-      
+
       // Remove already dealt cards (only needed for random decks)
       const dealtCards = [
         ...hand.communityCards,
@@ -192,12 +192,12 @@ export class HandService {
         );
       }
       hand.bettingRound = 'SHOWDOWN';
-      
+
       // Update test deck if in test mode
       if (testDeck) {
         this.testDeckService.setDeck(room.id, deck);
       }
-      
+
       room.lastActivityAt = Date.now();
       await this.storageService.saveRoom(room);
       this.logger.log(
@@ -238,7 +238,7 @@ export class HandService {
       case 'SHOWDOWN':
         throw new Error('Already at showdown');
     }
-    
+
     // Update test deck if in test mode
     if (testDeck) {
       this.testDeckService.setDeck(room.id, deck);

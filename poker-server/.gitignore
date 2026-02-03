@@ -39,3 +39,4 @@ lerna-debug.log*
 
 # Data storage
 /data
+test-results/
