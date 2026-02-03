@@ -162,7 +162,19 @@ export class BettingService {
         p.status !== 'all-in',
     );
 
-    // Only one player left
+    // If there's an outstanding bet that hasn't been called, round is not complete
+    const playersWithUnmatchedBet = room.players.filter(
+      (p) =>
+        hand.activePlayers.includes(p.id) &&
+        p.status !== 'folded' &&
+        p.currentBet < hand.currentBet,
+    );
+
+    if (playersWithUnmatchedBet.length > 0) {
+      return false;
+    }
+
+    // Only one player left who can act
     if (activePlayers.length <= 1) return true;
 
     // Check if all active players have acted

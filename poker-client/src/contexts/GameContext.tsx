@@ -105,13 +105,18 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           gameState: "IN_PROGRESS",
         } as Room;
       });
-      
+
       // Update player chips from game start
       setPlayer((prev) => {
         if (!prev) return prev;
         const updatedPlayer = data.players.find((p) => p.id === prev.id);
-        console.log('Updating player on GAME_STARTED:', { prev: prev.chips, updated: updatedPlayer?.chips });
-        return updatedPlayer ? { ...prev, ...updatedPlayer, cards: prev.cards } : prev;
+        console.log("Updating player on GAME_STARTED:", {
+          prev: prev.chips,
+          updated: updatedPlayer?.chips,
+        });
+        return updatedPlayer
+          ? { ...prev, ...updatedPlayer, cards: prev.cards }
+          : prev;
       });
     });
 
@@ -167,7 +172,9 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom((prev) => {
         if (!prev) return prev;
         const updatedPlayers = prev.players.map((p) => {
-          const winnerData = data.result.winners.find((w) => w.playerId === p.id);
+          const winnerData = data.result.winners.find(
+            (w) => w.playerId === p.id,
+          );
           if (winnerData) {
             return { ...p, chips: p.chips + winnerData.amountWon };
           }
@@ -213,12 +220,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             : prev.currentHand,
           players: prev.players.map((p) =>
             p.id === data.playerId
-              ? { ...p, chips: data.newChips, lastAction: data.action, currentBet: data.amount || p.currentBet }
-              : p
+              ? {
+                  ...p,
+                  chips: data.newChips,
+                  lastAction: data.action,
+                  currentBet: data.amount || p.currentBet,
+                }
+              : p,
           ),
         } as Room;
       });
-      
+
       // Update player state if it's the current player
       setPlayer((prev) => {
         if (!prev || prev.id !== data.playerId) return prev;
@@ -303,7 +315,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
   // Expose debug functions to window for testing
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       (window as any).pokerDebug = {
         getRoom: () => room,
         getPlayer: () => player,
@@ -313,23 +325,36 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         joinRoom,
         startGame,
         performAction,
-        fold: () => performAction('fold'),
-        check: () => performAction('check'),
-        call: () => performAction('call'),
-        raise: (amount: number) => performAction('raise', amount),
-        allIn: () => performAction('all-in'),
+        fold: () => performAction("fold"),
+        check: () => performAction("check"),
+        call: () => performAction("call"),
+        raise: (amount: number) => performAction("raise", amount),
+        allIn: () => performAction("all-in"),
         leaveRoom,
         requestRebuy,
-        emitCustom: (event: string, data: any) => socket?.emit(event as any, data),
+        emitCustom: (event: string, data: any) =>
+          socket?.emit(event as any, data),
         logState: () => {
-          console.log('Room:', room);
-          console.log('Player:', player);
-          console.log('Your Cards:', yourCards);
-          console.log('Is Host:', isHost);
+          console.log("Room:", room);
+          console.log("Player:", player);
+          console.log("Your Cards:", yourCards);
+          console.log("Is Host:", isHost);
         },
       };
     }
-  }, [room, player, yourCards, socket, isHost, createRoom, joinRoom, startGame, performAction, leaveRoom, requestRebuy]);
+  }, [
+    room,
+    player,
+    yourCards,
+    socket,
+    isHost,
+    createRoom,
+    joinRoom,
+    startGame,
+    performAction,
+    leaveRoom,
+    requestRebuy,
+  ]);
 
   return (
     <GameContext.Provider

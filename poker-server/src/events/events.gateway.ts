@@ -303,15 +303,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
 
       // Check if betting round complete
-      const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
+      const isComplete =
+        this.bettingService.isBettingRoundComplete(updatedRoom);
       this.logger.debug(`Betting round complete: ${isComplete}`);
-      
+
       if (isComplete) {
         await this.handleBettingRoundComplete(updatedRoom);
       } else {
         // Move to next player
         const nextPlayer = this.handService.getNextPlayer(updatedRoom);
-        this.logger.debug(`Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`);
+        this.logger.debug(
+          `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
+        );
         if (nextPlayer) {
           updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
           await this.storageService.saveRoom(updatedRoom);
@@ -479,13 +482,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // If we reached showdown, determine winner immediately
       if (nextRound === 'SHOWDOWN') {
         const result = await this.handService.determineWinner(updatedRoom);
-        
+
         const handCompleteData: HandCompleteData = {
           result,
         };
-        
+
         this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-        
+
         // Start new hand after delay
         setTimeout(async () => {
           try {

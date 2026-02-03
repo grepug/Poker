@@ -119,6 +119,25 @@ export class HandService {
       throw new Error('No active hand');
     }
 
+    this.logger.debug(
+      `[advanceBettingRound] Current round: ${hand.bettingRound}, community cards: ${hand.communityCards.length}`,
+    );
+
+    // Check if all remaining active players are all-in (≤1 player can still bet)
+    const playersWhoCanBet = room.players.filter(
+      (p) =>
+        hand.activePlayers.includes(p.id) &&
+        p.status !== 'folded' &&
+        p.status !== 'all-in' &&
+        p.chips > 0,
+    );
+
+    this.logger.debug(
+      `[advanceBettingRound] Players who can bet: ${playersWhoCanBet.length} (${playersWhoCanBet.map((p) => p.name).join(', ')})`,
+    );
+
+    const allPlayersAllIn = playersWhoCanBet.length <= 1;
+
     let deck = shuffleDeck(createDeck());
 
     // Remove already dealt cards
@@ -133,6 +152,27 @@ export class HandService {
           (dealt) => dealt.suit === card.suit && dealt.rank === card.rank,
         ),
     );
+
+    // If everyone is all-in, deal all remaining cards and go straight to showdown
+    if (allPlayersAllIn && hand.bettingRound !== 'SHOWDOWN') {
+      this.logger.debug(
+        `[advanceBettingRound] All players all-in, dealing remaining cards. Current: ${hand.communityCards.length} cards`,
+      );
+      while (hand.communityCards.length < 5) {
+        const { dealt } = dealCards(deck, 1);
+        hand.communityCards.push(dealt[0]);
+        this.logger.debug(
+          `[advanceBettingRound] Dealt ${dealt[0].rank}${dealt[0].suit}, total: ${hand.communityCards.length}`,
+        );
+      }
+      hand.bettingRound = 'SHOWDOWN';
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+      this.logger.log(
+        `All players all-in, skipping to showdown in room ${room.id}, community cards: ${hand.communityCards.length}`,
+      );
+      return 'SHOWDOWN';
+    }
 
     switch (hand.bettingRound) {
       case 'PRE_FLOP':
@@ -200,6 +240,10 @@ export class HandService {
       throw new Error('No active hand');
     }
 
+    this.logger.debug(
+      `[determineWinner] START - pot: ${hand.pot}, players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
+    );
+
     const activePlayers = room.players.filter((p) =>
       hand.activePlayers.includes(p.id),
     );
@@ -211,6 +255,9 @@ export class HandService {
     // If only one player left, they win
     if (activePlayers.length === 1) {
       const winner = activePlayers[0];
+      this.logger.debug(
+        `[determineWinner] Single winner: ${winner.name}, before: chips=${winner.chips}, awarding: ${hand.pot}`,
+      );
       winner.chips += hand.pot;
 
       // Don't evaluate hand if won by fold (may not have enough community cards)
@@ -267,7 +314,13 @@ export class HandService {
 
     // Distribute pot
     const amountPerWinner = Math.floor(hand.pot / winners.length);
+    this.logger.debug(
+      `[determineWinner] Distributing pot: ${hand.pot} / ${winners.length} winners = ${amountPerWinner} each`,
+    );
     for (const { player } of winners) {
+      this.logger.debug(
+        `[determineWinner] Awarding ${player.name}: before=${player.chips}, after=${player.chips + amountPerWinner}`,
+      );
       player.chips += amountPerWinner;
     }
 
@@ -364,6 +417,10 @@ export class HandService {
    * Cleanup after hand ends
    */
   private async cleanupHand(room: Room): Promise<void> {
+    this.logger.debug(
+      `[cleanupHand] BEFORE cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
+    );
+
     // Reset player states
     for (const player of room.players) {
       player.cards = null;
@@ -373,6 +430,13 @@ export class HandService {
         player.status = 'connected';
       }
     }
+
+    this.logger.debug(
+      `[cleanupHand] AFTER cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
+    );
+    this.logger.debug(
+      `[cleanupHand] Total chips: ${room.players.reduce((sum, p) => sum + p.chips + p.currentBet, 0)}`,
+    );
 
     room.lastActivityAt = Date.now();
     await this.storageService.saveRoom(room);

@@ -34,15 +34,17 @@ export const GameRoom: React.FC = () => {
   const minRaise = currentHand
     ? currentHand.currentBet * 2
     : room.config.bigBlind * 2;
-  
+
   // Get current player data from room.players to avoid stale data
-  const currentPlayer = room?.players.find(p => p.id === player?.id);
-  const canCheck = currentHand && currentPlayer
-    ? currentPlayer.currentBet === currentHand.currentBet
-    : false;
-  const callAmount = currentHand && currentPlayer
-    ? currentHand.currentBet - currentPlayer.currentBet
-    : 0;
+  const currentPlayer = room?.players.find((p) => p.id === player?.id);
+  const canCheck =
+    currentHand && currentPlayer
+      ? currentPlayer.currentBet === currentHand.currentBet
+      : false;
+  const callAmount =
+    currentHand && currentPlayer
+      ? currentHand.currentBet - currentPlayer.currentBet
+      : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-900 to-green-950 p-4">
@@ -100,12 +102,14 @@ export const GameRoom: React.FC = () => {
               const isCurrent = currentHand?.currentPlayerTurn === p.id;
               const isDealer = currentHand?.dealerPosition === idx;
               const isFolded = p.status === "folded";
-              
+
               return (
                 <div
                   key={p.id}
                   className={`flex items-center justify-between p-3 rounded-lg ${
-                    isCurrent ? "bg-yellow-900/50 ring-2 ring-yellow-400" : "bg-gray-800"
+                    isCurrent
+                      ? "bg-yellow-900/50 ring-2 ring-yellow-400"
+                      : "bg-gray-800"
                   } ${isFolded ? "opacity-50" : ""}`}
                 >
                   <div className="flex items-center gap-3 flex-1">
@@ -123,9 +127,7 @@ export const GameRoom: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <div className="text-green-400 text-sm">
-                        ${p.chips}
-                      </div>
+                      <div className="text-green-400 text-sm">${p.chips}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -147,7 +149,9 @@ export const GameRoom: React.FC = () => {
         {/* Your Cards (larger display) */}
         {yourCards && yourCards.length > 0 && (
           <div className="bg-gray-900 rounded-lg p-4 mb-4">
-            <h3 className="text-white font-semibold mb-2 text-sm">Your Cards</h3>
+            <h3 className="text-white font-semibold mb-2 text-sm">
+              Your Cards
+            </h3>
             <div className="flex gap-3 justify-center">
               {yourCards.map((card, idx) => (
                 <Card key={idx} card={card} size="large" />
@@ -229,7 +233,9 @@ export const GameRoom: React.FC = () => {
             </div>
             <div className="text-gray-400">
               Your Chips:{" "}
-              <span className="text-green-400">${currentPlayer?.chips || 0}</span>
+              <span className="text-green-400">
+                ${currentPlayer?.chips || 0}
+              </span>
             </div>
             {currentHand && (
               <div className="text-gray-400">
