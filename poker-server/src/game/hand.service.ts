@@ -11,6 +11,7 @@ import {
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { createDeck, shuffleDeck, dealCards } from '../common/utils/deck';
 import { evaluateHand, compareHands } from '../common/utils/hand-evaluator';
+import { TestDeckService } from './test-deck.service';
 
 @Injectable()
 export class HandService {
@@ -19,6 +20,7 @@ export class HandService {
   constructor(
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
+    private readonly testDeckService: TestDeckService,
   ) {}
 
   /**
@@ -68,8 +70,17 @@ export class HandService {
 
     const pot = sbAmount + bbAmount;
 
-    // Deal cards
-    let deck = shuffleDeck(createDeck());
+    // Deal cards - use test deck if available
+    let deck: Card[];
+    const testDeck = this.testDeckService.getDeck(room.id);
+    
+    if (testDeck) {
+      this.logger.debug(`Using test deck for room ${room.id}`);
+      deck = testDeck;
+    } else {
+      deck = shuffleDeck(createDeck());
+    }
+    
     const activePlayerIds = activePlayers.map((p) => p.id);
 
     for (const player of activePlayers) {
@@ -77,6 +88,11 @@ export class HandService {
       player.cards = dealt;
       player.status = 'connected';
       deck = remaining;
+    }
+    
+    // Save remaining deck back to test service if in test mode
+    if (testDeck) {
+      this.testDeckService.setDeck(room.id, deck);
     }
 
     // First to act is left of big blind (or dealer if heads-up)
@@ -138,20 +154,29 @@ export class HandService {
 
     const allPlayersAllIn = playersWhoCanBet.length <= 1;
 
-    let deck = shuffleDeck(createDeck());
+    // Get deck - use test deck if available, otherwise create and shuffle
+    let deck: Card[];
+    const testDeck = this.testDeckService.getDeck(room.id);
+    
+    if (testDeck) {
+      this.logger.debug(`Using test deck for room ${room.id}`);
+      deck = testDeck;
+    } else {
+      deck = shuffleDeck(createDeck());
+      
+      // Remove already dealt cards (only needed for random decks)
+      const dealtCards = [
+        ...hand.communityCards,
+        ...room.players.flatMap((p) => p.cards || []),
+      ];
 
-    // Remove already dealt cards
-    const dealtCards = [
-      ...hand.communityCards,
-      ...room.players.flatMap((p) => p.cards || []),
-    ];
-
-    deck = deck.filter(
-      (card) =>
-        !dealtCards.some(
-          (dealt) => dealt.suit === card.suit && dealt.rank === card.rank,
-        ),
-    );
+      deck = deck.filter(
+        (card) =>
+          !dealtCards.some(
+            (dealt) => dealt.suit === card.suit && dealt.rank === card.rank,
+          ),
+      );
+    }
 
     // If everyone is all-in, deal all remaining cards and go straight to showdown
     if (allPlayersAllIn && hand.bettingRound !== 'SHOWDOWN') {
@@ -159,13 +184,20 @@ export class HandService {
         `[advanceBettingRound] All players all-in, dealing remaining cards. Current: ${hand.communityCards.length} cards`,
       );
       while (hand.communityCards.length < 5) {
-        const { dealt } = dealCards(deck, 1);
+        const { dealt, remaining } = dealCards(deck, 1);
         hand.communityCards.push(dealt[0]);
+        deck = remaining;
         this.logger.debug(
           `[advanceBettingRound] Dealt ${dealt[0].rank}${dealt[0].suit}, total: ${hand.communityCards.length}`,
         );
       }
       hand.bettingRound = 'SHOWDOWN';
+      
+      // Update test deck if in test mode
+      if (testDeck) {
+        this.testDeckService.setDeck(room.id, deck);
+      }
+      
       room.lastActivityAt = Date.now();
       await this.storageService.saveRoom(room);
       this.logger.log(
@@ -177,23 +209,26 @@ export class HandService {
     switch (hand.bettingRound) {
       case 'PRE_FLOP':
         // Deal 3 cards (flop)
-        const { dealt: flop } = dealCards(deck, 3);
+        const { dealt: flop, remaining: afterFlop } = dealCards(deck, 3);
         hand.communityCards = flop;
         hand.bettingRound = 'FLOP';
+        deck = afterFlop;
         break;
 
       case 'FLOP':
         // Deal 1 card (turn)
-        const { dealt: turn } = dealCards(deck, 1);
+        const { dealt: turn, remaining: afterTurn } = dealCards(deck, 1);
         hand.communityCards.push(turn[0]);
         hand.bettingRound = 'TURN';
+        deck = afterTurn;
         break;
 
       case 'TURN':
         // Deal 1 card (river)
-        const { dealt: river } = dealCards(deck, 1);
+        const { dealt: river, remaining: afterRiver } = dealCards(deck, 1);
         hand.communityCards.push(river[0]);
         hand.bettingRound = 'RIVER';
+        deck = afterRiver;
         break;
 
       case 'RIVER':
@@ -202,6 +237,11 @@ export class HandService {
 
       case 'SHOWDOWN':
         throw new Error('Already at showdown');
+    }
+    
+    // Update test deck if in test mode
+    if (testDeck) {
+      this.testDeckService.setDeck(room.id, deck);
     }
 
     // Reset betting for new round

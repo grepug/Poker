@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { GameService } from '../game/game.service';
 import { HandService } from '../game/hand.service';
 import { BettingService } from '../game/betting.service';
+import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import {
   CreateRoomData,
@@ -28,6 +29,7 @@ import {
   BettingRoundCompleteData,
   CommunityCardsDealtData,
   HandCompleteData,
+  Card,
 } from 'poker-types';
 
 @WebSocketGateway({
@@ -49,6 +51,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly gameService: GameService,
     private readonly handService: HandService,
     private readonly bettingService: BettingService,
+    private readonly testDeckService: TestDeckService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
   ) {}
@@ -585,6 +588,52 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.gameService.markPlayerDisconnected(roomId, playerId);
     } catch (error) {
       this.logger.error(`Disconnect timeout error: ${error.message}`);
+    }
+  }
+
+  /**
+   * TEST MODE ONLY: Set a predetermined deck for deterministic testing
+   * Only works when TEST_MODE environment variable is set to 'true'
+   */
+  @SubscribeMessage('setTestDeck')
+  async handleSetTestDeck(
+    @MessageBody() data: { roomId: string; deck: Card[] },
+    @ConnectedSocket() client: Socket,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.testDeckService.isTestMode()) {
+        return {
+          success: false,
+          error: 'Test decks can only be set when TEST_MODE=true',
+        };
+      }
+
+      const { roomId, deck } = data;
+
+      if (!roomId || !deck || !Array.isArray(deck)) {
+        return {
+          success: false,
+          error: 'Invalid data: roomId and deck array required',
+        };
+      }
+
+      // Validate deck has valid cards
+      if (deck.length === 0) {
+        return {
+          success: false,
+          error: 'Deck cannot be empty',
+        };
+      }
+
+      this.testDeckService.setDeck(roomId, deck);
+      this.logger.log(
+        `Test deck set for room ${roomId} with ${deck.length} cards`,
+      );
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Set test deck error: ${error.message}`);
+      return { success: false, error: error.message };
     }
   }
 
