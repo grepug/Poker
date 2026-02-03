@@ -105,6 +105,14 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           gameState: "IN_PROGRESS",
         } as Room;
       });
+      
+      // Update player chips from game start
+      setPlayer((prev) => {
+        if (!prev) return prev;
+        const updatedPlayer = data.players.find((p) => p.id === prev.id);
+        console.log('Updating player on GAME_STARTED:', { prev: prev.chips, updated: updatedPlayer?.chips });
+        return updatedPlayer ? { ...prev, ...updatedPlayer, cards: prev.cards } : prev;
+      });
     });
 
     // Your cards
@@ -172,6 +180,50 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // New hand starting
     socket.on("NEW_HAND_STARTING", () => {
       console.log("New hand starting, waiting for GAME_STARTED event...");
+    });
+
+    // Player turn
+    socket.on("PLAYER_TURN", (data) => {
+      console.log("Player turn:", data);
+      // Update currentPlayerTurn
+      setRoom((prev) => {
+        if (!prev || !prev.currentHand) return prev;
+        return {
+          ...prev,
+          currentHand: {
+            ...prev.currentHand,
+            currentPlayerTurn: data.playerId,
+          },
+        } as Room;
+      });
+    });
+
+    // Player acted
+    socket.on("PLAYER_ACTED", (data) => {
+      console.log("Player acted:", data);
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          currentHand: prev.currentHand
+            ? {
+                ...prev.currentHand,
+                pot: data.newPot,
+              }
+            : prev.currentHand,
+          players: prev.players.map((p) =>
+            p.id === data.playerId
+              ? { ...p, chips: data.newChips, lastAction: data.action, currentBet: data.amount || p.currentBet }
+              : p
+          ),
+        } as Room;
+      });
+      
+      // Update player state if it's the current player
+      setPlayer((prev) => {
+        if (!prev || prev.id !== data.playerId) return prev;
+        return { ...prev, chips: data.newChips, lastAction: data.action };
+      });
     });
 
     // Betting round complete

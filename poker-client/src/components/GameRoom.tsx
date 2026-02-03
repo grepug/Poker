@@ -34,9 +34,15 @@ export const GameRoom: React.FC = () => {
   const minRaise = currentHand
     ? currentHand.currentBet * 2
     : room.config.bigBlind * 2;
-  const canCheck = currentHand
-    ? player.currentBet === currentHand.currentBet
+  
+  // Get current player data from room.players to avoid stale data
+  const currentPlayer = room?.players.find(p => p.id === player?.id);
+  const canCheck = currentHand && currentPlayer
+    ? currentPlayer.currentBet === currentHand.currentBet
     : false;
+  const callAmount = currentHand && currentPlayer
+    ? currentHand.currentBet - currentPlayer.currentBet
+    : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-900 to-green-950 p-4">
@@ -175,7 +181,7 @@ export const GameRoom: React.FC = () => {
                     onClick={() => handleAction("call")}
                     className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 rounded-lg font-semibold"
                   >
-                    Call ${currentHand?.currentBet || 0}
+                    Call ${callAmount}
                   </button>
                 )}
               </div>
@@ -184,7 +190,7 @@ export const GameRoom: React.FC = () => {
                 <input
                   type="number"
                   min={minRaise}
-                  max={player.chips}
+                  max={currentPlayer?.chips || 0}
                   value={raiseAmount}
                   onChange={(e) => setRaiseAmount(Number(e.target.value))}
                   className="flex-1 px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700"
@@ -223,7 +229,7 @@ export const GameRoom: React.FC = () => {
             </div>
             <div className="text-gray-400">
               Your Chips:{" "}
-              <span className="text-green-400">${player.chips}</span>
+              <span className="text-green-400">${currentPlayer?.chips || 0}</span>
             </div>
             {currentHand && (
               <div className="text-gray-400">

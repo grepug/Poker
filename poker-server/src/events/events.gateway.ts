@@ -303,12 +303,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
 
       // Check if betting round complete
-      if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
+      const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
+      this.logger.debug(`Betting round complete: ${isComplete}`);
+      
+      if (isComplete) {
         await this.handleBettingRoundComplete(updatedRoom);
       } else {
         // Move to next player
         const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+        this.logger.debug(`Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`);
         if (nextPlayer) {
+          updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
+          await this.storageService.saveRoom(updatedRoom);
+          this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
           this.emitPlayerTurn(updatedRoom, nextPlayer);
         }
       }
@@ -469,12 +476,72 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         round: nextRound,
       } as CommunityCardsDealtData);
 
-      // Emit first player's turn for new round
-      const currentPlayer = updatedRoom.players.find(
-        (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
-      );
-      if (currentPlayer) {
-        this.emitPlayerTurn(updatedRoom, currentPlayer);
+      // If we reached showdown, determine winner immediately
+      if (nextRound === 'SHOWDOWN') {
+        const result = await this.handService.determineWinner(updatedRoom);
+        
+        const handCompleteData: HandCompleteData = {
+          result,
+        };
+        
+        this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
+        
+        // Start new hand after delay
+        setTimeout(async () => {
+          try {
+            const freshRoom = await this.getRoom(room.id);
+            if (!freshRoom) {
+              this.logger.error(`Room ${room.id} not found for new hand`);
+              return;
+            }
+
+            const newHand = await this.handService.startNewHand(freshRoom);
+            this.server.to(room.id).emit('NEW_HAND_STARTING');
+
+            // Emit the new game state with updated hand
+            const gameStartedData: GameStartedData = {
+              hand: newHand,
+              players: freshRoom.players.map((p) => ({
+                id: p.id,
+                name: p.name,
+                chips: p.chips,
+                position: p.position,
+                status: p.status,
+                currentBet: p.currentBet,
+                lastAction: p.lastAction,
+              })),
+            };
+
+            this.server.to(room.id).emit('GAME_STARTED', gameStartedData);
+
+            // Send cards to each player
+            for (const player of freshRoom.players) {
+              if (player.cards && player.socketId) {
+                this.server.to(player.socketId).emit('YOUR_CARDS', {
+                  cards: player.cards,
+                } as YourCardsData);
+              }
+            }
+
+            // Emit first player's turn
+            const currentPlayer = freshRoom.players.find(
+              (p) => p.id === newHand.currentPlayerTurn,
+            );
+            if (currentPlayer) {
+              this.emitPlayerTurn(freshRoom, currentPlayer);
+            }
+          } catch (error) {
+            this.logger.error(`Error starting new hand: ${error.message}`);
+          }
+        }, 5000);
+      } else {
+        // Emit first player's turn for new round
+        const currentPlayer = updatedRoom.players.find(
+          (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
+        );
+        if (currentPlayer) {
+          this.emitPlayerTurn(updatedRoom, currentPlayer);
+        }
       }
     }
   }
