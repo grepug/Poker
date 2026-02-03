@@ -155,7 +155,28 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Hand complete
     socket.on("HAND_COMPLETE", (data) => {
       console.log("Hand complete:", data.result);
-      // Show winner(s) - would handle in UI
+      // Update chips for winners
+      setRoom((prev) => {
+        if (!prev) return prev;
+        const updatedPlayers = prev.players.map((p) => {
+          const winnerData = data.result.winners.find((w) => w.playerId === p.id);
+          if (winnerData) {
+            return { ...p, chips: p.chips + winnerData.amountWon };
+          }
+          return p;
+        });
+        return { ...prev, players: updatedPlayers };
+      });
+    });
+
+    // New hand starting
+    socket.on("NEW_HAND_STARTING", () => {
+      console.log("New hand starting, waiting for GAME_STARTED event...");
+    });
+
+    // Betting round complete
+    socket.on("BETTING_ROUND_COMPLETE", (data) => {
+      console.log("Betting round complete, next round:", data.nextRound);
     });
 
     // Error
@@ -176,6 +197,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("PLAYER_ACTED");
       socket.off("COMMUNITY_CARDS_DEALT");
       socket.off("HAND_COMPLETE");
+      socket.off("NEW_HAND_STARTING");
+      socket.off("BETTING_ROUND_COMPLETE");
       socket.off("ERROR");
     };
   }, [socket]);
@@ -225,6 +248,36 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   };
 
   const isHost = player?.id === room?.hostId;
+
+  // Expose debug functions to window for testing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).pokerDebug = {
+        getRoom: () => room,
+        getPlayer: () => player,
+        getCards: () => yourCards,
+        getSocket: () => socket,
+        createRoom,
+        joinRoom,
+        startGame,
+        performAction,
+        fold: () => performAction('fold'),
+        check: () => performAction('check'),
+        call: () => performAction('call'),
+        raise: (amount: number) => performAction('raise', amount),
+        allIn: () => performAction('all-in'),
+        leaveRoom,
+        requestRebuy,
+        emitCustom: (event: string, data: any) => socket?.emit(event as any, data),
+        logState: () => {
+          console.log('Room:', room);
+          console.log('Player:', player);
+          console.log('Your Cards:', yourCards);
+          console.log('Is Host:', isHost);
+        },
+      };
+    }
+  }, [room, player, yourCards, socket, isHost, createRoom, joinRoom, startGame, performAction, leaveRoom, requestRebuy]);
 
   return (
     <GameContext.Provider

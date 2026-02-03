@@ -22,6 +22,7 @@ import {
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
+  YourCardsData,
   PlayerTurnData,
   PlayerActedData,
   BettingRoundCompleteData,
@@ -410,8 +411,46 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       setTimeout(async () => {
         try {
           const updatedRoom = await this.getRoom(room.id);
-          await this.handService.startNewHand(updatedRoom);
+          if (!updatedRoom) {
+            this.logger.error(`Room ${room.id} not found for new hand`);
+            return;
+          }
+
+          const newHand = await this.handService.startNewHand(updatedRoom);
           this.server.to(room.id).emit('NEW_HAND_STARTING');
+
+          // Emit the new game state with updated hand
+          const gameStartedData: GameStartedData = {
+            hand: newHand,
+            players: updatedRoom.players.map((p) => ({
+              id: p.id,
+              name: p.name,
+              chips: p.chips,
+              position: p.position,
+              status: p.status,
+              currentBet: p.currentBet,
+              lastAction: p.lastAction,
+            })),
+          };
+
+          this.server.to(room.id).emit('GAME_STARTED', gameStartedData);
+
+          // Send cards to each player
+          for (const player of updatedRoom.players) {
+            if (player.cards && player.socketId) {
+              this.server.to(player.socketId).emit('YOUR_CARDS', {
+                cards: player.cards,
+              } as YourCardsData);
+            }
+          }
+
+          // Emit first player's turn
+          const currentPlayer = updatedRoom.players.find(
+            (p) => p.id === newHand.currentPlayerTurn,
+          );
+          if (currentPlayer) {
+            this.emitPlayerTurn(updatedRoom, currentPlayer);
+          }
         } catch (error) {
           this.logger.error(`Error starting new hand: ${error.message}`);
         }
