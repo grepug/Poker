@@ -1,0 +1,48 @@
+import { Card, HandEvaluation } from "./card.types";
+import { PlayerAction } from "./player.types";
+
+// Betting round phases
+export type BettingRound = "PRE_FLOP" | "FLOP" | "TURN" | "RIVER" | "SHOWDOWN";
+
+// Game state
+export type GameStateType = "WAITING" | "IN_PROGRESS" | "ENDED";
+
+// Side pot for all-in scenarios
+export interface SidePot {
+  amount: number;
+  eligiblePlayers: string[]; // Player IDs who can win this pot
+}
+
+// Single poker hand
+export interface Hand {
+  handNumber: number;
+  dealerPosition: number;
+  smallBlindPosition: number;
+  bigBlindPosition: number;
+  currentPlayerTurn: string | null; // player ID or null if hand over
+  pot: number;
+  communityCards: Card[];
+  bettingRound: BettingRound;
+  currentBet: number;
+  activePlayers: string[]; // Player IDs still in the hand
+  roundActions: Record<string, boolean>; // Track if player acted this round
+  sidePots: SidePot[];
+  startedAt: number;
+}
+
+// Result of a completed hand
+export interface HandResult {
+  winners: Array<{
+    playerId: string;
+    playerName: string;
+    hand: HandEvaluation;
+    amountWon: number;
+  }>;
+  playerHands: Array<{
+    playerId: string;
+    playerName: string;
+    cards: Card[];
+    hand: HandEvaluation;
+  }>;
+  totalPot: number;
+}
