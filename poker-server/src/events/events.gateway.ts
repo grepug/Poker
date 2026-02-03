@@ -7,11 +7,12 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { GameService } from '../game/game.service';
 import { HandService } from '../game/hand.service';
 import { BettingService } from '../game/betting.service';
+import { IStorageService } from '../common/interfaces/storage.interface';
 import {
   CreateRoomData,
   JoinRoomData,
@@ -47,6 +48,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly gameService: GameService,
     private readonly handService: HandService,
     private readonly bettingService: BettingService,
+    @Inject('IStorageService')
+    private readonly storageService: IStorageService,
   ) {}
 
   handleConnection(client: Socket) {
@@ -477,8 +480,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async getRoom(roomId: string): Promise<any> {
-    // Simplified - would use storage service
-    return {} as any;
+    return await this.storageService.getRoom(roomId);
   }
 
   private findSocketByPlayerId(playerId: string): Socket | null {
