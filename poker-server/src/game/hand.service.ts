@@ -213,12 +213,19 @@ export class HandService {
       const winner = activePlayers[0];
       winner.chips += hand.pot;
 
+      // Don't evaluate hand if won by fold (may not have enough community cards)
+      const hasEnoughCards =
+        winner.cards!.length + hand.communityCards.length >= 5;
+      const winnerHand = hasEnoughCards
+        ? evaluateHand(winner.cards!.concat(hand.communityCards))
+        : null;
+
       const result: HandResult = {
         winners: [
           {
             playerId: winner.id,
             playerName: winner.name,
-            hand: evaluateHand(winner.cards!.concat(hand.communityCards)),
+            hand: winnerHand,
             amountWon: hand.pot,
           },
         ],
@@ -227,7 +234,7 @@ export class HandService {
             playerId: winner.id,
             playerName: winner.name,
             cards: winner.cards!,
-            hand: evaluateHand(winner.cards!.concat(hand.communityCards)),
+            hand: winnerHand,
           },
         ],
         totalPot: hand.pot,
