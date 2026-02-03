@@ -170,12 +170,19 @@ export class BettingService {
         p.currentBet < hand.currentBet,
     );
 
+    this.logger.debug(
+      `[isBettingRoundComplete] active=${activePlayers.length}, unmatched=${playersWithUnmatchedBet.length}, round=${hand.bettingRound}`,
+    );
+
     if (playersWithUnmatchedBet.length > 0) {
       return false;
     }
 
     // Only one player left who can act
-    if (activePlayers.length <= 1) return true;
+    if (activePlayers.length <= 1) {
+      this.logger.debug('[isBettingRoundComplete] TRUE - ≤1 active players');
+      return true;
+    }
 
     // Check if all active players have acted
     const allActed = activePlayers.every((p) => hand.roundActions[p.id]);
