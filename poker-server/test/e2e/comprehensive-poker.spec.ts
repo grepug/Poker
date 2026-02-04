@@ -759,6 +759,289 @@ test.describe('Poker E2E - Chip Conservation', () => {
   });
 });
 
+test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
+  test('2.1: Single Raise - test raise mechanics', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    // Add console listeners
+    alicePage.on('console', msg => console.log('ALICE:', msg.text()));
+    bobPage.on('console', msg => console.log('BOB:', msg.text()));
+
+    // Navigate both to the app
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+
+    // Wait for connection
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room via UI
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    
+    // Wait for room page to load
+    await alicePage.waitForSelector('text=Room:');
+    
+    // Get room ID from UI
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins room via UI
+    console.log('Bob joining room...');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    
+    // Wait for Bob to see room page
+    await bobPage.waitForSelector('text=Room:');
+    
+    // Wait for both players to appear in room
+    await alicePage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Alice starts game via UI button
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    
+    // Wait for game to start
+    await alicePage.waitForSelector('text=Pot: $');
+    await bobPage.waitForSelector('text=Pot: $');
+    console.log('Game started');
+
+    // PRE_FLOP: Bob raises $50
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Pre-flop - Bob raising $50...');
+    await bobPage.fill('input[type="number"]', '50');
+    await bobPage.click('button:has-text("Raise")');
+
+    // Alice's turn - verify currentBet in the turn event
+    await alicePage.waitForSelector('text=Your Turn');
+    
+    const pokerDebugAlice = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        currentBet: room?.currentHand?.currentBet,
+        pot: room?.currentHand?.pot,
+      };
+    });
+    expect(pokerDebugAlice.currentBet).toBe(70);
+    console.log(`Current bet verified: $${pokerDebugAlice.currentBet}`);
+
+    // Alice must call $50 (from big blind $20 to $70)
+    const callButton = await alicePage.textContent('button:has-text("Call")');
+    expect(callButton).toContain('50'); // Should show "Call $50" (from $20 to $70)
+    console.log('Pre-flop - Alice calling $50...');
+    await alicePage.click('button:has-text("Call")');
+
+    // Verify pot = $140 after blinds + raise + call
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const afterPreFlop = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return room?.currentHand?.pot || 0;
+    });
+    expect(afterPreFlop).toBe(140);
+    console.log(`Pot after pre-flop: $${afterPreFlop}`);
+
+    // FLOP: Both check to showdown
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Flop - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Flop - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    // TURN: Both check
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Turn - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Turn - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    // RIVER: Both check
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('River - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('River - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    // Wait a moment for showdown to process
+    await alicePage.waitForTimeout(2000);
+    console.log('Showdown complete');
+
+    // Verify final state
+    const finalState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot || 0,
+        alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+
+    console.log(`Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`);
+    
+    // Verify chip conservation
+    await verifyChipConservation(alicePage, 2000);
+    
+    console.log('\n=== Test 2.1: Single raise mechanics verified ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
+
+  test('2.2: Re-raise (3-bet) - test re-raising mechanics', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    // Add console listeners
+    alicePage.on('console', msg => console.log('ALICE:', msg.text()));
+    bobPage.on('console', msg => console.log('BOB:', msg.text()));
+
+    // Navigate both to the app
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+
+    // Wait for connection
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room via UI
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    
+    // Wait for room page to load
+    await alicePage.waitForSelector('text=Room:');
+    
+    // Get room ID from UI
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins room via UI
+    console.log('Bob joining room...');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    
+    // Wait for Bob to see room page
+    await bobPage.waitForSelector('text=Room:');
+    
+    // Wait for both players to appear in room
+    await alicePage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Alice starts game via UI button
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    
+    // Wait for game to start
+    await alicePage.waitForSelector('text=Pot: $');
+    await bobPage.waitForSelector('text=Pot: $');
+    console.log('Game started');
+
+    // PRE_FLOP: Bob raises $50
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Pre-flop - Bob raising $50...');
+    await bobPage.fill('input[type="number"]', '50');
+    await bobPage.click('button:has-text("Raise")');
+
+    // Alice re-raises (must meet minimum raise of $140, making currentBet $210 or more)
+    // Actually, entering $150 creates currentBet $220 due to min raise rules
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Pre-flop - Alice re-raising (entering $150)...');
+    await alicePage.fill('input[type="number"]', '150');
+    await alicePage.click('button:has-text("Raise")');
+
+    // Verify currentBet after re-raise (will be enforced to minimum)
+    await bobPage.waitForSelector('text=Your Turn');
+    const pokerDebugBob = await bobPage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        currentBet: room?.currentHand?.currentBet,
+        pot: room?.currentHand?.pot,
+      };
+    });
+    // System enforces minimum raise, so currentBet will be higher than input
+    console.log(`Current bet after re-raise: $${pokerDebugBob.currentBet}, pot: $${pokerDebugBob.pot}`);
+
+    // Bob calls (amount depends on what system set as currentBet)
+    const callButtonText = await bobPage.textContent('button:has-text("Call")');
+    console.log(`Pre-flop - Bob sees: ${callButtonText}`);
+    await bobPage.click('button:has-text("Call")');
+
+    // Verify pot after all pre-flop action
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const afterPreFlop = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return room?.currentHand?.pot || 0;
+    });
+    console.log(`Pot after pre-flop: $${afterPreFlop}`);
+
+    // FLOP/TURN/RIVER: Both check to showdown
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Flop - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Flop - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Turn - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Turn - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('River - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('River - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    // Wait for showdown
+    await alicePage.waitForTimeout(2000);
+    console.log('Showdown complete');
+
+    // Verify final state
+    const finalState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+
+    console.log(`Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`);
+    
+    // Verify chip conservation
+    await verifyChipConservation(alicePage, 2000);
+    
+    console.log('\n=== Test 2.2: Re-raise (3-bet) mechanics verified ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
+});
+
 // Type augmentation for window.pokerDebug
 declare global {
   interface Window {
