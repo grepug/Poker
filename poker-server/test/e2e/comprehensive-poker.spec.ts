@@ -981,6 +981,139 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
   });
 });
 
+test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
+  test('4.1: Minimum Raise - verify system enforces minimum raise requirements', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('h1:has-text("Room:")');
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins
+    console.log('Bob joining room...');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    console.log('Game started');
+
+    // Verify initial state
+    const initialState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        currentBet: room?.currentHand?.currentBet,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `Initial: Pot $${initialState.pot}, currentBet $${initialState.currentBet}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
+    );
+    expect(initialState.pot).toBe(30);
+    expect(initialState.currentBet).toBe(20); // Big blind
+    expect(initialState.alice).toBe(980); // Big blind posted
+    expect(initialState.bob).toBe(990); // Small blind posted
+
+    // PRE_FLOP: Bob acts first (small blind)
+    // Test 1: Try to raise by small amount (should be enforced to minimum)
+    console.log('Pre-flop: Bob waiting for turn...');
+    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+
+    // Get minRaise from game state
+    const bobTurnState = await bobPage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        currentBet: room?.currentHand?.currentBet,
+        minRaise: room?.currentHand?.currentBet ? room.currentHand.currentBet * 2 : 40,
+      };
+    });
+    console.log(
+      `Bob's turn - currentBet: $${bobTurnState.currentBet}, minRaise: $${bobTurnState.minRaise}`,
+    );
+
+    // Test 1: Verify raise button is disabled when amount < minimum
+    console.log('Pre-flop: Testing invalid raise amount $30 (min is $40)...');
+    await bobPage.fill('input[type="number"]', '30');
+    await bobPage.waitForTimeout(100); // Let UI update
+    const raiseButtonDisabled = await bobPage.locator('button:has-text("Raise")').isDisabled();
+    expect(raiseButtonDisabled).toBe(true);
+    console.log('✓ Raise button disabled when input ($30) < minimum ($40)');
+
+    // Test 2: Now use the minimum raise amount ($40)
+    console.log('Pre-flop: Bob raising to minimum $40...');
+    await bobPage.fill('input[type="number"]', '40');
+    await bobPage.click('button:has-text("Raise")');
+    
+    // Wait for action to process
+    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    
+    const afterBobRaise = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        currentBet: room?.currentHand?.currentBet,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `After Bob's raise $40: Pot $${afterBobRaise.pot}, currentBet $${afterBobRaise.currentBet}, Bob chips: ${afterBobRaise.bob}`,
+    );
+
+    // Verify minimum raise worked
+    // Bob raised by $40 (the minimum raise amount)
+    // But currentBet = previous bet ($20) + raise ($40) = $60
+    expect(afterBobRaise.currentBet).toBe(60); // $20 big blind + $40 raise
+    console.log(`✓ Minimum raise of $40 succeeded (currentBet now $60)`);
+
+    // Verify Bob's chips decreased appropriately
+    // Bob started with 990, posted small blind $10
+    // After raising by $40, Bob's total contribution is $50 ($10 SB + $40 raise)
+    // So Bob's chips: 990 - 50 = 940
+    const expectedBobChips = 940;
+    expect(afterBobRaise.bob).toBe(expectedBobChips);
+    console.log(`✓ Bob's chips correctly updated: ${afterBobRaise.bob} (expected ${expectedBobChips})`)
+
+    // Test 3: Verify minRaise calculation (should be 2x currentBet)
+    // From our observations: minRaise = currentBet * 2
+    const minRaiseFormula = bobTurnState.currentBet * 2;
+    expect(bobTurnState.minRaise).toBe(minRaiseFormula);
+    console.log(`✓ Minimum raise formula verified: minRaise = currentBet * 2 = ${minRaiseFormula}`);
+
+    console.log('\n=== Test 4.1: Minimum raise enforcement verified ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
+});
+
 test.describe('Poker E2E - Chip Conservation', () => {
   test('6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
     browser,

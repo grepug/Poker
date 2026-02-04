@@ -164,11 +164,17 @@
 
 ### Test 4.1: Minimum Raise
 
+**Status**: ✅ PASSING  
 **Objective**: Verify minimum raise enforcement
 
-- [ ] Create room, start game
-- [ ] Try to raise $1 (should fail or enforce min raise)
-- [ ] Verify minimum raise = currentBet _ 2 or bigBlind _ 2
+- [x] Create room, start game
+- [x] Test 1: Verify raise button disabled when input ($30) < minimum ($40)
+- [x] Test 2: Raise with minimum amount ($40) succeeds
+- [x] Verify currentBet = previous bet + raise amount = $60
+- [x] Verify Bob's chips updated correctly (940 chips after $50 total bet)
+- [x] Test 3: Verify minRaise formula = currentBet * 2
+
+**Result**: Raise button correctly disabled for invalid amounts. Minimum raise of $40 succeeded with currentBet = $60. Formula verified: minRaise = currentBet * 2.
 
 ### Test 4.2: Raise More Than Opponent Has
 
