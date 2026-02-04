@@ -2,10 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './test/e2e',
-  fullyParallel: false, // Run tests sequentially to avoid port conflicts
+  fullyParallel: true, // Run tests in parallel - each test uses isolated browser contexts
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1, // Single worker to avoid conflicts
+  workers: process.env.CI ? 2 : 3, // Allow parallel execution
   reporter: 'html',
   timeout: 60000, // 60 second timeout for tests
   
@@ -23,6 +23,14 @@ export default defineConfig({
       use: { 
         ...devices['Desktop Chrome'],
         headless: true,
+      },
+    },
+    {
+      name: 'debug',
+      testMatch: 'debug-*.spec.ts',
+      use: { 
+        ...devices['Desktop Chrome'],
+        headless: false, // Show browser for debugging
       },
     },
   ],
