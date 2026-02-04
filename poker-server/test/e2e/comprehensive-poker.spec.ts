@@ -856,6 +856,129 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     await aliceContext.close();
     await bobContext.close();
   });
+
+  test('3.3: Both All-In Pre-Flop - immediate double all-in scenario', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('h1:has-text("Room:")');
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins
+    console.log('Bob joining room...');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    console.log('Game started');
+
+    // Verify initial state
+    const initialState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `Initial: Pot $${initialState.pot}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
+    );
+    expect(initialState.pot).toBe(30);
+    expect(initialState.alice).toBe(980); // Big blind
+    expect(initialState.bob).toBe(990); // Small blind
+
+    // PRE_FLOP: Bob (small blind) acts first - goes all-in immediately
+    console.log('Pre-flop: Bob waiting for turn...');
+    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    console.log('Pre-flop: Bob going all-in immediately...');
+    await bobPage.click('button:has-text("All-In")');
+
+    // Wait for Bob's all-in to propagate
+    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    const afterBobAllIn = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        currentBet: room?.currentHand?.currentBet,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `After Bob all-in: Pot $${afterBobAllIn.pot}, currentBet $${afterBobAllIn.currentBet}, Alice: ${afterBobAllIn.alice}, Bob: ${afterBobAllIn.bob}`,
+    );
+    expect(afterBobAllIn.bob).toBe(0); // Bob is all-in
+    // Bob started with 990 (after posting $10 small blind)
+    // Goes all-in: adds remaining 990 to pot
+    // Pot: 30 (blinds) + 990 (Bob's all-in) = 1020
+    expect(afterBobAllIn.pot).toBe(1020); // System calculated pot
+    expect(afterBobAllIn.currentBet).toBe(1000); // Bob's total bet (10 small + 990 all-in)
+
+    // Alice responds by going all-in
+    console.log('Pre-flop: Alice going all-in to match Bob...');
+    await alicePage.click('button:has-text("All-In")');
+
+    // Both all-in - wait for showdown
+    await alicePage.waitForTimeout(3000);
+    const finalState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        bettingRound: room?.currentHand?.bettingRound,
+        communityCards: room?.currentHand?.communityCards?.length,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `Final state: Pot $${finalState.pot}, Round: ${finalState.bettingRound}, Cards: ${finalState.communityCards}, Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
+    );
+
+    // Verify both all-in triggered immediate showdown
+    expect(finalState.bettingRound).toBe('SHOWDOWN');
+    expect(finalState.communityCards).toBe(5); // All 5 cards dealt immediately
+    
+    // Verify winner determination
+    const total = (finalState.alice || 0) + (finalState.bob || 0);
+    expect(total).toBe(2000);
+    expect(finalState.alice === 2000 || finalState.bob === 2000).toBe(true);
+
+    const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
+    const loser = winner === 'Alice' ? 'Bob' : 'Alice';
+    console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    console.log('\n=== Test 3.3: Both all-in pre-flop verified - instant showdown ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
 });
 
 test.describe('Poker E2E - Chip Conservation', () => {

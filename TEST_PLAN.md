@@ -137,13 +137,19 @@
 
 ### Test 3.3: Both All-In Pre-Flop
 
-**Objective**: Test double all-in scenario
+**Status**: ✅ PASSING  
+**Objective**: Test immediate double all-in scenario
 
-- [ ] Create room, start game
-- [ ] PRE_FLOP: Alice all-in $980, Bob all-in $990
-- [ ] Verify both at $0 chips
-- [ ] Verify immediate dealing of all community cards
-- [ ] Verify showdown and winner determination
+- [x] Create room, start game
+- [x] PRE_FLOP: Bob goes all-in immediately (pot $1020, currentBet $1000)
+- [x] Alice responds with all-in (matching Bob's bet)
+- [x] Verify both at $0 chips
+- [x] Verify immediate dealing of all 5 community cards
+- [x] Verify SHOWDOWN triggered instantly
+- [x] Verify winner determination: one player 2000, other 0
+- [x] Verify chip conservation: total = 2000
+
+**Result**: Both players all-in pre-flop. System went straight to SHOWDOWN with all 5 cards dealt immediately. Winner: Alice 2000, Loser: Bob 0 (varies by predetermined cards).
 
 ### Test 3.4: Partial All-In (Side Pot)
 
