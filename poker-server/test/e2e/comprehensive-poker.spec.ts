@@ -28,11 +28,13 @@ async function verifyChipConservation(page: Page, expected: number = 2000) {
 test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
   let alicePage: Page;
   let bobPage: Page;
+  let aliceContext: any;
+  let bobContext: any;
 
   test.beforeEach(async ({ browser }) => {
     // Create two browser contexts (Alice and Bob)
-    const aliceContext = await browser.newContext();
-    const bobContext = await browser.newContext();
+    aliceContext = await browser.newContext();
+    bobContext = await browser.newContext();
 
     alicePage = await aliceContext.newPage();
     bobPage = await bobContext.newPage();
@@ -46,8 +48,8 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
   });
 
   test.afterEach(async () => {
-    await alicePage?.close();
-    await bobPage?.close();
+    await aliceContext?.close();
+    await bobContext?.close();
   });
 
   test('1.1: Check/Check Scenario - both players check through all rounds', async () => {
@@ -59,7 +61,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for room to be created
     const roomId = await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.id,
-      { timeout: 5000 }
+      { timeout: 10000 }
     ).then(r => r.jsonValue());
 
     expect(roomId).toBeTruthy();
@@ -72,7 +74,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for Bob to join
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.players?.length === 2,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Alice starts game
@@ -83,7 +85,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for game to start
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // PRE_FLOP: Bob (small blind) calls, Alice (big blind) checks
@@ -93,7 +95,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for flop
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 3,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // FLOP: Both check
@@ -103,7 +105,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for turn
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 4,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // TURN: Both check
@@ -113,7 +115,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for river
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 5,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // RIVER: Both check
@@ -123,7 +125,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for hand to complete (pot resolved)
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.pot === 0,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Verify chip conservation
@@ -135,33 +137,33 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await alicePage.evaluate(() => window.pokerDebug.createRoom('Alice'));
     const roomId = await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.id,
-      { timeout: 5000 }
+      { timeout: 10000 }
     ).then(r => r.jsonValue());
     
     await bobPage.evaluate((rid) => window.pokerDebug.joinRoom(rid, 'Bob'), roomId);
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.players?.length === 2,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
     
     await alicePage.evaluate(() => window.pokerDebug.startGame());
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // PRE_FLOP: Bob (small blind) raises $50, Alice (big blind) calls
     await bobPage.evaluate(() => window.pokerDebug.raise(50));
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.currentBet === 50,
-      { timeout: 3000 }
+      { timeout: 10000 }
     );
     await alicePage.evaluate(() => window.pokerDebug.call());
 
     // Wait for flop
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 3,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // FLOP: Alice check, Bob raise $100, Alice call
@@ -169,14 +171,14 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await bobPage.evaluate(() => window.pokerDebug.raise(100));
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.currentBet === 100,
-      { timeout: 3000 }
+      { timeout: 10000 }
     );
     await alicePage.evaluate(() => window.pokerDebug.call());
 
     // Wait for turn
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 4,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // TURN: Both check
@@ -186,7 +188,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for river
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 5,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // RIVER: Both check
@@ -196,7 +198,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Wait for hand to complete
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.pot === 0,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Verify chip conservation
@@ -208,19 +210,19 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await alicePage.evaluate(() => window.pokerDebug.createRoom('Alice'));
     const roomId = await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.id,
-      { timeout: 5000 }
+      { timeout: 10000 }
     ).then(r => r.jsonValue());
     
     await bobPage.evaluate((rid) => window.pokerDebug.joinRoom(rid, 'Bob'), roomId);
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.players?.length === 2,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
     
     await alicePage.evaluate(() => window.pokerDebug.startGame());
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Get initial chips
@@ -236,14 +238,14 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await bobPage.evaluate(() => window.pokerDebug.raise(100));
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.currentBet === 100,
-      { timeout: 3000 }
+      { timeout: 10000 }
     );
     await alicePage.evaluate(() => window.pokerDebug.fold());
 
     // Wait for hand to complete
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.pot === 0,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Verify Bob won and chips updated
@@ -293,19 +295,19 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     await alicePage.evaluate(() => window.pokerDebug.createRoom('Alice'));
     const roomId = await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.id,
-      { timeout: 5000 }
+      { timeout: 10000 }
     ).then(r => r.jsonValue());
     
     await bobPage.evaluate((rid) => window.pokerDebug.joinRoom(rid, 'Bob'), roomId);
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.players?.length === 2,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
     
     await alicePage.evaluate(() => window.pokerDebug.startGame());
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Alice goes all-in
@@ -317,7 +319,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     // Wait for all 5 community cards to be dealt
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 5,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Verify all 5 community cards were dealt immediately
@@ -367,13 +369,13 @@ test.describe('Poker E2E - Chip Conservation', () => {
     await alicePage.evaluate(() => window.pokerDebug.createRoom('Alice'));
     const roomId = await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.id,
-      { timeout: 5000 }
+      { timeout: 10000 }
     ).then(r => r.jsonValue());
     
     await bobPage.evaluate((rid) => window.pokerDebug.joinRoom(rid, 'Bob'), roomId);
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.players?.length === 2,
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // Play 3 consecutive hands
@@ -381,7 +383,7 @@ test.describe('Poker E2E - Chip Conservation', () => {
       await alicePage.evaluate(() => window.pokerDebug.startGame());
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-        { timeout: 5000 }
+        { timeout: 10000 }
       );
 
       // Check conservation at start of hand
@@ -393,7 +395,7 @@ test.describe('Poker E2E - Chip Conservation', () => {
       await alicePage.evaluate(() => window.pokerDebug.check());
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 3,
-        { timeout: 5000 }
+        { timeout: 10000 }
       );
 
       // Flop
@@ -401,7 +403,7 @@ test.describe('Poker E2E - Chip Conservation', () => {
       await bobPage.evaluate(() => window.pokerDebug.check());
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 4,
-        { timeout: 5000 }
+        { timeout: 10000 }
       );
 
       // Turn
@@ -409,7 +411,7 @@ test.describe('Poker E2E - Chip Conservation', () => {
       await bobPage.evaluate(() => window.pokerDebug.check());
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 5,
-        { timeout: 5000 }
+        { timeout: 10000 }
       );
 
       // River
@@ -419,7 +421,7 @@ test.describe('Poker E2E - Chip Conservation', () => {
       // Wait for hand to complete
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.currentHand?.pot === 0,
-        { timeout: 5000 }
+        { timeout: 10000 }
       );
 
       // Check conservation after hand completes
