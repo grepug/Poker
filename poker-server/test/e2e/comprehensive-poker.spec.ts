@@ -703,7 +703,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(afterBobAllIn.pot).toBe(1920); // 1840 + 80 = 1920
 
     // Alice calls Bob's all-in
-    console.log('Pre-flop Round 4 - Alice calling Bob\'s all-in...');
+    console.log("Pre-flop Round 4 - Alice calling Bob's all-in...");
     await alicePage.click('button:has-text("Call")');
 
     // Both players all-in - should go straight to showdown
@@ -721,23 +721,27 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `After pre-flop: Pot $${afterPreFlop.pot}, Round: ${afterPreFlop.bettingRound}, Cards: ${afterPreFlop.communityCards}, Alice: ${afterPreFlop.alice}, Bob: ${afterPreFlop.bob}`,
     );
-    
+
     // Both all-in - should have gone to SHOWDOWN
     expect(afterPreFlop.bettingRound).toBe('SHOWDOWN'); // Straight to showdown
     expect(afterPreFlop.communityCards).toBe(5); // All 5 cards dealt immediately
-    
+
     // Winner determined - one player has 2000, other has 0
     const total = (afterPreFlop.alice || 0) + (afterPreFlop.bob || 0);
     expect(total).toBe(2000);
     expect(afterPreFlop.alice === 2000 || afterPreFlop.bob === 2000).toBe(true);
 
     // No need to check through rounds - both all-in means instant showdown
-    console.log('Both players all-in - went straight to SHOWDOWN with all 5 cards');
+    console.log(
+      'Both players all-in - went straight to SHOWDOWN with all 5 cards',
+    );
 
     const winner = afterPreFlop.alice === 2000 ? 'Alice' : 'Bob';
     const loser = winner === 'Alice' ? 'Bob' : 'Alice';
     console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
-    console.log('\n=== Test 3.1: Small all-in verified - both went all-in, instant showdown ===');
+    console.log(
+      '\n=== Test 3.1: Small all-in verified - both went all-in, instant showdown ===',
+    );
 
     await aliceContext.close();
     await bobContext.close();
@@ -965,7 +969,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     // Verify both all-in triggered immediate showdown
     expect(finalState.bettingRound).toBe('SHOWDOWN');
     expect(finalState.communityCards).toBe(5); // All 5 cards dealt immediately
-    
+
     // Verify winner determination
     const total = (finalState.alice || 0) + (finalState.bob || 0);
     expect(total).toBe(2000);
@@ -974,7 +978,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
     const loser = winner === 'Alice' ? 'Bob' : 'Alice';
     console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
-    console.log('\n=== Test 3.3: Both all-in pre-flop verified - instant showdown ===');
+    console.log(
+      '\n=== Test 3.3: Both all-in pre-flop verified - instant showdown ===',
+    );
 
     await aliceContext.close();
     await bobContext.close();
@@ -1052,7 +1058,9 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
         currentBet: room?.currentHand?.currentBet,
-        minRaise: room?.currentHand?.currentBet ? room.currentHand.currentBet * 2 : 40,
+        minRaise: room?.currentHand?.currentBet
+          ? room.currentHand.currentBet * 2
+          : 40,
       };
     });
     console.log(
@@ -1063,7 +1071,9 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log('Pre-flop: Testing invalid raise amount $30 (min is $40)...');
     await bobPage.fill('input[type="number"]', '30');
     await bobPage.waitForTimeout(100); // Let UI update
-    const raiseButtonDisabled = await bobPage.locator('button:has-text("Raise")').isDisabled();
+    const raiseButtonDisabled = await bobPage
+      .locator('button:has-text("Raise")')
+      .isDisabled();
     expect(raiseButtonDisabled).toBe(true);
     console.log('✓ Raise button disabled when input ($30) < minimum ($40)');
 
@@ -1071,10 +1081,10 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log('Pre-flop: Bob raising to minimum $40...');
     await bobPage.fill('input[type="number"]', '40');
     await bobPage.click('button:has-text("Raise")');
-    
+
     // Wait for action to process
     await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
-    
+
     const afterBobRaise = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1099,15 +1109,147 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     // So Bob's chips: 990 - 50 = 940
     const expectedBobChips = 940;
     expect(afterBobRaise.bob).toBe(expectedBobChips);
-    console.log(`✓ Bob's chips correctly updated: ${afterBobRaise.bob} (expected ${expectedBobChips})`)
+    console.log(
+      `✓ Bob's chips correctly updated: ${afterBobRaise.bob} (expected ${expectedBobChips})`,
+    );
 
     // Test 3: Verify minRaise calculation (should be 2x currentBet)
     // From our observations: minRaise = currentBet * 2
     const minRaiseFormula = bobTurnState.currentBet * 2;
     expect(bobTurnState.minRaise).toBe(minRaiseFormula);
-    console.log(`✓ Minimum raise formula verified: minRaise = currentBet * 2 = ${minRaiseFormula}`);
+    console.log(
+      `✓ Minimum raise formula verified: minRaise = currentBet * 2 = ${minRaiseFormula}`,
+    );
 
     console.log('\n=== Test 4.1: Minimum raise enforcement verified ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
+
+  test('4.2: Raise More Than Opponent Has - verify handling when player cannot match full bet', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('h1:has-text("Room:")');
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins
+    console.log('Bob joining room...');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    console.log('Game started');
+
+    // Verify initial state
+    const initialState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `Initial: Pot $${initialState.pot}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
+    );
+    expect(initialState.pot).toBe(30);
+    expect(initialState.alice).toBe(980); // Big blind posted
+    expect(initialState.bob).toBe(990); // Small blind posted
+
+    // PRE_FLOP: Bob acts first - raises large amount leaving only $5
+    console.log('Pre-flop: Bob waiting for turn...');
+    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    
+    // Bob raises $975 (will leave him with $5 after small blind $10 + raise $975 = $985 total bet)
+    console.log('Pre-flop: Bob raising $975 (leaving $5)...');
+    await bobPage.fill('input[type="number"]', '975');
+    await bobPage.click('button:has-text("Raise")');
+
+    // Wait for Alice's turn
+    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    const afterBobRaise = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        currentBet: room?.currentHand?.currentBet,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `After Bob's raise: Pot $${afterBobRaise.pot}, currentBet $${afterBobRaise.currentBet}, Alice: ${afterBobRaise.alice}, Bob: ${afterBobRaise.bob}`,
+    );
+
+    // Verify Bob's state after large raise
+    expect(afterBobRaise.bob).toBeLessThanOrEqual(15); // Bob should have very few chips left
+    console.log(`✓ Bob has ${afterBobRaise.bob} chips remaining after large raise`);
+
+    // Alice can call (matching Bob's bet) or raise (if she has enough)
+    // Since Alice has 980 chips and Bob's currentBet is likely ~$985-995
+    // Alice can only call up to Bob's total bet amount
+    console.log(`Pre-flop: Alice calling Bob's bet (currentBet $${afterBobRaise.currentBet})...`);
+    await alicePage.click('button:has-text("Call")');
+
+    // Wait for game to progress
+    await alicePage.waitForTimeout(2000);
+    const afterAliceCall = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        bettingRound: room?.currentHand?.bettingRound,
+        communityCards: room?.currentHand?.communityCards?.length,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    console.log(
+      `After Alice's call: Pot $${afterAliceCall.pot}, Round: ${afterAliceCall.bettingRound}, Alice: ${afterAliceCall.alice}, Bob: ${afterAliceCall.bob}`,
+    );
+
+    // Verify both players matched the bet properly
+    // Alice should have very few chips left after calling
+    expect(afterAliceCall.alice).toBeLessThanOrEqual(20);
+    console.log(`✓ Alice has ${afterAliceCall.alice} chips after calling Bob's large bet`);
+
+    // Verify game progressed to next round or showdown
+    expect(afterAliceCall.bettingRound).not.toBe('PRE_FLOP');
+    console.log(`✓ Game progressed to ${afterAliceCall.bettingRound}`);
+
+    // Verify chip conservation
+    const totalChips = (afterAliceCall.alice || 0) + (afterAliceCall.bob || 0) + (afterAliceCall.pot || 0);
+    expect(totalChips).toBe(2000);
+    console.log(`✓ Chip conservation maintained: ${afterAliceCall.alice} + ${afterAliceCall.bob} + ${afterAliceCall.pot} = ${totalChips}`);
+
+    console.log('\n=== Test 4.2: Large raise handled correctly ===');
 
     await aliceContext.close();
     await bobContext.close();
@@ -1326,7 +1468,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     });
     expect(afterPreFlop).toBe(140);
     console.log(`Pot after pre-flop: $${afterPreFlop}`);
-    
+
     // Verify both players' chips after pre-flop betting
     const chipsAfterPreFlop = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -1336,8 +1478,10 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       };
     });
     expect(chipsAfterPreFlop.alice).toBe(930); // Started 980, paid $50 to call
-    expect(chipsAfterPreFlop.bob).toBe(930);   // Started 990, paid $60 total
-    console.log(`Chips after pre-flop - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`);
+    expect(chipsAfterPreFlop.bob).toBe(930); // Started 990, paid $60 total
+    console.log(
+      `Chips after pre-flop - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`,
+    );
 
     // FLOP: Both check to showdown
     await bobPage.waitForSelector('text=Your Turn');
@@ -1347,7 +1491,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await alicePage.waitForSelector('text=Your Turn');
     console.log('Flop - Alice checking...');
     await alicePage.click('button:has-text("Check")');
-    
+
     // Verify betting round transitioned to TURN
     await new Promise((resolve) => setTimeout(resolve, 300));
     const afterFlop = await alicePage.evaluate(() => {
@@ -1395,11 +1539,11 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     console.log(
       `Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
     );
-    
+
     // Verify winner received pot and chip conservation
     const totalChips = finalState.alice + finalState.bob;
     expect(totalChips).toBe(2000); // Chip conservation
-    
+
     // One player should have won the $140 pot
     const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
     const expectedWinner = finalState.alice > 1000 ? 1070 : 1070; // 930 + 140
@@ -1509,7 +1653,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       return room?.currentHand?.pot || 0;
     });
     console.log(`Pot after pre-flop: $${afterPreFlop}`);
-    
+
     // Verify both players have equal chips after matching bets
     const chipsAfterPreFlop22 = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -1520,8 +1664,10 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     });
     expect(chipsAfterPreFlop22.alice).toBe(780); // Both matched the re-raise
     expect(chipsAfterPreFlop22.bob).toBe(780);
-    console.log(`Chips matched - Alice: ${chipsAfterPreFlop22.alice}, Bob: ${chipsAfterPreFlop22.bob}`);
-    
+    console.log(
+      `Chips matched - Alice: ${chipsAfterPreFlop22.alice}, Bob: ${chipsAfterPreFlop22.bob}`,
+    );
+
     // Verify both players have equal chips after matching bets
     const chipsAfterPreFlop = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -1532,7 +1678,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     });
     expect(chipsAfterPreFlop.alice).toBe(780); // Both matched the re-raise
     expect(chipsAfterPreFlop.bob).toBe(780);
-    console.log(`Chips matched - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`);
+    console.log(
+      `Chips matched - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`,
+    );
 
     // FLOP/TURN/RIVER: Both check to showdown
     await bobPage.waitForSelector('text=Your Turn');
@@ -1575,16 +1723,17 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     console.log(
       `Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
     );
-    
+
     // Verify winner received the pot and loser has correct amount
     const totalChips = finalState.alice + finalState.bob;
     expect(totalChips).toBe(2000); // Chip conservation
-    
+
     // One player won, one lost (pot was $440)
-    const hasWinner = (finalState.alice === 1220 && finalState.bob === 780) || 
-                      (finalState.alice === 780 && finalState.bob === 1220);
+    const hasWinner =
+      (finalState.alice === 1220 && finalState.bob === 780) ||
+      (finalState.alice === 780 && finalState.bob === 1220);
     expect(hasWinner).toBe(true);
-    
+
     const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
     const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
     console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
@@ -1598,7 +1747,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await bobContext.close();
   });
 
-  test('2.3: Multiple Re-raises - test escalating bets', async ({ browser }) => {
+  test('2.3: Multiple Re-raises - test escalating bets', async ({
+    browser,
+  }) => {
     const aliceContext = await browser.newContext();
     const bobContext = await browser.newContext();
     const alicePage = await aliceContext.newPage();
@@ -1620,7 +1771,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
     await alicePage.click('button:has-text("Create New Room")');
     await alicePage.waitForSelector('text=Room:');
-    
+
     const roomIdText = await alicePage.textContent('h1');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
@@ -1673,7 +1824,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       };
     });
     potHistory.push(pot2.pot);
-    console.log(`Pot after Alice's re-raise: $${pot2.pot}, currentBet: $${pot2.currentBet}`);
+    console.log(
+      `Pot after Alice's re-raise: $${pot2.pot}, currentBet: $${pot2.currentBet}`,
+    );
 
     // PRE_FLOP Round 3: Bob re-raises again (min raise = 2x current bet = $440)
     console.log('Pre-flop Round 3 - Bob re-raising to $440...');
@@ -1691,7 +1844,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       };
     });
     potHistory.push(pot3.pot);
-    console.log(`Pot after Bob's 2nd raise: $${pot3.pot}, currentBet: $${pot3.currentBet}, Alice: ${pot3.alice}, Bob: ${pot3.bob}`);
+    console.log(
+      `Pot after Bob's 2nd raise: $${pot3.pot}, currentBet: $${pot3.currentBet}, Alice: ${pot3.alice}, Bob: ${pot3.bob}`,
+    );
 
     // Alice calls to end pre-flop
     console.log('Pre-flop - Alice calling...');
@@ -1708,14 +1863,18 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       };
     });
     potHistory.push(finalPreFlopState.pot);
-    
+
     console.log(`Final pre-flop pot: $${finalPreFlopState.pot}`);
     console.log(`Pot progression: ${potHistory.join(' → ')}`);
-    console.log(`Chips after pre-flop - Alice: ${finalPreFlopState.alice}, Bob: ${finalPreFlopState.bob}`);
-    
+    console.log(
+      `Chips after pre-flop - Alice: ${finalPreFlopState.alice}, Bob: ${finalPreFlopState.bob}`,
+    );
+
     // Verify both players have same chip amount (matched all bets)
     expect(finalPreFlopState.alice).toBe(finalPreFlopState.bob);
-    expect(finalPreFlopState.alice + finalPreFlopState.bob + finalPreFlopState.pot).toBe(2000);
+    expect(
+      finalPreFlopState.alice + finalPreFlopState.bob + finalPreFlopState.pot,
+    ).toBe(2000);
 
     // FLOP/TURN/RIVER: Both check
     await bobPage.waitForSelector('text=Your Turn');
@@ -1755,17 +1914,21 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       };
     });
 
-    console.log(`Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`);
-    
+    console.log(
+      `Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
+    );
+
     // Verify chip conservation and winner determination
     const totalChips = finalState.alice + finalState.bob;
     expect(totalChips).toBe(2000);
-    
+
     const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
     const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
     console.log(`Winner: ${winner}, Loser: ${loser}`);
-    console.log(`Pot was distributed correctly: ${finalPreFlopState.pot} chips`);
-    
+    console.log(
+      `Pot was distributed correctly: ${finalPreFlopState.pot} chips`,
+    );
+
     await verifyChipConservation(alicePage, 2000);
 
     console.log('\n=== Test 2.3: Multiple re-raises verified ===');

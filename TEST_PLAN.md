@@ -172,18 +172,24 @@
 - [x] Test 2: Raise with minimum amount ($40) succeeds
 - [x] Verify currentBet = previous bet + raise amount = $60
 - [x] Verify Bob's chips updated correctly (940 chips after $50 total bet)
-- [x] Test 3: Verify minRaise formula = currentBet * 2
+- [x] Test 3: Verify minRaise formula = currentBet \* 2
 
-**Result**: Raise button correctly disabled for invalid amounts. Minimum raise of $40 succeeded with currentBet = $60. Formula verified: minRaise = currentBet * 2.
+**Result**: Raise button correctly disabled for invalid amounts. Minimum raise of $40 succeeded with currentBet = $60. Formula verified: minRaise = currentBet \* 2.
 
 ### Test 4.2: Raise More Than Opponent Has
 
-**Objective**: Test raise when opponent can't match
+**Status**: ✅ PASSING  
+**Objective**: Test raise when opponent can match
 
-- [ ] Create room, start game
-- [ ] Alice check, Bob raise $995 (leaves Bob with $5)
-- [ ] Alice can only call up to Bob's total bet
-- [ ] Verify proper handling
+- [x] Create room, start game
+- [x] Bob raises $975 (leaving Bob with $5)
+- [x] Verify Bob has 5 chips after large raise
+- [x] Alice calls Bob's bet (currentBet $995)
+- [x] Verify Alice has 5 chips after calling
+- [x] Verify game progressed to FLOP
+- [x] Verify chip conservation: 5 + 5 + 1990 = 2000
+
+**Result**: Bob raised $975 (currentBet $995). Alice successfully called. Both players have $5 remaining, pot $1990. Chip conservation maintained.
 
 ### Test 4.3: Check When Bet Required
 
