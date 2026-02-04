@@ -128,6 +128,21 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Player turn
     socket.on("PLAYER_TURN", (data) => {
       console.log("Player turn:", data);
+      
+      // Update current bet and min raise from the server
+      setRoom((prev) => {
+        if (!prev || !prev.currentHand) return prev;
+        
+        return {
+          ...prev,
+          currentHand: {
+            ...prev.currentHand,
+            currentPlayerTurn: data.playerId,
+            currentBet: data.currentBet,
+            minRaise: data.minRaise,
+          },
+        };
+      });
     });
 
     // Player acted
@@ -241,6 +256,16 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Betting round complete
     socket.on("BETTING_ROUND_COMPLETE", (data) => {
       console.log("Betting round complete, next round:", data.nextRound);
+      
+      // Reset all players' currentBet to 0 for the new betting round
+      setRoom((prev) => {
+        if (!prev) return prev;
+        
+        return {
+          ...prev,
+          players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
+        };
+      });
     });
 
     // Error
