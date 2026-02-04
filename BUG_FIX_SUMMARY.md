@@ -11,6 +11,7 @@
 When both players went all-in during a hand, chip conservation was violated. The total chip count dropped from 2000 to as low as 30, making the game unplayable.
 
 ### Symptoms
+
 - After all-in scenarios, total chips would be 1020-1260 instead of 2000
 - Error: "Need at least 5 cards to evaluate a hand"
 - Winner determination failed
@@ -23,6 +24,7 @@ When both players went all-in during a hand, chip conservation was violated. The
 The bug involved **three interconnected logic errors**:
 
 ### 1. `isHandComplete()` Premature Return
+
 **File:** `poker-server/src/game/hand.service.ts`  
 **Issue:** Returned `TRUE` when all players were all-in, even though cards still needed to be dealt
 
@@ -39,6 +41,7 @@ isHandComplete(room: Room): boolean {
 **Problem:** `getActivePlayers()` filters out players with status='all-in'. When both players go all-in, `activePlayers.length = 0`, causing the function to return TRUE immediately.
 
 ### 2. `handleBettingRoundComplete()` Early Winner Determination
+
 **File:** `poker-server/src/events/events.gateway.ts`  
 **Issue:** Called `determineWinner()` before dealing community cards
 
@@ -47,7 +50,7 @@ isHandComplete(room: Room): boolean {
 private async handleBettingRoundComplete(room: any) {
   if (this.handService.isHandComplete(room)) {
     // ❌ Called when all players all-in, BEFORE dealing cards!
-    const result = await this.handService.determineWinner(room); 
+    const result = await this.handService.determineWinner(room);
   } else {
     // ✓ This is where cards should be dealt
     const nextRound = await this.handService.advanceBettingRound(room);
@@ -58,13 +61,14 @@ private async handleBettingRoundComplete(room: any) {
 **Problem:** When `isHandComplete()` returned TRUE (because everyone was all-in), it skipped `advanceBettingRound()` and went straight to `determineWinner()` with only 0-3 community cards dealt.
 
 ### 3. `evaluateHand()` Insufficient Cards
+
 **File:** `poker-server/src/common/utils/hand-evaluator.ts`  
 **Issue:** Threw error when trying to evaluate hands with < 5 total cards
 
 ```typescript
 export function evaluateHand(cards: Card[]): HandEvaluation {
   if (cards.length < 5) {
-    throw new Error('Need at least 5 cards to evaluate a hand'); // ❌ Error thrown!
+    throw new Error("Need at least 5 cards to evaluate a hand"); // ❌ Error thrown!
   }
   // ...
 }
@@ -77,6 +81,7 @@ export function evaluateHand(cards: Card[]): HandEvaluation {
 ## The Solution
 
 ### Fix 1: Modified `isHandComplete()` Logic
+
 **File:** `poker-server/src/game/hand.service.ts` (lines 369-393)
 
 ```typescript
@@ -110,12 +115,13 @@ isHandComplete(room: Room): boolean {
 **Key Change:** When all players are all-in (activePlayers.length ≤ 1), check if it's due to folds or all-ins. If all-ins, return FALSE so `advanceBettingRound()` gets called.
 
 ### Fix 2: Added All-In Fast-Forward in `advanceBettingRound()`
+
 **File:** `poker-server/src/game/hand.service.ts` (lines 116-161)
 
 ```typescript
 async advanceBettingRound(room: Room): Promise<BettingRound> {
   // ...
-  
+
   // ✓ Detect when all remaining players are all-in
   const playersWhoCanBet = room.players.filter(
     (p) =>
@@ -136,7 +142,7 @@ async advanceBettingRound(room: Room): Promise<BettingRound> {
     hand.bettingRound = 'SHOWDOWN';
     return 'SHOWDOWN';
   }
-  
+
   // ... normal round advancement
 }
 ```
@@ -144,12 +150,13 @@ async advanceBettingRound(room: Room): Promise<BettingRound> {
 **Key Change:** When all players are all-in, automatically deal all remaining community cards (flop, turn, river) and jump to SHOWDOWN, where `determineWinner()` can properly evaluate complete hands.
 
 ### Fix 3: Fixed `isBettingRoundComplete()` to Wait for Calls
+
 **File:** `poker-server/src/game/betting.service.ts` (lines 154-183)
 
 ```typescript
 isBettingRoundComplete(room: Room): boolean {
   // ...
-  
+
   // ✓ Check for unmatched bets BEFORE checking active player count
   const playersWithUnmatchedBet = room.players.filter(
     (p) =>
@@ -164,7 +171,7 @@ isBettingRoundComplete(room: Room): boolean {
 
   // Only one player left who can act
   if (activePlayers.length <= 1) return true;
-  
+
   // ...
 }
 ```
@@ -177,15 +184,16 @@ isBettingRoundComplete(room: Room): boolean {
 
 ### Test Results
 
-| Test | Before Fix | After Fix | Status |
-|------|------------|-----------|--------|
-| Basic all-in (both players) | ❌ Total = 1020 | ✅ Total = 2000 | PASS |
-| All-in after raises | ❌ Total = 1260 | ✅ Total = 2000 | PASS |
-| Multiple all-in hands | ❌ Chips disappear | ✅ Conservation maintained | PASS |
-| Community cards dealt | ❌ 0-3 cards | ✅ All 5 cards | PASS |
-| Winner determination | ❌ Error thrown | ✅ Correct winner | PASS |
+| Test                        | Before Fix         | After Fix                  | Status |
+| --------------------------- | ------------------ | -------------------------- | ------ |
+| Basic all-in (both players) | ❌ Total = 1020    | ✅ Total = 2000            | PASS   |
+| All-in after raises         | ❌ Total = 1260    | ✅ Total = 2000            | PASS   |
+| Multiple all-in hands       | ❌ Chips disappear | ✅ Conservation maintained | PASS   |
+| Community cards dealt       | ❌ 0-3 cards       | ✅ All 5 cards             | PASS   |
+| Winner determination        | ❌ Error thrown    | ✅ Correct winner          | PASS   |
 
 ### Chip Conservation Formula
+
 ```
 Σ(player.chips + player.currentBet) = 2000 (always)
 ```
@@ -197,6 +205,7 @@ isBettingRoundComplete(room: Room): boolean {
 ## Code Changes Summary
 
 ### Files Modified
+
 1. **poker-server/src/game/hand.service.ts**
    - `isHandComplete()`: Added fold detection, prevented early completion on all-in
    - `advanceBettingRound()`: Added all-in fast-forward logic to deal remaining cards
@@ -210,6 +219,7 @@ isBettingRoundComplete(room: Room): boolean {
    - No changes needed (bug was in called services)
 
 ### Lines Changed
+
 - **hand.service.ts**: +50 lines
 - **betting.service.ts**: +15 lines
 - **Total**: ~65 lines added/modified
@@ -219,12 +229,14 @@ isBettingRoundComplete(room: Room): boolean {
 ## Impact
 
 ### Before
+
 - ❌ All-in scenarios were unplayable
 - ❌ Chips disappeared from the game
 - ❌ Winner determination crashed
 - ❌ Game could not continue after all-in
 
 ### After
+
 - ✅ All-in scenarios work correctly
 - ✅ Chip conservation maintained (always 2000)
 - ✅ All 5 community cards dealt properly
@@ -247,18 +259,21 @@ isBettingRoundComplete(room: Room): boolean {
 ## Next Steps
 
 ### Immediate
+
 - [x] Fix implemented
 - [x] Manual testing passed
 - [x] Chip conservation verified
 - [x] Documentation updated
 
 ### Short-term
+
 - [ ] Add unit tests for all-in scenarios
 - [ ] Add integration tests for multi-hand chip conservation
 - [ ] Test with 3+ players (side pots)
 - [ ] Remove debug logging or make it conditional
 
 ### Long-term
+
 - [ ] Add server-side chip conservation validation
 - [ ] Add automated regression tests
 - [ ] Consider adding chip audit trail

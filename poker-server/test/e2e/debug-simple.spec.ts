@@ -3,29 +3,32 @@ import { test, expect, Page } from '@playwright/test';
 test('Debug - Two players room creation and game', async ({ browser }) => {
   const context1 = await browser.newContext();
   const context2 = await browser.newContext();
-  
+
   const alice = await context1.newPage();
   const bob = await context2.newPage();
 
   // Listen to console messages
-  alice.on('console', msg => console.log('ALICE:', msg.text()));
-  bob.on('console', msg => console.log('BOB:', msg.text()));
-  
+  alice.on('console', (msg) => console.log('ALICE:', msg.text()));
+  bob.on('console', (msg) => console.log('BOB:', msg.text()));
+
   await alice.goto('http://localhost:5174');
   await bob.goto('http://localhost:5174');
-  
+
   // Wait for pokerDebug
-  await alice.waitForFunction(() => window.pokerDebug !== undefined, { timeout: 5000 });
-  await bob.waitForFunction(() => window.pokerDebug !== undefined, { timeout: 5000 });
+  await alice.waitForFunction(() => window.pokerDebug !== undefined, {
+    timeout: 5000,
+  });
+  await bob.waitForFunction(() => window.pokerDebug !== undefined, {
+    timeout: 5000,
+  });
 
   // Alice creates room
   await alice.evaluate(() => window.pokerDebug.createRoom('Alice'));
 
   // Wait for room to be created
-  const roomId = await alice.waitForFunction(
-    () => window.pokerDebug.getRoom()?.id,
-    { timeout: 5000 }
-  ).then(r => r.jsonValue());
+  const roomId = await alice
+    .waitForFunction(() => window.pokerDebug.getRoom()?.id, { timeout: 5000 })
+    .then((r) => r.jsonValue());
 
   console.log('Room ID:', roomId);
 
@@ -35,7 +38,7 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
   // Wait for Bob to join
   await alice.waitForFunction(
     () => window.pokerDebug.getRoom()?.players?.length === 2,
-    { timeout: 5000 }
+    { timeout: 5000 },
   );
 
   const state1 = await alice.evaluate(() => {
@@ -65,8 +68,8 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
 
   // Check if game actually started
   await alice.waitForFunction(
-    () => window.pokerDebug.getRoom()?.gameState === "IN_PROGRESS",
-    { timeout: 5000 }
+    () => window.pokerDebug.getRoom()?.gameState === 'IN_PROGRESS',
+    { timeout: 5000 },
   );
 
   console.log('Game started successfully!');

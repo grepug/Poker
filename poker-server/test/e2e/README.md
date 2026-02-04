@@ -13,8 +13,7 @@ The application has been enhanced with a deterministic testing system that allow
 - **TestDeckService** (`poker-server/src/game/test-deck.service.ts`)
   - Manages predetermined card decks for reproducible tests
   - Only active when `TEST_MODE=true` environment variable is set
-  
-- **Modified HandService** 
+- **Modified HandService**
   - Uses test decks instead of random shuffling when available
   - Preserves remaining cards for subsequent rounds
 
@@ -25,6 +24,7 @@ The application has been enhanced with a deterministic testing system that allow
 ### 2. **Test Types**
 
 #### Browser-Based E2E Tests (Playwright)
+
 - **File**: `comprehensive-poker.spec.ts`
 - **Purpose**: Test actual user interactions through the browser
 - **Technology**: Playwright Page API
@@ -34,12 +34,14 @@ The application has been enhanced with a deterministic testing system that allow
   - Test Suite 6: Chip Conservation
 
 #### Server-Side Integration Tests (Socket.io)
+
 - **Files**: `pair-vs-highcard.spec.ts`, `allin-scenario.spec.ts`, `flush-vs-straight.spec.ts`
 - **Purpose**: Test WebSocket API directly
 - **Technology**: socket.io-client
 - **Usage**: Faster tests for specific game logic scenarios
 
 #### Basic Connectivity Test
+
 - **File**: `simple-connection.spec.ts`
 - **Status**: ✅ PASSING
 - **Purpose**: Verify WebSocket connectivity and room creation
@@ -123,7 +125,7 @@ const roomId = await alicePage.evaluate(() => {
 // Wait for state changes with Playwright's built-in waitForFunction
 await alicePage.waitForFunction(
   () => window.pokerDebug.getRoom()?.players?.length === 2,
-  { timeout: 5000 }
+  { timeout: 5000 },
 );
 ```
 
@@ -144,16 +146,19 @@ The comprehensive test plan is documented in `/Users/kai/Developer/games/Poker/T
 ### Chip Conservation Bugs
 
 During manual testing, chip conservation issues were discovered:
+
 - Total chips sometimes = 1990 (should be 2000)
 - Total chips sometimes = 2030 (should be 2000)
 
 These issues need investigation in:
+
 - `BettingService` (bet collection)
 - `HandService` (pot distribution)
 
 ### WebSocket Event Naming
 
 Event names use UPPERCASE_WITH_UNDERSCORES:
+
 - `CREATE_ROOM` → `ROOM_CREATED`
 - `JOIN_ROOM` → `PLAYER_JOINED`
 - `START_GAME` → `GAME_STARTED`
@@ -220,6 +225,7 @@ window.pokerDebug.raise(100);
 ### Test Isolation
 
 Each test should:
+
 - Create fresh browser contexts (separate sessions)
 - Use unique room IDs
 - Clean up after itself

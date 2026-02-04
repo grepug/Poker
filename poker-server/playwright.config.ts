@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 2 : 3, // Allow parallel execution
   reporter: 'html',
   timeout: 60000, // 60 second timeout for tests
-  
+
   use: {
     trace: 'on-first-retry',
     proxy: undefined, // Disable proxy
@@ -20,7 +20,7 @@ export default defineConfig({
     {
       name: 'comprehensive-e2e',
       testMatch: 'comprehensive-poker.spec.ts',
-      use: { 
+      use: {
         ...devices['Desktop Chrome'],
         headless: true,
       },
@@ -28,7 +28,7 @@ export default defineConfig({
     {
       name: 'debug',
       testMatch: 'debug-*.spec.ts',
-      use: { 
+      use: {
         ...devices['Desktop Chrome'],
         headless: false, // Show browser for debugging
       },
