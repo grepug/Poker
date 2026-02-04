@@ -108,14 +108,20 @@
 
 ### Test 3.1: Small All-In (under pot size)
 
-**Objective**: Test all-in with small stack
+**Status**: ✅ PASSING  
+**Objective**: Test all-in with small stack escalating to both players all-in
 
-- [ ] Create room, start game
-- [ ] PRE_FLOP: Alice check, Bob raise $900 (leaving Bob with $90)
-- [ ] Alice call $910
-- [ ] Verify Bob is marked as "all-in" with $0 chips
-- [ ] Continue through all betting rounds (Bob can't act)
-- [ ] Verify showdown and pot distribution
+- [x] Create room, start game
+- [x] PRE_FLOP Round 1: Bob raises $900 (currentBet $920, Bob has $80 left)
+- [x] PRE_FLOP Round 2: Alice calls (both players have $80)
+- [x] PRE_FLOP Round 3: Bob goes all-in with $80 (Bob: $0, pot $1920)
+- [x] PRE_FLOP Round 4: Alice calls Bob's all-in (both: $0, pot $2000)
+- [x] Verify both all-in triggers immediate SHOWDOWN
+- [x] Verify all 5 community cards dealt immediately
+- [x] Verify winner determination: one player 2000, other 0
+- [x] Verify chip conservation: total = 2000
+
+**Result**: Both players went all-in. System went straight to SHOWDOWN with all 5 cards dealt immediately. Winner: Bob 2000, Loser: Alice 0 (varies by predetermined cards).
 
 ### Test 3.2: All-In Call ✅ PASSING
 
