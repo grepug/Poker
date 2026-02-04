@@ -1254,6 +1254,95 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     await aliceContext.close();
     await bobContext.close();
   });
+
+  test('4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('h1:has-text("Room:")');
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins
+    console.log('Bob joining room...');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    console.log('Game started');
+
+    // PRE_FLOP: Bob acts first (small blind, needs to call or raise)
+    console.log('Pre-flop: Bob waiting for turn...');
+    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    
+    // Bob raises $50
+    console.log('Pre-flop: Bob raising $50...');
+    await bobPage.fill('input[type="number"]', '50');
+    await bobPage.click('button:has-text("Raise")');
+
+    // Alice's turn - she faces a bet and cannot check
+    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    console.log('Pre-flop: Alice facing Bob\'s raise...');
+
+    const afterBobRaise = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        currentBet: room?.currentHand?.currentBet,
+      };
+    });
+    console.log(`Alice facing bet of $${afterBobRaise.currentBet}`);
+
+    // Verify Check button is NOT present when facing a bet
+    const checkButtonCount = await alicePage.locator('button:has-text("Check")').count();
+    expect(checkButtonCount).toBe(0);
+    console.log('✓ Check button not present when Alice faces a bet');
+
+    // Verify Call button is available
+    const callButtonEnabled = await alicePage.locator('button:has-text("Call")').isEnabled();
+    expect(callButtonEnabled).toBe(true);
+    console.log('✓ Call button is enabled');
+
+    // Verify Fold button is available
+    const foldButtonEnabled = await alicePage.locator('button:has-text("Fold")').isEnabled();
+    expect(foldButtonEnabled).toBe(true);
+    console.log('✓ Fold button is enabled');
+
+    // Verify All-In button is available
+    const allInButtonEnabled = await alicePage.locator('button:has-text("All-In")').isEnabled();
+    expect(allInButtonEnabled).toBe(true);
+    console.log('✓ All-In button is enabled');
+
+    console.log('\n=== Test 4.3: Check validation verified - cannot check when facing a bet ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
 });
 
 test.describe('Poker E2E - Chip Conservation', () => {

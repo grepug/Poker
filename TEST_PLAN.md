@@ -195,10 +195,13 @@
 
 **Objective**: Verify check validation
 
-- [ ] Create room, start game
-- [ ] Alice check, Bob raise $50
-- [ ] Try Alice check (should fail, must call/raise/fold)
-- [ ] Verify error handling
+✅ **PASSING** - Verified Check button not present when facing a bet
+- Create room, start game
+- Bob raises $50 (currentBet becomes $70)
+- Alice faces bet: Check button not present
+- Available actions: Call, Fold, All-In (and Raise if valid amount)
+- ✓ Check button count = 0
+- ✓ Call, Fold, All-In buttons enabled
 
 ### Test 4.4: Multiple Hands in Sequence
 
