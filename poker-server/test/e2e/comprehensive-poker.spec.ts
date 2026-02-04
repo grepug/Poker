@@ -86,10 +86,9 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
       { timeout: 5000 }
     );
 
-    // PRE_FLOP: Both check
-    // Note: In heads-up, small blind acts first and must call the big blind
-    await bobPage.evaluate(() => window.pokerDebug.call()); // Bob calls the big blind
-    await alicePage.evaluate(() => window.pokerDebug.check()); // Alice (big blind) checks
+    // PRE_FLOP: Bob (small blind) calls, Alice (big blind) checks
+    await bobPage.evaluate(() => window.pokerDebug.call());
+    await alicePage.evaluate(() => window.pokerDebug.check());
 
     // Wait for flop
     await alicePage.waitForFunction(
@@ -151,8 +150,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
       { timeout: 5000 }
     );
 
-    // PRE_FLOP: Alice check, Bob raise $50, Alice call
-    await alicePage.evaluate(() => window.pokerDebug.check());
+    // PRE_FLOP: Bob (small blind) raises $50, Alice (big blind) calls
     await bobPage.evaluate(() => window.pokerDebug.raise(50));
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.currentBet === 50,
@@ -234,8 +232,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
       };
     });
 
-    // PRE_FLOP: Alice check, Bob raise $100, Alice fold
-    await alicePage.evaluate(() => window.pokerDebug.check());
+    // PRE_FLOP: Bob (small blind) raises $100, Alice (big blind) folds
     await bobPage.evaluate(() => window.pokerDebug.raise(100));
     await alicePage.waitForFunction(
       () => window.pokerDebug.getRoom()?.currentHand?.currentBet === 100,
@@ -391,9 +388,9 @@ test.describe('Poker E2E - Chip Conservation', () => {
       await verifyChipConservation(alicePage, 2000);
 
       // Play through hand (both check through all rounds)
-      // Pre-flop
+      // Pre-flop: Bob (small blind) calls, Alice (big blind) checks
+      await bobPage.evaluate(() => window.pokerDebug.call());
       await alicePage.evaluate(() => window.pokerDebug.check());
-      await bobPage.evaluate(() => window.pokerDebug.check());
       await alicePage.waitForFunction(
         () => window.pokerDebug.getRoom()?.currentHand?.communityCards?.length === 3,
         { timeout: 5000 }

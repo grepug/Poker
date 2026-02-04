@@ -95,9 +95,11 @@ export class HandService {
       this.testDeckService.setDeck(room.id, deck);
     }
 
-    // First to act is left of big blind (or dealer if heads-up)
+    // First to act pre-flop:
+    // - Heads-up: small blind (who is the button/dealer) acts first
+    // - 3+ players: player left of big blind acts first
     const firstToAct =
-      playerCount === 2 ? dealerPosition : (bigBlindPosition + 1) % playerCount;
+      playerCount === 2 ? smallBlindPosition : (bigBlindPosition + 1) % playerCount;
     const currentPlayerTurn = activePlayers[firstToAct].id;
 
     const hand: Hand = {

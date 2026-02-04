@@ -71,28 +71,19 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
 
   console.log('Game started successfully!');
 
-  // Both check
-  const beforeCheck = await alice.evaluate(() => {
+  // PRE-FLOP: Bob (small blind) calls, Alice (big blind) checks
+  await bob.evaluate(() => window.pokerDebug.call());
+
+  const afterBobCall = await alice.evaluate(() => {
     const room = window.pokerDebug.getRoom();
     return {
-      currentPlayerIndex: room?.currentHand?.currentPlayerIndex,
-      players: room?.players?.map(p => ({ name: p.name, position: p.position })),
+      bettingRound: room?.currentHand?.bettingRound,
+      pot: room?.currentHand?.pot,
     };
   });
-  console.log('Before check:', beforeCheck);
+  console.log('After Bob call:', afterBobCall);
 
   await alice.evaluate(() => window.pokerDebug.check());
-
-  const afterAliceCheck = await alice.evaluate(() => {
-    const room = window.pokerDebug.getRoom();
-    return {
-      currentPlayerIndex: room?.currentHand?.currentPlayerIndex,
-      bettingRound: room?.currentHand?.bettingRound,
-    };
-  });
-  console.log('After Alice check:', afterAliceCheck);
-
-  await bob.evaluate(() => window.pokerDebug.check());
 
   // Wait longer to see if state updates
   await alice.waitForTimeout(2000);
@@ -107,7 +98,7 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
       pot: room?.currentHand?.pot,
     };
   });
-  console.log('State after both check (2s wait):', state3);
+  console.log('State after call/check (2s wait):', state3);
 
   await context1.close();
   await context2.close();
