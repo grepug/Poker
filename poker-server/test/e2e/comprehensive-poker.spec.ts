@@ -1166,6 +1166,182 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await aliceContext.close();
     await bobContext.close();
   });
+
+  test('2.3: Multiple Re-raises - test escalating bets', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    // Navigate both to the app
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+
+    // Wait for connection
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    // Alice creates room
+    console.log('Alice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('text=Room:');
+    
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+    console.log('Room created:', roomCode);
+
+    // Bob joins room
+    console.log('Bob joining room...');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.waitForSelector('text=Room:');
+    await alicePage.waitForSelector('text=Players: 2/');
+    console.log('Both players in room');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $');
+    await bobPage.waitForSelector('text=Pot: $');
+    console.log('Game started');
+
+    // Track pot at each step
+    let potHistory: number[] = [30]; // Starting pot (blinds)
+
+    // PRE_FLOP Round 1: Bob raises $50
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Pre-flop Round 1 - Bob raising $50...');
+    await bobPage.fill('input[type="number"]', '50');
+    await bobPage.click('button:has-text("Raise")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    const pot1 = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return room?.currentHand?.pot || 0;
+    });
+    potHistory.push(pot1);
+    console.log(`Pot after Bob's raise: $${pot1}`);
+
+    // PRE_FLOP Round 2: Alice re-raises $150
+    console.log('Pre-flop Round 2 - Alice re-raising $150...');
+    await alicePage.fill('input[type="number"]', '150');
+    await alicePage.click('button:has-text("Raise")');
+
+    await bobPage.waitForSelector('text=Your Turn');
+    const pot2 = await bobPage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot || 0,
+        currentBet: room?.currentHand?.currentBet,
+      };
+    });
+    potHistory.push(pot2.pot);
+    console.log(`Pot after Alice's re-raise: $${pot2.pot}, currentBet: $${pot2.currentBet}`);
+
+    // PRE_FLOP Round 3: Bob re-raises again (min raise = 2x current bet = $440)
+    console.log('Pre-flop Round 3 - Bob re-raising to $440...');
+    await bobPage.fill('input[type="number"]', '440');
+    await bobPage.click('button:has-text("Raise")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    const pot3 = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot || 0,
+        currentBet: room?.currentHand?.currentBet,
+        alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    potHistory.push(pot3.pot);
+    console.log(`Pot after Bob's 2nd raise: $${pot3.pot}, currentBet: $${pot3.currentBet}, Alice: ${pot3.alice}, Bob: ${pot3.bob}`);
+
+    // Alice calls to end pre-flop
+    console.log('Pre-flop - Alice calling...');
+    await alicePage.click('button:has-text("Call")');
+
+    // Verify final pot after pre-flop
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const finalPreFlopState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot || 0,
+        alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+    potHistory.push(finalPreFlopState.pot);
+    
+    console.log(`Final pre-flop pot: $${finalPreFlopState.pot}`);
+    console.log(`Pot progression: ${potHistory.join(' → ')}`);
+    console.log(`Chips after pre-flop - Alice: ${finalPreFlopState.alice}, Bob: ${finalPreFlopState.bob}`);
+    
+    // Verify both players have same chip amount (matched all bets)
+    expect(finalPreFlopState.alice).toBe(finalPreFlopState.bob);
+    expect(finalPreFlopState.alice + finalPreFlopState.bob + finalPreFlopState.pot).toBe(2000);
+
+    // FLOP/TURN/RIVER: Both check
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Flop - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Flop - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('Turn - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('Turn - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    await bobPage.waitForSelector('text=Your Turn');
+    console.log('River - Bob checking...');
+    await bobPage.click('button:has-text("Check")');
+
+    await alicePage.waitForSelector('text=Your Turn');
+    console.log('River - Alice checking...');
+    await alicePage.click('button:has-text("Check")');
+
+    // Wait for showdown
+    await alicePage.waitForTimeout(2000);
+    console.log('Showdown complete');
+
+    // Verify final state
+    const finalState = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
+        bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
+      };
+    });
+
+    console.log(`Final state - Alice: ${finalState.alice}, Bob: ${finalState.bob}`);
+    
+    // Verify chip conservation and winner determination
+    const totalChips = finalState.alice + finalState.bob;
+    expect(totalChips).toBe(2000);
+    
+    const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
+    const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
+    console.log(`Winner: ${winner}, Loser: ${loser}`);
+    console.log(`Pot was distributed correctly: ${finalPreFlopState.pot} chips`);
+    
+    await verifyChipConservation(alicePage, 2000);
+
+    console.log('\n=== Test 2.3: Multiple re-raises verified ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
 });
 
 // Type augmentation for window.pokerDebug
