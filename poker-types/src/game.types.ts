@@ -24,10 +24,12 @@ export interface Hand {
   communityCards: Card[];
   bettingRound: BettingRound;
   currentBet: number;
+  lastRaiseSize: number; // Size of the most recent raise for min-raise calculation
   activePlayers: string[]; // Player IDs still in the hand
   roundActions: Record<string, boolean>; // Track if player acted this round
   sidePots: SidePot[];
   startedAt: number;
+  minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }
 
 // Result of a completed hand

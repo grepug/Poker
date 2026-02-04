@@ -114,6 +114,7 @@ export class HandService {
       communityCards: [],
       bettingRound: 'PRE_FLOP',
       currentBet: bbAmount,
+      lastRaiseSize: room.config.bigBlind, // Initial raise size is the big blind
       activePlayers: activePlayerIds,
       roundActions: {},
       sidePots: [],
@@ -250,6 +251,7 @@ export class HandService {
 
     // Reset betting for new round
     hand.currentBet = 0;
+    hand.lastRaiseSize = room.config.bigBlind; // Reset to big blind for new round
     hand.roundActions = {};
 
     for (const player of room.players) {

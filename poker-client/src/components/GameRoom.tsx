@@ -31,9 +31,8 @@ export const GameRoom: React.FC = () => {
     }
   };
 
-  const minRaise = currentHand
-    ? currentHand.currentBet * 2
-    : room.config.bigBlind * 2;
+  // Use minRaise from server (via PLAYER_TURN event) or fallback to big blind * 2
+  const minRaise = currentHand?.minRaise ?? room.config.bigBlind * 2;
 
   // Get current player data from room.players to avoid stale data
   const currentPlayer = room?.players.find((p) => p.id === player?.id);

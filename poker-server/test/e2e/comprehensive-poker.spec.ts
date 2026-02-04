@@ -988,6 +988,104 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 });
 
 test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
+  test('4.0: CORRECT Minimum Raise Logic - raise amount not bet amount', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+
+    await alicePage.goto(FRONTEND_URL);
+    await bobPage.goto(FRONTEND_URL);
+    await alicePage.waitForSelector('text=● Connected');
+    await bobPage.waitForSelector('text=● Connected');
+
+    console.log('=== Testing CORRECT minimum raise logic ===');
+    console.log('Correct rule: Minimum raise = size of previous raise');
+    console.log('Example: BB=$20, Alice raises to $60 ($40 raise), Bob must raise at least $40 more (to $100)');
+
+    // Alice creates room
+    console.log('\nAlice creating room...');
+    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.waitForSelector('h1:has-text("Room:")');
+    const roomIdText = await alicePage.textContent('h1');
+    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+
+    // Bob joins
+    console.log('Bob joining room...');
+    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+    await bobPage.click('button:has-text("Join Existing Room")');
+    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
+    await bobPage.click('button:has-text("Join Room")');
+    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.waitForSelector('text=Players: 2/');
+
+    // Start game
+    console.log('Alice starting game...');
+    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+
+    // PRE_FLOP: Bob acts first (SB posted $10, needs to call $10 more or raise)
+    console.log('\nPRE_FLOP: Bob (SB) to act...');
+    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+
+    // Bob raises to $60 (a $40 raise from BB of $20)
+    console.log('Bob raises $40 (making currentBet $60)...');
+    await bobPage.fill('input[type="number"]', '40');
+    await bobPage.click('button:has-text("Raise")');
+
+    // Alice's turn
+    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    console.log('Alice now facing bet of $60');
+
+    const afterBobRaise = await alicePage.evaluate(() => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return {
+        pot: room?.currentHand?.pot,
+        currentBet: room?.currentHand?.currentBet,
+        bobChips: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
+        aliceChips: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
+        minRaise: (window as any).pokerDebug?.minRaise,
+      };
+    });
+
+    console.log(`After Bob's raise: pot=$${afterBobRaise.pot}, currentBet=$${afterBobRaise.currentBet}`);
+    console.log(`Bob chips: ${afterBobRaise.bobChips}, Alice chips: ${afterBobRaise.aliceChips}`);
+    console.log(`Server says minRaise: $${afterBobRaise.minRaise}`);
+
+    // CORRECT poker rule: Bob raised $40 (from $20 to $60)
+    // So Alice must raise at least $40 more (to $100 minimum)
+    // The minimum RAISE AMOUNT is $40, not $80!
+    
+    console.log('\n=== Testing minimum raise ===');
+    console.log('Bob raised $40 (from $20 BB to $60)');
+    console.log('Alice must raise at least $40 more');
+    console.log('So minimum total bet = $60 + $40 = $100');
+    console.log('This means Alice should be able to raise $40 (not need to raise $80)');
+
+    // Try to raise $40 - this SHOULD work according to correct poker rules
+    await alicePage.fill('input[type="number"]', '40');
+    await alicePage.waitForTimeout(100);
+
+    const raiseButtonDisabled = await alicePage.locator('button:has-text("Raise")').isDisabled();
+    
+    // CORRECT EXPECTATION: Button should be ENABLED for $40 raise
+    // This test will FAIL because the current implementation requires $80 (currentBet * 2)
+    expect(raiseButtonDisabled).toBe(false);
+    console.log('✓ CORRECT: Raise button should be ENABLED for $40 raise (matches previous raise size)');
+
+    console.log('\n=== Test 4.0: This test expects CORRECT poker rules ===');
+
+    await aliceContext.close();
+    await bobContext.close();
+  });
+
   test('4.1: Minimum Raise - verify system enforces minimum raise requirements', async ({
     browser,
   }) => {

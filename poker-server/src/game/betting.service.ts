@@ -138,14 +138,15 @@ export class BettingService {
 
   /**
    * Calculate minimum raise amount
+   * Poker rule: Minimum raise = size of the previous raise
    */
   calculateMinRaise(room: Room): number {
     const hand = room.currentHand;
     if (!hand) return 0;
 
-    // Minimum raise is 2x the current bet, or 2x big blind if no bets
-    const minRaise = Math.max(hand.currentBet * 2, room.config.bigBlind * 2);
-    return minRaise;
+    // Minimum raise is the size of the last raise
+    // If no raise yet, it's the big blind amount
+    return hand.lastRaiseSize;
   }
 
   /**
@@ -254,6 +255,10 @@ export class BettingService {
     player.currentBet += totalAmount;
     hand.pot += totalAmount;
     hand.currentBet = player.currentBet;
+    
+    // Track the raise size for minimum raise calculations
+    hand.lastRaiseSize = raiseAmount;
+    
     player.lastAction = 'raise';
 
     // Reset round actions since bet increased
