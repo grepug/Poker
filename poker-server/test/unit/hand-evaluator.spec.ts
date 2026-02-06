@@ -266,6 +266,22 @@ describe('Hand Evaluator', () => {
       expect(result.rank).toBe('ONE_PAIR');
       expect(result.description).toContain('Pair of As');
     });
+
+    it('should identify board-paired hand as one pair with 7 cards', () => {
+      const cards: Card[] = [
+        { suit: 'hearts', rank: 'A' }, // hole
+        { suit: 'diamonds', rank: 'K' }, // hole
+        { suit: 'clubs', rank: 'A' }, // board pair card
+        { suit: 'diamonds', rank: '2' },
+        { suit: 'spades', rank: '5' },
+        { suit: 'hearts', rank: '8' },
+        { suit: 'diamonds', rank: '3' },
+      ];
+
+      const result = evaluateHand(cards);
+      expect(result.rank).toBe('ONE_PAIR');
+      expect(result.description).toContain('Pair of As');
+    });
   });
 
   describe('High Card', () => {

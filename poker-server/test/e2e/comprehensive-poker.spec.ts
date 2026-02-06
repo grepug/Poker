@@ -2653,14 +2653,11 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
 
       const result = await handCompletePromise;
       expect(result.winners).toHaveLength(1);
-      const winnerHandRank = result.winners[0].hand.rank;
-      expect(['ONE_PAIR', 'HIGH_CARD']).toContain(winnerHandRank);
-
-      const playerHandsByRank = result.playerHands.map((p: any) => p.hand.rank);
-      if (winnerHandRank === 'ONE_PAIR') {
-        expect(playerHandsByRank).toContain('HIGH_CARD');
-      }
-
+      expect(result.winners[0].hand.rank).toBe('ONE_PAIR');
+      const playerHandsByRank = result.playerHands
+        .map((p: any) => p.hand.rank)
+        .sort();
+      expect(playerHandsByRank).toEqual(['HIGH_CARD', 'ONE_PAIR']);
       expect(result.totalPot).toBe(40);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -2794,7 +2791,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       expect(await alicePage.locator('button:has-text("Check")').count()).toBe(1);
       expect(await alicePage.locator('button:has-text("Call")').count()).toBe(0);
-      expect(await bobPage.locator('h3:has-text("Your Turn")').count()).toBe(0);
+      const turnState = await getRoomSnapshot(alicePage);
+      expect(turnState.currentPlayerName).toBe('Alice');
     } finally {
       await teardownTwoPlayerSession(session);
     }

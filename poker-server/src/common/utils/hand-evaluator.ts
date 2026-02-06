@@ -1,6 +1,10 @@
 import { Card, HandEvaluation, HandRank, Rank } from 'poker-types';
 import { getRankValue } from './deck';
 
+// Category scores must dominate kicker scores. Kicker encoding can reach ~1.5e9,
+// so keep category gaps comfortably larger than that.
+const CATEGORY_BASE = 10_000_000_000;
+
 /**
  * Evaluate a poker hand from any number of cards (typically 5-7)
  * Returns the best 5-card hand possible
@@ -61,7 +65,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (isRoyalFlush(sorted)) {
     return {
       rank: 'ROYAL_FLUSH',
-      value: 10_000_000,
+      value: 10 * CATEGORY_BASE,
       cards: sorted,
       description: 'Royal Flush',
     };
@@ -71,7 +75,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (straightFlush) {
     return {
       rank: 'STRAIGHT_FLUSH',
-      value: 9_000_000 + straightFlush.highCard,
+      value: 9 * CATEGORY_BASE + straightFlush.highCard,
       cards: sorted,
       description: `Straight Flush, ${straightFlush.highCard} high`,
     };
@@ -81,7 +85,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (fourOfAKind) {
     return {
       rank: 'FOUR_OF_A_KIND',
-      value: 8_000_000 + fourOfAKind.quadValue * 100 + fourOfAKind.kicker,
+      value: 8 * CATEGORY_BASE + fourOfAKind.quadValue * 100 + fourOfAKind.kicker,
       cards: sorted,
       description: `Four ${fourOfAKind.quadRank}s`,
     };
@@ -91,7 +95,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (fullHouse) {
     return {
       rank: 'FULL_HOUSE',
-      value: 7_000_000 + fullHouse.tripValue * 100 + fullHouse.pairValue,
+      value: 7 * CATEGORY_BASE + fullHouse.tripValue * 100 + fullHouse.pairValue,
       cards: sorted,
       description: `Full House, ${fullHouse.tripRank}s over ${fullHouse.pairRank}s`,
     };
@@ -101,7 +105,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (flush) {
     return {
       rank: 'FLUSH',
-      value: 6_000_000 + flush.value,
+      value: 6 * CATEGORY_BASE + flush.value,
       cards: sorted,
       description: 'Flush',
     };
@@ -111,7 +115,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (straight) {
     return {
       rank: 'STRAIGHT',
-      value: 5_000_000 + straight.highCard,
+      value: 5 * CATEGORY_BASE + straight.highCard,
       cards: sorted,
       description: `Straight, ${straight.highCard} high`,
     };
@@ -121,7 +125,10 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (threeOfAKind) {
     return {
       rank: 'THREE_OF_A_KIND',
-      value: 4_000_000 + threeOfAKind.tripValue * 10000 + threeOfAKind.kickers,
+      value:
+        4 * CATEGORY_BASE +
+        threeOfAKind.tripValue * 10000 +
+        threeOfAKind.kickers,
       cards: sorted,
       description: `Three ${threeOfAKind.tripRank}s`,
     };
@@ -132,7 +139,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
     return {
       rank: 'TWO_PAIR',
       value:
-        3_000_000 +
+        3 * CATEGORY_BASE +
         twoPair.highPair * 10000 +
         twoPair.lowPair * 100 +
         twoPair.kicker,
@@ -145,7 +152,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (onePair) {
     return {
       rank: 'ONE_PAIR',
-      value: 2_000_000 + onePair.pairValue * 10000 + onePair.kickers,
+      value: 2 * CATEGORY_BASE + onePair.pairValue * 10000 + onePair.kickers,
       cards: sorted,
       description: `Pair of ${onePair.pairRank}s`,
     };
@@ -155,7 +162,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   const highCardValue = calculateKickers(sorted.map((c) => c.rank));
   return {
     rank: 'HIGH_CARD',
-    value: 1_000_000 + highCardValue,
+    value: 1 * CATEGORY_BASE + highCardValue,
     cards: sorted,
     description: `High Card ${sorted[0].rank}`,
   };

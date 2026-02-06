@@ -309,14 +309,14 @@
 
 ### Test 7.2: Pair vs High Card
 
-**Status**: ✅ PASSING (with rank-encoding caveat)  
+**Status**: ✅ PASSING  
 **Objective**: Test basic hand comparison
 
-- [x] Check cards to ensure non-tie winner
+- [x] Check cards to ensure different hand strengths (pair vs high card)
 - [x] Verify correct single winner and pot distribution
-- [x] Validate winner rank emitted by server (`ONE_PAIR` or `HIGH_CARD`)
+- [x] Validate exact ranks: winner `ONE_PAIR`, loser `HIGH_CARD`
 
-**Result**: Winner/pot behavior is correct; hand-rank encoding from backend can vary for this deck, so assertion accepts observed rank variants.
+**Result**: Deterministic deck and strict assertions verify pair beats high card with expected payout.
 
 ### Test 7.3: Tie (Split Pot)
 
