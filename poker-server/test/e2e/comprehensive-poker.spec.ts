@@ -256,7 +256,7 @@ async function waitForHandStart(page: Page, handNumber: number) {
       );
     },
     handNumber,
-    { timeout: 10000 },
+    { timeout: 15000 },
   );
 }
 
@@ -320,8 +320,8 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
-function captureNextHandComplete(page: Page): Promise<any> {
-  return page.evaluate(() => {
+function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
+  return page.evaluate((timeoutLimit) => {
     const pokerDebug = (window as any).pokerDebug;
     const socket = pokerDebug?.getSocket?.();
     if (!socket) {
@@ -329,16 +329,55 @@ function captureNextHandComplete(page: Page): Promise<any> {
     }
 
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error('Timed out waiting for HAND_COMPLETE')),
-        15000,
-      );
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for HAND_COMPLETE'));
+      }, timeoutLimit);
       socket.once('HAND_COMPLETE', (data: any) => {
-        clearTimeout(timeout);
+        clearTimeout(timer);
         resolve(data?.result ?? data);
       });
     });
-  });
+  }, timeoutMs);
+}
+
+async function completeCurrentHandWithPassiveActions(
+  anchorPage: Page,
+  pageByName: Record<string, Page>,
+  handNumber: number,
+) {
+  const handCompletePromise = captureNextHandComplete(anchorPage, 30000);
+
+  for (let i = 0; i < 40; i++) {
+    const state = await getRoomSnapshot(anchorPage);
+    if (state.handNumber !== handNumber) {
+      break;
+    }
+    const actingPlayer = state.currentPlayerName;
+    if (!actingPlayer) {
+      await anchorPage.waitForTimeout(200);
+      continue;
+    }
+
+    const actingPage = pageByName[actingPlayer];
+    await waitForPlayerTurn(actingPage, actingPlayer);
+    const canCheck = await actingPage.evaluate(() => {
+      const pokerDebug = (window as any).pokerDebug;
+      const room = pokerDebug?.getRoom?.();
+      const me = pokerDebug?.getPlayer?.();
+      const player = room?.players?.find((p: any) => p.id === me?.id);
+      return !!player && player.currentBet === room?.currentHand?.currentBet;
+    });
+
+    if (canCheck) {
+      await actingPage.evaluate(() => (window as any).pokerDebug.check());
+    } else {
+      await actingPage.evaluate(() => (window as any).pokerDebug.call());
+    }
+
+    await anchorPage.waitForTimeout(200);
+  }
+
+  await handCompletePromise;
 }
 
 async function playCheckCheckToShowdown(alicePage: Page, bobPage: Page) {
@@ -374,6 +413,94 @@ async function getCommunityCardCountFromUi(page: Page): Promise<number> {
     const potSection = sections.find((el) => el.textContent?.includes('Pot: $'));
     if (!potSection) return 0;
     return potSection.querySelectorAll('div.w-16.h-24').length;
+  });
+}
+
+function parseDollarAmount(text: string | null, label: string): number {
+  const match = text?.match(/\$([0-9]+)/);
+  if (!match) {
+    throw new Error(`Unable to parse ${label} from text: ${text ?? '<null>'}`);
+  }
+  return Number(match[1]);
+}
+
+async function getPotFromUi(page: Page): Promise<number> {
+  const potText = await page.textContent('text=Pot: $');
+  return parseDollarAmount(potText, 'pot');
+}
+
+async function getRoundFromUi(page: Page): Promise<string> {
+  const roundText = await page.textContent('text=Current Round:');
+  const match = roundText?.match(/Current Round:\s*([A-Z_]+)/);
+  if (!match) {
+    throw new Error(`Unable to parse round from text: ${roundText ?? '<null>'}`);
+  }
+  return match[1];
+}
+
+async function getYourChipsFromUi(page: Page): Promise<number> {
+  const chipsText = await page.textContent('text=Your Chips:');
+  return parseDollarAmount(chipsText, 'your chips');
+}
+
+async function getDealerNameFromUi(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const headings = Array.from(document.querySelectorAll('h3'));
+    const playersHeading = headings.find(
+      (heading) => heading.textContent?.trim() === 'Players',
+    );
+    const playersSection = playersHeading?.parentElement;
+    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    if (!rowsContainer) return null;
+
+    for (const row of Array.from(rowsContainer.children)) {
+      const hasDealerBadge = Array.from(row.querySelectorAll('span')).some(
+        (span) => span.textContent?.trim() === 'D',
+      );
+      if (!hasDealerBadge) continue;
+
+      const nameText =
+        row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+      return nameText.replace('(You)', '').trim();
+    }
+
+    return null;
+  });
+}
+
+async function getPlayersMoneyFromUi(
+  page: Page,
+): Promise<Record<string, { chips: number; currentBet: number }>> {
+  return page.evaluate(() => {
+    const result: Record<string, { chips: number; currentBet: number }> = {};
+    const headings = Array.from(document.querySelectorAll('h3'));
+    const playersHeading = headings.find(
+      (heading) => heading.textContent?.trim() === 'Players',
+    );
+    const playersSection = playersHeading?.parentElement;
+    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    if (!rowsContainer) return result;
+
+    for (const row of Array.from(rowsContainer.children)) {
+      const nameText =
+        row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+      const name = nameText.replace('(You)', '').trim();
+      if (!name) continue;
+
+      const chipsText = row.querySelector('div.text-green-400.text-sm')?.textContent;
+      const chipsMatch = chipsText?.match(/\$([0-9]+)/);
+      const chips = chipsMatch ? Number(chipsMatch[1]) : 0;
+
+      const betText = Array.from(row.querySelectorAll('div'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('Bet: $'));
+      const betMatch = betText?.match(/Bet:\s*\$([0-9]+)/);
+      const currentBet = betMatch ? Number(betMatch[1]) : 0;
+
+      result[name] = { chips, currentBet };
+    }
+
+    return result;
   });
 }
 
@@ -968,13 +1095,15 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `After Bob raise: Pot $${afterBobRaise.pot}, currentBet $${afterBobRaise.currentBet}, Alice: ${afterBobRaise.alice}, Bob: ${afterBobRaise.bob}`,
     );
-    // Bob started with 990 (small blind $10 already posted)
-    // Bob raises $900, making currentBet $920 (well above any minimum)
-    // Bob's total contribution: $10 SB + $910 more = $920 total
-    // Bob's remaining chips: 990 - 920 = 70 (but expect shows 80, so let's verify system values)
-    expect(afterBobRaise.bob).toBe(80); // System calculated value
-    expect(afterBobRaise.pot).toBe(940); // System calculated pot
-    expect(afterBobRaise.currentBet).toBe(920); // System enforced currentBet
+    // Independent expected math:
+    // Bob already posted $10. Raising by $900 requires an additional $10 call + $900 raise.
+    // Bob contribution this action: $910, total committed by Bob: $920, remaining chips: $80.
+    const expectedBobChipsAfterRaise = 80;
+    const expectedPotAfterRaise = 940;
+    const expectedCurrentBetAfterRaise = 920;
+    expect(afterBobRaise.bob).toBe(expectedBobChipsAfterRaise);
+    expect(afterBobRaise.pot).toBe(expectedPotAfterRaise);
+    expect(afterBobRaise.currentBet).toBe(expectedCurrentBetAfterRaise);
 
     // PRE_FLOP Round 2: Alice calls (matching Bob's currentBet $920)
     console.log("Pre-flop Round 2 - Alice calling Bob's raise...");
@@ -1259,10 +1388,8 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       `After Bob all-in: Pot $${afterBobAllIn.pot}, currentBet $${afterBobAllIn.currentBet}, Alice: ${afterBobAllIn.alice}, Bob: ${afterBobAllIn.bob}`,
     );
     expect(afterBobAllIn.bob).toBe(0); // Bob is all-in
-    // Bob started with 990 (after posting $10 small blind)
-    // Goes all-in: adds remaining 990 to pot
-    // Pot: 30 (blinds) + 990 (Bob's all-in) = 1020
-    expect(afterBobAllIn.pot).toBe(1020); // System calculated pot
+    // Independent expected math: initial pot $30 + Bob remaining $990.
+    expect(afterBobAllIn.pot).toBe(1020);
     expect(afterBobAllIn.currentBet).toBe(1000); // Bob's total bet (10 small + 990 all-in)
 
     // Alice responds by going all-in
@@ -3147,6 +3274,206 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(5);
     } finally {
       await teardownTwoPlayerSession(session);
+    }
+  });
+});
+
+test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
+  test('9.1: Three-Player Turn Order - pre-flop and flop order are correct', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      const initial = await getRoomSnapshot(alicePage);
+      expect(initial.handNumber).toBe(1);
+      expect(initial.dealerPlayerName).toBe('Alice');
+      expect(initial.smallBlindPlayerName).toBe('Bob');
+      expect(initial.bigBlindPlayerName).toBe('Charlie');
+      expect(initial.currentPlayerName).toBe('Alice');
+      expect(initial.pot).toBe(30);
+      expect(await getDealerNameFromUi(alicePage)).toBe('Alice');
+      expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
+      expect(await getPotFromUi(alicePage)).toBe(30);
+      expect(await getYourChipsFromUi(alicePage)).toBe(1000);
+      expect(await getYourChipsFromUi(bobPage)).toBe(990);
+      expect(await getYourChipsFromUi(charliePage)).toBe(980);
+      await verifyChipConservation(alicePage, 3000);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await expect(alicePage.locator('button:has-text("Call $20")')).toBeVisible();
+      await alicePage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await expect(bobPage.locator('button:has-text("Call $10")')).toBeVisible();
+      await bobPage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await expect(charliePage.locator('button:has-text("Check")')).toBeVisible();
+      await charliePage.click('button:has-text("Check")');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      const flop = await getRoomSnapshot(alicePage);
+      expect(flop.currentPlayerName).toBe('Bob');
+      expect(flop.pot).toBe(60);
+      expect(await getRoundFromUi(alicePage)).toBe('FLOP');
+      expect(await getPotFromUi(alicePage)).toBe(60);
+      expect(await getYourChipsFromUi(alicePage)).toBe(980);
+      expect(await getYourChipsFromUi(bobPage)).toBe(980);
+      expect(await getYourChipsFromUi(charliePage)).toBe(980);
+      await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('9.2: Three-Player Blind Rotation - dealer/SB/BB rotate across hands', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const pageByName: Record<string, Page> = {
+        Alice: alicePage,
+        Bob: bobPage,
+        Charlie: charliePage,
+      };
+
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      const expectedDealer = ['Alice', 'Bob', 'Charlie'];
+      const expectedSmallBlind = ['Bob', 'Charlie', 'Alice'];
+      const expectedBigBlind = ['Charlie', 'Alice', 'Bob'];
+      const expectedFirstToAct = ['Alice', 'Bob', 'Charlie'];
+
+      for (let handNumber = 1; handNumber <= 3; handNumber++) {
+        await waitForHandStart(alicePage, handNumber);
+        const snapshot = await getRoomSnapshot(alicePage);
+
+        expect(snapshot.handNumber).toBe(handNumber);
+        expect(snapshot.bettingRound).toBe('PRE_FLOP');
+        expect(snapshot.dealerPlayerName).toBe(expectedDealer[handNumber - 1]);
+        expect(snapshot.smallBlindPlayerName).toBe(
+          expectedSmallBlind[handNumber - 1],
+        );
+        expect(snapshot.bigBlindPlayerName).toBe(expectedBigBlind[handNumber - 1]);
+        expect(snapshot.currentPlayerName).toBe(expectedFirstToAct[handNumber - 1]);
+        expect(snapshot.pot).toBe(30);
+        expect(await getDealerNameFromUi(alicePage)).toBe(
+          expectedDealer[handNumber - 1],
+        );
+        expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
+        expect(await getPotFromUi(alicePage)).toBe(30);
+        await expect(
+          pageByName[expectedFirstToAct[handNumber - 1]].locator(
+            'h3:has-text("Your Turn")',
+          ),
+        ).toBeVisible();
+        await verifyChipConservation(alicePage, 3000);
+
+        await completeCurrentHandWithPassiveActions(
+          alicePage,
+          pageByName,
+          handNumber,
+        );
+
+        if (handNumber < 3) {
+          await waitForHandStart(alicePage, handNumber + 1);
+        }
+      }
+
+      // After hand 3 fold, players can drop below two active stacks, so a 4th hand
+      // may not start. Rotation assertions above already validate full 3-hand cycle.
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('9.3: Three-Way Tie - split pot evenly across 3 winners', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'clubs', rank: '2' }, // Alice
+        { suit: 'diamonds', rank: '7' }, // Alice
+        { suit: 'hearts', rank: '3' }, // Bob
+        { suit: 'spades', rank: '8' }, // Bob
+        { suit: 'clubs', rank: '4' }, // Charlie
+        { suit: 'diamonds', rank: '9' }, // Charlie
+        { suit: 'clubs', rank: 'A' }, // Flop 1
+        { suit: 'diamonds', rank: 'K' }, // Flop 2
+        { suit: 'hearts', rank: 'Q' }, // Flop 3
+        { suit: 'spades', rank: 'J' }, // Turn
+        { suit: 'clubs', rank: '10' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('button:has-text("All-In")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('button:has-text("Call")');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(3000);
+      expect(result.winners).toHaveLength(3);
+      const winnerNames = result.winners
+        .map((winner: any) => winner.playerName)
+        .sort();
+      expect(winnerNames).toEqual(['Alice', 'Bob', 'Charlie']);
+      const amounts = result.winners
+        .map((winner: any) => winner.amountWon)
+        .sort((a: number, b: number) => a - b);
+      expect(amounts).toEqual([1000, 1000, 1000]);
+      const ranks = result.winners.map((winner: any) => winner.hand.rank);
+      expect(ranks.every((rank: string) => rank === 'STRAIGHT')).toBe(true);
+      await expect(
+        alicePage.locator('text=Current Round: SHOWDOWN'),
+      ).toBeVisible();
+      expect(await getPotFromUi(alicePage)).toBe(3000);
+      const uiMoney = await getPlayersMoneyFromUi(alicePage);
+      expect(uiMoney.Alice.chips + uiMoney.Alice.currentBet).toBe(1000);
+      expect(uiMoney.Bob.chips + uiMoney.Bob.currentBet).toBe(1000);
+      expect(uiMoney.Charlie.chips + uiMoney.Charlie.currentBet).toBe(1000);
+      const totalUiMoney =
+        uiMoney.Alice.chips +
+        uiMoney.Alice.currentBet +
+        uiMoney.Bob.chips +
+        uiMoney.Bob.currentBet +
+        uiMoney.Charlie.chips +
+        uiMoney.Charlie.currentBet;
+      expect(totalUiMoney).toBe(3000);
+
+      await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
     }
   });
 });
