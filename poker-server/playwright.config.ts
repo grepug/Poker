@@ -38,13 +38,16 @@ export default defineConfig({
   // Start both frontend and backend before tests
   webServer: [
     {
-      command: 'cd ../poker-client && npm run dev',
+      // Use prebuilt static assets for stability under Node versions that
+      // may not meet Vite dev-server requirements.
+      command: 'python3 -m http.server 5174 --directory ../poker-client/dist',
       url: 'http://localhost:5174',
       reuseExistingServer: true,
       timeout: 30000,
     },
     {
-      command: 'TEST_MODE=true npm run start:dev',
+      // Avoid watch mode restarts during long e2e runs.
+      command: 'TEST_MODE=true npm run start',
       url: 'http://localhost:3001',
       reuseExistingServer: true,
       timeout: 30000,
