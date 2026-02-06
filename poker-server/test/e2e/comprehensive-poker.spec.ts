@@ -416,6 +416,94 @@ async function getCommunityCardCountFromUi(page: Page): Promise<number> {
   });
 }
 
+function parseDollarAmount(text: string | null, label: string): number {
+  const match = text?.match(/\$([0-9]+)/);
+  if (!match) {
+    throw new Error(`Unable to parse ${label} from text: ${text ?? '<null>'}`);
+  }
+  return Number(match[1]);
+}
+
+async function getPotFromUi(page: Page): Promise<number> {
+  const potText = await page.textContent('text=Pot: $');
+  return parseDollarAmount(potText, 'pot');
+}
+
+async function getRoundFromUi(page: Page): Promise<string> {
+  const roundText = await page.textContent('text=Current Round:');
+  const match = roundText?.match(/Current Round:\s*([A-Z_]+)/);
+  if (!match) {
+    throw new Error(`Unable to parse round from text: ${roundText ?? '<null>'}`);
+  }
+  return match[1];
+}
+
+async function getYourChipsFromUi(page: Page): Promise<number> {
+  const chipsText = await page.textContent('text=Your Chips:');
+  return parseDollarAmount(chipsText, 'your chips');
+}
+
+async function getDealerNameFromUi(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const headings = Array.from(document.querySelectorAll('h3'));
+    const playersHeading = headings.find(
+      (heading) => heading.textContent?.trim() === 'Players',
+    );
+    const playersSection = playersHeading?.parentElement;
+    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    if (!rowsContainer) return null;
+
+    for (const row of Array.from(rowsContainer.children)) {
+      const hasDealerBadge = Array.from(row.querySelectorAll('span')).some(
+        (span) => span.textContent?.trim() === 'D',
+      );
+      if (!hasDealerBadge) continue;
+
+      const nameText =
+        row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+      return nameText.replace('(You)', '').trim();
+    }
+
+    return null;
+  });
+}
+
+async function getPlayersMoneyFromUi(
+  page: Page,
+): Promise<Record<string, { chips: number; currentBet: number }>> {
+  return page.evaluate(() => {
+    const result: Record<string, { chips: number; currentBet: number }> = {};
+    const headings = Array.from(document.querySelectorAll('h3'));
+    const playersHeading = headings.find(
+      (heading) => heading.textContent?.trim() === 'Players',
+    );
+    const playersSection = playersHeading?.parentElement;
+    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    if (!rowsContainer) return result;
+
+    for (const row of Array.from(rowsContainer.children)) {
+      const nameText =
+        row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+      const name = nameText.replace('(You)', '').trim();
+      if (!name) continue;
+
+      const chipsText = row.querySelector('div.text-green-400.text-sm')?.textContent;
+      const chipsMatch = chipsText?.match(/\$([0-9]+)/);
+      const chips = chipsMatch ? Number(chipsMatch[1]) : 0;
+
+      const betText = Array.from(row.querySelectorAll('div'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('Bet: $'));
+      const betMatch = betText?.match(/Bet:\s*\$([0-9]+)/);
+      const currentBet = betMatch ? Number(betMatch[1]) : 0;
+
+      result[name] = { chips, currentBet };
+    }
+
+    return result;
+  });
+}
+
 test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
   test('1.1: Check/Check Scenario - both players check through all rounds', async ({
     browser,
@@ -1007,13 +1095,15 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `After Bob raise: Pot $${afterBobRaise.pot}, currentBet $${afterBobRaise.currentBet}, Alice: ${afterBobRaise.alice}, Bob: ${afterBobRaise.bob}`,
     );
-    // Bob started with 990 (small blind $10 already posted)
-    // Bob raises $900, making currentBet $920 (well above any minimum)
-    // Bob's total contribution: $10 SB + $910 more = $920 total
-    // Bob's remaining chips: 990 - 920 = 70 (but expect shows 80, so let's verify system values)
-    expect(afterBobRaise.bob).toBe(80); // System calculated value
-    expect(afterBobRaise.pot).toBe(940); // System calculated pot
-    expect(afterBobRaise.currentBet).toBe(920); // System enforced currentBet
+    // Independent expected math:
+    // Bob already posted $10. Raising by $900 requires an additional $10 call + $900 raise.
+    // Bob contribution this action: $910, total committed by Bob: $920, remaining chips: $80.
+    const expectedBobChipsAfterRaise = 80;
+    const expectedPotAfterRaise = 940;
+    const expectedCurrentBetAfterRaise = 920;
+    expect(afterBobRaise.bob).toBe(expectedBobChipsAfterRaise);
+    expect(afterBobRaise.pot).toBe(expectedPotAfterRaise);
+    expect(afterBobRaise.currentBet).toBe(expectedCurrentBetAfterRaise);
 
     // PRE_FLOP Round 2: Alice calls (matching Bob's currentBet $920)
     console.log("Pre-flop Round 2 - Alice calling Bob's raise...");
@@ -1298,10 +1388,8 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       `After Bob all-in: Pot $${afterBobAllIn.pot}, currentBet $${afterBobAllIn.currentBet}, Alice: ${afterBobAllIn.alice}, Bob: ${afterBobAllIn.bob}`,
     );
     expect(afterBobAllIn.bob).toBe(0); // Bob is all-in
-    // Bob started with 990 (after posting $10 small blind)
-    // Goes all-in: adds remaining 990 to pot
-    // Pot: 30 (blinds) + 990 (Bob's all-in) = 1020
-    expect(afterBobAllIn.pot).toBe(1020); // System calculated pot
+    // Independent expected math: initial pot $30 + Bob remaining $990.
+    expect(afterBobAllIn.pot).toBe(1020);
     expect(afterBobAllIn.currentBet).toBe(1000); // Bob's total bet (10 small + 990 all-in)
 
     // Alice responds by going all-in
@@ -3212,6 +3300,12 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(initial.bigBlindPlayerName).toBe('Charlie');
       expect(initial.currentPlayerName).toBe('Alice');
       expect(initial.pot).toBe(30);
+      expect(await getDealerNameFromUi(alicePage)).toBe('Alice');
+      expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
+      expect(await getPotFromUi(alicePage)).toBe(30);
+      expect(await getYourChipsFromUi(alicePage)).toBe(1000);
+      expect(await getYourChipsFromUi(bobPage)).toBe(990);
+      expect(await getYourChipsFromUi(charliePage)).toBe(980);
       await verifyChipConservation(alicePage, 3000);
 
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -3230,6 +3324,11 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.currentPlayerName).toBe('Bob');
       expect(flop.pot).toBe(60);
+      expect(await getRoundFromUi(alicePage)).toBe('FLOP');
+      expect(await getPotFromUi(alicePage)).toBe(60);
+      expect(await getYourChipsFromUi(alicePage)).toBe(980);
+      expect(await getYourChipsFromUi(bobPage)).toBe(980);
+      expect(await getYourChipsFromUi(charliePage)).toBe(980);
       await verifyChipConservation(alicePage, 3000);
     } finally {
       await teardownThreePlayerSession(session);
@@ -3274,6 +3373,16 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         expect(snapshot.bigBlindPlayerName).toBe(expectedBigBlind[handNumber - 1]);
         expect(snapshot.currentPlayerName).toBe(expectedFirstToAct[handNumber - 1]);
         expect(snapshot.pot).toBe(30);
+        expect(await getDealerNameFromUi(alicePage)).toBe(
+          expectedDealer[handNumber - 1],
+        );
+        expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
+        expect(await getPotFromUi(alicePage)).toBe(30);
+        await expect(
+          pageByName[expectedFirstToAct[handNumber - 1]].locator(
+            'h3:has-text("Your Turn")',
+          ),
+        ).toBeVisible();
         await verifyChipConservation(alicePage, 3000);
 
         await completeCurrentHandWithPassiveActions(
@@ -3335,12 +3444,32 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       const result = await handCompletePromise;
       expect(result.totalPot).toBe(3000);
       expect(result.winners).toHaveLength(3);
+      const winnerNames = result.winners
+        .map((winner: any) => winner.playerName)
+        .sort();
+      expect(winnerNames).toEqual(['Alice', 'Bob', 'Charlie']);
       const amounts = result.winners
         .map((winner: any) => winner.amountWon)
         .sort((a: number, b: number) => a - b);
       expect(amounts).toEqual([1000, 1000, 1000]);
       const ranks = result.winners.map((winner: any) => winner.hand.rank);
       expect(ranks.every((rank: string) => rank === 'STRAIGHT')).toBe(true);
+      await expect(
+        alicePage.locator('text=Current Round: SHOWDOWN'),
+      ).toBeVisible();
+      expect(await getPotFromUi(alicePage)).toBe(3000);
+      const uiMoney = await getPlayersMoneyFromUi(alicePage);
+      expect(uiMoney.Alice.chips + uiMoney.Alice.currentBet).toBe(1000);
+      expect(uiMoney.Bob.chips + uiMoney.Bob.currentBet).toBe(1000);
+      expect(uiMoney.Charlie.chips + uiMoney.Charlie.currentBet).toBe(1000);
+      const totalUiMoney =
+        uiMoney.Alice.chips +
+        uiMoney.Alice.currentBet +
+        uiMoney.Bob.chips +
+        uiMoney.Bob.currentBet +
+        uiMoney.Charlie.chips +
+        uiMoney.Charlie.currentBet;
+      expect(totalUiMoney).toBe(3000);
 
       await verifyChipConservation(alicePage, 3000);
     } finally {
