@@ -52,6 +52,16 @@ type TwoPlayerSession = {
   roomCode: string;
 };
 
+type ThreePlayerSession = {
+  aliceContext: BrowserContext;
+  bobContext: BrowserContext;
+  charlieContext: BrowserContext;
+  alicePage: Page;
+  bobPage: Page;
+  charliePage: Page;
+  roomCode: string;
+};
+
 async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
   const aliceContext = await browser.newContext();
   const bobContext = await browser.newContext();
@@ -94,6 +104,70 @@ async function teardownTwoPlayerSession(session: TwoPlayerSession) {
   await Promise.allSettled([
     session.aliceContext.close(),
     session.bobContext.close(),
+  ]);
+}
+
+async function setupThreePlayerSession(browser: any): Promise<ThreePlayerSession> {
+  const aliceContext = await browser.newContext();
+  const bobContext = await browser.newContext();
+  const charlieContext = await browser.newContext();
+  const alicePage = await aliceContext.newPage();
+  const bobPage = await bobContext.newPage();
+  const charliePage = await charlieContext.newPage();
+
+  await Promise.all([
+    alicePage.goto(FRONTEND_URL),
+    bobPage.goto(FRONTEND_URL),
+    charliePage.goto(FRONTEND_URL),
+  ]);
+  await Promise.all([
+    alicePage.waitForSelector('text=● Connected'),
+    bobPage.waitForSelector('text=● Connected'),
+    charliePage.waitForSelector('text=● Connected'),
+  ]);
+
+  await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
+  await alicePage.click('button:has-text("Create New Room")');
+  await alicePage.waitForSelector('h1:has-text("Room:")');
+  const roomIdText = await alicePage.textContent('h1');
+  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+  if (!roomCode) {
+    throw new Error('Failed to create room code for three-player setup');
+  }
+
+  await bobPage.click('button:has-text("Join Existing Room")');
+  await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
+  await bobPage.fill('input[placeholder="Enter room code"]', roomCode);
+  await bobPage.click('button:has-text("Join Room")');
+  await bobPage.waitForSelector('text=Players: 2/');
+  await alicePage.waitForSelector('text=Players: 2/');
+
+  await charliePage.click('button:has-text("Join Existing Room")');
+  await charliePage.fill('input[placeholder="Enter your name"]', 'Charlie');
+  await charliePage.fill('input[placeholder="Enter room code"]', roomCode);
+  await charliePage.click('button:has-text("Join Room")');
+  await Promise.all([
+    alicePage.waitForSelector('text=Players: 3/'),
+    bobPage.waitForSelector('text=Players: 3/'),
+    charliePage.waitForSelector('text=Players: 3/'),
+  ]);
+
+  return {
+    aliceContext,
+    bobContext,
+    charlieContext,
+    alicePage,
+    bobPage,
+    charliePage,
+    roomCode,
+  };
+}
+
+async function teardownThreePlayerSession(session: ThreePlayerSession) {
+  await Promise.allSettled([
+    session.aliceContext.close(),
+    session.bobContext.close(),
+    session.charlieContext.close(),
   ]);
 }
 
@@ -218,6 +292,32 @@ async function setTestDeckForCurrentRoom(
       );
     });
   }, deck);
+}
+
+async function requestRebuy(page: Page, amount: number) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async (rebuyAmount) => {
+    const socket = (window as any).pokerDebug?.getSocket?.();
+    if (!socket) {
+      throw new Error('Unable to rebuy: socket unavailable');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      socket.emit(
+        'REQUEST_REBUY',
+        { amount: rebuyAmount },
+        (response: { success: boolean; error?: string }) => {
+          if (response?.success) {
+            resolve();
+          } else {
+            reject(
+              new Error(response?.error || 'Unknown REQUEST_REBUY failure'),
+            );
+          }
+        },
+      );
+    });
+  }, amount);
 }
 
 function captureNextHandComplete(page: Page): Promise<any> {
@@ -1205,10 +1305,94 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     await bobContext.close();
   });
 
-  test.skip('3.4: Partial All-In (Side Pot) - pending side-pot payout support for 3+ players', async () => {
-    // Current implementation evaluates a single combined pot in determineWinner()
-    // and does not distribute side pots to eligible players separately.
-    // Enable when side-pot payout logic is implemented in HandService.
+  test('3.4: Partial All-In (Side Pot) - short stack wins main pot, deeper stack wins side pot', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'spades', rank: 'A' }, // Alice
+        { suit: 'diamonds', rank: 'K' }, // Alice
+        { suit: 'clubs', rank: 'Q' }, // Bob
+        { suit: 'clubs', rank: 'J' }, // Bob
+        { suit: 'diamonds', rank: '9' }, // Charlie
+        { suit: 'diamonds', rank: '8' }, // Charlie
+        { suit: 'hearts', rank: 'A' }, // Flop 1
+        { suit: 'clubs', rank: '2' }, // Flop 2
+        { suit: 'spades', rank: '5' }, // Flop 3
+        { suit: 'diamonds', rank: '7' }, // Turn
+        { suit: 'clubs', rank: '10' }, // River
+      ]);
+
+      await requestRebuy(bobPage, 2000);
+      await requestRebuy(charliePage, 2000);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      // PRE_FLOP action order (3 players): Alice -> Bob -> Charlie -> Bob
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('button:has-text("All-In")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.fill('input[type="number"]', '500');
+      await charliePage.click('button:has-text("Raise")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Call")');
+
+      // Post-flop only Bob and Charlie can act (Alice is all-in).
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Check")');
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('button:has-text("Check")');
+
+      await waitForRound(alicePage, 'TURN', 4);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Check")');
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('button:has-text("Check")');
+
+      await waitForRound(alicePage, 'RIVER', 5);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Check")');
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('button:has-text("Check")');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(4000);
+      expect(result.winners).toHaveLength(2);
+
+      const winnerAmounts = new Map(
+        result.winners.map((winner: any) => [winner.playerName, winner.amountWon]),
+      );
+      expect(winnerAmounts.get('Alice')).toBe(3000);
+      expect(winnerAmounts.get('Bob')).toBe(1000);
+      expect(winnerAmounts.get('Charlie') || 0).toBe(0);
+
+      const totalAwarded = result.winners.reduce(
+        (sum: number, winner: any) => sum + winner.amountWon,
+        0,
+      );
+      expect(totalAwarded).toBe(4000);
+
+      await verifyChipConservation(alicePage, 5000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
   });
 });
 

@@ -28,6 +28,7 @@ export interface Hand {
   activePlayers: string[]; // Player IDs still in the hand
   roundActions: Record<string, boolean>; // Track if player acted this round
   sidePots: SidePot[];
+  potContributions: Record<string, number>; // Total chips each player put into the pot this hand
   startedAt: number;
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }

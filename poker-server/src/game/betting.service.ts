@@ -168,6 +168,7 @@ export class BettingService {
       (p) =>
         hand.activePlayers.includes(p.id) &&
         p.status !== 'folded' &&
+        p.status !== 'all-in' &&
         p.currentBet < hand.currentBet,
     );
 
@@ -231,7 +232,7 @@ export class BettingService {
 
     player.chips -= callAmount;
     player.currentBet += callAmount;
-    hand.pot += callAmount;
+    this.addToPot(hand, player.id, callAmount);
     player.lastAction = 'call';
   }
 
@@ -253,12 +254,12 @@ export class BettingService {
 
     player.chips -= totalAmount;
     player.currentBet += totalAmount;
-    hand.pot += totalAmount;
+    this.addToPot(hand, player.id, totalAmount);
     hand.currentBet = player.currentBet;
-    
+
     // Track the raise size for minimum raise calculations
     hand.lastRaiseSize = raiseAmount;
-    
+
     player.lastAction = 'raise';
 
     // Reset round actions since bet increased
@@ -273,7 +274,7 @@ export class BettingService {
 
     const allInAmount = player.chips;
     player.currentBet += allInAmount;
-    hand.pot += allInAmount;
+    this.addToPot(hand, player.id, allInAmount);
     player.chips = 0;
     player.status = 'all-in';
     player.lastAction = 'all-in';
@@ -284,6 +285,19 @@ export class BettingService {
       // Reset round actions
       hand.roundActions = { [player.id]: true };
     }
+  }
+
+  private addToPot(hand: Room['currentHand'], playerId: string, amount: number) {
+    if (!hand || amount <= 0) {
+      return;
+    }
+
+    hand.pot += amount;
+    if (!hand.potContributions) {
+      hand.potContributions = {};
+    }
+    hand.potContributions[playerId] =
+      (hand.potContributions[playerId] || 0) + amount;
   }
 
   /**

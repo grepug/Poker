@@ -46,6 +46,7 @@ export class HandService {
     const activePlayers = room.players.filter(
       (p) => p.chips > 0 && p.status !== 'left',
     );
+    const activePlayerIds = activePlayers.map((p) => p.id);
     const playerCount = activePlayers.length;
 
     if (playerCount < 2) {
@@ -69,6 +70,11 @@ export class HandService {
     bigBlindPlayer.currentBet = bbAmount;
 
     const pot = sbAmount + bbAmount;
+    const potContributions: Record<string, number> = Object.fromEntries(
+      activePlayerIds.map((id) => [id, 0]),
+    );
+    potContributions[smallBlindPlayer.id] += sbAmount;
+    potContributions[bigBlindPlayer.id] += bbAmount;
 
     // Deal cards - use test deck if available
     let deck: Card[];
@@ -80,8 +86,6 @@ export class HandService {
     } else {
       deck = shuffleDeck(createDeck());
     }
-
-    const activePlayerIds = activePlayers.map((p) => p.id);
 
     for (const player of activePlayers) {
       const { dealt, remaining } = dealCards(deck, 2);
@@ -118,6 +122,7 @@ export class HandService {
       activePlayers: activePlayerIds,
       roundActions: {},
       sidePots: [],
+      potContributions,
       startedAt: Date.now(),
     };
 
@@ -343,51 +348,194 @@ export class HandService {
       evaluation: evaluateHand(player.cards!.concat(hand.communityCards)),
     }));
 
-    // Sort by hand strength
-    evaluations.sort((a, b) => compareHands(b.evaluation, a.evaluation));
+    const evaluationsByPlayerId = new Map(
+      evaluations.map((entry) => [entry.player.id, entry]),
+    );
+    const sidePotSegments = this.buildPotSegments(
+      this.getHandContributions(room),
+      hand.activePlayers,
+    );
 
-    // Handle ties
-    const winners = [evaluations[0]];
-    for (let i = 1; i < evaluations.length; i++) {
-      if (
-        compareHands(evaluations[i].evaluation, evaluations[0].evaluation) === 0
-      ) {
-        winners.push(evaluations[i]);
-      } else {
-        break;
+    // Keep side pots on hand for visibility/debugging (excluding the main pot segment).
+    hand.sidePots = sidePotSegments.slice(1);
+
+    const payoutByPlayerId = new Map<string, number>();
+    let distributedTotal = 0;
+
+    for (const segment of sidePotSegments) {
+      const eligibleEvaluations = segment.eligiblePlayers
+        .map((playerId) => evaluationsByPlayerId.get(playerId))
+        .filter((entry): entry is (typeof evaluations)[number] => !!entry)
+        .sort((a, b) => compareHands(b.evaluation, a.evaluation));
+
+      if (eligibleEvaluations.length === 0) {
+        continue;
+      }
+
+      const winningEvaluations = [eligibleEvaluations[0]];
+      for (let i = 1; i < eligibleEvaluations.length; i++) {
+        if (
+          compareHands(
+            eligibleEvaluations[i].evaluation,
+            eligibleEvaluations[0].evaluation,
+          ) === 0
+        ) {
+          winningEvaluations.push(eligibleEvaluations[i]);
+        } else {
+          break;
+        }
+      }
+
+      // Split odd chips deterministically by table position to preserve total chips.
+      winningEvaluations.sort((a, b) => a.player.position - b.player.position);
+      const amountPerWinner = Math.floor(
+        segment.amount / winningEvaluations.length,
+      );
+      const remainder = segment.amount % winningEvaluations.length;
+
+      for (let i = 0; i < winningEvaluations.length; i++) {
+        const winner = winningEvaluations[i];
+        const award = amountPerWinner + (i < remainder ? 1 : 0);
+        payoutByPlayerId.set(
+          winner.player.id,
+          (payoutByPlayerId.get(winner.player.id) || 0) + award,
+        );
+        distributedTotal += award;
       }
     }
 
-    // Distribute pot
-    const amountPerWinner = Math.floor(hand.pot / winners.length);
-    this.logger.debug(
-      `[determineWinner] Distributing pot: ${hand.pot} / ${winners.length} winners = ${amountPerWinner} each`,
-    );
-    for (const { player } of winners) {
-      this.logger.debug(
-        `[determineWinner] Awarding ${player.name}: before=${player.chips}, after=${player.chips + amountPerWinner}`,
+    if (distributedTotal !== hand.pot && evaluations.length > 0) {
+      const adjustment = hand.pot - distributedTotal;
+      const fallbackWinner = evaluations
+        .slice()
+        .sort((a, b) => compareHands(b.evaluation, a.evaluation))[0];
+      payoutByPlayerId.set(
+        fallbackWinner.player.id,
+        (payoutByPlayerId.get(fallbackWinner.player.id) || 0) + adjustment,
       );
-      player.chips += amountPerWinner;
+      distributedTotal += adjustment;
+      this.logger.warn(
+        `[determineWinner] Pot distribution adjusted by ${adjustment} to preserve chip conservation`,
+      );
     }
 
+    for (const [playerId, amountWon] of payoutByPlayerId.entries()) {
+      const player = room.players.find((p) => p.id === playerId);
+      if (!player) continue;
+      this.logger.debug(
+        `[determineWinner] Awarding ${player.name}: before=${player.chips}, amount=${amountWon}, after=${player.chips + amountWon}`,
+      );
+      player.chips += amountWon;
+    }
+
+    const winners = Array.from(payoutByPlayerId.entries())
+      .map(([playerId, amountWon]) => {
+        const evaluation = evaluationsByPlayerId.get(playerId)!;
+        return {
+          playerId,
+          playerName: evaluation.player.name,
+          hand: evaluation.evaluation,
+          amountWon,
+        };
+      })
+      .sort((a, b) => b.amountWon - a.amountWon);
+
     const result: HandResult = {
-      winners: winners.map(({ player, evaluation }) => ({
-        playerId: player.id,
-        playerName: player.name,
-        hand: evaluation,
-        amountWon: amountPerWinner,
-      })),
-      playerHands: evaluations.map(({ player, evaluation }) => ({
-        playerId: player.id,
-        playerName: player.name,
-        cards: player.cards!,
-        hand: evaluation,
-      })),
+      winners,
+      playerHands: evaluations
+        .slice()
+        .sort((a, b) => compareHands(b.evaluation, a.evaluation))
+        .map(({ player, evaluation }) => ({
+          playerId: player.id,
+          playerName: player.name,
+          cards: player.cards!,
+          hand: evaluation,
+        })),
       totalPot: hand.pot,
     };
 
     await this.cleanupHand(room);
     return result;
+  }
+
+  private getHandContributions(room: Room): Record<string, number> {
+    const hand = room.currentHand!;
+    if (Object.keys(hand.potContributions || {}).length > 0) {
+      return hand.potContributions;
+    }
+
+    // Fallback for legacy hand states that don't have tracked contributions.
+    const fallback: Record<string, number> = {};
+    const activePlayerIds = [...hand.activePlayers];
+    if (activePlayerIds.length === 0 || hand.pot <= 0) {
+      return fallback;
+    }
+
+    const sortedActive = activePlayerIds.sort((a, b) => {
+      const aPos = room.players.find((p) => p.id === a)?.position ?? 0;
+      const bPos = room.players.find((p) => p.id === b)?.position ?? 0;
+      return aPos - bPos;
+    });
+
+    const base = Math.floor(hand.pot / sortedActive.length);
+    let remainder = hand.pot % sortedActive.length;
+    for (const playerId of sortedActive) {
+      const bonus = remainder > 0 ? 1 : 0;
+      fallback[playerId] = base + bonus;
+      remainder -= bonus;
+    }
+
+    hand.potContributions = fallback;
+    this.logger.warn(
+      `[determineWinner] Missing potContributions for hand ${hand.handNumber}, using fallback split`,
+    );
+    return fallback;
+  }
+
+  private buildPotSegments(
+    contributions: Record<string, number>,
+    activePlayerIds: string[],
+  ): Array<{ amount: number; eligiblePlayers: string[] }> {
+    const entries = Object.entries(contributions).filter(
+      ([, amount]) => amount > 0,
+    );
+    if (entries.length === 0) {
+      return [];
+    }
+
+    const levels = [...new Set(entries.map(([, amount]) => amount))].sort(
+      (a, b) => a - b,
+    );
+
+    const activeSet = new Set(activePlayerIds);
+    const segments: Array<{ amount: number; eligiblePlayers: string[] }> = [];
+    let previousLevel = 0;
+
+    for (const level of levels) {
+      const contributors = entries
+        .filter(([, amount]) => amount >= level)
+        .map(([playerId]) => playerId);
+      const layerAmount = (level - previousLevel) * contributors.length;
+      previousLevel = level;
+
+      if (layerAmount <= 0) {
+        continue;
+      }
+
+      const eligiblePlayers = contributors.filter((playerId) =>
+        activeSet.has(playerId),
+      );
+      if (eligiblePlayers.length === 0) {
+        continue;
+      }
+
+      segments.push({
+        amount: layerAmount,
+        eligiblePlayers,
+      });
+    }
+
+    return segments;
   }
 
   /**

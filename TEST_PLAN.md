@@ -153,19 +153,16 @@
 
 ### Test 3.4: Partial All-In (Side Pot)
 
-**Status**: ⚠️ BLOCKED (side-pot payout logic not implemented yet)  
+**Status**: ✅ PASSING  
 **Objective**: Test side pot creation (requires 3 players)
 
-- [x] Note: Current 2-player test can't verify side pots
-- [x] Document expected behavior for 3+ players
+- [x] 3-player setup with one short stack and two deeper stacks
+- [x] Short stack all-in creates main-pot threshold
+- [x] Deeper stacks continue betting to create side pot
+- [x] Verify showdown payouts split by eligibility (main pot vs side pot)
+- [x] Verify chip conservation with rebuys included
 
-**Expected behavior for 3+ players**:
-
-- Main pot should include each active player's contribution up to the smallest all-in amount
-- Side pot(s) should include only chips above that threshold from eligible players
-- Main-pot winner can be short stack; side-pot winner must be among side-pot-eligible players
-- Payout should be computed per pot with correct eligibility per pot, then summed per player
-- Current code path (`determineWinner`) distributes a single total pot, so this remains pending
+**Result**: Deterministic 3-player hand validates side-pot payout. Main pot awarded to short-stack all-in winner, side pot awarded to strongest remaining eligible player.
 
 ---
 
