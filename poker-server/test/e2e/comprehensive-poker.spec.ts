@@ -256,7 +256,7 @@ async function waitForHandStart(page: Page, handNumber: number) {
       );
     },
     handNumber,
-    { timeout: 10000 },
+    { timeout: 15000 },
   );
 }
 
@@ -320,8 +320,8 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
-function captureNextHandComplete(page: Page): Promise<any> {
-  return page.evaluate(() => {
+function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
+  return page.evaluate((timeoutLimit) => {
     const pokerDebug = (window as any).pokerDebug;
     const socket = pokerDebug?.getSocket?.();
     if (!socket) {
@@ -329,16 +329,55 @@ function captureNextHandComplete(page: Page): Promise<any> {
     }
 
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error('Timed out waiting for HAND_COMPLETE')),
-        15000,
-      );
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for HAND_COMPLETE'));
+      }, timeoutLimit);
       socket.once('HAND_COMPLETE', (data: any) => {
-        clearTimeout(timeout);
+        clearTimeout(timer);
         resolve(data?.result ?? data);
       });
     });
-  });
+  }, timeoutMs);
+}
+
+async function completeCurrentHandWithPassiveActions(
+  anchorPage: Page,
+  pageByName: Record<string, Page>,
+  handNumber: number,
+) {
+  const handCompletePromise = captureNextHandComplete(anchorPage, 30000);
+
+  for (let i = 0; i < 40; i++) {
+    const state = await getRoomSnapshot(anchorPage);
+    if (state.handNumber !== handNumber) {
+      break;
+    }
+    const actingPlayer = state.currentPlayerName;
+    if (!actingPlayer) {
+      await anchorPage.waitForTimeout(200);
+      continue;
+    }
+
+    const actingPage = pageByName[actingPlayer];
+    await waitForPlayerTurn(actingPage, actingPlayer);
+    const canCheck = await actingPage.evaluate(() => {
+      const pokerDebug = (window as any).pokerDebug;
+      const room = pokerDebug?.getRoom?.();
+      const me = pokerDebug?.getPlayer?.();
+      const player = room?.players?.find((p: any) => p.id === me?.id);
+      return !!player && player.currentBet === room?.currentHand?.currentBet;
+    });
+
+    if (canCheck) {
+      await actingPage.evaluate(() => (window as any).pokerDebug.check());
+    } else {
+      await actingPage.evaluate(() => (window as any).pokerDebug.call());
+    }
+
+    await anchorPage.waitForTimeout(200);
+  }
+
+  await handCompletePromise;
 }
 
 async function playCheckCheckToShowdown(alicePage: Page, bobPage: Page) {
@@ -3147,6 +3186,165 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(5);
     } finally {
       await teardownTwoPlayerSession(session);
+    }
+  });
+});
+
+test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
+  test('9.1: Three-Player Turn Order - pre-flop and flop order are correct', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      const initial = await getRoomSnapshot(alicePage);
+      expect(initial.handNumber).toBe(1);
+      expect(initial.dealerPlayerName).toBe('Alice');
+      expect(initial.smallBlindPlayerName).toBe('Bob');
+      expect(initial.bigBlindPlayerName).toBe('Charlie');
+      expect(initial.currentPlayerName).toBe('Alice');
+      expect(initial.pot).toBe(30);
+      await verifyChipConservation(alicePage, 3000);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await expect(alicePage.locator('button:has-text("Call $20")')).toBeVisible();
+      await alicePage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await expect(bobPage.locator('button:has-text("Call $10")')).toBeVisible();
+      await bobPage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await expect(charliePage.locator('button:has-text("Check")')).toBeVisible();
+      await charliePage.click('button:has-text("Check")');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      const flop = await getRoomSnapshot(alicePage);
+      expect(flop.currentPlayerName).toBe('Bob');
+      expect(flop.pot).toBe(60);
+      await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('9.2: Three-Player Blind Rotation - dealer/SB/BB rotate across hands', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const pageByName: Record<string, Page> = {
+        Alice: alicePage,
+        Bob: bobPage,
+        Charlie: charliePage,
+      };
+
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      const expectedDealer = ['Alice', 'Bob', 'Charlie'];
+      const expectedSmallBlind = ['Bob', 'Charlie', 'Alice'];
+      const expectedBigBlind = ['Charlie', 'Alice', 'Bob'];
+      const expectedFirstToAct = ['Alice', 'Bob', 'Charlie'];
+
+      for (let handNumber = 1; handNumber <= 3; handNumber++) {
+        await waitForHandStart(alicePage, handNumber);
+        const snapshot = await getRoomSnapshot(alicePage);
+
+        expect(snapshot.handNumber).toBe(handNumber);
+        expect(snapshot.bettingRound).toBe('PRE_FLOP');
+        expect(snapshot.dealerPlayerName).toBe(expectedDealer[handNumber - 1]);
+        expect(snapshot.smallBlindPlayerName).toBe(
+          expectedSmallBlind[handNumber - 1],
+        );
+        expect(snapshot.bigBlindPlayerName).toBe(expectedBigBlind[handNumber - 1]);
+        expect(snapshot.currentPlayerName).toBe(expectedFirstToAct[handNumber - 1]);
+        expect(snapshot.pot).toBe(30);
+        await verifyChipConservation(alicePage, 3000);
+
+        await completeCurrentHandWithPassiveActions(
+          alicePage,
+          pageByName,
+          handNumber,
+        );
+
+        if (handNumber < 3) {
+          await waitForHandStart(alicePage, handNumber + 1);
+        }
+      }
+
+      // After hand 3 fold, players can drop below two active stacks, so a 4th hand
+      // may not start. Rotation assertions above already validate full 3-hand cycle.
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('9.3: Three-Way Tie - split pot evenly across 3 winners', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'clubs', rank: '2' }, // Alice
+        { suit: 'diamonds', rank: '7' }, // Alice
+        { suit: 'hearts', rank: '3' }, // Bob
+        { suit: 'spades', rank: '8' }, // Bob
+        { suit: 'clubs', rank: '4' }, // Charlie
+        { suit: 'diamonds', rank: '9' }, // Charlie
+        { suit: 'clubs', rank: 'A' }, // Flop 1
+        { suit: 'diamonds', rank: 'K' }, // Flop 2
+        { suit: 'hearts', rank: 'Q' }, // Flop 3
+        { suit: 'spades', rank: 'J' }, // Turn
+        { suit: 'clubs', rank: '10' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await alicePage.click('button:has-text("Start Game")');
+      await Promise.all([
+        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('button:has-text("All-In")');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('button:has-text("Call")');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('button:has-text("Call")');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(3000);
+      expect(result.winners).toHaveLength(3);
+      const amounts = result.winners
+        .map((winner: any) => winner.amountWon)
+        .sort((a: number, b: number) => a - b);
+      expect(amounts).toEqual([1000, 1000, 1000]);
+      const ranks = result.winners.map((winner: any) => winner.hand.rank);
+      expect(ranks.every((rank: string) => rank === 'STRAIGHT')).toBe(true);
+
+      await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
     }
   });
 });

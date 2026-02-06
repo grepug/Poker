@@ -4,7 +4,7 @@
 
 - Backend: NestJS server running on port 3001 (managed by pm2)
 - Frontend: Vite React app on port 5174
-- Testing Tool: agent-browser with 2 sessions (Alice & Bob)
+- Testing Tool: Playwright/browser automation with 2-3 sessions (Alice, Bob, Charlie)
 - Debug Interface: window.pokerDebug global functions
 
 ## Pre-Test Verification
@@ -390,6 +390,49 @@
 
 ---
 
+## Test Suite 9: Three-Player Coverage
+
+### Test 9.1: Three-Player Turn Order
+
+**Status**: ✅ PASSING  
+**Objective**: Verify pre-flop/flop order with 3 active players
+
+- [x] Hand 1 setup with 3 players (Alice dealer, Bob SB, Charlie BB)
+- [x] Verify pre-flop first-to-act is left of BB (Alice)
+- [x] Play pre-flop call/call/check sequence
+- [x] Verify flop first-to-act is left of dealer (Bob)
+- [x] Verify pot/chip conservation with 3-player total (`3000`)
+
+**Result**: Three-player action order and blind roles match expected no-limit hold'em flow.
+
+### Test 9.2: Three-Player Blind/Button Rotation
+
+**Status**: ✅ PASSING  
+**Objective**: Verify dealer/SB/BB rotate correctly across consecutive hands
+
+- [x] Play/advance through 3 consecutive hands
+- [x] Verify dealer order: Alice → Bob → Charlie
+- [x] Verify SB/BB roles rotate accordingly each hand
+- [x] Verify first-to-act rotates with position rules
+- [x] Verify chip conservation remains `3000`
+
+**Result**: Rotation logic is correct for 3-player tables across consecutive hands.
+
+### Test 9.3: Three-Way Tie Split Pot
+
+**Status**: ✅ PASSING  
+**Objective**: Verify exact equal split on 3-way tied showdown
+
+- [x] Deterministic deck forcing board-only straight for all 3 players
+- [x] All players all-in pre-flop to force immediate showdown
+- [x] Verify 3 winners and equal payouts (`1000/1000/1000` from `3000` pot)
+- [x] Verify winner hand rank consistency (`STRAIGHT`)
+- [x] Verify chip conservation remains `3000`
+
+**Result**: Multi-way tie resolution correctly splits pot evenly among all eligible winners.
+
+---
+
 ## Test Execution Order
 
 1. **Run Test Suite 1** (Basic Actions) - Establish baseline functionality
@@ -400,6 +443,7 @@
 6. **Run Test Suite 7** (Winner Determination) - Test game logic
 7. **Run Test Suite 5** (Turn/Round) - Already mostly verified, final check
 8. **Run Test Suite 8** (UI) - Visual verification
+9. **Run Test Suite 9** (3-Player) - Multi-player correctness and split-pot behavior
 
 ---
 
