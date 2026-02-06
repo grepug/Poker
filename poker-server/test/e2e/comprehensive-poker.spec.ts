@@ -140,6 +140,8 @@ async function getRoomSnapshot(page: Page) {
   return page.evaluate(() => {
     const room = (window as any).pokerDebug?.getRoom();
     const hand = room?.currentHand;
+    const alice = room?.players?.find((p: any) => p.name === 'Alice');
+    const bob = room?.players?.find((p: any) => p.name === 'Bob');
     return {
       handNumber: hand?.handNumber ?? 0,
       pot: hand?.pot ?? 0,
@@ -153,10 +155,35 @@ async function getRoomSnapshot(page: Page) {
       currentPlayerName:
         room?.players?.find((p: any) => p.id === hand?.currentPlayerTurn)?.name ??
         null,
-      aliceChips: room?.players?.find((p: any) => p.name === 'Alice')?.chips ?? 0,
-      bobChips: room?.players?.find((p: any) => p.name === 'Bob')?.chips ?? 0,
+      dealerPlayerName:
+        room?.players?.find((p: any) => p.position === hand?.dealerPosition)?.name ??
+        null,
+      smallBlindPlayerName:
+        room?.players?.find((p: any) => p.position === hand?.smallBlindPosition)
+          ?.name ?? null,
+      bigBlindPlayerName:
+        room?.players?.find((p: any) => p.position === hand?.bigBlindPosition)?.name ??
+        null,
+      aliceChips: alice?.chips ?? 0,
+      bobChips: bob?.chips ?? 0,
+      aliceCurrentBet: alice?.currentBet ?? 0,
+      bobCurrentBet: bob?.currentBet ?? 0,
     };
   });
+}
+
+async function waitForHandStart(page: Page, handNumber: number) {
+  await page.waitForFunction(
+    (targetHandNumber) => {
+      const room = (window as any).pokerDebug?.getRoom();
+      return (
+        room?.currentHand?.handNumber === targetHandNumber &&
+        room?.currentHand?.bettingRound === 'PRE_FLOP'
+      );
+    },
+    handNumber,
+    { timeout: 10000 },
+  );
 }
 
 async function setTestDeckForCurrentRoom(
@@ -1177,6 +1204,12 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     await aliceContext.close();
     await bobContext.close();
   });
+
+  test.skip('3.4: Partial All-In (Side Pot) - pending side-pot payout support for 3+ players', async () => {
+    // Current implementation evaluates a single combined pot in determineWinner()
+    // and does not distribute side pots to eligible players separately.
+    // Enable when side-pot payout logic is implemented in HandService.
+  });
 });
 
 test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
@@ -1687,6 +1720,93 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     await aliceContext.close();
     await bobContext.close();
+  });
+
+  test('4.4: Multiple Hands in Sequence - play 5 hands and verify rotation/accounting', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      const handStarts: Array<{
+        handNumber: number;
+        dealerPosition: number | null;
+        smallBlindPosition: number | null;
+        bigBlindPosition: number | null;
+        dealerPlayerName: string | null;
+        smallBlindPlayerName: string | null;
+        bigBlindPlayerName: string | null;
+        currentPlayerName: string | null;
+        pot: number;
+        aliceCurrentBet: number;
+        bobCurrentBet: number;
+      }> = [];
+
+      for (let handNumber = 1; handNumber <= 5; handNumber++) {
+        await waitForHandStart(alicePage, handNumber);
+        const snapshot = await getRoomSnapshot(alicePage);
+        handStarts.push({
+          handNumber: snapshot.handNumber,
+          dealerPosition: snapshot.dealerPosition,
+          smallBlindPosition: snapshot.smallBlindPosition,
+          bigBlindPosition: snapshot.bigBlindPosition,
+          dealerPlayerName: snapshot.dealerPlayerName,
+          smallBlindPlayerName: snapshot.smallBlindPlayerName,
+          bigBlindPlayerName: snapshot.bigBlindPlayerName,
+          currentPlayerName: snapshot.currentPlayerName,
+          pot: snapshot.pot,
+          aliceCurrentBet: snapshot.aliceCurrentBet,
+          bobCurrentBet: snapshot.bobCurrentBet,
+        });
+
+        expect(snapshot.handNumber).toBe(handNumber);
+        expect(snapshot.bettingRound).toBe('PRE_FLOP');
+        expect(snapshot.pot).toBe(30);
+        expect(snapshot.dealerPosition).not.toBeNull();
+        expect(snapshot.dealerPosition).toBe((handNumber - 1) % 2);
+        expect(snapshot.smallBlindPosition).toBe(
+          (Number(snapshot.dealerPosition) + 1) % 2,
+        );
+        expect(snapshot.bigBlindPosition).toBe(snapshot.dealerPosition);
+        expect(snapshot.currentPlayerName).toBe(
+          snapshot.smallBlindPlayerName,
+        );
+        expect(snapshot.aliceCurrentBet + snapshot.bobCurrentBet).toBe(30);
+        await verifyChipConservation(alicePage, 2000);
+
+        const actingPage =
+          snapshot.currentPlayerName === 'Alice' ? alicePage : bobPage;
+        await waitForPlayerTurn(actingPage, snapshot.currentPlayerName!);
+        await actingPage.click('button:has-text("Fold")');
+
+        if (handNumber < 5) {
+          await waitForHandStart(alicePage, handNumber + 1);
+        } else {
+          await waitForHandStart(alicePage, 6);
+        }
+      }
+
+      expect(handStarts.map((h) => h.dealerPosition)).toEqual([0, 1, 0, 1, 0]);
+      expect(handStarts.map((h) => h.smallBlindPlayerName)).toEqual([
+        'Bob',
+        'Alice',
+        'Bob',
+        'Alice',
+        'Bob',
+      ]);
+      expect(handStarts.map((h) => h.bigBlindPlayerName)).toEqual([
+        'Alice',
+        'Bob',
+        'Alice',
+        'Bob',
+        'Alice',
+      ]);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
   });
 });
 

@@ -153,10 +153,19 @@
 
 ### Test 3.4: Partial All-In (Side Pot)
 
-**Objective**: Test side pot creation (requires 3 players - note for future)
+**Status**: ⚠️ BLOCKED (side-pot payout logic not implemented yet)  
+**Objective**: Test side pot creation (requires 3 players)
 
-- [ ] Note: Current 2-player test can't verify side pots
-- [ ] Document expected behavior for 3+ players
+- [x] Note: Current 2-player test can't verify side pots
+- [x] Document expected behavior for 3+ players
+
+**Expected behavior for 3+ players**:
+
+- Main pot should include each active player's contribution up to the smallest all-in amount
+- Side pot(s) should include only chips above that threshold from eligible players
+- Main-pot winner can be short stack; side-pot winner must be among side-pot-eligible players
+- Payout should be computed per pot with correct eligibility per pot, then summed per player
+- Current code path (`determineWinner`) distributes a single total pot, so this remains pending
 
 ---
 
@@ -206,13 +215,16 @@
 
 ### Test 4.4: Multiple Hands in Sequence
 
+**Status**: ✅ PASSING  
 **Objective**: Test continuous play
 
-- [ ] Play 5 complete hands back-to-back
-- [ ] Verify dealer button rotates
-- [ ] Verify blinds post correctly each hand
-- [ ] Verify chip conservation across all hands
-- [ ] Track chip totals: hand start → hand end
+- [x] Play 5 complete hands back-to-back
+- [x] Verify dealer button rotates
+- [x] Verify blinds post correctly each hand
+- [x] Verify chip conservation across all hands
+- [x] Track chip totals: hand start → hand end
+
+**Result**: Five consecutive hands completed with deterministic fold flow. Dealer alternated each hand in heads-up play, blinds posted as expected at each hand start, and chip conservation held throughout.
 
 ---
 
