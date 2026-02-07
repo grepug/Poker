@@ -435,10 +435,10 @@ async function getCommunityCardCountFromUi(page: Page): Promise<number> {
     const cards = document.querySelectorAll('[data-testid^="community-card-"]');
     if (cards.length > 0) return cards.length;
 
-    const sections = Array.from(document.querySelectorAll('div'));
-    const potSection = sections.find((el) => el.textContent?.includes('Pot: $'));
-    if (!potSection) return 0;
-    return potSection.querySelectorAll('div.w-16.h-24').length;
+    // Board now always renders 5 slots with card backs; this helper tracks
+    // only revealed community cards.
+    const room = (window as any).pokerDebug?.getRoom?.();
+    return room?.currentHand?.communityCards?.length ?? 0;
   });
 }
 
@@ -3477,6 +3477,74 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const uiMoney = await getPlayersMoneyFromUi(alicePage);
       expect(uiMoney.Alice.totalBuyIn).toBe(1000);
       expect(uiMoney.Bob.totalBuyIn).toBe(2000);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.8: Action Confirmation Modal Helps Decision Before Commit', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]').check();
+      await bobPage.click('[data-testid="action-call"]');
+
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Confirm Action',
+      );
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Pot',
+      );
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Your Stack',
+      );
+
+      await bobPage.click('[data-testid="confirm-action-button"]');
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const stateAfterConfirm = await getRoomSnapshot(alicePage);
+      expect(stateAfterConfirm.currentPlayerName).toBe('Alice');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="ranking-row-1"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toContainText(
+        'Player Rankings',
+      );
+      await alicePage.click('[data-testid="close-rankings-button"]');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toHaveCount(0);
+
+      await alicePage.click('[data-testid="toggle-hole-cards"]');
+      await expect(alicePage.locator('[data-testid^="your-card-"]')).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="hole-cards-hidden-state"]')).toBeVisible();
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      // TEST_MODE auto-starts hand #2; hidden cards should reset to shown.
+      await waitForHandStart(alicePage, 2);
+      await expect(alicePage.locator('[data-testid^="your-card-"]')).toHaveCount(2);
     } finally {
       await teardownTwoPlayerSession(session);
     }
