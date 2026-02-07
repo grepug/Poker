@@ -567,23 +567,12 @@ export class HandService {
     // At showdown
     if (hand.bettingRound === 'SHOWDOWN') return true;
 
+    // Fold-outs remove players from activePlayers; if only one remains,
+    // the hand is immediately complete (no showdown needed).
+    if (hand.activePlayers.length <= 1) return true;
+
     const activePlayers = this.getActivePlayers(room);
-
-    // Only one player left (others folded) - hand is complete
-    if (activePlayers.length <= 1) {
-      // But only if there are actual non-all-in players left, or someone folded
-      const allPlayers = room.players.filter((p) =>
-        hand.activePlayers.includes(p.id),
-      );
-      const foldedPlayers = allPlayers.filter((p) => p.status === 'folded');
-
-      // If someone folded, hand is complete
-      if (foldedPlayers.length > 0) return true;
-
-      // If everyone is all-in, hand is NOT complete yet (need to deal cards)
-      // The all-in logic in advanceBettingRound will handle this
-      return false;
-    }
+    if (activePlayers.length <= 1) return false;
 
     return false;
   }

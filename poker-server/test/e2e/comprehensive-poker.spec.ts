@@ -1292,19 +1292,27 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(afterPreFlop.bettingRound).toBe('SHOWDOWN'); // Straight to showdown
     expect(afterPreFlop.communityCards).toBe(5); // All 5 cards dealt immediately
 
-    // Winner determined - one player has 2000, other has 0
+    // Winner determined or split pot on tie.
     const total = (afterPreFlop.alice || 0) + (afterPreFlop.bob || 0);
     expect(total).toBe(2000);
-    expect(afterPreFlop.alice === 2000 || afterPreFlop.bob === 2000).toBe(true);
+    expect(
+      afterPreFlop.alice === 2000 ||
+        afterPreFlop.bob === 2000 ||
+        (afterPreFlop.alice === 1000 && afterPreFlop.bob === 1000),
+    ).toBe(true);
 
     // No need to check through rounds - both all-in means instant showdown
     console.log(
       'Both players all-in - went straight to SHOWDOWN with all 5 cards',
     );
 
-    const winner = afterPreFlop.alice === 2000 ? 'Alice' : 'Bob';
-    const loser = winner === 'Alice' ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    if (afterPreFlop.alice === afterPreFlop.bob) {
+      console.log('Tie showdown: split pot (1000/1000).');
+    } else {
+      const winner = afterPreFlop.alice === 2000 ? 'Alice' : 'Bob';
+      const loser = winner === 'Alice' ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    }
     console.log(
       '\n=== Test 3.1: Small all-in verified - both went all-in, instant showdown ===',
     );
@@ -1415,10 +1423,14 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(gameState.communityCards).toBe(5);
     expect(gameState.bettingRound).toBe('SHOWDOWN');
 
-    // One player should have 2000, the other 0
+    // Valid outcomes: one winner takes all, or split pot tie.
     const total = gameState.alice + gameState.bob;
     expect(total).toBe(2000);
-    expect(gameState.alice === 2000 || gameState.bob === 2000).toBe(true);
+    expect(
+      gameState.alice === 2000 ||
+        gameState.bob === 2000 ||
+        (gameState.alice === 1000 && gameState.bob === 1000),
+    ).toBe(true);
 
     // Verify chip conservation
     await verifyChipConservation(alicePage, 2000);
@@ -1534,14 +1546,22 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(finalState.bettingRound).toBe('SHOWDOWN');
     expect(finalState.communityCards).toBe(5); // All 5 cards dealt immediately
 
-    // Verify winner determination
+    // Verify winner determination (or split on tie)
     const total = (finalState.alice || 0) + (finalState.bob || 0);
     expect(total).toBe(2000);
-    expect(finalState.alice === 2000 || finalState.bob === 2000).toBe(true);
+    expect(
+      finalState.alice === 2000 ||
+        finalState.bob === 2000 ||
+        (finalState.alice === 1000 && finalState.bob === 1000),
+    ).toBe(true);
 
-    const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
-    const loser = winner === 'Alice' ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    if (finalState.alice === finalState.bob) {
+      console.log('Tie showdown: split pot (1000/1000).');
+    } else {
+      const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
+      const loser = winner === 'Alice' ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    }
     console.log(
       '\n=== Test 3.3: Both all-in pre-flop verified - instant showdown ===',
     );
@@ -2721,15 +2741,20 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     const totalChips = finalState.alice + finalState.bob;
     expect(totalChips).toBe(2000); // Chip conservation
 
-    // One player won, one lost (pot was $440)
-    const hasWinner =
+    // Pot was $440. Valid outcomes: one winner takes all or split pot tie.
+    const hasValidOutcome =
       (finalState.alice === 1220 && finalState.bob === 780) ||
-      (finalState.alice === 780 && finalState.bob === 1220);
-    expect(hasWinner).toBe(true);
+      (finalState.alice === 780 && finalState.bob === 1220) ||
+      (finalState.alice === 1000 && finalState.bob === 1000);
+    expect(hasValidOutcome).toBe(true);
 
-    const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
-    const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
+    if (finalState.alice === finalState.bob) {
+      console.log('Showdown tie: split pot (1000/1000).');
+    } else {
+      const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
+      const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
+    }
 
     // Verify chip conservation
     await verifyChipConservation(alicePage, 2000);
@@ -3733,6 +3758,85 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'hearts', rank: 'A' }, // Alice
+        { suit: 'hearts', rank: 'K' }, // Alice
+        { suit: 'spades', rank: 'Q' }, // Bob
+        { suit: 'spades', rank: 'J' }, // Bob
+        { suit: 'clubs', rank: '2' }, // Flop 1
+        { suit: 'diamonds', rank: '5' }, // Flop 2
+        { suit: 'spades', rank: '8' }, // Flop 3
+        { suit: 'hearts', rank: '9' }, // Turn
+        { suit: 'diamonds', rank: 'K' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
+        'Showdown complete',
+      );
+      await expect(
+        alicePage.locator('[data-testid^="winner-rank-"]').first(),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        0,
+      );
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(
+        0,
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.14: Non-Showdown Result Allows Manual Show My Hand', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
+        'without showdown',
+      );
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        2,
+      );
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+
+      await alicePage.click('[data-testid="show-my-hand-button"]');
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        0,
+      );
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
+      await expect(alicePage.locator('[data-testid="my-hand-revealed-indicator"]')).toBeVisible();
+
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
     } finally {
       await teardownTwoPlayerSession(session);
     }

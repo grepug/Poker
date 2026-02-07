@@ -42,18 +42,21 @@ export default defineConfig({
       // may not meet Vite dev-server requirements.
       command: 'python3 -m http.server 5174 --directory ../poker-client/dist',
       url: 'http://localhost:5174',
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 30000,
     },
     {
       // Avoid watch mode restarts during long e2e runs.
-      command: 'TEST_MODE=true npm run start',
+      command:
+        'PORT=3001 CORS_ORIGIN=http://localhost:5174 CLIENT_URL=http://localhost:5174 TEST_MODE=true npm run start',
       url: 'http://localhost:3001',
-      reuseExistingServer: true,
-      timeout: 30000,
+      reuseExistingServer: false,
+      timeout: 60000,
       env: {
-        TEST_MODE: 'true',
         PORT: '3001',
+        CORS_ORIGIN: 'http://localhost:5174',
+        CLIENT_URL: 'http://localhost:5174',
+        TEST_MODE: 'true',
       },
     },
   ],

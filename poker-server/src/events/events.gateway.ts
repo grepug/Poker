@@ -20,6 +20,7 @@ import {
   ReconnectData,
   PlayerActionData,
   RequestRebuyData,
+  ShowMyHandData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -29,6 +30,7 @@ import {
   BettingRoundCompleteData,
   CommunityCardsDealtData,
   HandCompleteData,
+  PlayerHandRevealedData,
   Card,
 } from 'poker-types';
 
@@ -302,6 +304,65 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('SHOW_MY_HAND')
+  async handleShowMyHand(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() _data: ShowMyHandData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room?.currentHand) throw new Error('No hand state found');
+
+      if (room.currentHand.currentPlayerTurn) {
+        throw new Error('Current hand is still in progress');
+      }
+
+      if (room.currentHand.bettingRound === 'SHOWDOWN') {
+        // Showdown is already public by default.
+        return { success: true };
+      }
+
+      const completedResult = room.currentHand.lastResult;
+      if (!completedResult) {
+        throw new Error('No completed hand result available');
+      }
+
+      const playerHand = completedResult.playerHands.find(
+        (entry) => entry.playerId === playerInfo.playerId,
+      );
+      if (!playerHand) {
+        throw new Error('You cannot reveal cards for this hand');
+      }
+
+      const currentReveals = new Set(room.currentHand.revealedPlayerIds ?? []);
+      if (currentReveals.has(playerInfo.playerId)) {
+        return { success: true };
+      }
+
+      currentReveals.add(playerInfo.playerId);
+      room.currentHand.revealedPlayerIds = [...currentReveals];
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+
+      const player = room.players.find((p) => p.id === playerInfo.playerId);
+      const revealData: PlayerHandRevealedData = {
+        playerId: playerInfo.playerId,
+        playerName: player?.name ?? '',
+        handNumber: room.currentHand.handNumber,
+      };
+
+      this.server.to(room.id).emit('PLAYER_HAND_REVEALED', revealData);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Show hand error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
   @SubscribeMessage('PLAYER_ACTION')
   async handlePlayerAction(
     @ConnectedSocket() client: Socket,
@@ -444,11 +505,20 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
       const result = await this.handService.determineWinner(room);
+      const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
+      const revealedPlayerIds = isShowdown
+        ? result.playerHands.map((entry) => entry.playerId)
+        : [];
+      room.currentHand.lastResult = result;
+      room.currentHand.revealedPlayerIds = revealedPlayerIds;
       room.currentHand.currentPlayerTurn = null;
       await this.storageService.saveRoom(room);
 
       const handCompleteData: HandCompleteData = {
         result,
+        handNumber: room.currentHand.handNumber,
+        isShowdown,
+        revealedPlayerIds,
       };
 
       this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
@@ -479,11 +549,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // If we reached showdown, determine winner immediately
       if (nextRound === 'SHOWDOWN') {
         const result = await this.handService.determineWinner(updatedRoom);
+        const isShowdown = true;
+        const revealedPlayerIds = result.playerHands.map((entry) => entry.playerId);
+        updatedRoom.currentHand.lastResult = result;
+        updatedRoom.currentHand.revealedPlayerIds = revealedPlayerIds;
         updatedRoom.currentHand.currentPlayerTurn = null;
         await this.storageService.saveRoom(updatedRoom);
 
         const handCompleteData: HandCompleteData = {
           result,
+          handNumber: updatedRoom.currentHand.handNumber,
+          isShowdown,
+          revealedPlayerIds,
         };
 
         this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
