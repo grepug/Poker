@@ -1,7 +1,89 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Sora", "Space Grotesk", "Avenir Next", sans-serif;
+  color-scheme: dark;
+  --bg-deep: #05150f;
+  --bg-mid: #0b2418;
+  --bg-soft: #123524;
+  --panel: #0e2018;
+  --panel-border: #1f4a36;
+  --text-main: #e5f5eb;
+  --text-muted: #9fc0ae;
+  --chip: #0e3122;
+  --state-turn: #f4c96a;
+  --state-warning: #f97316;
+  --state-danger: #ef4444;
+  --state-safe: #22c55e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at 15% 20%, rgba(33, 94, 65, 0.35) 0%, transparent 35%),
+    radial-gradient(circle at 80% 15%, rgba(56, 120, 88, 0.2) 0%, transparent 45%),
+    linear-gradient(170deg, var(--bg-mid) 0%, var(--bg-deep) 72%);
+}
+
+.surface-panel {
+  border: 1px solid rgba(6, 95, 70, 0.7);
+  background: rgba(6, 78, 59, 0.5);
+  border-radius: 1rem;
+  box-shadow: 0 14px 30px rgba(2, 26, 17, 0.35);
+  backdrop-filter: blur(4px);
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  background: rgba(6, 78, 59, 0.65);
+  color: #d1fae5;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.turn-glow {
+  animation: turnPulse 1.8s ease-in-out infinite;
+}
+
+.card-enter {
+  animation: cardReveal 220ms ease-out;
+}
+
+@keyframes turnPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 201, 106, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 201, 106, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 201, 106, 0);
+  }
+}
+
+@keyframes cardReveal {
+  from {
+    transform: translateY(4px) scale(0.98);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }

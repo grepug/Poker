@@ -70,26 +70,26 @@ async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
 
   await alicePage.goto(FRONTEND_URL);
   await bobPage.goto(FRONTEND_URL);
-  await alicePage.waitForSelector('text=● Connected');
-  await bobPage.waitForSelector('text=● Connected');
+  await alicePage.waitForSelector('[data-testid="connection-status"]');
+  await bobPage.waitForSelector('[data-testid="connection-status"]');
 
-  await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-  await alicePage.click('button:has-text("Create New Room")');
-  await alicePage.waitForSelector('h1:has-text("Room:")');
-  const roomIdText = await alicePage.textContent('h1');
+  await alicePage.fill('[data-testid="name-input"]', 'Alice');
+  await alicePage.click('[data-testid="create-room-button"]');
+  await alicePage.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
   const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
 
   if (!roomCode) {
     throw new Error('Failed to create room code for two-player setup');
   }
 
-  await bobPage.click('button:has-text("Join Existing Room")');
-  await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-  await bobPage.fill('input[placeholder="Enter room code"]', roomCode);
-  await bobPage.click('button:has-text("Join Room")');
+  await bobPage.click('[data-testid="join-toggle-button"]');
+  await bobPage.fill('[data-testid="name-input"]', 'Bob');
+  await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+  await bobPage.click('[data-testid="join-room-button"]');
 
-  await alicePage.waitForSelector('text=Players: 2/');
-  await bobPage.waitForSelector('text=Players: 2/');
+  await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+  await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
 
   return {
     aliceContext,
@@ -121,35 +121,35 @@ async function setupThreePlayerSession(browser: any): Promise<ThreePlayerSession
     charliePage.goto(FRONTEND_URL),
   ]);
   await Promise.all([
-    alicePage.waitForSelector('text=● Connected'),
-    bobPage.waitForSelector('text=● Connected'),
-    charliePage.waitForSelector('text=● Connected'),
+    alicePage.waitForSelector('[data-testid="connection-status"]'),
+    bobPage.waitForSelector('[data-testid="connection-status"]'),
+    charliePage.waitForSelector('[data-testid="connection-status"]'),
   ]);
 
-  await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-  await alicePage.click('button:has-text("Create New Room")');
-  await alicePage.waitForSelector('h1:has-text("Room:")');
-  const roomIdText = await alicePage.textContent('h1');
+  await alicePage.fill('[data-testid="name-input"]', 'Alice');
+  await alicePage.click('[data-testid="create-room-button"]');
+  await alicePage.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
   const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
   if (!roomCode) {
     throw new Error('Failed to create room code for three-player setup');
   }
 
-  await bobPage.click('button:has-text("Join Existing Room")');
-  await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-  await bobPage.fill('input[placeholder="Enter room code"]', roomCode);
-  await bobPage.click('button:has-text("Join Room")');
-  await bobPage.waitForSelector('text=Players: 2/');
-  await alicePage.waitForSelector('text=Players: 2/');
+  await bobPage.click('[data-testid="join-toggle-button"]');
+  await bobPage.fill('[data-testid="name-input"]', 'Bob');
+  await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+  await bobPage.click('[data-testid="join-room-button"]');
+  await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+  await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
 
-  await charliePage.click('button:has-text("Join Existing Room")');
-  await charliePage.fill('input[placeholder="Enter your name"]', 'Charlie');
-  await charliePage.fill('input[placeholder="Enter room code"]', roomCode);
-  await charliePage.click('button:has-text("Join Room")');
+  await charliePage.click('[data-testid="join-toggle-button"]');
+  await charliePage.fill('[data-testid="name-input"]', 'Charlie');
+  await charliePage.fill('[data-testid="room-id-input"]', roomCode);
+  await charliePage.click('[data-testid="join-room-button"]');
   await Promise.all([
-    alicePage.waitForSelector('text=Players: 3/'),
-    bobPage.waitForSelector('text=Players: 3/'),
-    charliePage.waitForSelector('text=Players: 3/'),
+    alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 3/")'),
+    bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 3/")'),
+    charliePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 3/")'),
   ]);
 
   return {
@@ -172,9 +172,23 @@ async function teardownThreePlayerSession(session: ThreePlayerSession) {
 }
 
 async function startGameFromLobby(alicePage: Page, bobPage: Page) {
-  await alicePage.click('button:has-text("Start Game")');
-  await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-  await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+  await alicePage.click('[data-testid="start-game-button"]');
+  await Promise.all([
+    alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+    bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+  ]);
+  await Promise.all([waitForHoleCards(alicePage), waitForHoleCards(bobPage)]);
+}
+
+async function waitForHoleCards(page: Page, expectedCount = 2) {
+  await page.waitForFunction(
+    (count) => {
+      const cards = (window as any).pokerDebug?.getCards?.();
+      return Array.isArray(cards) && cards.length === count;
+    },
+    expectedCount,
+    { timeout: 10000 },
+  );
 }
 
 async function waitForPlayerTurn(page: Page, playerName: string) {
@@ -382,20 +396,29 @@ async function completeCurrentHandWithPassiveActions(
 
 async function playCheckCheckToShowdown(alicePage: Page, bobPage: Page) {
   await waitForPlayerTurn(bobPage, 'Bob');
-  await bobPage.click('button:has-text("Call")');
+  await bobPage.click('[data-testid="action-call"]');
   await waitForPlayerTurn(alicePage, 'Alice');
-  await alicePage.click('button:has-text("Check")');
+  await alicePage.click('[data-testid="action-check"]');
 
   for (let i = 0; i < 3; i++) {
     await waitForPlayerTurn(bobPage, 'Bob');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
     await waitForPlayerTurn(alicePage, 'Alice');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
   }
 }
 
 async function getYourCardRanksFromUi(page: Page): Promise<string[]> {
   return page.evaluate(() => {
+    const cards = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="your-card-"]'),
+    );
+    if (cards.length > 0) {
+      return cards
+        .map((el) => el.dataset.rank?.trim() ?? '')
+        .filter(Boolean);
+    }
+
     const sections = Array.from(document.querySelectorAll('div'));
     const yourCardsSection = sections.find((el) =>
       el.querySelector('h3')?.textContent?.includes('Your Cards'),
@@ -409,6 +432,9 @@ async function getYourCardRanksFromUi(page: Page): Promise<string[]> {
 
 async function getCommunityCardCountFromUi(page: Page): Promise<number> {
   return page.evaluate(() => {
+    const cards = document.querySelectorAll('[data-testid^="community-card-"]');
+    if (cards.length > 0) return cards.length;
+
     const sections = Array.from(document.querySelectorAll('div'));
     const potSection = sections.find((el) => el.textContent?.includes('Pot: $'));
     if (!potSection) return 0;
@@ -425,12 +451,12 @@ function parseDollarAmount(text: string | null, label: string): number {
 }
 
 async function getPotFromUi(page: Page): Promise<number> {
-  const potText = await page.textContent('text=Pot: $');
+  const potText = await page.textContent('[data-testid="pot-value"]');
   return parseDollarAmount(potText, 'pot');
 }
 
 async function getRoundFromUi(page: Page): Promise<string> {
-  const roundText = await page.textContent('text=Current Round:');
+  const roundText = await page.textContent('[data-testid="round-value"]');
   const match = roundText?.match(/Current Round:\s*([A-Z_]+)/);
   if (!match) {
     throw new Error(`Unable to parse round from text: ${roundText ?? '<null>'}`);
@@ -439,18 +465,35 @@ async function getRoundFromUi(page: Page): Promise<string> {
 }
 
 async function getYourChipsFromUi(page: Page): Promise<number> {
-  const chipsText = await page.textContent('text=Your Chips:');
+  const chipsText = await page.textContent('[data-testid="your-chips"]');
   return parseDollarAmount(chipsText, 'your chips');
 }
 
 async function getDealerNameFromUi(page: Page): Promise<string | null> {
   return page.evaluate(() => {
+    const playersSection = document.querySelector('[data-testid="players-section"]');
+    const seatRows = playersSection?.querySelectorAll('[data-testid^="player-seat-"]');
+    if (seatRows && seatRows.length > 0) {
+      for (const row of Array.from(seatRows)) {
+        const hasDealerBadge = Array.from(row.querySelectorAll('div')).some(
+          (el) => el.textContent?.trim() === 'D',
+        );
+        if (!hasDealerBadge) continue;
+
+        const nameText =
+          row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+        return nameText.replace('(You)', '').trim();
+      }
+
+      return null;
+    }
+
     const headings = Array.from(document.querySelectorAll('h3'));
-    const playersHeading = headings.find(
+    const fallbackHeading = headings.find(
       (heading) => heading.textContent?.trim() === 'Players',
     );
-    const playersSection = playersHeading?.parentElement;
-    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    const fallbackSection = fallbackHeading?.parentElement;
+    const rowsContainer = fallbackSection?.querySelector('div.space-y-2');
     if (!rowsContainer) return null;
 
     for (const row of Array.from(rowsContainer.children)) {
@@ -473,12 +516,37 @@ async function getPlayersMoneyFromUi(
 ): Promise<Record<string, { chips: number; currentBet: number }>> {
   return page.evaluate(() => {
     const result: Record<string, { chips: number; currentBet: number }> = {};
+    const playersSection = document.querySelector('[data-testid="players-section"]');
+    const seatRows = playersSection?.querySelectorAll('[data-testid^="player-seat-"]');
+    if (seatRows && seatRows.length > 0) {
+      for (const row of Array.from(seatRows)) {
+        const nameText =
+          row.querySelector('span.text-white.font-semibold')?.textContent ?? '';
+        const name = nameText.replace('(You)', '').trim();
+        if (!name) continue;
+
+        const chipsText = row.querySelector('div.text-green-400.text-sm')?.textContent;
+        const chipsMatch = chipsText?.match(/\$([0-9]+)/);
+        const chips = chipsMatch ? Number(chipsMatch[1]) : 0;
+
+        const betText = Array.from(row.querySelectorAll('div'))
+          .map((el) => el.textContent || '')
+          .find((text) => text.includes('Bet: $'));
+        const betMatch = betText?.match(/Bet:\s*\$([0-9]+)/);
+        const currentBet = betMatch ? Number(betMatch[1]) : 0;
+
+        result[name] = { chips, currentBet };
+      }
+
+      return result;
+    }
+
     const headings = Array.from(document.querySelectorAll('h3'));
-    const playersHeading = headings.find(
+    const fallbackHeading = headings.find(
       (heading) => heading.textContent?.trim() === 'Players',
     );
-    const playersSection = playersHeading?.parentElement;
-    const rowsContainer = playersSection?.querySelector('div.space-y-2');
+    const fallbackSection = fallbackHeading?.parentElement;
+    const rowsContainer = fallbackSection?.querySelector('div.space-y-2');
     if (!rowsContainer) return result;
 
     for (const row of Array.from(rowsContainer.children)) {
@@ -524,70 +592,70 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
-    await alicePage.waitForSelector('text=Room:');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
 
     // Get room ID from UI
-    const roomIdText = await alicePage.textContent('h1');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
     // Wait for Bob to see room page
-    await bobPage.waitForSelector('text=Room:');
+    await bobPage.waitForSelector('[data-testid="room-title"]');
 
     // Wait for both players to appear in room
-    await alicePage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI button
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
     // Wait for game to start and verify pot appears
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
 
     // Verify both players can see pot (game started)
-    const alicePot = await alicePage.textContent('text=Pot: $');
-    const bobPot = await bobPage.textContent('text=Pot: $');
+    const alicePot = await alicePage.textContent('[data-testid="pot-value"]');
+    const bobPot = await bobPage.textContent('[data-testid="pot-value"]');
     console.log('Game started - Alice sees:', alicePot, 'Bob sees:', bobPot);
     expect(alicePot).toContain('$30'); // Small blind $10 + Big blind $20
     expect(bobPot).toContain('$30');
 
     // PRE_FLOP: Bob (small blind) calls, Alice (big blind) checks
     console.log('Pre-flop: Bob calling...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Verify Call button shows correct amount
-    const callButton = await bobPage.textContent('button:has-text("Call")');
+    const callButton = await bobPage.textContent('[data-testid="action-call"]');
     console.log('Bob sees call button:', callButton);
     expect(callButton).toContain('$10'); // Must call $10 to match big blind
 
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
     console.log('Pre-flop: Alice checking...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
-    await alicePage.waitForSelector('button:has-text("Check")');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-check"]');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Verify pot after pre-flop
     await alicePage.waitForTimeout(2000);
-    const potAfterPreFlop = await alicePage.textContent('text=Pot: $');
+    const potAfterPreFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After pre-flop, pot:', potAfterPreFlop);
     expect(potAfterPreFlop).toContain('$40'); // Both players put in $20
 
@@ -612,7 +680,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // FLOP: Bob checks, Alice checks
     console.log('Flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Take screenshot to see what's on screen
     await bobPage.screenshot({ path: 'bob-flop-turn.png' });
@@ -631,15 +699,15 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     );
     console.log('Bob can do:', bobActions);
     expect(bobActions.some((a) => a?.includes('Check'))).toBe(true);
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     console.log('Flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Flop: Alice checking...');
-    await alicePage.waitForSelector('button:has-text("Check"):visible', {
+    await alicePage.waitForSelector('[data-testid="action-check"]:visible', {
       timeout: 10000,
     });
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for turn
     await alicePage.waitForTimeout(2000);
@@ -647,7 +715,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // TURN: Bob checks, Alice checks
     console.log('Turn: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Check what action Bob can take on turn
     const bobTurnActions = await bobPage.$$eval('button', (btns) =>
@@ -658,10 +726,10 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Bob checks if possible, otherwise calls
     expect(bobTurnActions.some((a) => a?.includes('Check'))).toBe(true);
     console.log('Turn: Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     console.log('Flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     const aliceActions = await alicePage.$$eval('button', (btns) =>
       btns.filter((b) => !b.disabled).map((b) => b.textContent),
@@ -670,10 +738,10 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     if (aliceActions.some((a) => a?.includes('Check'))) {
       console.log('Flop: Alice checking...');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
     } else if (aliceActions.some((a) => a?.includes('Call'))) {
       console.log('Flop: Alice calling...');
-      await alicePage.click('button:has-text("Call")');
+      await alicePage.click('[data-testid="action-call"]');
     }
 
     // Wait for river
@@ -682,14 +750,14 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // RIVER: Bob checks, Alice checks
     console.log('River: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('River: Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     console.log('River: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('River: Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for hand to complete
     await alicePage.waitForTimeout(2000);
@@ -737,114 +805,114 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room to be created and get room code
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
     // Wait for both players to see each other
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
     // Wait for game to start - check for pot display
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
 
-    const alicePot = await alicePage.textContent('text=Pot: $');
-    const bobPot = await bobPage.textContent('text=Pot: $');
+    const alicePot = await alicePage.textContent('[data-testid="pot-value"]');
+    const bobPot = await bobPage.textContent('[data-testid="pot-value"]');
     console.log('Game started - Alice sees:', alicePot, 'Bob sees:', bobPot);
 
     // PRE_FLOP: Bob (small blind) raises $50, Alice (big blind) calls
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Pre-flop: Bob raising $50...');
-    await bobPage.fill('input[type="number"]', '50');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '50');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice's turn
     console.log('Pre-flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Verify Alice sees the correct call amount
-    const callButton = await alicePage.textContent('button:has-text("Call")');
+    const callButton = await alicePage.textContent('[data-testid="action-call"]');
     console.log('Alice sees call button:', callButton);
     expect(callButton).toContain('$50'); // Call from $20 to $70
 
     console.log('Pre-flop: Alice calling...');
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Wait for flop
     await alicePage.waitForTimeout(2000);
-    const potAfterPreFlop = await alicePage.textContent('text=Pot: $');
+    const potAfterPreFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After pre-flop, pot:', potAfterPreFlop);
     expect(potAfterPreFlop).toContain('$140'); // $30 blinds + $110 in raises/calls
 
     // FLOP: Bob checks, Alice raises $100, Bob calls
     console.log('Flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Flop: Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     // Alice's turn
     console.log('Flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Flop: Alice raising $100...');
-    await alicePage.fill('input[type="number"]', '100');
-    await alicePage.click('button:has-text("Raise")');
+    await alicePage.fill('[data-testid="raise-input"]', '100');
+    await alicePage.click('[data-testid="action-raise"]');
 
     // Bob's turn to call
     console.log('Flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
-    const flopCallButton = await bobPage.textContent('button:has-text("Call")');
+    const flopCallButton = await bobPage.textContent('[data-testid="action-call"]');
     console.log('Bob sees call button:', flopCallButton);
     expect(flopCallButton).toContain('$100');
 
     console.log('Flop: Bob calling...');
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
     // Wait for turn
     await alicePage.waitForTimeout(2000);
-    const potAfterFlop = await alicePage.textContent('text=Pot: $');
+    const potAfterFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After flop, pot:', potAfterFlop);
     expect(potAfterFlop).toContain('$340'); // $140 + $200
 
     // TURN: Bob checks, Alice checks
     console.log('Turn: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Turn: Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     console.log('Turn: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Turn: Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for river
     await alicePage.waitForTimeout(2000);
@@ -852,16 +920,16 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // RIVER: Bob checks, Alice checks
     console.log('River: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('River: Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
     console.log('River: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('River: Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for hand to complete
     await alicePage.waitForTimeout(2000);
@@ -913,36 +981,36 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // Get initial chips using pokerDebug
@@ -963,21 +1031,21 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // PRE_FLOP: Bob (small blind) raises $100, Alice (big blind) folds
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Pre-flop: Bob raising $100...');
-    await bobPage.fill('input[type="number"]', '100');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '100');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice's turn - she should see a call option
     console.log('Pre-flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
-    const callButton = await alicePage.textContent('button:has-text("Call")');
+    const callButton = await alicePage.textContent('[data-testid="action-call"]');
     console.log('Alice sees call button:', callButton);
 
     console.log('Pre-flop: Alice folding...');
-    await alicePage.click('button:has-text("Fold")');
+    await alicePage.click('[data-testid="action-fold"]');
 
     // Wait for new hand to start (pot resets, blinds posted again)
     await alicePage.waitForTimeout(2000);
@@ -1029,33 +1097,33 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started - blinds posted, pot should be $30');
 
     // Verify initial pot = $30 (blinds)
@@ -1076,13 +1144,13 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // PRE_FLOP Round 1: Bob (small blind) raises $900
     console.log('Pre-flop Round 1 - Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Pre-flop Round 1 - Bob raising $900 (leaving $90)...');
-    await bobPage.fill('input[type="number"]', '900');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '900');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Verify Bob's chips after raise
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     const afterBobRaise = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1107,10 +1175,10 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // PRE_FLOP Round 2: Alice calls (matching Bob's currentBet $920)
     console.log("Pre-flop Round 2 - Alice calling Bob's raise...");
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Verify Alice's chips after call
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     const afterAliceCall = await bobPage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1131,10 +1199,10 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // PRE_FLOP Round 3: Bob goes all-in with remaining $80
     console.log('Pre-flop Round 3 - Bob going all-in with $80...');
-    await bobPage.click('button:has-text("All-In")');
+    await bobPage.click('[data-testid="action-all-in"]');
 
     // Alice's turn to respond
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     const afterBobAllIn = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1152,7 +1220,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Alice calls Bob's all-in
     console.log("Pre-flop Round 4 - Alice calling Bob's all-in...");
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Both players all-in - should go straight to showdown
     await alicePage.waitForTimeout(3000);
@@ -1214,66 +1282,66 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // PRE_FLOP: Bob (small blind) acts first
     // Alice goes all-in
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Bob checks to pass turn to Alice
     console.log('Pre-flop: Bob calling (to match big blind)...');
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
     // Alice's turn - goes all-in
     console.log('Pre-flop: Alice waiting for turn...');
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     console.log('Pre-flop: Alice going all-in...');
-    await alicePage.click('button:has-text("All-In")');
+    await alicePage.click('[data-testid="action-all-in"]');
 
     // Wait for Alice's all-in to register
     await bobPage.waitForTimeout(1000);
 
     // Bob's turn - calls all-in
     console.log('Pre-flop: Bob waiting for turn after Alice all-in...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
-    const callButton = await bobPage.textContent('button:has-text("Call")');
+    const callButton = await bobPage.textContent('[data-testid="action-call"]');
     console.log('Bob sees call button:', callButton);
 
     console.log('Pre-flop: Bob calling all-in...');
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
     // Wait for all 5 community cards to be dealt immediately (both all-in)
     await alicePage.waitForTimeout(3000);
@@ -1322,33 +1390,33 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // Verify initial state
@@ -1369,12 +1437,12 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // PRE_FLOP: Bob (small blind) acts first - goes all-in immediately
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Pre-flop: Bob going all-in immediately...');
-    await bobPage.click('button:has-text("All-In")');
+    await bobPage.click('[data-testid="action-all-in"]');
 
     // Wait for Bob's all-in to propagate
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     const afterBobAllIn = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1394,7 +1462,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Alice responds by going all-in
     console.log('Pre-flop: Alice going all-in to match Bob...');
-    await alicePage.click('button:has-text("All-In")');
+    await alicePage.click('[data-testid="action-all-in"]');
 
     // Both all-in - wait for showdown
     await alicePage.waitForTimeout(3000);
@@ -1459,45 +1527,45 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
       const handCompletePromise = captureNextHandComplete(alicePage);
 
-      await alicePage.click('button:has-text("Start Game")');
+      await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
-        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
       ]);
 
       // PRE_FLOP action order (3 players): Alice -> Bob -> Charlie -> Bob
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("All-In")');
+      await alicePage.click('[data-testid="action-all-in"]');
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
 
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await charliePage.fill('input[type="number"]', '500');
-      await charliePage.click('button:has-text("Raise")');
+      await charliePage.fill('[data-testid="raise-input"]', '500');
+      await charliePage.click('[data-testid="action-raise"]');
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
 
       // Post-flop only Bob and Charlie can act (Alice is all-in).
       await waitForRound(alicePage, 'FLOP', 3);
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await charliePage.click('button:has-text("Check")');
+      await charliePage.click('[data-testid="action-check"]');
 
       await waitForRound(alicePage, 'TURN', 4);
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await charliePage.click('button:has-text("Check")');
+      await charliePage.click('[data-testid="action-check"]');
 
       await waitForRound(alicePage, 'RIVER', 5);
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await charliePage.click('button:has-text("Check")');
+      await charliePage.click('[data-testid="action-check"]');
 
       const result = await handCompletePromise;
       expect(result.totalPot).toBe(4000);
@@ -1537,8 +1605,8 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     console.log('=== Testing CORRECT minimum raise logic ===');
     console.log('Correct rule: Minimum raise = size of previous raise');
@@ -1548,38 +1616,38 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Alice creates room
     console.log('\nAlice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
 
     // PRE_FLOP: Bob acts first (SB posted $10, needs to call $10 more or raise)
     console.log('\nPRE_FLOP: Bob (SB) to act...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Bob raises to $60 (a $40 raise from BB of $20)
     console.log('Bob raises $40 (making currentBet $60)...');
-    await bobPage.fill('input[type="number"]', '40');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '40');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice's turn
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Alice now facing bet of $60');
 
     const afterBobRaise = await alicePage.evaluate(() => {
@@ -1614,11 +1682,11 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     );
 
     // Try to raise $40 - this SHOULD work according to correct poker rules
-    await alicePage.fill('input[type="number"]', '40');
+    await alicePage.fill('[data-testid="raise-input"]', '40');
     await alicePage.waitForTimeout(100);
 
     const raiseButtonDisabled = await alicePage
-      .locator('button:has-text("Raise")')
+      .locator('[data-testid="action-raise"]')
       .isDisabled();
 
     // CORRECT EXPECTATION: Button should be ENABLED for $40 raise
@@ -1647,33 +1715,33 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // Verify initial state
@@ -1696,7 +1764,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // PRE_FLOP: Bob acts first (small blind)
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Get minRaise from SERVER (correct poker rules!)
     const bobTurnState = await bobPage.evaluate(() => {
@@ -1720,10 +1788,10 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log(
       `Pre-flop: Testing invalid raise amount $${invalidAmount} (min is $${bobTurnState.minRaise})...`,
     );
-    await bobPage.fill('input[type="number"]', invalidAmount.toString());
+    await bobPage.fill('[data-testid="raise-input"]', invalidAmount.toString());
     await bobPage.waitForTimeout(100); // Let UI update
     const raiseButtonDisabled = await bobPage
-      .locator('button:has-text("Raise")')
+      .locator('[data-testid="action-raise"]')
       .isDisabled();
     expect(raiseButtonDisabled).toBe(true);
     console.log(
@@ -1735,13 +1803,13 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
       `Pre-flop: Bob raising to minimum $${bobTurnState.minRaise}...`,
     );
     await bobPage.fill(
-      'input[type="number"]',
+      '[data-testid="raise-input"]',
       bobTurnState.minRaise.toString(),
     );
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Wait for action to process
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     const afterBobRaise = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -1809,33 +1877,33 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // Verify initial state
@@ -1856,15 +1924,15 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // PRE_FLOP: Bob acts first - raises large amount leaving only $5
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Bob raises $975 (will leave him with $5 after small blind $10 + raise $975 = $985 total bet)
     console.log('Pre-flop: Bob raising $975 (leaving $5)...');
-    await bobPage.fill('input[type="number"]', '975');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '975');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Wait for Alice's turn
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     const afterBobRaise = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -1890,7 +1958,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log(
       `Pre-flop: Alice calling Bob's bet (currentBet $${afterBobRaise.currentBet})...`,
     );
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Wait for game to progress
     await alicePage.waitForTimeout(2000);
@@ -1947,46 +2015,46 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     await alicePage.goto(FRONTEND_URL);
     await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // PRE_FLOP: Bob acts first (small blind, needs to call or raise)
     console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
     // Bob raises $50
     console.log('Pre-flop: Bob raising $50...');
-    await bobPage.fill('input[type="number"]', '50');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '50');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice's turn - she faces a bet and cannot check
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log("Pre-flop: Alice facing Bob's raise...");
 
     const afterBobRaise = await alicePage.evaluate(() => {
@@ -1999,28 +2067,28 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Verify Check button is NOT present when facing a bet
     const checkButtonCount = await alicePage
-      .locator('button:has-text("Check")')
+      .locator('[data-testid="action-check"]')
       .count();
     expect(checkButtonCount).toBe(0);
     console.log('✓ Check button not present when Alice faces a bet');
 
     // Verify Call button is available
     const callButtonEnabled = await alicePage
-      .locator('button:has-text("Call")')
+      .locator('[data-testid="action-call"]')
       .isEnabled();
     expect(callButtonEnabled).toBe(true);
     console.log('✓ Call button is enabled');
 
     // Verify Fold button is available
     const foldButtonEnabled = await alicePage
-      .locator('button:has-text("Fold")')
+      .locator('[data-testid="action-fold"]')
       .isEnabled();
     expect(foldButtonEnabled).toBe(true);
     console.log('✓ Fold button is enabled');
 
     // Verify All-In button is available
     const allInButtonEnabled = await alicePage
-      .locator('button:has-text("All-In")')
+      .locator('[data-testid="action-all-in"]')
       .isEnabled();
     expect(allInButtonEnabled).toBe(true);
     console.log('✓ All-In button is enabled');
@@ -2091,7 +2159,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
         const actingPage =
           snapshot.currentPlayerName === 'Alice' ? alicePage : bobPage;
         await waitForPlayerTurn(actingPage, snapshot.currentPlayerName!);
-        await actingPage.click('button:has-text("Fold")');
+        await actingPage.click('[data-testid="action-fold"]');
 
         if (handNumber < 5) {
           await waitForHandStart(alicePage, handNumber + 1);
@@ -2141,37 +2209,37 @@ test.describe('Poker E2E - Chip Conservation', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
-    await alicePage.waitForSelector('h1:has-text("Room:")');
-    const roomIdText = await alicePage.textContent('h1');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
-    await alicePage.waitForSelector('text=Players: 2/');
-    await bobPage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
+    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Play 1 hand to verify chip conservation throughout
     console.log(`\n=== Starting Hand ===`);
 
     // Start game via UI
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $', { timeout: 10000 });
-    await bobPage.waitForSelector('text=Pot: $', { timeout: 10000 });
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
     console.log('Game started');
 
     // Check conservation at start
@@ -2179,46 +2247,46 @@ test.describe('Poker E2E - Chip Conservation', () => {
     await verifyChipConservation(alicePage, 2000);
 
     // Pre-flop: Bob calls, Alice checks
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Bob calling...');
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     await alicePage.waitForTimeout(2000);
 
     // Flop: Bob checks, Alice checks (Bob acts first post-flop)
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Flop - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Flop - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     await alicePage.waitForTimeout(2000);
 
     // Turn: Bob checks, Alice checks
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Turn - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('Turn - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     await alicePage.waitForTimeout(2000);
 
     // River: Bob checks, Alice checks
-    await bobPage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('River - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn', { timeout: 10000 });
+    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
     console.log('River - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for hand to complete
     await alicePage.waitForTimeout(2000);
@@ -2261,53 +2329,53 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
-    await alicePage.waitForSelector('text=Room:');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
 
     // Get room ID from UI
-    const roomIdText = await alicePage.textContent('h1');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
     // Wait for Bob to see room page
-    await bobPage.waitForSelector('text=Room:');
+    await bobPage.waitForSelector('[data-testid="room-title"]');
 
     // Wait for both players to appear in room
-    await alicePage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI button
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
     // Wait for game to start
-    await alicePage.waitForSelector('text=Pot: $');
-    await bobPage.waitForSelector('text=Pot: $');
+    await alicePage.waitForSelector('[data-testid="round-value"]');
+    await bobPage.waitForSelector('[data-testid="round-value"]');
     console.log('Game started');
 
     // PRE_FLOP: Bob raises $50
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Pre-flop - Bob raising $50...');
-    await bobPage.fill('input[type="number"]', '50');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '50');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice's turn - verify currentBet in the turn event
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
 
     const pokerDebugAlice = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -2320,10 +2388,10 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     console.log(`Current bet verified: $${pokerDebugAlice.currentBet}`);
 
     // Alice must call $50 (from big blind $20 to $70)
-    const callButton = await alicePage.textContent('button:has-text("Call")');
+    const callButton = await alicePage.textContent('[data-testid="action-call"]');
     expect(callButton).toContain('50'); // Should show "Call $50" (from $20 to $70)
     console.log('Pre-flop - Alice calling $50...');
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Verify pot = $140 after blinds + raise + call
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -2349,13 +2417,13 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     );
 
     // FLOP: Both check to showdown
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Verify betting round transitioned to TURN
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -2370,22 +2438,22 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     expect(afterFlop.communityCards).toBe(4); // Flop (3) + Turn (1)
 
     // TURN: Both check
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // RIVER: Both check
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait a moment for showdown to process
     await alicePage.waitForTimeout(2000);
@@ -2449,61 +2517,61 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
-    await alicePage.waitForSelector('text=Room:');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
 
     // Get room ID from UI
-    const roomIdText = await alicePage.textContent('h1');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
 
     // Wait for Bob to see room page
-    await bobPage.waitForSelector('text=Room:');
+    await bobPage.waitForSelector('[data-testid="room-title"]');
 
     // Wait for both players to appear in room
-    await alicePage.waitForSelector('text=Players: 2/');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Alice starts game via UI button
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
+    await alicePage.click('[data-testid="start-game-button"]');
 
     // Wait for game to start
-    await alicePage.waitForSelector('text=Pot: $');
-    await bobPage.waitForSelector('text=Pot: $');
+    await alicePage.waitForSelector('[data-testid="round-value"]');
+    await bobPage.waitForSelector('[data-testid="round-value"]');
     console.log('Game started');
 
     // PRE_FLOP: Bob raises $50
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Pre-flop - Bob raising $50...');
-    await bobPage.fill('input[type="number"]', '50');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '50');
+    await bobPage.click('[data-testid="action-raise"]');
 
     // Alice re-raises
     // (Bob raised $50, so min raise = $50 more = $120 minimum with correct poker rules)
     // Alice raises $150 (more than minimum), making currentBet $220
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Pre-flop - Alice re-raising (entering $150)...');
-    await alicePage.fill('input[type="number"]', '150');
-    await alicePage.click('button:has-text("Raise")');
+    await alicePage.fill('[data-testid="raise-input"]', '150');
+    await alicePage.click('[data-testid="action-raise"]');
 
     // Verify currentBet after re-raise (will be enforced to minimum)
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     const pokerDebugBob = await bobPage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -2517,9 +2585,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     );
 
     // Bob calls (amount depends on what system set as currentBet)
-    const callButtonText = await bobPage.textContent('button:has-text("Call")');
+    const callButtonText = await bobPage.textContent('[data-testid="action-call"]');
     console.log(`Pre-flop - Bob sees: ${callButtonText}`);
-    await bobPage.click('button:has-text("Call")');
+    await bobPage.click('[data-testid="action-call"]');
 
     // Verify pot after all pre-flop action
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -2558,29 +2626,29 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     );
 
     // FLOP/TURN/RIVER: Both check to showdown
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for showdown
     await alicePage.waitForTimeout(2000);
@@ -2638,46 +2706,46 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     await bobPage.goto(FRONTEND_URL);
 
     // Wait for connection
-    await alicePage.waitForSelector('text=● Connected');
-    await bobPage.waitForSelector('text=● Connected');
+    await alicePage.waitForSelector('[data-testid="connection-status"]');
+    await bobPage.waitForSelector('[data-testid="connection-status"]');
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('input[placeholder="Enter your name"]', 'Alice');
-    await alicePage.click('button:has-text("Create New Room")');
-    await alicePage.waitForSelector('text=Room:');
+    await alicePage.fill('[data-testid="name-input"]', 'Alice');
+    await alicePage.click('[data-testid="create-room-button"]');
+    await alicePage.waitForSelector('[data-testid="room-title"]');
 
-    const roomIdText = await alicePage.textContent('h1');
+    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
     const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
     console.log('Room created:', roomCode);
 
     // Bob joins room
     console.log('Bob joining room...');
-    await bobPage.click('button:has-text("Join Existing Room")');
-    await bobPage.fill('input[placeholder="Enter your name"]', 'Bob');
-    await bobPage.fill('input[placeholder="Enter room code"]', roomCode!);
-    await bobPage.click('button:has-text("Join Room")');
-    await bobPage.waitForSelector('text=Room:');
-    await alicePage.waitForSelector('text=Players: 2/');
+    await bobPage.click('[data-testid="join-toggle-button"]');
+    await bobPage.fill('[data-testid="name-input"]', 'Bob');
+    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+    await bobPage.click('[data-testid="join-room-button"]');
+    await bobPage.waitForSelector('[data-testid="room-title"]');
+    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
     console.log('Both players in room');
 
     // Start game
     console.log('Alice starting game...');
-    await alicePage.click('button:has-text("Start Game")');
-    await alicePage.waitForSelector('text=Pot: $');
-    await bobPage.waitForSelector('text=Pot: $');
+    await alicePage.click('[data-testid="start-game-button"]');
+    await alicePage.waitForSelector('[data-testid="round-value"]');
+    await bobPage.waitForSelector('[data-testid="round-value"]');
     console.log('Game started');
 
     // Track pot at each step
     let potHistory: number[] = [30]; // Starting pot (blinds)
 
     // PRE_FLOP Round 1: Bob raises $50
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Pre-flop Round 1 - Bob raising $50...');
-    await bobPage.fill('input[type="number"]', '50');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '50');
+    await bobPage.click('[data-testid="action-raise"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     const pot1 = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return room?.currentHand?.pot || 0;
@@ -2687,10 +2755,10 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // PRE_FLOP Round 2: Alice re-raises $150
     console.log('Pre-flop Round 2 - Alice re-raising $150...');
-    await alicePage.fill('input[type="number"]', '150');
-    await alicePage.click('button:has-text("Raise")');
+    await alicePage.fill('[data-testid="raise-input"]', '150');
+    await alicePage.click('[data-testid="action-raise"]');
 
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     const pot2 = await bobPage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -2706,10 +2774,10 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     // PRE_FLOP Round 3: Bob re-raises again
     // (Alice raised $150, so min raise = $150 more = $370 minimum, but Bob raises to $440)
     console.log('Pre-flop Round 3 - Bob re-raising to $440...');
-    await bobPage.fill('input[type="number"]', '440');
-    await bobPage.click('button:has-text("Raise")');
+    await bobPage.fill('[data-testid="raise-input"]', '440');
+    await bobPage.click('[data-testid="action-raise"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     const pot3 = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
@@ -2726,7 +2794,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Alice calls to end pre-flop
     console.log('Pre-flop - Alice calling...');
-    await alicePage.click('button:has-text("Call")');
+    await alicePage.click('[data-testid="action-call"]');
 
     // Verify final pot after pre-flop
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -2753,29 +2821,29 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     ).toBe(2000);
 
     // FLOP/TURN/RIVER: Both check
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Flop - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('Turn - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
-    await bobPage.waitForSelector('text=Your Turn');
+    await bobPage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Bob checking...');
-    await bobPage.click('button:has-text("Check")');
+    await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('text=Your Turn');
+    await alicePage.waitForSelector('[data-testid="action-dock"]');
     console.log('River - Alice checking...');
-    await alicePage.click('button:has-text("Check")');
+    await alicePage.click('[data-testid="action-check"]');
 
     // Wait for showdown
     await alicePage.waitForTimeout(2000);
@@ -2847,7 +2915,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       const afterBobCheck = await getRoomSnapshot(alicePage);
       expect(afterBobCheck.currentPlayerName).toBe('Alice');
 
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'TURN', 4);
 
       const turnState = await getRoomSnapshot(alicePage);
@@ -2868,36 +2936,36 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       const handCompletePromise = captureNextHandComplete(alicePage);
       await startGameFromLobby(alicePage, bobPage);
 
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
 
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.bettingRound).toBe('FLOP');
       expect(flop.communityCards).toBe(3);
 
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'TURN', 4);
 
       const turn = await getRoomSnapshot(alicePage);
       expect(turn.bettingRound).toBe('TURN');
       expect(turn.communityCards).toBe(4);
 
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'RIVER', 5);
 
       const river = await getRoomSnapshot(alicePage);
       expect(river.bettingRound).toBe('RIVER');
       expect(river.communityCards).toBe(5);
 
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
 
       const result = await handCompletePromise;
       expect(result.totalPot).toBe(40);
@@ -2917,9 +2985,9 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await startGameFromLobby(alicePage, bobPage);
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("All-In")');
+      await bobPage.click('[data-testid="action-all-in"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("All-In")');
+      await alicePage.click('[data-testid="action-all-in"]');
 
       await waitForRound(alicePage, 'SHOWDOWN', 5);
       const finalState = await getRoomSnapshot(alicePage);
@@ -3000,7 +3068,7 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       expect(hand1.currentPlayerName).toBe('Bob');
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Fold")');
+      await bobPage.click('[data-testid="action-fold"]');
 
       await alicePage.waitForFunction(
         () => {
@@ -3137,7 +3205,7 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
       await startGameFromLobby(alicePage, bobPage);
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Fold")');
+      await bobPage.click('[data-testid="action-fold"]');
 
       const result = await handCompletePromise;
       expect(result.winners).toHaveLength(1);
@@ -3159,41 +3227,41 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const { alicePage, bobPage } = session;
       await startGameFromLobby(alicePage, bobPage);
 
-      const alicePot = await alicePage.textContent('text=Pot: $');
-      const bobPot = await bobPage.textContent('text=Pot: $');
+      const alicePot = await alicePage.textContent('[data-testid="pot-value"]');
+      const bobPot = await bobPage.textContent('[data-testid="pot-value"]');
       expect(alicePot).toContain('$30');
       expect(bobPot).toContain('$30');
 
-      const aliceRound = await alicePage.textContent('text=Current Round:');
-      const bobRound = await bobPage.textContent('text=Current Round:');
+      const aliceRound = await alicePage.textContent('[data-testid="round-value"]');
+      const bobRound = await bobPage.textContent('[data-testid="round-value"]');
       expect(aliceRound).toContain('PRE_FLOP');
       expect(bobRound).toContain('PRE_FLOP');
 
-      const aliceChips = await alicePage.textContent('text=Your Chips:');
-      const bobChips = await bobPage.textContent('text=Your Chips:');
+      const aliceChips = await alicePage.textContent('[data-testid="your-chips"]');
+      const bobChips = await bobPage.textContent('[data-testid="your-chips"]');
       expect(aliceChips).toContain('$980');
       expect(bobChips).toContain('$990');
 
       const initialTurn = await getRoomSnapshot(alicePage);
       expect(initialTurn.currentPlayerName).toBe('Bob');
-      expect(await bobPage.locator('h3:has-text("Your Turn")').count()).toBe(1);
+      expect(await bobPage.locator('[data-testid="action-dock"]').count()).toBe(1);
 
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
       await waitForPlayerTurn(alicePage, 'Alice');
       const turnAfterBobCall = await getRoomSnapshot(alicePage);
       expect(turnAfterBobCall.currentPlayerName).toBe('Alice');
-      expect(await alicePage.locator('h3:has-text("Your Turn")').count()).toBe(1);
+      expect(await alicePage.locator('[data-testid="action-dock"]').count()).toBe(1);
 
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
 
-      const flopRoundAlice = await alicePage.textContent('text=Current Round:');
-      const flopRoundBob = await bobPage.textContent('text=Current Round:');
+      const flopRoundAlice = await alicePage.textContent('[data-testid="round-value"]');
+      const flopRoundBob = await bobPage.textContent('[data-testid="round-value"]');
       expect(flopRoundAlice).toContain('FLOP');
       expect(flopRoundBob).toContain('FLOP');
 
-      const flopPotAlice = await alicePage.textContent('text=Pot: $');
-      const flopPotBob = await bobPage.textContent('text=Pot: $');
+      const flopPotAlice = await alicePage.textContent('[data-testid="pot-value"]');
+      const flopPotBob = await bobPage.textContent('[data-testid="pot-value"]');
       expect(flopPotAlice).toContain('$40');
       expect(flopPotBob).toContain('$40');
     } finally {
@@ -3209,19 +3277,22 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      expect(await bobPage.locator('button:has-text("Check")').count()).toBe(0);
-      await expect(bobPage.locator('button:has-text("Call $10")')).toBeEnabled();
+      expect(await bobPage.locator('[data-testid="action-check"]').count()).toBe(0);
+      await expect(bobPage.locator('[data-testid="action-call"]')).toContainText(
+        'Call $10',
+      );
+      await expect(bobPage.locator('[data-testid="action-call"]')).toBeEnabled();
 
-      const bobRaiseButton = bobPage.locator('button:has-text("Raise")');
+      const bobRaiseButton = bobPage.locator('[data-testid="action-raise"]');
       await expect(bobRaiseButton).toBeDisabled();
-      await bobPage.fill('input[type="number"]', '20');
+      await bobPage.fill('[data-testid="raise-input"]', '20');
       await expect(bobRaiseButton).toBeEnabled();
 
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
       await waitForPlayerTurn(alicePage, 'Alice');
 
-      expect(await alicePage.locator('button:has-text("Check")').count()).toBe(1);
-      expect(await alicePage.locator('button:has-text("Call")').count()).toBe(0);
+      expect(await alicePage.locator('[data-testid="action-check"]').count()).toBe(1);
+      expect(await alicePage.locator('[data-testid="action-call"]').count()).toBe(0);
       const turnState = await getRoomSnapshot(alicePage);
       expect(turnState.currentPlayerName).toBe('Alice');
     } finally {
@@ -3255,21 +3326,21 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(0);
 
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(3);
 
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'TURN', 4);
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(4);
 
-      await bobPage.click('button:has-text("Check")');
+      await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("Check")');
+      await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'RIVER', 5);
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(5);
     } finally {
@@ -3286,12 +3357,13 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
 
     try {
       const { alicePage, bobPage, charliePage } = session;
-      await alicePage.click('button:has-text("Start Game")');
+      await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
-        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
       ]);
+      await waitForHandStart(alicePage, 1);
 
       const initial = await getRoomSnapshot(alicePage);
       expect(initial.handNumber).toBe(1);
@@ -3309,16 +3381,22 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       await verifyChipConservation(alicePage, 3000);
 
       await waitForPlayerTurn(alicePage, 'Alice');
-      await expect(alicePage.locator('button:has-text("Call $20")')).toBeVisible();
-      await alicePage.click('button:has-text("Call")');
+      await expect(alicePage.locator('[data-testid="action-call"]')).toContainText(
+        'Call $20',
+      );
+      await expect(alicePage.locator('[data-testid="action-call"]')).toBeVisible();
+      await alicePage.click('[data-testid="action-call"]');
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await expect(bobPage.locator('button:has-text("Call $10")')).toBeVisible();
-      await bobPage.click('button:has-text("Call")');
+      await expect(bobPage.locator('[data-testid="action-call"]')).toContainText(
+        'Call $10',
+      );
+      await expect(bobPage.locator('[data-testid="action-call"]')).toBeVisible();
+      await bobPage.click('[data-testid="action-call"]');
 
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await expect(charliePage.locator('button:has-text("Check")')).toBeVisible();
-      await charliePage.click('button:has-text("Check")');
+      await expect(charliePage.locator('[data-testid="action-check"]')).toBeVisible();
+      await charliePage.click('[data-testid="action-check"]');
 
       await waitForRound(alicePage, 'FLOP', 3);
       const flop = await getRoomSnapshot(alicePage);
@@ -3348,11 +3426,11 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         Charlie: charliePage,
       };
 
-      await alicePage.click('button:has-text("Start Game")');
+      await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
-        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
       ]);
 
       const expectedDealer = ['Alice', 'Bob', 'Charlie'];
@@ -3380,7 +3458,7 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         expect(await getPotFromUi(alicePage)).toBe(30);
         await expect(
           pageByName[expectedFirstToAct[handNumber - 1]].locator(
-            'h3:has-text("Your Turn")',
+            '[data-testid="action-dock"]',
           ),
         ).toBeVisible();
         await verifyChipConservation(alicePage, 3000);
@@ -3425,21 +3503,21 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       ]);
 
       const handCompletePromise = captureNextHandComplete(alicePage);
-      await alicePage.click('button:has-text("Start Game")');
+      await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
-        alicePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        bobPage.waitForSelector('text=Pot: $', { timeout: 10000 }),
-        charliePage.waitForSelector('text=Pot: $', { timeout: 10000 }),
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
       ]);
 
       await waitForPlayerTurn(alicePage, 'Alice');
-      await alicePage.click('button:has-text("All-In")');
+      await alicePage.click('[data-testid="action-all-in"]');
 
       await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('button:has-text("Call")');
+      await bobPage.click('[data-testid="action-call"]');
 
       await waitForPlayerTurn(charliePage, 'Charlie');
-      await charliePage.click('button:has-text("Call")');
+      await charliePage.click('[data-testid="action-call"]');
 
       const result = await handCompletePromise;
       expect(result.totalPot).toBe(3000);
@@ -3454,9 +3532,9 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(amounts).toEqual([1000, 1000, 1000]);
       const ranks = result.winners.map((winner: any) => winner.hand.rank);
       expect(ranks.every((rank: string) => rank === 'STRAIGHT')).toBe(true);
-      await expect(
-        alicePage.locator('text=Current Round: SHOWDOWN'),
-      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="round-value"]')).toContainText(
+        'SHOWDOWN',
+      );
       expect(await getPotFromUi(alicePage)).toBe(3000);
       const uiMoney = await getPlayersMoneyFromUi(alicePage);
       expect(uiMoney.Alice.chips + uiMoney.Alice.currentBet).toBe(1000);

@@ -6,123 +6,185 @@ import { useSocket } from "../contexts/SocketContext";
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const { connected } = useSocket();
-  const { createRoom, joinRoom } = useGame();
+  const { createRoom, joinRoom, lastError, clearError } = useGame();
+
   const [playerName, setPlayerName] = useState("");
   const [roomId, setRoomId] = useState("");
   const [isJoining, setIsJoining] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const clearFeedback = () => {
+    if (feedback) {
+      setFeedback(null);
+    }
+    if (lastError) {
+      clearError();
+    }
+  };
 
   const handleCreateRoom = () => {
-    if (!playerName.trim()) {
-      alert("Please enter your name");
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      setFeedback("Please enter your name");
       return;
     }
-    createRoom(playerName);
+
+    clearFeedback();
+    createRoom(trimmedName);
     navigate("/room");
   };
 
   const handleJoinRoom = () => {
-    if (!playerName.trim() || !roomId.trim()) {
-      alert("Please enter your name and room code");
+    const trimmedName = playerName.trim();
+    const trimmedRoomId = roomId.trim();
+
+    if (!trimmedName || !trimmedRoomId) {
+      setFeedback("Please enter your name and room code");
       return;
     }
-    joinRoom(roomId, playerName);
+
+    clearFeedback();
+    joinRoom(trimmedRoomId, trimmedName);
     navigate("/room");
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
-            ♠️ Poker Game ♥️
-          </h1>
-          <p className="text-gray-400">Texas Hold'em Online</p>
+    <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-24 top-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="absolute -right-24 bottom-8 h-64 w-64 rounded-full bg-yellow-500/10 blur-3xl" />
+      </div>
 
-          {/* Connection status */}
-          <div className="mt-4">
-            {connected ? (
-              <span className="text-green-400 text-sm">● Connected</span>
-            ) : (
-              <span className="text-red-400 text-sm">● Disconnected</span>
-            )}
+      <div className="relative mx-auto flex min-h-[85vh] max-w-5xl items-center justify-center">
+        <section className="surface-panel w-full max-w-md p-6 md:p-8" data-testid="home-panel">
+          <div className="mb-8 text-center">
+            <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">
+              Personal Table
+            </p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-white">
+              Poker Game
+            </h1>
+            <p className="mt-2 text-sm text-emerald-100/70">
+              Texas Hold&apos;em Online
+            </p>
+            <div className="mt-5">
+              {connected ? (
+                <span className="hud-chip text-emerald-200" data-testid="connection-status">
+                  ● Connected
+                </span>
+              ) : (
+                <span className="hud-chip border-red-500/40 bg-red-950/60 text-red-200" data-testid="connection-status">
+                  ● Disconnected
+                </span>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Player Name Input */}
-        <div className="mb-6">
-          <label className="block text-white text-sm font-semibold mb-2">
-            Your Name
-          </label>
-          <input
-            type="text"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            placeholder="Enter your name"
-            className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-        </div>
-
-        {!isJoining ? (
-          <>
-            {/* Create Room */}
-            <button
-              onClick={handleCreateRoom}
-              disabled={!connected}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Create New Room
-            </button>
-
-            {/* Join Room Toggle */}
-            <button
-              onClick={() => setIsJoining(true)}
-              className="w-full border-2 border-green-600 text-green-400 hover:bg-green-600 hover:text-white font-semibold py-3 rounded-lg transition-colors"
-            >
-              Join Existing Room
-            </button>
-          </>
-        ) : (
-          <>
-            {/* Room ID Input */}
-            <div className="mb-4">
-              <label className="block text-white text-sm font-semibold mb-2">
-                Room Code
+          <div className="space-y-5">
+            <div>
+              <label
+                htmlFor="player-name"
+                className="mb-2 block text-sm font-semibold text-emerald-100"
+              >
+                Your Name
               </label>
               <input
+                id="player-name"
                 type="text"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                placeholder="Enter room code"
-                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                value={playerName}
+                onChange={(e) => {
+                  setPlayerName(e.target.value);
+                  clearFeedback();
+                }}
+                placeholder="Enter your name"
+                data-testid="name-input"
+                className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
               />
             </div>
 
-            {/* Join Room */}
-            <button
-              onClick={handleJoinRoom}
-              disabled={!connected}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Join Room
-            </button>
+            {(feedback || lastError) && (
+              <div
+                className="rounded-xl border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+                data-testid="form-feedback"
+              >
+                {feedback || lastError}
+              </div>
+            )}
 
-            {/* Back */}
-            <button
-              onClick={() => setIsJoining(false)}
-              className="w-full border-2 border-gray-600 text-gray-400 hover:bg-gray-700 font-semibold py-3 rounded-lg transition-colors"
-            >
-              Back
-            </button>
-          </>
-        )}
+            {!isJoining ? (
+              <>
+                <button
+                  onClick={handleCreateRoom}
+                  disabled={!connected}
+                  data-testid="create-room-button"
+                  className="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Create New Room
+                </button>
 
-        {/* Rules */}
-        <div className="mt-8 text-center">
-          <p className="text-gray-500 text-sm">
-            2-10 players • Texas Hold'em rules
-          </p>
-        </div>
+                <button
+                  onClick={() => {
+                    setIsJoining(true);
+                    clearFeedback();
+                  }}
+                  data-testid="join-toggle-button"
+                  className="w-full rounded-xl border border-emerald-500/70 bg-transparent px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
+                >
+                  Join Existing Room
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label
+                    htmlFor="room-code"
+                    className="mb-2 block text-sm font-semibold text-emerald-100"
+                  >
+                    Room Code
+                  </label>
+                  <input
+                    id="room-code"
+                    type="text"
+                    value={roomId}
+                    onChange={(e) => {
+                      setRoomId(e.target.value.toUpperCase());
+                      clearFeedback();
+                    }}
+                    placeholder="Enter room code"
+                    data-testid="room-id-input"
+                    className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                </div>
+
+                <button
+                  onClick={handleJoinRoom}
+                  disabled={!connected}
+                  data-testid="join-room-button"
+                  className="w-full rounded-xl bg-sky-500 px-4 py-3 font-semibold text-sky-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Join Room
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsJoining(false);
+                    setRoomId("");
+                    clearFeedback();
+                  }}
+                  data-testid="back-button"
+                  className="w-full rounded-xl border border-slate-500/70 bg-slate-700/20 px-4 py-3 font-semibold text-slate-200 transition hover:bg-slate-700/40"
+                >
+                  Back
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="mt-8 border-t border-emerald-900/80 pt-4 text-center text-xs text-emerald-200/70">
+            2-10 players • Texas Hold&apos;em rules
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
