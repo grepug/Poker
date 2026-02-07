@@ -168,24 +168,24 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const angle = startAngle + slotIndex * angleStep;
 
   const centerX = 50;
-  const centerY = 44;
-  const radiusX = 40;
-  const radiusY = 28;
+  const centerY = 45;
+  const radiusX = 44;
+  const radiusY = 34;
 
   const left = centerX + Math.cos(angle) * radiusX;
   const top = centerY + Math.sin(angle) * radiusY;
 
   return {
-    top: `${Math.max(14, Math.min(76, top))}%`,
-    left: `${Math.max(9, Math.min(91, left))}%`,
+    top: `${Math.max(10, Math.min(82, top))}%`,
+    left: `${Math.max(6, Math.min(94, left))}%`,
   };
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
-  if (occupiedSeats <= 2) return "min(18vw, 4.8rem)";
-  if (occupiedSeats <= 4) return "min(17vw, 4.6rem)";
-  if (occupiedSeats <= 6) return "min(16vw, 4.4rem)";
-  return "min(15vw, 4.1rem)";
+  if (occupiedSeats <= 2) return "min(14vw, 3.9rem)";
+  if (occupiedSeats <= 4) return "min(13vw, 3.7rem)";
+  if (occupiedSeats <= 6) return "min(12vw, 3.5rem)";
+  return "min(11vw, 3.3rem)";
 };
 
 const getPositionBadges = (
