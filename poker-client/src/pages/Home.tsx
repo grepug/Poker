@@ -14,7 +14,13 @@ export const Home: React.FC<HomeProps> = ({
 }) => {
   const navigate = useNavigate();
   const { connected } = useSocket();
-  const { createRoom, joinRoom, lastError, clearError } = useGame();
+  const {
+    createRoom,
+    joinRoom,
+    isRecoveringSession,
+    lastError,
+    clearError,
+  } = useGame();
 
   const [playerName, setPlayerName] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -44,6 +50,8 @@ export const Home: React.FC<HomeProps> = ({
   };
 
   const handleCreateRoom = () => {
+    if (isRecoveringSession) return;
+
     const trimmedName = playerName.trim();
     if (!trimmedName) {
       setFeedback("Please enter your name");
@@ -56,6 +64,8 @@ export const Home: React.FC<HomeProps> = ({
   };
 
   const handleJoinRoom = () => {
+    if (isRecoveringSession) return;
+
     const trimmedName = playerName.trim();
     const trimmedRoomId = roomId.trim();
     const normalizedRoomId = trimmedRoomId.toUpperCase();
@@ -103,6 +113,15 @@ export const Home: React.FC<HomeProps> = ({
           </div>
 
           <div className="space-y-5">
+            {isRecoveringSession && (
+              <div
+                className="rounded-xl border border-sky-400/50 bg-sky-500/10 px-3 py-2 text-sm text-sky-200"
+                data-testid="session-recovery-status"
+              >
+                Reconnecting to your previous table...
+              </div>
+            )}
+
             <div>
               <label
                 htmlFor="player-name"
@@ -137,7 +156,7 @@ export const Home: React.FC<HomeProps> = ({
               <>
                 <button
                   onClick={handleCreateRoom}
-                  disabled={!connected}
+                  disabled={!connected || isRecoveringSession}
                   data-testid="create-room-button"
                   className="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -146,9 +165,11 @@ export const Home: React.FC<HomeProps> = ({
 
                 <button
                   onClick={() => {
+                    if (isRecoveringSession) return;
                     setIsJoining(true);
                     clearFeedback();
                   }}
+                  disabled={isRecoveringSession}
                   data-testid="join-toggle-button"
                   className="w-full rounded-xl border border-emerald-500/70 bg-transparent px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
                 >
@@ -180,7 +201,7 @@ export const Home: React.FC<HomeProps> = ({
 
                 <button
                   onClick={handleJoinRoom}
-                  disabled={!connected}
+                  disabled={!connected || isRecoveringSession}
                   data-testid="join-room-button"
                   className="w-full rounded-xl bg-sky-500 px-4 py-3 font-semibold text-sky-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >

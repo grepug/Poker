@@ -5,6 +5,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import type {
@@ -50,6 +51,7 @@ interface GameContextType {
   lastHandResult: HandResult | null;
   revealedHandPlayerIds: string[];
   isHost: boolean;
+  isRecoveringSession: boolean;
   lastError: string | null;
   createRoom: (playerName: string) => void;
   joinRoom: (roomId: string, playerName: string) => void;
@@ -76,6 +78,53 @@ interface GameProviderProps {
   children: ReactNode;
 }
 
+type StoredSession = {
+  roomId: string;
+  playerId: string;
+  playerName: string;
+};
+
+const SESSION_STORAGE_KEY = "poker.activeSession";
+
+function readStoredSession(): StoredSession | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (
+      typeof parsed.roomId !== "string" ||
+      !parsed.roomId ||
+      typeof parsed.playerId !== "string" ||
+      !parsed.playerId ||
+      typeof parsed.playerName !== "string" ||
+      !parsed.playerName
+    ) {
+      return null;
+    }
+    return parsed as StoredSession;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSession(session: StoredSession) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearStoredSession() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function isInvalidReconnectReason(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return normalized.includes("not found");
+}
+
 declare global {
   interface Window {
     pokerDebug?: DebugApi;
@@ -89,7 +138,25 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
   const [lastHandResult, setLastHandResult] = useState<HandResult | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
+  const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const playerRef = useRef<Player | null>(null);
+  const reconnectInFlightRef = useRef(false);
+
+  useEffect(() => {
+    roomRef.current = room;
+    playerRef.current = player;
+  }, [room, player]);
+
+  useEffect(() => {
+    if (!room?.id || !player?.id || !player.name) return;
+    writeStoredSession({
+      roomId: room.id,
+      playerId: player.id,
+      playerName: player.name,
+    });
+  }, [player?.id, player?.name, room?.id]);
 
   useEffect(() => {
     if (!socket) return;
@@ -99,6 +166,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
+      setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
 
@@ -106,6 +174,32 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("ROOM_JOINED", (data) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       setPlayer(data.player);
+      setIsRecoveringSession(false);
+      setLastError(null);
+    });
+
+    // Explicit reconnect success
+    socket.on("RECONNECT_SUCCESS", (data) => {
+      setRoom(data.room as unknown as Room);
+      setPlayer(data.player as Player);
+      setYourCards(data.yourCards ?? null);
+      setLastError(null);
+      setIsRecoveringSession(false);
+      reconnectInFlightRef.current = false;
+    });
+
+    // Explicit reconnect failure
+    socket.on("RECONNECT_ERROR", (data) => {
+      const reason = data.reason || "Reconnect failed";
+      reconnectInFlightRef.current = false;
+      setIsRecoveringSession(false);
+      if (isInvalidReconnectReason(reason)) {
+        clearStoredSession();
+        setRoom(null);
+        setPlayer(null);
+        setYourCards(null);
+      }
+      setLastError(reason);
     });
 
     // Player joined
@@ -128,6 +222,59 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           players: prev.players.filter((p) => p.id !== data.playerId),
         };
       });
+    });
+
+    socket.on("PLAYER_DISCONNECTED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((p) =>
+            p.id === data.playerId ? { ...p, status: "disconnected" } : p,
+          ),
+        };
+      });
+      setPlayer((prev) =>
+        prev && prev.id === data.playerId
+          ? { ...prev, status: "disconnected" }
+          : prev,
+      );
+    });
+
+    socket.on("PLAYER_RECONNECTED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((p) =>
+            p.id === data.playerId ? { ...p, status: "connected" } : p,
+          ),
+        };
+      });
+      setPlayer((prev) =>
+        prev && prev.id === data.playerId
+          ? { ...prev, status: "connected" }
+          : prev,
+      );
+    });
+
+    socket.on("PLAYER_AUTO_FOLDED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((p) =>
+            p.id === data.playerId
+              ? { ...p, status: "folded", lastAction: "fold" }
+              : p,
+          ),
+        };
+      });
+      setPlayer((prev) =>
+        prev && prev.id === data.playerId
+          ? { ...prev, status: "folded", lastAction: "fold" }
+          : prev,
+      );
     });
 
     // Host changed
@@ -329,8 +476,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     return () => {
       socket.off("ROOM_CREATED");
       socket.off("ROOM_JOINED");
+      socket.off("RECONNECT_SUCCESS");
+      socket.off("RECONNECT_ERROR");
       socket.off("PLAYER_JOINED");
       socket.off("PLAYER_LEFT");
+      socket.off("PLAYER_DISCONNECTED");
+      socket.off("PLAYER_RECONNECTED");
+      socket.off("PLAYER_AUTO_FOLDED");
       socket.off("HOST_CHANGED");
       socket.off("GAME_STARTED");
       socket.off("YOUR_CARDS");
@@ -342,6 +494,68 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("NEW_HAND_STARTING");
       socket.off("BETTING_ROUND_COMPLETE");
       socket.off("ERROR");
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const attemptSessionRecovery = () => {
+      if (reconnectInFlightRef.current) return;
+
+      const roomState = roomRef.current;
+      const playerState = playerRef.current;
+      const fromState =
+        roomState?.id && playerState?.name
+          ? { roomId: roomState.id, playerName: playerState.name }
+          : null;
+      const fromStorage = readStoredSession();
+      const payload = fromState ?? fromStorage;
+
+      if (!payload) {
+        setIsRecoveringSession(false);
+        return;
+      }
+
+      reconnectInFlightRef.current = true;
+      setIsRecoveringSession(true);
+      socket.emit("RECONNECT", payload, (response) => {
+        reconnectInFlightRef.current = false;
+        if (response && "success" in response && !response.success) {
+          const reason = response.error || "Reconnect failed";
+          setIsRecoveringSession(false);
+          if (isInvalidReconnectReason(reason)) {
+            clearStoredSession();
+            setRoom(null);
+            setPlayer(null);
+            setYourCards(null);
+          }
+          setLastError(reason);
+        }
+      });
+    };
+
+    const handleConnect = () => {
+      attemptSessionRecovery();
+    };
+
+    const handleDisconnect = () => {
+      const stored = readStoredSession();
+      const hasKnownSession =
+        Boolean(roomRef.current?.id && playerRef.current?.name) || Boolean(stored);
+      setIsRecoveringSession(hasKnownSession);
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+
+    if (socket.connected) {
+      handleConnect();
+    }
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
     };
   }, [socket]);
 
@@ -414,11 +628,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const leaveRoom = useCallback(() => {
     if (!socket) return;
     socket.emit("LEAVE_ROOM", () => {
+      clearStoredSession();
       setRoom(null);
       setPlayer(null);
       setYourCards(null);
       setLastHandResult(null);
       setRevealedHandPlayerIds([]);
+      setIsRecoveringSession(false);
       setLastError(null);
     });
   }, [socket]);
@@ -504,6 +720,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         lastHandResult,
         revealedHandPlayerIds,
         isHost,
+        isRecoveringSession,
         lastError,
         createRoom,
         joinRoom,
