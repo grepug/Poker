@@ -161,30 +161,31 @@ const resolveDropIntent = ({
   };
 };
 
-const getSeatAnchors = (capacity: number): SeatAnchor[] => {
-  if (capacity > 6) {
-    return [
-      { top: "73%", left: "50%" },
-      { top: "69%", left: "70%" },
-      { top: "57%", left: "84%" },
-      { top: "42%", left: "90%" },
-      { top: "24%", left: "79%" },
-      { top: "15%", left: "59%" },
-      { top: "15%", left: "41%" },
-      { top: "24%", left: "21%" },
-      { top: "42%", left: "10%" },
-      { top: "57%", left: "16%" },
-    ];
-  }
+const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
+  const safeTotal = Math.max(1, totalSeats);
+  const angleStep = (Math.PI * 2) / safeTotal;
+  const startAngle = Math.PI / 2; // Self seat starts at bottom center
+  const angle = startAngle + slotIndex * angleStep;
 
-  return [
-    { top: "73%", left: "50%" },
-    { top: "66%", left: "78%" },
-    { top: "44%", left: "90%" },
-    { top: "17%", left: "50%" },
-    { top: "44%", left: "10%" },
-    { top: "66%", left: "22%" },
-  ];
+  const centerX = 50;
+  const centerY = 44;
+  const radiusX = 40;
+  const radiusY = 28;
+
+  const left = centerX + Math.cos(angle) * radiusX;
+  const top = centerY + Math.sin(angle) * radiusY;
+
+  return {
+    top: `${Math.max(14, Math.min(76, top))}%`,
+    left: `${Math.max(9, Math.min(91, left))}%`,
+  };
+};
+
+const getSeatSlotWidth = (occupiedSeats: number) => {
+  if (occupiedSeats <= 2) return "min(18vw, 4.8rem)";
+  if (occupiedSeats <= 4) return "min(17vw, 4.6rem)";
+  if (occupiedSeats <= 6) return "min(16vw, 4.4rem)";
+  return "min(15vw, 4.1rem)";
 };
 
 const getPositionBadges = (
@@ -336,8 +337,10 @@ export const GameRoom: React.FC = () => {
     return room.config.maxPlayers > 6 ? 10 : 6;
   }, [room]);
 
-  const seatAnchors = useMemo(() => getSeatAnchors(orbitCapacity), [orbitCapacity]);
-  const seatSlotWidth = orbitCapacity > 6 ? "min(20vw, 5.4rem)" : "min(22vw, 5.8rem)";
+  const seatSlotWidth = useMemo(
+    () => getSeatSlotWidth(room?.players.length ?? 0),
+    [room?.players.length],
+  );
   const playerRankings = useMemo(
     () => {
       if (!room) return [];
@@ -364,23 +367,23 @@ export const GameRoom: React.FC = () => {
     if (!room || !player) return [] as Array<{
       slotIndex: number;
       position: number;
-      seatPlayer: Player | null;
+      seatPlayer: Player;
       anchor: SeatAnchor;
     }>;
-
-    const playersByPosition = new Map(room.players.map((entry) => [entry.position, entry]));
     const myPosition = currentPlayer?.position ?? player.position;
-
-    return seatAnchors.map((anchor, slotIndex) => {
-      const absolutePosition = (myPosition + slotIndex) % orbitCapacity;
-      return {
-        slotIndex,
-        position: absolutePosition,
-        seatPlayer: playersByPosition.get(absolutePosition) ?? null,
-        anchor,
-      };
+    const orderedPlayers = [...room.players].sort((a, b) => {
+      const aOffset = (a.position - myPosition + orbitCapacity) % orbitCapacity;
+      const bOffset = (b.position - myPosition + orbitCapacity) % orbitCapacity;
+      return aOffset - bOffset;
     });
-  }, [currentPlayer?.position, orbitCapacity, player, room, seatAnchors]);
+
+    return orderedPlayers.map((seatPlayer, slotIndex) => ({
+      slotIndex,
+      position: seatPlayer.position,
+      seatPlayer,
+      anchor: getOrbitAnchor(slotIndex, orderedPlayers.length),
+    }));
+  }, [currentPlayer?.position, orbitCapacity, player, room]);
 
   const communitySlots = Array.from(
     { length: 5 },
@@ -912,52 +915,45 @@ export const GameRoom: React.FC = () => {
                     transform: "translate(-50%, -50%)",
                   }}
                 >
-                  {seatPlayer ? (
-                    <article
-                      data-testid={`player-seat-${seatPlayer.id}`}
-                      className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
-                        isFolded ? "seat-pod--folded" : ""
-                      }`}
-                    >
-                      <div className="seat-pod__row">
-                        <span className="seat-pod__name text-white font-semibold">
-                          {seatPlayer.name}
-                          {isSelfSeat ? " (You)" : ""}
-                        </span>
-                        <div className="seat-pod__badges">
-                          {badges.map((badge) => (
-                            <span key={`${seatPlayer.id}-${badge}`} className="seat-pod__badge">
-                              {badge}
-                            </span>
-                          ))}
-                        </div>
+                  <article
+                    data-testid={`player-seat-${seatPlayer.id}`}
+                    className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
+                      isFolded ? "seat-pod--folded" : ""
+                    }`}
+                  >
+                    <div className="seat-pod__row">
+                      <span className="seat-pod__name text-white font-semibold">
+                        {seatPlayer.name}
+                        {isSelfSeat ? " (You)" : ""}
+                      </span>
+                      <div className="seat-pod__badges">
+                        {badges.map((badge) => (
+                          <span key={`${seatPlayer.id}-${badge}`} className="seat-pod__badge">
+                            {badge}
+                          </span>
+                        ))}
                       </div>
-
-                      <div className="seat-pod__row seat-pod__row--chips">
-                        <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
-                      </div>
-
-                      <div className="seat-pod__row seat-pod__row--buyin">
-                        <div className="seat-pod__buyin">Buy-in: ${seatPlayer.totalBuyIn}</div>
-                        <div className="seat-pod__bet sr-only">Bet: ${seatPlayer.currentBet}</div>
-                        {isAllIn && (
-                          <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
-                        )}
-                        {isFolded && (
-                          <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>
-                        )}
-                      </div>
-                    </article>
-                  ) : (
-                    <div className="seat-pod seat-pod--empty">
-                      <span className="seat-pod__empty-label">Empty Seat</span>
                     </div>
-                  )}
+
+                    <div className="seat-pod__row seat-pod__row--chips">
+                      <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
+                    </div>
+
+                    <div className="seat-pod__row seat-pod__row--buyin">
+                      <div className="seat-pod__buyin">Buy-in: ${seatPlayer.totalBuyIn}</div>
+                      <div className="seat-pod__bet sr-only">Bet: ${seatPlayer.currentBet}</div>
+                      {isAllIn && (
+                        <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
+                      )}
+                      {isFolded && (
+                        <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>
+                      )}
+                    </div>
+                  </article>
                 </div>
               );
             })}
           </div>
-
         </div>
 
         <div className="your-cards-tray" data-testid="your-cards-section">
