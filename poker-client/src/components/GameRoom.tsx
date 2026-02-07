@@ -148,6 +148,14 @@ export const GameRoom: React.FC = () => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [actionHint, clearError, lastError]);
 
+  useEffect(() => {
+    if (room && player) return;
+    const redirectTimer = window.setTimeout(() => {
+      navigate("/", { replace: true });
+    }, 2500);
+    return () => window.clearTimeout(redirectTimer);
+  }, [navigate, player, room]);
+
   const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
     if (lastError) {
       const normalized = lastError.toLowerCase();
@@ -249,7 +257,22 @@ export const GameRoom: React.FC = () => {
   }, [actionHint, callAmount, currentTurnPlayer?.name, lastError, maxRaise, minRaise]);
 
   if (!room || !player) {
-    return <div className="p-4 text-white">Loading...</div>;
+    return (
+      <main className="min-h-screen px-4 py-10">
+        <div className="mx-auto max-w-lg rounded-2xl border border-emerald-700/70 bg-emerald-950/60 p-6 text-emerald-50 shadow-lg">
+          <h1 className="text-lg font-semibold">Restoring your room...</h1>
+          <p className="mt-2 text-sm text-emerald-100/80">
+            If this takes too long, we will return you to the lobby automatically.
+          </p>
+          <button
+            onClick={() => navigate("/", { replace: true })}
+            className="mt-4 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/35"
+          >
+            Go to Lobby Now
+          </button>
+        </div>
+      </main>
+    );
   }
 
   const queueAction = (action: PlayerAction, amount?: number) => {
