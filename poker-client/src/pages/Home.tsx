@@ -1,9 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
 
-export const Home: React.FC = () => {
+interface HomeProps {
+  prefilledRoomId?: string;
+  forceJoinMode?: boolean;
+}
+
+export const Home: React.FC<HomeProps> = ({
+  prefilledRoomId,
+  forceJoinMode = false,
+}) => {
   const navigate = useNavigate();
   const { connected } = useSocket();
   const { createRoom, joinRoom, lastError, clearError } = useGame();
@@ -12,6 +20,19 @@ export const Home: React.FC = () => {
   const [roomId, setRoomId] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    const normalizedRoomId = prefilledRoomId?.trim().toUpperCase();
+    if (normalizedRoomId) {
+      setIsJoining(true);
+      setRoomId(normalizedRoomId);
+      return;
+    }
+
+    if (forceJoinMode) {
+      setIsJoining(true);
+    }
+  }, [prefilledRoomId, forceJoinMode]);
 
   const clearFeedback = () => {
     if (feedback) {
@@ -37,15 +58,16 @@ export const Home: React.FC = () => {
   const handleJoinRoom = () => {
     const trimmedName = playerName.trim();
     const trimmedRoomId = roomId.trim();
+    const normalizedRoomId = trimmedRoomId.toUpperCase();
 
-    if (!trimmedName || !trimmedRoomId) {
+    if (!trimmedName || !normalizedRoomId) {
       setFeedback("Please enter your name and room code");
       return;
     }
 
     clearFeedback();
-    joinRoom(trimmedRoomId, trimmedName);
-    navigate("/room");
+    joinRoom(normalizedRoomId, trimmedName);
+    navigate(`/room/${normalizedRoomId}`);
   };
 
   return (

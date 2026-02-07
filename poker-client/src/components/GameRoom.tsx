@@ -21,6 +21,26 @@ type PendingAction = {
   projectedStack: number;
 };
 
+const fallbackCopyText = (text: string) => {
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textArea);
+  }
+
+  return copied;
+};
+
 export const GameRoom: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -41,6 +61,7 @@ export const GameRoom: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [hiddenCardsHandNumber, setHiddenCardsHandNumber] = useState<number | null>(null);
   const [showRankingsModal, setShowRankingsModal] = useState<boolean>(false);
+  const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [confirmActions, setConfirmActions] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     const saved = window.localStorage.getItem("poker.confirmActions");
@@ -79,6 +100,10 @@ export const GameRoom: React.FC = () => {
     currentHandNumber === null || hiddenCardsHandNumber !== currentHandNumber;
   const canHostStartNextHand =
     isHost && isGameStarted && isHandPausedForNext && room.players.length >= 2;
+  const inviteUrl = useMemo(() => {
+    if (!room?.id || typeof window === "undefined") return "";
+    return `${window.location.origin}/room/${room.id}`;
+  }, [room?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -96,6 +121,12 @@ export const GameRoom: React.FC = () => {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pendingAction, showRankingsModal]);
+
+  useEffect(() => {
+    if (!inviteCopyStatus) return;
+    const timeoutId = window.setTimeout(() => setInviteCopyStatus(null), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [inviteCopyStatus]);
 
   if (!room || !player) {
     return <div className="p-4 text-white">Loading...</div>;
@@ -161,6 +192,22 @@ export const GameRoom: React.FC = () => {
     navigate("/");
   };
 
+  const handleCopyInviteLink = async () => {
+    if (!inviteUrl) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteUrl);
+      } else if (!fallbackCopyText(inviteUrl)) {
+        throw new Error("Clipboard API unavailable");
+      }
+      setInviteCopyStatus("Copied invite link");
+    } catch (error) {
+      console.error("Failed to copy invite link:", error);
+      setInviteCopyStatus("Copy failed");
+    }
+  };
+
   const getPlayerPositionLabel = (seatPlayerPosition: number) => {
     if (!currentHand) return null;
 
@@ -216,6 +263,30 @@ export const GameRoom: React.FC = () => {
               >
                 Players: {room.players.length}/{room.config.maxPlayers}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-md border border-emerald-700/70 bg-emerald-950/55 px-2 py-1 font-mono text-xs text-emerald-100/85">
+                  {inviteUrl}
+                </span>
+                <button
+                  onClick={handleCopyInviteLink}
+                  data-testid="copy-room-url-button"
+                  className="rounded-lg border border-cyan-400/60 bg-cyan-900/30 px-2.5 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+                >
+                  Copy Link
+                </button>
+                {inviteCopyStatus && (
+                  <span
+                    data-testid="copy-room-url-status"
+                    className={`text-xs font-semibold ${
+                      inviteCopyStatus.includes("failed")
+                        ? "text-amber-200"
+                        : "text-emerald-200"
+                    }`}
+                  >
+                    {inviteCopyStatus}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
