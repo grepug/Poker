@@ -196,6 +196,10 @@ export const GameRoom: React.FC = () => {
       if (b.net !== a.net) return b.net - a.net;
       return a.name.localeCompare(b.name);
     });
+  const communitySlots = Array.from(
+    { length: 5 },
+    (_, idx) => currentHand?.communityCards[idx] ?? null,
+  );
 
   return (
     <div className="min-h-screen px-3 pb-8 pt-3 md:px-6 md:pb-10">
@@ -280,26 +284,32 @@ export const GameRoom: React.FC = () => {
 
         <section className="surface-panel p-4" data-testid="table-board-section">
           <h3 className="text-sm font-semibold text-emerald-100">Board</h3>
-          <div className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
+          <div className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3" data-testid="community-cards">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
               Community Cards
             </p>
-            {currentHand && currentHand.communityCards.length > 0 ? (
-              <div className="mt-3 flex flex-wrap justify-center gap-2" data-testid="community-cards">
-                {currentHand.communityCards.map((card, idx) => (
-                  <Card
-                    key={idx}
-                    card={card}
-                    size="medium"
-                    dataTestId={`community-card-${idx}`}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 text-center text-sm text-emerald-100/65">
-                No community cards yet.
-              </div>
-            )}
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {communitySlots.map((card, idx) => {
+                const isRevealed = Boolean(card);
+                return (
+                  <div
+                    key={`community-slot-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                    className={isRevealed ? "community-reveal" : ""}
+                    style={isRevealed ? { animationDelay: `${idx * 65}ms` } : undefined}
+                  >
+                    <Card
+                      card={card}
+                      size="medium"
+                      faceDown={!isRevealed}
+                      dataTestId={isRevealed ? `community-card-${idx}` : `board-back-${idx}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-center text-xs text-emerald-100/65">
+              {currentHand ? `${currentHand.communityCards.length} / 5 revealed` : "0 / 5 revealed"}
+            </div>
           </div>
 
           <div className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3" data-testid="your-cards-section">
@@ -330,7 +340,7 @@ export const GameRoom: React.FC = () => {
                   <Card
                     key={idx}
                     card={card}
-                    size="large"
+                    size="medium"
                     dataTestId={`your-card-${idx}`}
                   />
                 ))}

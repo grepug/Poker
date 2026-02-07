@@ -435,10 +435,10 @@ async function getCommunityCardCountFromUi(page: Page): Promise<number> {
     const cards = document.querySelectorAll('[data-testid^="community-card-"]');
     if (cards.length > 0) return cards.length;
 
-    const sections = Array.from(document.querySelectorAll('div'));
-    const potSection = sections.find((el) => el.textContent?.includes('Pot: $'));
-    if (!potSection) return 0;
-    return potSection.querySelectorAll('div.w-16.h-24').length;
+    // Board now always renders 5 slots with card backs; this helper tracks
+    // only revealed community cards.
+    const room = (window as any).pokerDebug?.getRoom?.();
+    return room?.currentHand?.communityCards?.length ?? 0;
   });
 }
 
