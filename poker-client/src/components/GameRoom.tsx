@@ -32,6 +32,13 @@ type PendingAction = {
   projectedStack: number;
 };
 
+type FeedbackInsight = {
+  title: string;
+  reason: string;
+  suggestions: string[];
+  technicalDetail?: string;
+};
+
 type DragState = {
   active: boolean;
   pointerId: number | null;
@@ -418,11 +425,10 @@ export const GameRoom: React.FC = () => {
 
   useEffect(() => {
     setLegacyRaiseAmount((prev) => {
-      const baseline = prev > 0 ? prev : minRaise;
-      const upperBound = Math.max(minRaise, maxStack);
-      return Math.max(minRaise, Math.min(baseline, upperBound));
+      if (prev <= 0) return 0;
+      return Math.min(prev, maxStack);
     });
-  }, [maxStack, minRaise]);
+  }, [maxStack]);
 
   useEffect(() => {
     if (!isYourTurn) {
@@ -686,6 +692,49 @@ export const GameRoom: React.FC = () => {
 
     submit(action);
   };
+
+  const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
+    if (!lastError) {
+      return null;
+    }
+
+    const normalized = lastError.toLowerCase();
+    const insight: FeedbackInsight = {
+      title: "Action Rejected",
+      reason: lastError,
+      suggestions: ["Try again after the game state updates."],
+      technicalDetail: lastError,
+    };
+
+    if (normalized.includes("not your turn")) {
+      insight.title = "Not Your Turn";
+      insight.reason = "Another player must act first.";
+      insight.suggestions = [
+        `Wait until the Turn indicator shows ${currentTurnPlayer?.name ?? "the active player"}.`,
+        "Review the pot and choose fold, call/check, or raise.",
+      ];
+    } else if (normalized.includes("cannot check")) {
+      insight.title = "Check Not Allowed";
+      insight.reason = "You are facing a bet, so check is not legal right now.";
+      insight.suggestions = [
+        `Call $${callAmount}, raise at least $${minRaise}, or fold.`,
+        "Use the To Call value in the action dock to verify required chips.",
+      ];
+    } else if (normalized.includes("minimum")) {
+      insight.title = "Raise Too Small";
+      insight.reason = "Your raise is below the minimum allowed for this betting round.";
+      insight.suggestions = [
+        `Raise at least $${minRaise}.`,
+        "Or use call/check if you do not want to raise.",
+      ];
+    } else if (normalized.includes("insufficient chips")) {
+      insight.title = "Insufficient Chips";
+      insight.reason = "Your stack is not enough for this action.";
+      insight.suggestions = [`Current stack: $${maxStack}.`, "Use all-in or lower commitment."];
+    }
+
+    return insight;
+  }, [callAmount, currentTurnPlayer?.name, lastError, maxStack, minRaise]);
 
   if (!room || !player) {
     return (
@@ -1452,15 +1501,15 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
-      {lastError && (
+      {feedbackInsight && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
           data-testid="error-modal"
         >
           <div className="surface-panel w-full max-w-xl p-4 md:p-6">
-            <h3 className="text-lg font-black text-white">Action Rejected</h3>
+            <h3 className="text-lg font-black text-white">{feedbackInsight.title}</h3>
             <p className="mt-2 text-sm text-emerald-100/90" data-testid="error-modal-reason">
-              {lastError}
+              {feedbackInsight.reason}
             </p>
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -1481,6 +1530,26 @@ export const GameRoom: React.FC = () => {
                 <p className="mt-1 font-semibold text-white">${minRaise}</p>
               </div>
             </div>
+
+            <div className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                What you can do
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-100/90">
+                {feedbackInsight.suggestions.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </div>
+
+            {feedbackInsight.technicalDetail && (
+              <details className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3 text-xs text-emerald-100/75">
+                <summary className="cursor-pointer font-semibold">Technical detail</summary>
+                <p className="mt-2 break-words font-mono text-[11px]">
+                  {feedbackInsight.technicalDetail}
+                </p>
+              </details>
+            )}
 
             <div className="mt-5 flex justify-end">
               <button
