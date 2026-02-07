@@ -135,11 +135,13 @@ body {
 }
 
 .table-controls-strip {
-  margin: 0.5rem 0.75rem 0;
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .table-board-wrap {
@@ -271,6 +273,11 @@ body {
   opacity: 0.58;
 }
 
+.seat-pod--disconnected {
+  border-color: rgba(248, 113, 113, 0.88);
+  background: rgba(69, 10, 10, 0.68);
+}
+
 .seat-pod--empty {
   border-style: dashed;
   background: rgba(4, 35, 25, 0.45);
@@ -348,6 +355,10 @@ body {
   color: #fca5a5;
 }
 
+.seat-pod__state--disconnected {
+  color: #fca5a5;
+}
+
 .seat-pod__empty-label {
   font-size: 0.5rem;
   color: rgba(209, 250, 229, 0.55);
@@ -381,6 +392,20 @@ body {
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.42);
   max-height: min(62vh, 27rem);
   overflow-y: auto;
+}
+
+.chip-composer-dock__cards {
+  border: 1px solid rgba(6, 95, 70, 0.68);
+  border-radius: 0.85rem;
+  background: rgba(5, 43, 30, 0.86);
+  backdrop-filter: blur(4px);
+  padding: 0.42rem 0.5rem 0.46rem;
+}
+
+.chip-composer-dock__action-area {
+  margin-top: 0.58rem;
+  border-top: 1px solid rgba(16, 185, 129, 0.24);
+  padding-top: 0.56rem;
 }
 
 .chip-composer-dock__header {
@@ -659,11 +684,6 @@ body {
     align-items: center;
   }
 
-  .table-controls-strip {
-    max-width: 70rem;
-    margin: 0.55rem auto 0;
-  }
-
   .table-board-wrap {
     max-width: 70rem;
     margin: 0.7rem auto 0;
@@ -717,5 +737,9 @@ body {
     left: 50%;
     transform: translateX(-50%);
     width: min(96vw, 56rem);
+  }
+
+  .chip-composer-dock__cards {
+    max-width: 22rem;
   }
 }
