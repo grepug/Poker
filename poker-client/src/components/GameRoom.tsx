@@ -41,6 +41,14 @@ const fallbackCopyText = (text: string) => {
   return copied;
 };
 
+type FeedbackInsight = {
+  source: "error" | "hint";
+  title: string;
+  reason: string;
+  suggestions: string[];
+  technicalDetail?: string;
+};
+
 export const GameRoom: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -127,6 +135,118 @@ export const GameRoom: React.FC = () => {
     const timeoutId = window.setTimeout(() => setInviteCopyStatus(null), 2200);
     return () => window.clearTimeout(timeoutId);
   }, [inviteCopyStatus]);
+
+  useEffect(() => {
+    if (!lastError && !actionHint) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (lastError) clearError();
+        if (actionHint) setActionHint(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [actionHint, clearError, lastError]);
+
+  const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
+    if (lastError) {
+      const normalized = lastError.toLowerCase();
+      const insight: FeedbackInsight = {
+        source: "error",
+        title: "Action Rejected",
+        reason: lastError,
+        suggestions: ["Try again after the game state updates."],
+        technicalDetail: lastError,
+      };
+
+      if (normalized.includes("not your turn")) {
+        insight.title = "Not Your Turn";
+        insight.reason = "Another player must act first.";
+        insight.suggestions = [
+          `Wait until the Turn indicator shows ${
+            currentTurnPlayer?.name ?? "your name"
+          }.`,
+          "Review the pot and decide between fold, call/check, or raise.",
+        ];
+      } else if (normalized.includes("cannot check")) {
+        insight.title = "Check Not Allowed";
+        insight.reason = "You are facing a bet, so check is not legal right now.";
+        insight.suggestions = [
+          `Call $${callAmount}, raise at least $${minRaise}, or fold.`,
+          "Use the To Call chip in the action dock to verify required chips.",
+        ];
+      } else if (normalized.includes("nothing to call")) {
+        insight.title = "Call Not Needed";
+        insight.reason = "There is no outstanding bet to call.";
+        insight.suggestions = ["Use Check to continue without adding chips."];
+      } else if (normalized.includes("raise too small") || normalized.includes("minimum")) {
+        insight.title = "Raise Too Small";
+        insight.reason = "Your raise is below the minimum allowed for this betting round.";
+        insight.suggestions = [
+          `Raise at least $${minRaise}.`,
+          "Or use Call/Check if you don't want to raise.",
+        ];
+      } else if (normalized.includes("invalid raise amount")) {
+        insight.title = "Invalid Raise Amount";
+        insight.reason = "Raise amount must be a positive number.";
+        insight.suggestions = [
+          `Enter a value between $${minRaise} and $${maxRaise}.`,
+          "You can also use Call/Check or All-In.",
+        ];
+      } else if (normalized.includes("insufficient chips")) {
+        insight.title = "Insufficient Chips";
+        insight.reason = "Your stack is not enough for this action.";
+        insight.suggestions = [
+          `Current stack: $${maxRaise}.`,
+          "Use All-In or choose a lower commitment.",
+        ];
+      } else if (normalized.includes("only host")) {
+        insight.title = "Host Permission Required";
+        insight.reason = "This action can only be performed by the room host.";
+        insight.suggestions = ["Ask the host to perform this action."];
+      } else if (normalized.includes("current hand is still in progress")) {
+        insight.title = "Hand Still In Progress";
+        insight.reason = "A new hand cannot start until the current hand fully ends.";
+        insight.suggestions = ["Finish the current hand first."];
+      } else if (normalized.includes("not in active hand")) {
+        insight.title = "You Are Out Of This Hand";
+        insight.reason = "You cannot act because you're not active in the current hand.";
+        insight.suggestions = ["Wait for the next hand to start."];
+      }
+
+      return insight;
+    }
+
+    if (actionHint) {
+      const normalized = actionHint.toLowerCase();
+      const insight: FeedbackInsight = {
+        source: "hint",
+        title: "Action Guidance",
+        reason: actionHint,
+        suggestions: [],
+      };
+
+      if (normalized.includes("at least")) {
+        insight.title = "Raise Too Small";
+        insight.suggestions = [
+          `Minimum raise right now is $${minRaise}.`,
+          `To continue cheaply, call/check based on To Call ($${callAmount}).`,
+        ];
+      } else if (normalized.includes("cannot exceed")) {
+        insight.title = "Raise Too Large";
+        insight.suggestions = [
+          `Maximum raise is your stack: $${maxRaise}.`,
+          "Use All-In to commit your full stack quickly.",
+        ];
+      } else {
+        insight.suggestions = ["Adjust your action and try again."];
+      }
+
+      return insight;
+    }
+
+    return null;
+  }, [actionHint, callAmount, currentTurnPlayer?.name, lastError, maxRaise, minRaise]);
 
   if (!room || !player) {
     return <div className="p-4 text-white">Loading...</div>;
@@ -309,21 +429,6 @@ export const GameRoom: React.FC = () => {
             </div>
           </div>
         </header>
-
-        {lastError && (
-          <section className="surface-panel p-4 md:p-5">
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-500/60 bg-red-900/25 px-3 py-2 text-sm text-red-100">
-              <span>{lastError}</span>
-              <button
-                className="rounded-md border border-red-300/50 px-2 py-1 text-xs font-semibold text-red-100 transition hover:bg-red-500/15"
-                onClick={clearError}
-                data-testid="dismiss-error-button"
-              >
-                Dismiss
-              </button>
-            </div>
-          </section>
-        )}
 
         <section className="surface-panel p-4" data-testid="players-section">
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -603,6 +708,76 @@ export const GameRoom: React.FC = () => {
           </section>
         )}
       </div>
+
+      {feedbackInsight && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
+          data-testid={feedbackInsight.source === "error" ? "error-modal" : "alert-modal"}
+        >
+          <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
+            <h3 className="text-lg font-black text-white">{feedbackInsight.title}</h3>
+            <p className="mt-2 text-sm text-emerald-100/90" data-testid="error-modal-reason">
+              {feedbackInsight.reason}
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
+                <p className="text-xs text-emerald-100/70">Pot</p>
+                <p className="mt-1 font-semibold text-white">${displayPot}</p>
+              </div>
+              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
+                <p className="text-xs text-emerald-100/70">To Call</p>
+                <p className="mt-1 font-semibold text-white">${callAmount}</p>
+              </div>
+              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
+                <p className="text-xs text-emerald-100/70">Your Stack</p>
+                <p className="mt-1 font-semibold text-white">${maxRaise}</p>
+              </div>
+              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
+                <p className="text-xs text-emerald-100/70">Min Raise</p>
+                <p className="mt-1 font-semibold text-white">${minRaise}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                What you can do
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-100/90">
+                {feedbackInsight.suggestions.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </div>
+
+            {feedbackInsight.technicalDetail && (
+              <details className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3 text-xs text-emerald-100/75">
+                <summary className="cursor-pointer font-semibold">Technical detail</summary>
+                <p className="mt-2 break-words font-mono text-[11px]">
+                  {feedbackInsight.technicalDetail}
+                </p>
+              </details>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+                onClick={() => {
+                  if (lastError) clearError();
+                  if (actionHint) setActionHint(null);
+                }}
+                data-testid={
+                  feedbackInsight.source === "error"
+                    ? "dismiss-error-button"
+                    : "dismiss-alert-button"
+                }
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRankingsModal && (
         <div

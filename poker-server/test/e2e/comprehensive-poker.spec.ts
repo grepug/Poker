@@ -72,6 +72,12 @@ async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
   await bobPage.goto(FRONTEND_URL);
   await alicePage.waitForSelector('[data-testid="connection-status"]');
   await bobPage.waitForSelector('[data-testid="connection-status"]');
+  await expect(alicePage.locator('[data-testid="connection-status"]')).toContainText(
+    'Connected',
+  );
+  await expect(bobPage.locator('[data-testid="connection-status"]')).toContainText(
+    'Connected',
+  );
 
   await alicePage.fill('[data-testid="name-input"]', 'Alice');
   await alicePage.click('[data-testid="create-room-button"]');
@@ -124,6 +130,17 @@ async function setupThreePlayerSession(browser: any): Promise<ThreePlayerSession
     alicePage.waitForSelector('[data-testid="connection-status"]'),
     bobPage.waitForSelector('[data-testid="connection-status"]'),
     charliePage.waitForSelector('[data-testid="connection-status"]'),
+  ]);
+  await Promise.all([
+    expect(alicePage.locator('[data-testid="connection-status"]')).toContainText(
+      'Connected',
+    ),
+    expect(bobPage.locator('[data-testid="connection-status"]')).toContainText(
+      'Connected',
+    ),
+    expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
+      'Connected',
+    ),
   ]);
 
   await alicePage.fill('[data-testid="name-input"]', 'Alice');
@@ -3545,6 +3562,62 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       // TEST_MODE auto-starts hand #2; hidden cards should reset to shown.
       await waitForHandStart(alicePage, 2);
       await expect(alicePage.locator('[data-testid^="your-card-"]')).toHaveCount(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.10: Rejected Action Shows Detailed Error Modal', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage } = session;
+      await startGameFromLobby(alicePage, session.bobPage);
+
+      // Bob acts first pre-flop in heads-up; force an out-of-turn action from Alice.
+      await alicePage.evaluate(() => (window as any).pokerDebug.call());
+
+      await expect(alicePage.locator('[data-testid="error-modal"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="error-modal-reason"]')).toContainText(
+        'Another player must act first',
+      );
+      await expect(alicePage.locator('[data-testid="error-modal"]')).toContainText(
+        'Technical detail',
+      );
+      await expect(alicePage.locator('[data-testid="error-modal"]')).toContainText(
+        'shows Bob',
+      );
+
+      await alicePage.click('[data-testid="dismiss-error-button"]');
+      await expect(alicePage.locator('[data-testid="error-modal"]')).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.11: Invalid Check Uses Same Detailed Error Modal', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { bobPage } = session;
+      await startGameFromLobby(session.alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.evaluate(() => (window as any).pokerDebug.check());
+
+      await expect(bobPage.locator('[data-testid="error-modal"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="error-modal-reason"]')).toContainText(
+        'facing a bet',
+      );
+      await expect(bobPage.locator('[data-testid="error-modal"]')).toContainText(
+        'Call $10',
+      );
+      await expect(bobPage.locator('[data-testid="error-modal"]')).toContainText(
+        'Technical detail',
+      );
+
+      await bobPage.click('[data-testid="dismiss-error-button"]');
+      await expect(bobPage.locator('[data-testid="error-modal"]')).toHaveCount(0);
     } finally {
       await teardownTwoPlayerSession(session);
     }
