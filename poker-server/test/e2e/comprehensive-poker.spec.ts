@@ -3622,6 +3622,85 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await teardownTwoPlayerSession(session);
     }
   });
+
+  test('8.12: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'hearts', rank: 'A' }, // Alice
+        { suit: 'hearts', rank: 'K' }, // Alice
+        { suit: 'spades', rank: 'Q' }, // Bob
+        { suit: 'spades', rank: 'J' }, // Bob
+        { suit: 'clubs', rank: '2' }, // Flop 1
+        { suit: 'diamonds', rank: '5' }, // Flop 2
+        { suit: 'spades', rank: '8' }, // Flop 3
+        { suit: 'hearts', rank: '9' }, // Turn
+        { suit: 'diamonds', rank: 'K' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
+        'Showdown complete',
+      );
+      await expect(
+        alicePage.locator('[data-testid^="winner-rank-"]').first(),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        0,
+      );
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(
+        0,
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13: Non-Showdown Result Allows Manual Show My Hand', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
+        'without showdown',
+      );
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        2,
+      );
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+
+      await alicePage.click('[data-testid="show-my-hand-button"]');
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
+        0,
+      );
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
+      await expect(alicePage.locator('[data-testid="my-hand-revealed-indicator"]')).toBeVisible();
+
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
 });
 
 test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {

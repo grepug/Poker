@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
 import { PlayerSeat } from "./PlayerSeat";
-import type { PlayerAction } from "poker-types";
+import type { HandEvaluation, PlayerAction } from "poker-types";
 
 const seatPositions: Array<"top" | "right" | "bottom" | "left"> = [
   "top",
@@ -49,17 +49,26 @@ type FeedbackInsight = {
   technicalDetail?: string;
 };
 
+const formatHandRank = (rank: HandEvaluation["rank"]) =>
+  rank
+    .split("_")
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(" ");
+
 export const GameRoom: React.FC = () => {
   const navigate = useNavigate();
   const {
     room,
     player,
     yourCards,
+    lastHandResult,
+    revealedHandPlayerIds,
     isHost,
     lastError,
     clearError,
     startGame,
     startNextHand,
+    showMyHand,
     performAction,
     leaveRoom,
   } = useGame();
@@ -108,6 +117,41 @@ export const GameRoom: React.FC = () => {
     currentHandNumber === null || hiddenCardsHandNumber !== currentHandNumber;
   const canHostStartNextHand =
     isHost && isGameStarted && isHandPausedForNext && room.players.length >= 2;
+  const isShowdownComplete =
+    Boolean(lastHandResult) &&
+    isHandPausedForNext &&
+    currentHand?.bettingRound === "SHOWDOWN";
+  const shouldForceShowHoleCards = isShowdownComplete;
+  const isShowingHoleCards = shouldForceShowHoleCards || showHoleCards;
+  const myCompletedHand =
+    lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
+  const canRevealMyCompletedHand =
+    Boolean(lastHandResult) && Boolean(myCompletedHand) && !isShowdownComplete;
+  const revealedHandPlayerIdSet = useMemo(
+    () => new Set(revealedHandPlayerIds),
+    [revealedHandPlayerIds],
+  );
+  const isMyCompletedHandRevealed = player?.id
+    ? revealedHandPlayerIdSet.has(player.id)
+    : false;
+  const isPlayerHandVisible = (playerId: string) =>
+    isShowdownComplete || revealedHandPlayerIdSet.has(playerId);
+  const winnersByPlayerId = useMemo(
+    () =>
+      new Map(
+        (lastHandResult?.winners ?? []).map((winner) => [winner.playerId, winner]),
+      ),
+    [lastHandResult],
+  );
+  const handResultRows = useMemo(() => {
+    if (!lastHandResult) return [];
+    return lastHandResult.playerHands.map((entry, idx) => ({
+      ...entry,
+      amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
+      isWinner: winnersByPlayerId.has(entry.playerId),
+      rankOrder: idx + 1,
+    }));
+  }, [lastHandResult, winnersByPlayerId]);
   const inviteUrl = useMemo(() => {
     if (!room?.id || typeof window === "undefined") return "";
     return `${window.location.origin}/room/${room.id}`;
@@ -528,12 +572,17 @@ export const GameRoom: React.FC = () => {
                   )
                 }
                 data-testid="toggle-hole-cards"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                disabled={shouldForceShowHoleCards}
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {showHoleCards ? "Hide Cards" : "Show Cards"}
+                {shouldForceShowHoleCards
+                  ? "Cards Revealed"
+                  : showHoleCards
+                    ? "Hide Cards"
+                    : "Show Cards"}
               </button>
             </div>
-            {showHoleCards && yourCards && yourCards.length > 0 ? (
+            {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
               <div className="mt-3 flex justify-center gap-3">
                 {yourCards.map((card, idx) => (
                   <Card
@@ -549,7 +598,7 @@ export const GameRoom: React.FC = () => {
                 className="mt-3 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-4 text-center text-sm text-emerald-100/70"
                 data-testid="hole-cards-hidden-state"
               >
-                {showHoleCards
+                {isShowingHoleCards
                   ? "Cards will appear when a hand starts."
                   : "Hole cards are hidden. Toggle to reveal."}
               </div>
@@ -608,6 +657,164 @@ export const GameRoom: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {lastHandResult && (
+          <section className="surface-panel p-4" data-testid="hand-results-panel">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-100" data-testid="hand-results-title">
+                  Hand #{currentHandNumber ?? "?"} Results
+                </h3>
+                <p className="mt-1 text-sm text-emerald-100/75" data-testid="hand-results-mode">
+                  {isShowdownComplete
+                    ? "Showdown complete: hands are automatically revealed."
+                    : "Hand ended without showdown: players may choose whether to reveal."}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="hud-chip" data-testid="hand-results-pot">
+                  Pot: ${lastHandResult.totalPot}
+                </span>
+                <span className="hud-chip" data-testid="hand-results-winner-count">
+                  Winners: {lastHandResult.winners.length}
+                </span>
+              </div>
+            </div>
+
+            {canRevealMyCompletedHand && !isMyCompletedHandRevealed && (
+              <button
+                onClick={showMyHand}
+                data-testid="show-my-hand-button"
+                className="mt-3 rounded-lg border border-cyan-400/60 bg-cyan-900/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+              >
+                Show My Hand
+              </button>
+            )}
+            {isMyCompletedHandRevealed && !isShowdownComplete && (
+              <p
+                className="mt-3 text-xs font-semibold uppercase tracking-wide text-cyan-100/90"
+                data-testid="my-hand-revealed-indicator"
+              >
+                Your hand is revealed to the table.
+              </p>
+            )}
+
+            <div
+              className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
+              data-testid="hand-results-winners"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                Winners
+              </p>
+              <div className="mt-2 space-y-2 text-sm text-emerald-50">
+                {lastHandResult.winners.map((winner) => {
+                  const isSelf = winner.playerId === player.id;
+                  const showWinnerHand = isPlayerHandVisible(winner.playerId);
+                  const winnerHand = winner.hand as HandEvaluation | null;
+                  return (
+                    <div
+                      key={`winner-${winner.playerId}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
+                      data-testid={`winner-row-${winner.playerId}`}
+                    >
+                      <span className="font-semibold">
+                        {winner.playerName}
+                        {isSelf ? " (You)" : ""}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 font-semibold">
+                          +${winner.amountWon}
+                        </span>
+                        {showWinnerHand && winnerHand ? (
+                          <span
+                            className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 font-semibold text-cyan-100"
+                            data-testid={`winner-rank-${winner.playerId}`}
+                          >
+                            {formatHandRank(winnerHand.rank)}
+                          </span>
+                        ) : showWinnerHand ? (
+                          <span className="text-emerald-200/70">Cards shown</span>
+                        ) : (
+                          <span className="text-emerald-200/70">Hand hidden</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {handResultRows.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="hand-results-rows">
+                {handResultRows.map((entry) => {
+                  const isSelf = entry.playerId === player.id;
+                  const showCards = isPlayerHandVisible(entry.playerId);
+                  const evaluatedHand = entry.hand as HandEvaluation | null;
+                  return (
+                    <article
+                      key={`hand-result-${entry.playerId}`}
+                      className={`rounded-xl border p-3 ${
+                        entry.isWinner
+                          ? "border-amber-400/70 bg-amber-500/10"
+                          : "border-emerald-700/60 bg-emerald-950/45"
+                      }`}
+                      data-testid={`hand-result-row-${entry.playerId}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            #{entry.rankOrder} {entry.playerName}
+                            {isSelf ? " (You)" : ""}
+                          </p>
+                          <p className="text-xs text-emerald-100/70">
+                            {entry.isWinner ? `Won $${entry.amountWon}` : "No payout"}
+                          </p>
+                        </div>
+                        {entry.isWinner && (
+                          <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-1 text-xs font-semibold text-amber-100">
+                            Winner
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {showCards
+                          ? entry.cards.map((card, idx) => (
+                              <Card
+                                key={`${entry.playerId}-shown-${idx}`}
+                                card={card}
+                                size="small"
+                                dataTestId={`hand-result-card-${entry.playerId}-${idx}`}
+                              />
+                            ))
+                          : [0, 1].map((idx) => (
+                              <Card
+                                key={`${entry.playerId}-hidden-${idx}`}
+                                card={null}
+                                size="small"
+                                faceDown
+                                dataTestId={`hand-result-hidden-card-${entry.playerId}-${idx}`}
+                              />
+                            ))}
+                      </div>
+
+                      <p
+                        className="mt-2 text-xs text-emerald-100/75"
+                        data-testid={`hand-result-rank-${entry.playerId}`}
+                      >
+                        {showCards
+                          ? evaluatedHand
+                            ? `${formatHandRank(evaluatedHand.rank)} - ${evaluatedHand.description}`
+                            : "Cards shown (no evaluated hand)."
+                          : "Hand hidden"}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         {canHostStartNextHand && (
           <section className="surface-panel p-4">

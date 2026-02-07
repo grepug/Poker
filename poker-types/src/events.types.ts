@@ -31,6 +31,8 @@ export interface RequestRebuyData {
   amount: number;
 }
 
+export interface ShowMyHandData {}
+
 export interface ClientToServerEvents {
   CREATE_ROOM: (
     data: CreateRoomData,
@@ -40,6 +42,10 @@ export interface ClientToServerEvents {
   RECONNECT: (data: ReconnectData, callback: (response: any) => void) => void;
   START_GAME: (callback: (response: any) => void) => void;
   START_NEXT_HAND: (callback: (response: any) => void) => void;
+  SHOW_MY_HAND: (
+    data: ShowMyHandData,
+    callback: (response: any) => void,
+  ) => void;
   PLAYER_ACTION: (
     data: PlayerActionData,
     callback: (response: any) => void,
@@ -119,6 +125,15 @@ export interface CommunityCardsDealtData {
 
 export interface HandCompleteData {
   result: HandResult;
+  handNumber: number;
+  isShowdown: boolean;
+  revealedPlayerIds: string[];
+}
+
+export interface PlayerHandRevealedData {
+  playerId: string;
+  playerName: string;
+  handNumber: number;
 }
 
 export interface PlayerDisconnectedData {
@@ -183,6 +198,7 @@ export interface ServerToClientEvents {
   BETTING_ROUND_COMPLETE: (data: BettingRoundCompleteData) => void;
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
+  PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
