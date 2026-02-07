@@ -53,6 +53,7 @@ export default defineConfig({
       timeout: 30000,
       env: {
         TEST_MODE: 'true',
+        PORT: '3001',
       },
     },
   ],

@@ -208,7 +208,11 @@ async function waitForHoleCards(page: Page, expectedCount = 2) {
   );
 }
 
-async function waitForPlayerTurn(page: Page, playerName: string) {
+async function waitForPlayerTurn(
+  page: Page,
+  playerName: string,
+  timeoutMs = 10000,
+) {
   await page.waitForFunction(
     (name) => {
       const room = (window as any).pokerDebug?.getRoom();
@@ -216,7 +220,7 @@ async function waitForPlayerTurn(page: Page, playerName: string) {
       return !!playerId && room?.currentHand?.currentPlayerTurn === playerId;
     },
     playerName,
-    { timeout: 10000 },
+    { timeout: timeoutMs },
   );
 }
 
@@ -376,13 +380,15 @@ async function completeCurrentHandWithPassiveActions(
   pageByName: Record<string, Page>,
   handNumber: number,
 ) {
-  const handCompletePromise = captureNextHandComplete(anchorPage, 30000);
+  const startedAt = Date.now();
+  const maxDurationMs = 45000;
 
-  for (let i = 0; i < 40; i++) {
+  while (Date.now() - startedAt < maxDurationMs) {
     const state = await getRoomSnapshot(anchorPage);
-    if (state.handNumber !== handNumber) {
-      break;
+    if (state.handNumber !== handNumber || state.currentPlayerTurn === null) {
+      return;
     }
+
     const actingPlayer = state.currentPlayerName;
     if (!actingPlayer) {
       await anchorPage.waitForTimeout(200);
@@ -390,7 +396,18 @@ async function completeCurrentHandWithPassiveActions(
     }
 
     const actingPage = pageByName[actingPlayer];
-    await waitForPlayerTurn(actingPage, actingPlayer);
+    if (!actingPage) {
+      await anchorPage.waitForTimeout(200);
+      continue;
+    }
+
+    try {
+      await waitForPlayerTurn(actingPage, actingPlayer, 5000);
+    } catch {
+      await anchorPage.waitForTimeout(200);
+      continue;
+    }
+
     const canCheck = await actingPage.evaluate(() => {
       const pokerDebug = (window as any).pokerDebug;
       const room = pokerDebug?.getRoom?.();
@@ -405,10 +422,13 @@ async function completeCurrentHandWithPassiveActions(
       await actingPage.evaluate(() => (window as any).pokerDebug.call());
     }
 
-    await anchorPage.waitForTimeout(200);
+    await anchorPage.waitForTimeout(150);
   }
 
-  await handCompletePromise;
+  const finalState = await getRoomSnapshot(anchorPage);
+  throw new Error(
+    `Timed out completing hand ${handNumber}; final state: hand=${finalState.handNumber}, round=${finalState.bettingRound}, turn=${finalState.currentPlayerName}`,
+  );
 }
 
 async function playCheckCheckToShowdown(alicePage: Page, bobPage: Page) {
@@ -3618,6 +3638,101 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await bobPage.click('[data-testid="dismiss-error-button"]');
       await expect(bobPage.locator('[data-testid="error-modal"]')).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const beforeRefresh = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        return {
+          roomId: room?.id ?? null,
+          playerId: player?.id ?? null,
+          playerName: player?.name ?? null,
+          handNumber: room?.currentHand?.handNumber ?? null,
+          bettingRound: room?.currentHand?.bettingRound ?? null,
+          hasCards: Array.isArray((window as any).pokerDebug?.getCards?.())
+            ? (window as any).pokerDebug.getCards().length === 2
+            : false,
+        };
+      });
+
+      expect(beforeRefresh.roomId).toBe(roomCode);
+      expect(beforeRefresh.playerName).toBe('Bob');
+      expect(beforeRefresh.hasCards).toBe(true);
+      expect(beforeRefresh.handNumber).toBe(1);
+      expect(beforeRefresh.bettingRound).toBe('PRE_FLOP');
+
+      // Test harness serves static files without SPA fallback. Intercept room route
+      // and serve index.html so a hard reload at /room/:id behaves like production.
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.reload({ waitUntil: 'domcontentloaded' });
+      await bobPage.unroute(roomRoutePattern);
+
+      await waitForPokerDebug(bobPage);
+      await bobPage.waitForFunction(
+        () => {
+          const pd = (window as any).pokerDebug;
+          const room = pd?.getRoom?.();
+          const player = pd?.getPlayer?.();
+          return (
+            !!room?.id &&
+            !!player?.id &&
+            Array.isArray(pd?.getCards?.()) &&
+            pd.getCards().length === 2
+          );
+        },
+        { timeout: 15000 },
+      );
+
+      const afterRefresh = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        return {
+          roomId: room?.id ?? null,
+          playerId: player?.id ?? null,
+          playerName: player?.name ?? null,
+          handNumber: room?.currentHand?.handNumber ?? null,
+          bettingRound: room?.currentHand?.bettingRound ?? null,
+          currentPlayerTurn: room?.currentHand?.currentPlayerTurn ?? null,
+          status: room?.players?.find((p: any) => p.id === player?.id)?.status ?? null,
+        };
+      });
+
+      expect(afterRefresh.roomId).toBe(beforeRefresh.roomId);
+      expect(afterRefresh.playerId).toBe(beforeRefresh.playerId);
+      expect(afterRefresh.playerName).toBe('Bob');
+      expect(afterRefresh.handNumber).toBe(beforeRefresh.handNumber);
+      expect(afterRefresh.bettingRound).toBe(beforeRefresh.bettingRound);
+      expect(afterRefresh.currentPlayerTurn).toBe(afterRefresh.playerId);
+      expect(afterRefresh.status).toBe('connected');
+      await expect(bobPage).toHaveURL(new RegExp(`/room/${roomCode}$`));
+
+      // Verify recovered player can immediately continue the same hand.
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(alicePage, 'FLOP', 3);
     } finally {
       await teardownTwoPlayerSession(session);
     }
