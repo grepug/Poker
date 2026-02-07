@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
 
@@ -13,6 +13,7 @@ export const Home: React.FC<HomeProps> = ({
   forceJoinMode = false,
 }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { connected } = useSocket();
   const {
     createRoom,
@@ -26,12 +27,22 @@ export const Home: React.FC<HomeProps> = ({
     () => prefilledRoomId?.trim().toUpperCase() ?? "",
     [prefilledRoomId],
   );
-  const defaultJoinMode = forceJoinMode || Boolean(normalizedPrefilledRoomId);
+  const queryRoomId = useMemo(
+    () => searchParams.get("roomId")?.trim().toUpperCase() ?? "",
+    [searchParams],
+  );
+  const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
+  const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
   const [playerName, setPlayerName] = useState("");
-  const [roomId, setRoomId] = useState(normalizedPrefilledRoomId);
+  const [roomId, setRoomId] = useState(inferredRoomId);
   const [isJoining, setIsJoining] = useState(defaultJoinMode);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const effectiveRoomId = normalizedPrefilledRoomId || roomId;
+  const effectiveRoomId = inferredRoomId || roomId;
+
+  useEffect(() => {
+    setRoomId(inferredRoomId);
+    setIsJoining(defaultJoinMode);
+  }, [defaultJoinMode, inferredRoomId]);
 
   const clearFeedback = () => {
     if (feedback) {
@@ -53,7 +64,6 @@ export const Home: React.FC<HomeProps> = ({
 
     clearFeedback();
     createRoom(trimmedName);
-    navigate("/room");
   };
 
   const handleJoinRoom = () => {
@@ -70,7 +80,6 @@ export const Home: React.FC<HomeProps> = ({
 
     clearFeedback();
     joinRoom(normalizedRoomId, trimmedName);
-    navigate(`/room/${normalizedRoomId}`);
   };
 
   return (
@@ -206,6 +215,7 @@ export const Home: React.FC<HomeProps> = ({
                     setIsJoining(false);
                     setRoomId("");
                     clearFeedback();
+                    navigate("/", { replace: true });
                   }}
                   data-testid="back-button"
                   className="w-full rounded-xl border border-slate-500/70 bg-slate-700/20 px-4 py-3 font-semibold text-slate-200 transition hover:bg-slate-700/40"
