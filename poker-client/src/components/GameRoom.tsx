@@ -39,6 +39,8 @@ export const GameRoom: React.FC = () => {
   const [raiseAmount, setRaiseAmount] = useState<number>(0);
   const [actionHint, setActionHint] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [hiddenCardsHandNumber, setHiddenCardsHandNumber] = useState<number | null>(null);
+  const [showRankingsModal, setShowRankingsModal] = useState<boolean>(false);
   const [confirmActions, setConfirmActions] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     const saved = window.localStorage.getItem("poker.confirmActions");
@@ -72,6 +74,9 @@ export const GameRoom: React.FC = () => {
   const canCheck = callAmount === 0;
   const maxRaise = currentPlayer?.chips ?? 0;
   const isYourTurn = currentHand?.currentPlayerTurn === player?.id;
+  const currentHandNumber = currentHand?.handNumber ?? null;
+  const showHoleCards =
+    currentHandNumber === null || hiddenCardsHandNumber !== currentHandNumber;
   const canHostStartNextHand =
     isHost && isGameStarted && isHandPausedForNext && room.players.length >= 2;
 
@@ -81,15 +86,16 @@ export const GameRoom: React.FC = () => {
   }, [confirmActions]);
 
   useEffect(() => {
-    if (!pendingAction) return;
+    if (!pendingAction && !showRankingsModal) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setPendingAction(null);
+        setShowRankingsModal(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pendingAction]);
+  }, [pendingAction, showRankingsModal]);
 
   if (!room || !player) {
     return <div className="p-4 text-white">Loading...</div>;
@@ -175,6 +181,21 @@ export const GameRoom: React.FC = () => {
   const myPositionLabel = currentPlayer
     ? getPlayerPositionLabel(currentPlayer.position)
     : null;
+  const playerRankings = [...room.players]
+    .map((rankedPlayer) => {
+      const tableStack = rankedPlayer.chips + (rankedPlayer.currentBet || 0);
+      const net = tableStack - rankedPlayer.totalBuyIn;
+      return {
+        ...rankedPlayer,
+        tableStack,
+        net,
+      };
+    })
+    .sort((a, b) => {
+      if (b.tableStack !== a.tableStack) return b.tableStack - a.tableStack;
+      if (b.net !== a.net) return b.net - a.net;
+      return a.name.localeCompare(b.name);
+    });
 
   return (
     <div className="min-h-screen px-3 pb-8 pt-3 md:px-6 md:pb-10">
@@ -230,7 +251,16 @@ export const GameRoom: React.FC = () => {
         )}
 
         <section className="surface-panel p-4" data-testid="players-section">
-          <h3 className="mb-3 text-sm font-semibold text-emerald-100">Players</h3>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-emerald-100">Players</h3>
+            <button
+              onClick={() => setShowRankingsModal(true)}
+              data-testid="open-rankings-button"
+              className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+            >
+              View Rankings
+            </button>
+          </div>
           <div className="space-y-2">
             {room.players.map((seatPlayer, idx) => (
               <PlayerSeat
@@ -248,100 +278,14 @@ export const GameRoom: React.FC = () => {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {yourCards && yourCards.length > 0 && (
-            <section className="surface-panel p-4" data-testid="your-cards-section">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-emerald-100">Your Cards</h3>
-                {myPositionLabel && (
-                  <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-100">
-                    {myPositionLabel}
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[auto_1fr] xl:items-center">
-                <div className="flex justify-center gap-3">
-                  {yourCards.map((card, idx) => (
-                    <Card
-                      key={idx}
-                      card={card}
-                      size="large"
-                      dataTestId={`your-card-${idx}`}
-                    />
-                  ))}
-                </div>
-                <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                    Decision Snapshot
-                  </p>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="text-emerald-100/70">
-                      To Call: <span className="text-white">${callAmount}</span>
-                    </div>
-                    <div className="text-emerald-100/70">
-                      Min Raise: <span className="text-white">${minRaise}</span>
-                    </div>
-                    <div className="text-emerald-100/70">
-                      Stack: <span className="text-white">${maxRaise}</span>
-                    </div>
-                    <div className="text-emerald-100/70">
-                      In Pot: <span className="text-white">${currentPlayer?.currentBet ?? 0}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          <section className="surface-panel p-4" data-testid="game-info-panel">
-            <h3 className="text-sm font-semibold text-emerald-100">Game Info</h3>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                  Table State
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="hud-chip" data-testid="pot-value">
-                    Pot: ${displayPot}
-                  </span>
-                  {currentHand && (
-                    <span className="hud-chip" data-testid="round-value">
-                      Current Round: {currentHand.bettingRound}
-                    </span>
-                  )}
-                  <span className="hud-chip" data-testid="your-chips">
-                    Your Chips: ${currentPlayer?.chips ?? 0}
-                  </span>
-                  {currentTurnPlayer && (
-                    <span className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100" data-testid="turn-player">
-                      Turn: {currentTurnPlayer.name}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                  Hand Context
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="text-emerald-100/70">
-                    Small Blind: <span className="text-white">${room.config.smallBlind}</span>
-                  </div>
-                  <div className="text-emerald-100/70">
-                    Big Blind: <span className="text-white">${room.config.bigBlind}</span>
-                  </div>
-                  {currentHand && (
-                    <div className="text-emerald-100/70">
-                      Hand #: <span className="text-white">{currentHand.handNumber}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {currentHand && currentHand.communityCards.length > 0 && (
-              <div className="mt-4 flex flex-wrap justify-center gap-2" data-testid="community-cards">
+        <section className="surface-panel p-4" data-testid="table-board-section">
+          <h3 className="text-sm font-semibold text-emerald-100">Board</h3>
+          <div className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+              Community Cards
+            </p>
+            {currentHand && currentHand.communityCards.length > 0 ? (
+              <div className="mt-3 flex flex-wrap justify-center gap-2" data-testid="community-cards">
                 {currentHand.communityCards.map((card, idx) => (
                   <Card
                     key={idx}
@@ -351,9 +295,110 @@ export const GameRoom: React.FC = () => {
                   />
                 ))}
               </div>
+            ) : (
+              <div className="mt-3 text-center text-sm text-emerald-100/65">
+                No community cards yet.
+              </div>
             )}
-          </section>
-        </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3" data-testid="your-cards-section">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-emerald-100">Your Cards</h3>
+                {myPositionLabel && (
+                  <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-100">
+                    {myPositionLabel}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() =>
+                  setHiddenCardsHandNumber((prev) =>
+                    showHoleCards ? currentHandNumber ?? prev : null,
+                  )
+                }
+                data-testid="toggle-hole-cards"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                {showHoleCards ? "Hide Cards" : "Show Cards"}
+              </button>
+            </div>
+            {showHoleCards && yourCards && yourCards.length > 0 ? (
+              <div className="mt-3 flex justify-center gap-3">
+                {yourCards.map((card, idx) => (
+                  <Card
+                    key={idx}
+                    card={card}
+                    size="large"
+                    dataTestId={`your-card-${idx}`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div
+                className="mt-3 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-4 text-center text-sm text-emerald-100/70"
+                data-testid="hole-cards-hidden-state"
+              >
+                {showHoleCards
+                  ? "Cards will appear when a hand starts."
+                  : "Hole cards are hidden. Toggle to reveal."}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="surface-panel p-4" data-testid="game-info-panel">
+          <h3 className="text-sm font-semibold text-emerald-100">Game Info</h3>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                Decision Priority
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="hud-chip" data-testid="pot-value">
+                  Pot: ${displayPot}
+                </span>
+                {currentHand && (
+                  <span className="hud-chip" data-testid="round-value">
+                    Current Round: {currentHand.bettingRound}
+                  </span>
+                )}
+                <span className="hud-chip" data-testid="your-chips">
+                  Your Chips: ${currentPlayer?.chips ?? 0}
+                </span>
+                <span className="hud-chip">To Call: ${callAmount}</span>
+                {currentTurnPlayer && (
+                  <span className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100" data-testid="turn-player">
+                    Turn: {currentTurnPlayer.name}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/55 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                Table Context
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                <div className="text-emerald-100/70">
+                  Small Blind: <span className="text-white">${room.config.smallBlind}</span>
+                </div>
+                <div className="text-emerald-100/70">
+                  Big Blind: <span className="text-white">${room.config.bigBlind}</span>
+                </div>
+                {currentHand && (
+                  <div className="text-emerald-100/70">
+                    Hand #: <span className="text-white">{currentHand.handNumber}</span>
+                  </div>
+                )}
+                <div className="text-emerald-100/70">
+                  Your Bet: <span className="text-white">${currentPlayer?.currentBet ?? 0}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {canHostStartNextHand && (
           <section className="surface-panel p-4">
@@ -477,6 +522,68 @@ export const GameRoom: React.FC = () => {
           </section>
         )}
       </div>
+
+      {showRankingsModal && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
+          data-testid="rankings-modal"
+        >
+          <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-black text-white">Player Rankings</h3>
+              <button
+                onClick={() => setShowRankingsModal(false)}
+                data-testid="close-rankings-button"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-emerald-100/80">
+              Sorted by table stack (`chips + current bet`).
+            </p>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
+              <table className="min-w-full text-sm">
+                <thead className="bg-emerald-950/70 text-emerald-100/70">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">Rank</th>
+                    <th className="px-3 py-2 text-left font-semibold">Player</th>
+                    <th className="px-3 py-2 text-right font-semibold">Stack</th>
+                    <th className="px-3 py-2 text-right font-semibold">Buy-in</th>
+                    <th className="px-3 py-2 text-right font-semibold">Net</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-emerald-950/45">
+                  {playerRankings.map((rankedPlayer, idx) => (
+                    <tr
+                      key={rankedPlayer.id}
+                      className="border-t border-emerald-800/60 text-emerald-50"
+                      data-testid={`ranking-row-${idx + 1}`}
+                    >
+                      <td className="px-3 py-2">#{idx + 1}</td>
+                      <td className="px-3 py-2">
+                        {rankedPlayer.name}
+                        {rankedPlayer.id === player.id ? " (You)" : ""}
+                      </td>
+                      <td className="px-3 py-2 text-right">${rankedPlayer.tableStack}</td>
+                      <td className="px-3 py-2 text-right">${rankedPlayer.totalBuyIn}</td>
+                      <td
+                        className={`px-3 py-2 text-right font-semibold ${
+                          rankedPlayer.net >= 0 ? "text-emerald-300" : "text-red-300"
+                        }`}
+                      >
+                        {rankedPlayer.net >= 0 ? "+" : ""}
+                        ${rankedPlayer.net}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingAction && (
         <div

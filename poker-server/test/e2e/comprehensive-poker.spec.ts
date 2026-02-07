@@ -3516,6 +3516,39 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await teardownTwoPlayerSession(session);
     }
   });
+
+  test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="ranking-row-1"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toContainText(
+        'Player Rankings',
+      );
+      await alicePage.click('[data-testid="close-rankings-button"]');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toHaveCount(0);
+
+      await alicePage.click('[data-testid="toggle-hole-cards"]');
+      await expect(alicePage.locator('[data-testid^="your-card-"]')).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="hole-cards-hidden-state"]')).toBeVisible();
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      // TEST_MODE auto-starts hand #2; hidden cards should reset to shown.
+      await waitForHandStart(alicePage, 2);
+      await expect(alicePage.locator('[data-testid^="your-card-"]')).toHaveCount(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
 });
 
 test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
