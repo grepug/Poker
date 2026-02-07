@@ -3481,6 +3481,41 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await teardownTwoPlayerSession(session);
     }
   });
+
+  test('8.8: Action Confirmation Modal Helps Decision Before Commit', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]').check();
+      await bobPage.click('[data-testid="action-call"]');
+
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Confirm Action',
+      );
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Pot',
+      );
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
+        'Your Stack',
+      );
+
+      await bobPage.click('[data-testid="confirm-action-button"]');
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const stateAfterConfirm = await getRoomSnapshot(alicePage);
+      expect(stateAfterConfirm.currentPlayerName).toBe('Alice');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
 });
 
 test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
