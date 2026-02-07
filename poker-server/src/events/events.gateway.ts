@@ -34,9 +34,39 @@ import {
   Card,
 } from 'poker-types';
 
+const resolveGatewayCorsOrigin = ():
+  | string
+  | string[]
+  | ((
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => void) => {
+  const raw = process.env.CORS_ORIGIN?.trim();
+
+  if (!raw || raw === '*') {
+    return (
+      _origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      callback(null, true);
+    };
+  }
+
+  const origins = raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (origins.length <= 1) {
+    return origins[0] || raw;
+  }
+
+  return origins;
+};
+
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: resolveGatewayCorsOrigin(),
     credentials: true,
   },
 })
@@ -48,6 +78,28 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
+
+  private getRoomShareUrl(client: Socket, roomId: string) {
+    const configuredClientUrl = process.env.CLIENT_URL?.trim();
+    if (configuredClientUrl) {
+      return `${configuredClientUrl.replace(/\/$/, '')}/room/${roomId}`;
+    }
+
+    const originHeader = client.handshake.headers.origin;
+    if (typeof originHeader === 'string' && originHeader.trim()) {
+      return `${originHeader.replace(/\/$/, '')}/room/${roomId}`;
+    }
+
+    const hostHeader = client.handshake.headers.host;
+    if (typeof hostHeader === 'string' && hostHeader.trim()) {
+      const hostname = hostHeader.split(':')[0];
+      const clientProtocol = process.env.CLIENT_PROTOCOL || 'http';
+      const clientPort = process.env.CLIENT_PORT || '5173';
+      return `${clientProtocol}://${hostname}:${clientPort}/room/${roomId}`;
+    }
+
+    return `/room/${roomId}`;
+  }
 
   constructor(
     private readonly gameService: GameService,
@@ -111,7 +163,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const response: RoomCreatedData = {
         roomId: room.id,
-        shareUrl: `${process.env.CLIENT_URL || 'http://localhost:5173'}/room/${room.id}`,
+        shareUrl: this.getRoomShareUrl(client, room.id),
         room: this.sanitizeRoom(room),
       };
 
