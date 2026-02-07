@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
 import { PlayerSeat } from "./PlayerSeat";
@@ -12,6 +13,7 @@ const seatPositions: Array<"top" | "right" | "bottom" | "left"> = [
 ];
 
 export const GameRoom: React.FC = () => {
+  const navigate = useNavigate();
   const {
     room,
     player,
@@ -20,6 +22,7 @@ export const GameRoom: React.FC = () => {
     lastError,
     clearError,
     startGame,
+    startNextHand,
     performAction,
     leaveRoom,
   } = useGame();
@@ -31,6 +34,8 @@ export const GameRoom: React.FC = () => {
   const currentPlayer = room?.players.find((p) => p.id === player?.id) ?? null;
   const currentTurnPlayer =
     room?.players.find((p) => p.id === currentHand?.currentPlayerTurn) ?? null;
+  const isHandPausedForNext =
+    Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
 
   const minRaise = useMemo(() => {
     if (!room) return 0;
@@ -49,6 +54,8 @@ export const GameRoom: React.FC = () => {
   const canCheck = callAmount === 0;
   const maxRaise = currentPlayer?.chips ?? 0;
   const isYourTurn = currentHand?.currentPlayerTurn === player?.id;
+  const canHostStartNextHand =
+    isHost && isGameStarted && isHandPausedForNext && room.players.length >= 2;
 
   if (!room || !player) {
     return <div className="p-4 text-white">Loading...</div>;
@@ -73,6 +80,28 @@ export const GameRoom: React.FC = () => {
 
     setActionHint(null);
     performAction(action);
+  };
+
+  const handleLeave = () => {
+    leaveRoom();
+    navigate("/");
+  };
+
+  const getPlayerPositionLabel = (seatPlayerPosition: number) => {
+    if (!currentHand) return null;
+
+    const labels: string[] = [];
+    if (currentHand.dealerPosition === seatPlayerPosition) {
+      labels.push("Dealer");
+    }
+    if (currentHand.smallBlindPosition === seatPlayerPosition) {
+      labels.push("SB");
+    }
+    if (currentHand.bigBlindPosition === seatPlayerPosition) {
+      labels.push("BB");
+    }
+
+    return labels.length > 0 ? labels.join(" / ") : null;
   };
 
   return (
@@ -103,7 +132,7 @@ export const GameRoom: React.FC = () => {
                 </button>
               )}
               <button
-                onClick={leaveRoom}
+                onClick={handleLeave}
                 data-testid="leave-room-button"
                 className="rounded-xl border border-red-500/70 bg-red-900/25 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-800/40"
               >
@@ -113,9 +142,9 @@ export const GameRoom: React.FC = () => {
           </div>
         </header>
 
-        <section className="surface-panel p-4 md:p-5" data-testid="hud-panel">
-          {lastError && (
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/60 bg-red-900/25 px-3 py-2 text-sm text-red-100">
+        {lastError && (
+          <section className="surface-panel p-4 md:p-5">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-500/60 bg-red-900/25 px-3 py-2 text-sm text-red-100">
               <span>{lastError}</span>
               <button
                 className="rounded-md border border-red-300/50 px-2 py-1 text-xs font-semibold text-red-100 transition hover:bg-red-500/15"
@@ -125,97 +154,117 @@ export const GameRoom: React.FC = () => {
                 Dismiss
               </button>
             </div>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hud-chip" data-testid="pot-value">
-              Pot: ${displayPot}
-            </span>
-            {currentHand && (
-              <span className="hud-chip" data-testid="round-value">
-                Current Round: {currentHand.bettingRound}
-              </span>
-            )}
-            <span className="hud-chip" data-testid="your-chips">
-              Your Chips: ${currentPlayer?.chips ?? 0}
-            </span>
-            {currentTurnPlayer && (
-              <span className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100" data-testid="turn-player">
-                Turn: {currentTurnPlayer.name}
-              </span>
-            )}
-          </div>
+          </section>
+        )}
 
-          {currentHand && currentHand.communityCards.length > 0 && (
-            <div className="mt-4 flex flex-wrap justify-center gap-2" data-testid="community-cards">
-              {currentHand.communityCards.map((card, idx) => (
-                <Card
-                  key={idx}
-                  card={card}
-                  size="medium"
-                  dataTestId={`community-card-${idx}`}
-                />
-              ))}
-            </div>
-          )}
+        <section className="surface-panel p-4" data-testid="players-section">
+          <h3 className="mb-3 text-sm font-semibold text-emerald-100">Players</h3>
+          <div className="space-y-2">
+            {room.players.map((seatPlayer, idx) => (
+              <PlayerSeat
+                key={seatPlayer.id}
+                player={seatPlayer}
+                position={seatPositions[idx % seatPositions.length]}
+                seatNumber={idx + 1}
+                isYou={seatPlayer.id === player.id}
+                isCurrentPlayer={currentHand?.currentPlayerTurn === seatPlayer.id}
+                isDealer={currentHand?.dealerPosition === seatPlayer.position}
+                positionLabel={getPlayerPositionLabel(seatPlayer.position)}
+                dataTestId={`player-seat-${seatPlayer.id}`}
+              />
+            ))}
+          </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
-          <section className="surface-panel p-4" data-testid="players-section">
-            <h3 className="mb-3 text-sm font-semibold text-emerald-100">Players</h3>
-            <div className="space-y-2">
-              {room.players.map((seatPlayer, idx) => (
-                <PlayerSeat
-                  key={seatPlayer.id}
-                  player={seatPlayer}
-                  position={seatPositions[idx % seatPositions.length]}
-                  seatNumber={idx + 1}
-                  isYou={seatPlayer.id === player.id}
-                  isCurrentPlayer={currentHand?.currentPlayerTurn === seatPlayer.id}
-                  isDealer={currentHand?.dealerPosition === idx}
-                  dataTestId={`player-seat-${seatPlayer.id}`}
-                />
-              ))}
-            </div>
-          </section>
-
-          <div className="space-y-3">
-            {yourCards && yourCards.length > 0 && (
-              <section className="surface-panel p-4" data-testid="your-cards-section">
-                <h3 className="mb-2 text-sm font-semibold text-emerald-100">Your Cards</h3>
-                <div className="flex justify-center gap-3">
-                  {yourCards.map((card, idx) => (
-                    <Card
-                      key={idx}
-                      card={card}
-                      size="large"
-                      dataTestId={`your-card-${idx}`}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <section className="surface-panel p-4" data-testid="game-info-panel">
-              <h3 className="mb-2 text-sm font-semibold text-emerald-100">Game Info</h3>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="text-emerald-100/70">
-                  Small Blind: <span className="text-white">${room.config.smallBlind}</span>
-                </div>
-                <div className="text-emerald-100/70">
-                  Big Blind: <span className="text-white">${room.config.bigBlind}</span>
-                </div>
-                <div className="text-emerald-100/70">
-                  Your Chips: <span className="text-green-400">${currentPlayer?.chips ?? 0}</span>
-                </div>
-                {currentHand && (
-                  <div className="text-emerald-100/70">
-                    Current Round: <span className="text-amber-300">{currentHand.bettingRound}</span>
-                  </div>
-                )}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {yourCards && yourCards.length > 0 && (
+            <section className="surface-panel p-4" data-testid="your-cards-section">
+              <h3 className="mb-2 text-sm font-semibold text-emerald-100">Your Cards</h3>
+              <div className="flex justify-center gap-3">
+                {yourCards.map((card, idx) => (
+                  <Card
+                    key={idx}
+                    card={card}
+                    size="large"
+                    dataTestId={`your-card-${idx}`}
+                  />
+                ))}
               </div>
             </section>
-          </div>
+          )}
+
+          <section className="surface-panel p-4" data-testid="game-info-panel">
+            <h3 className="mb-2 text-sm font-semibold text-emerald-100">Game Info</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="hud-chip" data-testid="pot-value">
+                Pot: ${displayPot}
+              </span>
+              {currentHand && (
+                <span className="hud-chip" data-testid="round-value">
+                  Current Round: {currentHand.bettingRound}
+                </span>
+              )}
+              <span className="hud-chip" data-testid="your-chips">
+                Your Chips: ${currentPlayer?.chips ?? 0}
+              </span>
+              {currentTurnPlayer && (
+                <span className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100" data-testid="turn-player">
+                  Turn: {currentTurnPlayer.name}
+                </span>
+              )}
+            </div>
+
+            {currentHand && currentHand.communityCards.length > 0 && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2" data-testid="community-cards">
+                {currentHand.communityCards.map((card, idx) => (
+                  <Card
+                    key={idx}
+                    card={card}
+                    size="medium"
+                    dataTestId={`community-card-${idx}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+              <div className="text-emerald-100/70">
+                Small Blind: <span className="text-white">${room.config.smallBlind}</span>
+              </div>
+              <div className="text-emerald-100/70">
+                Big Blind: <span className="text-white">${room.config.bigBlind}</span>
+              </div>
+              {currentHand && (
+                <div className="text-emerald-100/70">
+                  Hand #: <span className="text-white">{currentHand.handNumber}</span>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
+
+        {canHostStartNextHand && (
+          <section className="surface-panel p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-100">
+                  Hand complete
+                </h3>
+                <p className="text-sm text-emerald-100/70">
+                  Host can start the next hand when everyone is ready.
+                </p>
+              </div>
+              <button
+                onClick={startNextHand}
+                data-testid="start-next-hand-button"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+              >
+                Start Next Hand
+              </button>
+            </div>
+          </section>
+        )}
+
       </div>
 
       {isYourTurn && (

@@ -39,6 +39,7 @@ export interface ClientToServerEvents {
   JOIN_ROOM: (data: JoinRoomData, callback: (response: any) => void) => void;
   RECONNECT: (data: ReconnectData, callback: (response: any) => void) => void;
   START_GAME: (callback: (response: any) => void) => void;
+  START_NEXT_HAND: (callback: (response: any) => void) => void;
   PLAYER_ACTION: (
     data: PlayerActionData,
     callback: (response: any) => void,

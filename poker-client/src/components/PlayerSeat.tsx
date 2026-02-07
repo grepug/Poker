@@ -6,6 +6,7 @@ interface PlayerSeatProps {
   player: PlayerType | null;
   isCurrentPlayer?: boolean;
   isDealer?: boolean;
+  positionLabel?: string | null;
   showCards?: boolean;
   isYou?: boolean;
   seatNumber?: number;
@@ -17,6 +18,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
   player,
   isCurrentPlayer = false,
   isDealer = false,
+  positionLabel = null,
   showCards = false,
   isYou = false,
   seatNumber,
@@ -67,8 +69,19 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
             <span className="truncate text-white font-semibold">
               {player.name} {isYou ? "(You)" : ""}
             </span>
+            {positionLabel && (
+              <span className="rounded-full border border-cyan-300/50 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">
+                {positionLabel}
+              </span>
+            )}
           </div>
           <div className="text-green-400 text-sm">${player.chips}</div>
+          <div
+            className="text-[11px] text-emerald-100/65"
+            data-testid={dataTestId ? `${dataTestId}-buy-in` : undefined}
+          >
+            Buy-in: ${player.totalBuyIn}
+          </div>
         </div>
 
         <div className="text-right">

@@ -31,11 +31,11 @@ export class HandService {
       throw new Error('Need at least 2 players to start a hand');
     }
 
-    // Give starting chips to players who don't have any
+    // Auto-refill busted players with starting chips and track it as an added buy-in.
     for (const player of room.players) {
       if (player.chips === 0) {
         player.chips = room.config.startingChips;
-        player.totalBuyIn = room.config.startingChips;
+        player.totalBuyIn = (player.totalBuyIn ?? 0) + room.config.startingChips;
       }
     }
 

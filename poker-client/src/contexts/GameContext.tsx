@@ -25,6 +25,7 @@ type DebugApi = {
   createRoom: (name: string) => void;
   joinRoom: (roomId: string, name: string) => void;
   startGame: () => void;
+  startNextHand: () => void;
   performAction: (action: PlayerAction, amount?: number) => void;
   fold: () => void;
   check: () => void;
@@ -47,6 +48,7 @@ interface GameContextType {
   createRoom: (playerName: string) => void;
   joinRoom: (roomId: string, playerName: string) => void;
   startGame: () => void;
+  startNextHand: () => void;
   performAction: (action: PlayerAction, amount?: number) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
@@ -164,46 +166,6 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setYourCards(data.cards);
     });
 
-    // Player turn
-    socket.on("PLAYER_TURN", (data) => {
-      console.log("Player turn:", data);
-
-      // Update current bet and min raise from the server
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-
-        return {
-          ...prev,
-          currentHand: {
-            ...prev.currentHand,
-            currentPlayerTurn: data.playerId,
-            currentBet: data.currentBet,
-            minRaise: data.minRaise,
-          },
-        };
-      });
-    });
-
-    // Player acted
-    socket.on("PLAYER_ACTED", (data) => {
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-
-        const updatedPlayers = prev.players.map((p) =>
-          p.id === data.playerId ? { ...p, chips: data.newChips } : p,
-        );
-
-        return {
-          ...prev,
-          players: updatedPlayers,
-          currentHand: {
-            ...prev.currentHand,
-            pot: data.newPot,
-          },
-        };
-      });
-    });
-
     // Community cards dealt
     socket.on("COMMUNITY_CARDS_DEALT", (data) => {
       setRoom((prev) => {
@@ -222,19 +184,37 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Hand complete
     socket.on("HAND_COMPLETE", (data) => {
       console.log("Hand complete:", data.result);
-      // Update chips for winners
+      // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
       setRoom((prev) => {
-        if (!prev) return prev;
+        if (!prev || !prev.currentHand) return prev;
         const updatedPlayers = prev.players.map((p) => {
           const winnerData = data.result.winners.find(
             (w) => w.playerId === p.id,
           );
-          if (winnerData) {
-            return { ...p, chips: p.chips + winnerData.amountWon };
-          }
-          return p;
+          return {
+            ...p,
+            chips: winnerData ? p.chips + winnerData.amountWon : p.chips,
+            currentBet: 0,
+          };
         });
-        return { ...prev, players: updatedPlayers };
+        return {
+          ...prev,
+          players: updatedPlayers,
+          currentHand: {
+            ...prev.currentHand,
+            currentPlayerTurn: null,
+          },
+        };
+      });
+
+      setPlayer((prev) => {
+        if (!prev) return prev;
+        const winnerData = data.result.winners.find((w) => w.playerId === prev.id);
+        return {
+          ...prev,
+          chips: winnerData ? prev.chips + winnerData.amountWon : prev.chips,
+          currentBet: 0,
+        };
       });
     });
 
@@ -246,7 +226,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Player turn
     socket.on("PLAYER_TURN", (data) => {
       console.log("Player turn:", data);
-      // Update currentPlayerTurn
+
       setRoom((prev) => {
         if (!prev || !prev.currentHand) return prev;
         return {
@@ -254,6 +234,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           currentHand: {
             ...prev.currentHand,
             currentPlayerTurn: data.playerId,
+            currentBet: data.currentBet,
+            minRaise: data.minRaise,
           },
         } as Room;
       });
@@ -275,10 +257,22 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           players: prev.players.map((p) =>
             p.id === data.playerId
               ? {
-                  ...p,
-                  chips: data.newChips,
-                  lastAction: data.action,
-                  currentBet: data.amount || p.currentBet,
+                  // Keep currentBet in sync for call/all-in when payload has no explicit amount.
+                  // We derive the committed amount from chip delta.
+                  ...(() => {
+                    const chipsCommitted = Math.max(0, p.chips - data.newChips);
+                    const nextCurrentBet =
+                      data.action === "check" || data.action === "fold"
+                        ? p.currentBet
+                        : p.currentBet + chipsCommitted;
+
+                    return {
+                      ...p,
+                      chips: data.newChips,
+                      lastAction: data.action,
+                      currentBet: nextCurrentBet,
+                    };
+                  })(),
                 }
               : p,
           ),
@@ -364,6 +358,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const startNextHand = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("START_NEXT_HAND", (response) => {
+      console.log("Start next hand response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to start next hand");
+      }
+    });
+  }, [socket]);
+
   const performAction = useCallback((action: PlayerAction, amount?: number) => {
     if (!socket) return;
     setLastError(null);
@@ -411,6 +416,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         createRoom,
         joinRoom,
         startGame,
+        startNextHand,
         performAction,
         fold: () => performAction("fold"),
         check: () => performAction("check"),
@@ -443,6 +449,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     createRoom,
     joinRoom,
     startGame,
+    startNextHand,
     performAction,
     leaveRoom,
     requestRebuy,
@@ -460,6 +467,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         createRoom,
         joinRoom,
         startGame,
+        startNextHand,
         performAction,
         leaveRoom,
         requestRebuy,

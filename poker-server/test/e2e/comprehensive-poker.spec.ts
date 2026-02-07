@@ -513,9 +513,12 @@ async function getDealerNameFromUi(page: Page): Promise<string | null> {
 
 async function getPlayersMoneyFromUi(
   page: Page,
-): Promise<Record<string, { chips: number; currentBet: number }>> {
+): Promise<Record<string, { chips: number; currentBet: number; totalBuyIn: number }>> {
   return page.evaluate(() => {
-    const result: Record<string, { chips: number; currentBet: number }> = {};
+    const result: Record<
+      string,
+      { chips: number; currentBet: number; totalBuyIn: number }
+    > = {};
     const playersSection = document.querySelector('[data-testid="players-section"]');
     const seatRows = playersSection?.querySelectorAll('[data-testid^="player-seat-"]');
     if (seatRows && seatRows.length > 0) {
@@ -534,8 +537,13 @@ async function getPlayersMoneyFromUi(
           .find((text) => text.includes('Bet: $'));
         const betMatch = betText?.match(/Bet:\s*\$([0-9]+)/);
         const currentBet = betMatch ? Number(betMatch[1]) : 0;
+        const buyInText = Array.from(row.querySelectorAll('div'))
+          .map((el) => el.textContent || '')
+          .find((text) => text.includes('Buy-in: $'));
+        const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
+        const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
 
-        result[name] = { chips, currentBet };
+        result[name] = { chips, currentBet, totalBuyIn };
       }
 
       return result;
@@ -564,8 +572,13 @@ async function getPlayersMoneyFromUi(
         .find((text) => text.includes('Bet: $'));
       const betMatch = betText?.match(/Bet:\s*\$([0-9]+)/);
       const currentBet = betMatch ? Number(betMatch[1]) : 0;
+      const buyInText = Array.from(row.querySelectorAll('div'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('Buy-in: $'));
+      const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
+      const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
 
-      result[name] = { chips, currentBet };
+      result[name] = { chips, currentBet, totalBuyIn };
     }
 
     return result;
@@ -3291,6 +3304,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.click('[data-testid="action-call"]');
       await waitForPlayerTurn(alicePage, 'Alice');
 
+      const afterBobCall = await getRoomSnapshot(alicePage);
+      expect(afterBobCall.currentBet).toBe(20);
+      expect(afterBobCall.bobCurrentBet).toBe(20);
+      expect(afterBobCall.aliceCurrentBet).toBe(20);
+
       expect(await alicePage.locator('[data-testid="action-check"]').count()).toBe(1);
       expect(await alicePage.locator('[data-testid="action-call"]').count()).toBe(0);
       const turnState = await getRoomSnapshot(alicePage);
@@ -3343,6 +3361,122 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'RIVER', 5);
       expect(await getCommunityCardCountFromUi(alicePage)).toBe(5);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.4: Leave Room Navigates Home', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { bobPage } = session;
+      await bobPage.click('[data-testid="leave-room-button"]');
+
+      await expect(bobPage).toHaveURL(/\/$/);
+      await expect(bobPage.locator('[data-testid="name-input"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="create-room-button"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const firstHand = await getRoomSnapshot(alicePage);
+      expect(firstHand.handNumber).toBe(1);
+
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await alicePage.waitForFunction(
+        () => window.pokerDebug?.getRoom()?.currentHand?.currentPlayerTurn === null,
+        { timeout: 10000 },
+      );
+
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="start-next-hand-button"]');
+      await waitForHandStart(alicePage, 2);
+
+      const secondHand = await getRoomSnapshot(alicePage);
+      expect(secondHand.handNumber).toBe(2);
+      expect(secondHand.currentPlayerName).toBeTruthy();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.6: Player List Shows Total Buy-In', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      const aliceViewMoney = await getPlayersMoneyFromUi(alicePage);
+      expect(aliceViewMoney.Alice.totalBuyIn).toBe(1000);
+      expect(aliceViewMoney.Bob.totalBuyIn).toBe(1000);
+
+      const bobViewMoney = await getPlayersMoneyFromUi(bobPage);
+      expect(bobViewMoney.Alice.totalBuyIn).toBe(1000);
+      expect(bobViewMoney.Bob.totalBuyIn).toBe(1000);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.7: Bust Auto-Refill Increments Total Buy-In', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'spades', rank: 'A' }, // Alice
+        { suit: 'hearts', rank: 'A' }, // Alice
+        { suit: 'clubs', rank: '2' }, // Bob
+        { suit: 'diamonds', rank: '7' }, // Bob
+        { suit: 'clubs', rank: 'K' }, // Flop 1
+        { suit: 'diamonds', rank: 'Q' }, // Flop 2
+        { suit: 'hearts', rank: 'J' }, // Flop 3
+        { suit: 'spades', rank: '9' }, // Turn
+        { suit: 'clubs', rank: '3' }, // River
+        { suit: 'clubs', rank: '4' }, // Alice (hand 2)
+        { suit: 'diamonds', rank: '4' }, // Alice (hand 2)
+        { suit: 'clubs', rank: '5' }, // Bob (hand 2)
+        { suit: 'diamonds', rank: '5' }, // Bob (hand 2)
+        { suit: 'hearts', rank: '2' }, // Flop 1 (hand 2)
+        { suit: 'spades', rank: '8' }, // Flop 2 (hand 2)
+        { suit: 'diamonds', rank: 'K' }, // Flop 3 (hand 2)
+        { suit: 'clubs', rank: '9' }, // Turn (hand 2)
+        { suit: 'hearts', rank: 'J' }, // River (hand 2)
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-all-in"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      const result = await handCompletePromise;
+      const bobWon = result.winners.some((winner: any) => winner.playerName === 'Bob');
+      expect(bobWon).toBe(false);
+
+      // In TEST_MODE, next hand auto-starts after hand complete.
+      await waitForHandStart(alicePage, 2);
+
+      const uiMoney = await getPlayersMoneyFromUi(alicePage);
+      expect(uiMoney.Alice.totalBuyIn).toBe(1000);
+      expect(uiMoney.Bob.totalBuyIn).toBe(2000);
     } finally {
       await teardownTwoPlayerSession(session);
     }

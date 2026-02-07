@@ -271,6 +271,37 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('START_NEXT_HAND')
+  async handleStartNextHand(@ConnectedSocket() client: Socket) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
+
+      // Verify host
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can start next hand');
+      }
+
+      if (!room.currentHand) {
+        throw new Error('No hand state found');
+      }
+
+      if (room.currentHand.currentPlayerTurn) {
+        throw new Error('Current hand is still in progress');
+      }
+
+      await this.startAndBroadcastNewHand(room.id);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Start next hand error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
   @SubscribeMessage('PLAYER_ACTION')
   async handlePlayerAction(
     @ConnectedSocket() client: Socket,
@@ -413,61 +444,24 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
       const result = await this.handService.determineWinner(room);
+      room.currentHand.currentPlayerTurn = null;
+      await this.storageService.saveRoom(room);
 
       const handCompleteData: HandCompleteData = {
         result,
       };
 
       this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-
-      // Start new hand after delay
-      setTimeout(async () => {
-        try {
-          const updatedRoom = await this.getRoom(room.id);
-          if (!updatedRoom) {
-            this.logger.error(`Room ${room.id} not found for new hand`);
-            return;
+      if (this.testDeckService.isTestMode()) {
+        // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
+        setTimeout(async () => {
+          try {
+            await this.startAndBroadcastNewHand(room.id);
+          } catch (error) {
+            this.logger.error(`Error starting new hand: ${error.message}`);
           }
-
-          const newHand = await this.handService.startNewHand(updatedRoom);
-          this.server.to(room.id).emit('NEW_HAND_STARTING');
-
-          // Emit the new game state with updated hand
-          const gameStartedData: GameStartedData = {
-            hand: newHand,
-            players: updatedRoom.players.map((p) => ({
-              id: p.id,
-              name: p.name,
-              chips: p.chips,
-              position: p.position,
-              status: p.status,
-              currentBet: p.currentBet,
-              lastAction: p.lastAction,
-            })),
-          };
-
-          this.server.to(room.id).emit('GAME_STARTED', gameStartedData);
-
-          // Send cards to each player
-          for (const player of updatedRoom.players) {
-            if (player.cards && player.socketId) {
-              this.server.to(player.socketId).emit('YOUR_CARDS', {
-                cards: player.cards,
-              } as YourCardsData);
-            }
-          }
-
-          // Emit first player's turn
-          const currentPlayer = updatedRoom.players.find(
-            (p) => p.id === newHand.currentPlayerTurn,
-          );
-          if (currentPlayer) {
-            this.emitPlayerTurn(updatedRoom, currentPlayer);
-          }
-        } catch (error) {
-          this.logger.error(`Error starting new hand: ${error.message}`);
-        }
-      }, 5000);
+        }, 5000);
+      }
     } else {
       // Advance to next round
       const nextRound = await this.handService.advanceBettingRound(room);
@@ -485,61 +479,24 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // If we reached showdown, determine winner immediately
       if (nextRound === 'SHOWDOWN') {
         const result = await this.handService.determineWinner(updatedRoom);
+        updatedRoom.currentHand.currentPlayerTurn = null;
+        await this.storageService.saveRoom(updatedRoom);
 
         const handCompleteData: HandCompleteData = {
           result,
         };
 
         this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-
-        // Start new hand after delay
-        setTimeout(async () => {
-          try {
-            const freshRoom = await this.getRoom(room.id);
-            if (!freshRoom) {
-              this.logger.error(`Room ${room.id} not found for new hand`);
-              return;
+        if (this.testDeckService.isTestMode()) {
+          // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
+          setTimeout(async () => {
+            try {
+              await this.startAndBroadcastNewHand(room.id);
+            } catch (error) {
+              this.logger.error(`Error starting new hand: ${error.message}`);
             }
-
-            const newHand = await this.handService.startNewHand(freshRoom);
-            this.server.to(room.id).emit('NEW_HAND_STARTING');
-
-            // Emit the new game state with updated hand
-            const gameStartedData: GameStartedData = {
-              hand: newHand,
-              players: freshRoom.players.map((p) => ({
-                id: p.id,
-                name: p.name,
-                chips: p.chips,
-                position: p.position,
-                status: p.status,
-                currentBet: p.currentBet,
-                lastAction: p.lastAction,
-              })),
-            };
-
-            this.server.to(room.id).emit('GAME_STARTED', gameStartedData);
-
-            // Send cards to each player
-            for (const player of freshRoom.players) {
-              if (player.cards && player.socketId) {
-                this.server.to(player.socketId).emit('YOUR_CARDS', {
-                  cards: player.cards,
-                } as YourCardsData);
-              }
-            }
-
-            // Emit first player's turn
-            const currentPlayer = freshRoom.players.find(
-              (p) => p.id === newHand.currentPlayerTurn,
-            );
-            if (currentPlayer) {
-              this.emitPlayerTurn(freshRoom, currentPlayer);
-            }
-          } catch (error) {
-            this.logger.error(`Error starting new hand: ${error.message}`);
-          }
-        }, 5000);
+          }, 5000);
+        }
       } else {
         // Emit first player's turn for new round
         const currentPlayer = updatedRoom.players.find(
@@ -549,6 +506,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.emitPlayerTurn(updatedRoom, currentPlayer);
         }
       }
+    }
+  }
+
+  private async startAndBroadcastNewHand(roomId: string) {
+    const room = await this.getRoom(roomId);
+    if (!room) {
+      throw new Error(`Room ${roomId} not found for new hand`);
+    }
+
+    const newHand = await this.handService.startNewHand(room);
+    const updatedRoom = await this.getRoom(roomId);
+    if (!updatedRoom) {
+      throw new Error(`Room ${roomId} missing after starting new hand`);
+    }
+
+    this.server.to(roomId).emit('NEW_HAND_STARTING');
+
+    const { activePlayers, ...handWithoutActivePlayers } = newHand;
+    const gameStartedData: GameStartedData = {
+      hand: handWithoutActivePlayers,
+      players: updatedRoom.players.map((p) => ({
+        ...this.sanitizePlayer(p),
+        hasCards: !!p.cards,
+      })),
+    };
+
+    this.server.to(roomId).emit('GAME_STARTED', gameStartedData);
+
+    // Send cards to each player privately.
+    for (const seatPlayer of updatedRoom.players) {
+      if (seatPlayer.cards && seatPlayer.socketId) {
+        this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
+          cards: seatPlayer.cards,
+        } as YourCardsData);
+      }
+    }
+
+    const currentPlayer = updatedRoom.players.find(
+      (p) => p.id === newHand.currentPlayerTurn,
+    );
+    if (currentPlayer) {
+      this.emitPlayerTurn(updatedRoom, currentPlayer);
     }
   }
 
