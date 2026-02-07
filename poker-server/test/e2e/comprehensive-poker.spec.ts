@@ -2701,15 +2701,20 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     const totalChips = finalState.alice + finalState.bob;
     expect(totalChips).toBe(2000); // Chip conservation
 
-    // One player won, one lost (pot was $440)
-    const hasWinner =
+    // Pot was $440. Valid outcomes: one winner takes all or split pot tie.
+    const hasValidOutcome =
       (finalState.alice === 1220 && finalState.bob === 780) ||
-      (finalState.alice === 780 && finalState.bob === 1220);
-    expect(hasWinner).toBe(true);
+      (finalState.alice === 780 && finalState.bob === 1220) ||
+      (finalState.alice === 1000 && finalState.bob === 1000);
+    expect(hasValidOutcome).toBe(true);
 
-    const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
-    const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
+    if (finalState.alice === finalState.bob) {
+      console.log('Showdown tie: split pot (1000/1000).');
+    } else {
+      const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
+      const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
+    }
 
     // Verify chip conservation
     await verifyChipConservation(alicePage, 2000);
