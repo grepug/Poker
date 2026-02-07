@@ -374,8 +374,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     setLastError(null);
     socket.emit("PLAYER_ACTION", { action, amount }, (response) => {
       console.log("Action response:", response);
-      if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Action rejected");
+      if (response && "success" in response && !response.success && response.error) {
+        setLastError(response.error);
       }
     });
   }, [socket]);
