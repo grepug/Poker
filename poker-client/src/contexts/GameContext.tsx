@@ -89,7 +89,7 @@ const SESSION_STORAGE_KEY = "poker.activeSession";
 function readStoredSession(): StoredSession | null {
   if (typeof window === "undefined") return null;
 
-  const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) return null;
 
   try {
@@ -112,11 +112,12 @@ function readStoredSession(): StoredSession | null {
 
 function writeStoredSession(session: StoredSession) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 function clearStoredSession() {
   if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
@@ -506,8 +507,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       const roomState = roomRef.current;
       const playerState = playerRef.current;
       const fromState =
-        roomState?.id && playerState?.name
-          ? { roomId: roomState.id, playerName: playerState.name }
+        roomState?.id && playerState?.name && playerState?.id
+          ? {
+              roomId: roomState.id,
+              playerName: playerState.name,
+              playerId: playerState.id,
+            }
           : null;
       const fromStorage = readStoredSession();
       const payload = fromState ?? fromStorage;
