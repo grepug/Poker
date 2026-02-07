@@ -164,26 +164,26 @@ const resolveDropIntent = ({
 const getSeatAnchors = (capacity: number): SeatAnchor[] => {
   if (capacity > 6) {
     return [
-      { top: "84%", left: "50%" },
-      { top: "78%", left: "73%" },
-      { top: "64%", left: "87%" },
-      { top: "44%", left: "90%" },
+      { top: "73%", left: "50%" },
+      { top: "69%", left: "70%" },
+      { top: "57%", left: "84%" },
+      { top: "42%", left: "90%" },
       { top: "24%", left: "79%" },
       { top: "15%", left: "59%" },
       { top: "15%", left: "41%" },
       { top: "24%", left: "21%" },
-      { top: "44%", left: "10%" },
-      { top: "64%", left: "13%" },
+      { top: "42%", left: "10%" },
+      { top: "57%", left: "16%" },
     ];
   }
 
   return [
-    { top: "84%", left: "50%" },
-    { top: "74%", left: "79%" },
+    { top: "73%", left: "50%" },
+    { top: "66%", left: "78%" },
     { top: "44%", left: "90%" },
     { top: "17%", left: "50%" },
     { top: "44%", left: "10%" },
-    { top: "74%", left: "21%" },
+    { top: "66%", left: "22%" },
   ];
 };
 
@@ -271,7 +271,12 @@ export const GameRoom: React.FC = () => {
 
   const maxStack = currentPlayer?.chips ?? 0;
   const canCheck = callAmount === 0;
-  const isYourTurn = currentHand?.currentPlayerTurn === player?.id;
+  const resolvedPlayerId = currentPlayer?.id ?? player?.id ?? null;
+  const isYourTurn = Boolean(
+    currentHand?.currentPlayerTurn &&
+      resolvedPlayerId &&
+      currentHand.currentPlayerTurn === resolvedPlayerId,
+  );
   const currentHandNumber = currentHand?.handNumber ?? null;
   const showHoleCards =
     currentHandNumber === null || hiddenCardsHandNumber !== currentHandNumber;
@@ -332,6 +337,7 @@ export const GameRoom: React.FC = () => {
   }, [room]);
 
   const seatAnchors = useMemo(() => getSeatAnchors(orbitCapacity), [orbitCapacity]);
+  const seatSlotWidth = orbitCapacity > 6 ? "min(24vw, 6.8rem)" : "min(28vw, 7.6rem)";
   const playerRankings = useMemo(
     () => {
       if (!room) return [];
@@ -891,7 +897,7 @@ export const GameRoom: React.FC = () => {
               const seatPlayerId = seatPlayer?.id ?? null;
               const isCurrentTurnSeat =
                 seatPlayerId !== null && currentHand?.currentPlayerTurn === seatPlayerId;
-              const isSelfSeat = seatPlayer?.id === player.id;
+              const isSelfSeat = seatPlayer?.id === resolvedPlayerId;
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
 
@@ -902,6 +908,7 @@ export const GameRoom: React.FC = () => {
                   style={{
                     top: slot.anchor.top,
                     left: slot.anchor.left,
+                    width: seatSlotWidth,
                     transform: "translate(-50%, -50%)",
                   }}
                 >

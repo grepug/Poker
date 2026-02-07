@@ -226,6 +226,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.roomId,
         data.playerName,
         client.id,
+        data.playerId,
       );
 
       if (!player) {

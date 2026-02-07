@@ -166,6 +166,7 @@ export class GameService {
     roomId: string,
     playerName: string,
     newSocketId: string,
+    playerId?: string,
   ): Promise<Player | null> {
     const room = await this.storageService.getRoom(roomId);
 
@@ -173,7 +174,9 @@ export class GameService {
       return null;
     }
 
-    const player = room.players.find((p) => p.name === playerName);
+    const player = playerId
+      ? room.players.find((p) => p.id === playerId)
+      : room.players.find((p) => p.name === playerName);
     if (!player) {
       return null;
     }
@@ -184,7 +187,7 @@ export class GameService {
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
-    this.logger.log(`Player ${playerName} reconnected in room ${roomId}`);
+    this.logger.log(`Player ${player.name} reconnected in room ${roomId}`);
 
     return player;
   }
