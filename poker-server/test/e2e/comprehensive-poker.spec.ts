@@ -1292,19 +1292,27 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(afterPreFlop.bettingRound).toBe('SHOWDOWN'); // Straight to showdown
     expect(afterPreFlop.communityCards).toBe(5); // All 5 cards dealt immediately
 
-    // Winner determined - one player has 2000, other has 0
+    // Winner determined or split pot on tie.
     const total = (afterPreFlop.alice || 0) + (afterPreFlop.bob || 0);
     expect(total).toBe(2000);
-    expect(afterPreFlop.alice === 2000 || afterPreFlop.bob === 2000).toBe(true);
+    expect(
+      afterPreFlop.alice === 2000 ||
+        afterPreFlop.bob === 2000 ||
+        (afterPreFlop.alice === 1000 && afterPreFlop.bob === 1000),
+    ).toBe(true);
 
     // No need to check through rounds - both all-in means instant showdown
     console.log(
       'Both players all-in - went straight to SHOWDOWN with all 5 cards',
     );
 
-    const winner = afterPreFlop.alice === 2000 ? 'Alice' : 'Bob';
-    const loser = winner === 'Alice' ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    if (afterPreFlop.alice === afterPreFlop.bob) {
+      console.log('Tie showdown: split pot (1000/1000).');
+    } else {
+      const winner = afterPreFlop.alice === 2000 ? 'Alice' : 'Bob';
+      const loser = winner === 'Alice' ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    }
     console.log(
       '\n=== Test 3.1: Small all-in verified - both went all-in, instant showdown ===',
     );
@@ -1415,10 +1423,14 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(gameState.communityCards).toBe(5);
     expect(gameState.bettingRound).toBe('SHOWDOWN');
 
-    // One player should have 2000, the other 0
+    // Valid outcomes: one winner takes all, or split pot tie.
     const total = gameState.alice + gameState.bob;
     expect(total).toBe(2000);
-    expect(gameState.alice === 2000 || gameState.bob === 2000).toBe(true);
+    expect(
+      gameState.alice === 2000 ||
+        gameState.bob === 2000 ||
+        (gameState.alice === 1000 && gameState.bob === 1000),
+    ).toBe(true);
 
     // Verify chip conservation
     await verifyChipConservation(alicePage, 2000);
@@ -1534,14 +1546,22 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     expect(finalState.bettingRound).toBe('SHOWDOWN');
     expect(finalState.communityCards).toBe(5); // All 5 cards dealt immediately
 
-    // Verify winner determination
+    // Verify winner determination (or split on tie)
     const total = (finalState.alice || 0) + (finalState.bob || 0);
     expect(total).toBe(2000);
-    expect(finalState.alice === 2000 || finalState.bob === 2000).toBe(true);
+    expect(
+      finalState.alice === 2000 ||
+        finalState.bob === 2000 ||
+        (finalState.alice === 1000 && finalState.bob === 1000),
+    ).toBe(true);
 
-    const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
-    const loser = winner === 'Alice' ? 'Bob' : 'Alice';
-    console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    if (finalState.alice === finalState.bob) {
+      console.log('Tie showdown: split pot (1000/1000).');
+    } else {
+      const winner = finalState.alice === 2000 ? 'Alice' : 'Bob';
+      const loser = winner === 'Alice' ? 'Bob' : 'Alice';
+      console.log(`Winner: ${winner} (2000 chips), Loser: ${loser} (0 chips)`);
+    }
     console.log(
       '\n=== Test 3.3: Both all-in pre-flop verified - instant showdown ===',
     );
