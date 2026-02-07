@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, {
   createContext,
   useContext,
@@ -32,28 +33,27 @@ interface SocketProviderProps {
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
-  const [socket, setSocket] = useState<Socket<
+  const [socket] = useState<Socket<
     ServerToClientEvents,
     ClientToServerEvents
-  > | null>(null);
-  const [connected, setConnected] = useState(false);
+  > | null>(() => socketService.connect());
+  const [connected, setConnected] = useState(() => socketService.isConnected());
 
   useEffect(() => {
-    const newSocket = socketService.connect();
-    setSocket(newSocket);
+    if (!socket) return;
 
     const handleConnect = () => setConnected(true);
     const handleDisconnect = () => setConnected(false);
 
-    newSocket.on("connect", handleConnect);
-    newSocket.on("disconnect", handleDisconnect);
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
 
     return () => {
-      newSocket.off("connect", handleConnect);
-      newSocket.off("disconnect", handleDisconnect);
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
       socketService.disconnect();
     };
-  }, []);
+  }, [socket]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>

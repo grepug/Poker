@@ -7,7 +7,10 @@ interface PlayerSeatProps {
   isCurrentPlayer?: boolean;
   isDealer?: boolean;
   showCards?: boolean;
+  isYou?: boolean;
+  seatNumber?: number;
   position: "top" | "right" | "bottom" | "left";
+  dataTestId?: string;
 }
 
 export const PlayerSeat: React.FC<PlayerSeatProps> = ({
@@ -15,58 +18,85 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
   isCurrentPlayer = false,
   isDealer = false,
   showCards = false,
+  isYou = false,
+  seatNumber,
+  dataTestId,
 }) => {
   if (!player) {
     return (
-      <div className="w-32 h-40 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center bg-gray-800/30">
-        <span className="text-gray-600 text-sm">Empty</span>
+      <div
+        data-testid={dataTestId}
+        className="rounded-xl border border-dashed border-emerald-800/80 bg-emerald-950/25 p-3"
+      >
+        <span className="text-sm text-emerald-200/50">Empty Seat</span>
       </div>
     );
   }
 
   const isConnected =
-    player.status === "connected" || player.status === "waiting";
+    player.status === "connected" ||
+    player.status === "waiting" ||
+    player.status === "all-in";
   const isFolded = player.status === "folded";
 
   return (
     <div
-      className={`relative ${isCurrentPlayer ? "ring-4 ring-yellow-400" : ""}`}
+      data-testid={dataTestId}
+      className={`relative rounded-xl border p-3 transition ${
+        isCurrentPlayer
+          ? "turn-glow border-amber-300/90 bg-amber-300/10"
+          : isConnected
+            ? "border-emerald-700/80 bg-emerald-950/60"
+            : "border-slate-700 bg-slate-900/50"
+      } ${isFolded ? "opacity-60" : "opacity-100"}`}
     >
-      <div
-        className={`w-32 p-3 rounded-lg ${isConnected ? "bg-green-800" : "bg-gray-700"} ${isFolded ? "opacity-50" : ""}`}
-      >
-        {/* Dealer button */}
-        {isDealer && (
-          <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-xs font-bold">
-            D
-          </div>
-        )}
-
-        {/* Player info */}
-        <div className="text-white text-sm font-semibold truncate">
-          {player.name}
+      {isDealer && (
+        <div className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-amber-300 text-xs font-black text-amber-950 shadow-md">
+          D
         </div>
-        <div className="text-green-400 text-xs">${player.chips}</div>
+      )}
 
-        {/* Current bet */}
-        {player.currentBet > 0 && (
-          <div className="mt-1 text-yellow-300 text-xs">
-            Bet: ${player.currentBet}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {typeof seatNumber === "number" && (
+              <span className="text-xs font-semibold text-emerald-100/65">
+                #{seatNumber}
+              </span>
+            )}
+            <span className="truncate text-white font-semibold">
+              {player.name} {isYou ? "(You)" : ""}
+            </span>
           </div>
-        )}
+          <div className="text-green-400 text-sm">${player.chips}</div>
+        </div>
 
-        {/* Cards */}
-        {player.cards && player.cards.length > 0 && (
-          <div className="flex gap-1 mt-2">
-            {player.cards.map((card, idx) => (
-              <Card key={idx} card={card} size="small" faceDown={!showCards} />
-            ))}
-          </div>
-        )}
-
-        {/* Status */}
-        {isFolded && <div className="text-red-400 text-xs mt-1">FOLDED</div>}
+        <div className="text-right">
+          {player.currentBet > 0 && (
+            <div className="text-yellow-300 text-sm font-semibold">
+              Bet: ${player.currentBet}
+            </div>
+          )}
+          {player.status === "all-in" && (
+            <div className="text-orange-300 text-xs font-semibold">ALL-IN</div>
+          )}
+          {isFolded && <div className="text-red-400 text-xs font-semibold">FOLDED</div>}
+        </div>
       </div>
+
+      {player.cards && player.cards.length > 0 && (
+        <div className="mt-2 flex gap-1">
+          {player.cards.map((card, idx) => (
+            <Card
+              key={idx}
+              card={card}
+              size="small"
+              faceDown={!showCards}
+              dataTestId={`${dataTestId}-card-${idx}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,15 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
+import { PlayerSeat } from "./PlayerSeat";
 import type { PlayerAction } from "poker-types";
+
+const seatPositions: Array<"top" | "right" | "bottom" | "left"> = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+];
 
 export const GameRoom: React.FC = () => {
   const {
@@ -9,244 +17,290 @@ export const GameRoom: React.FC = () => {
     player,
     yourCards,
     isHost,
+    lastError,
+    clearError,
     startGame,
     performAction,
     leaveRoom,
   } = useGame();
+
   const [raiseAmount, setRaiseAmount] = useState<number>(0);
+  const [actionHint, setActionHint] = useState<string | null>(null);
+  const currentHand = room?.currentHand ?? null;
+  const isGameStarted = room?.gameState === "IN_PROGRESS";
+  const currentPlayer = room?.players.find((p) => p.id === player?.id) ?? null;
+  const currentTurnPlayer =
+    room?.players.find((p) => p.id === currentHand?.currentPlayerTurn) ?? null;
 
-  if (!room || !player) {
-    return <div className="text-white">Loading...</div>;
-  }
+  const minRaise = useMemo(() => {
+    if (!room) return 0;
+    return currentHand?.minRaise ?? room.config.bigBlind * 2;
+  }, [currentHand?.minRaise, room]);
 
-  const currentHand = room.currentHand;
-  const isGameStarted = room.gameState === "IN_PROGRESS";
-  const isYourTurn = currentHand?.currentPlayerTurn === player.id;
-
-  const handleAction = (action: PlayerAction) => {
-    if (action === "raise" || action === "all-in") {
-      performAction(action, raiseAmount);
-    } else {
-      performAction(action);
-    }
-  };
-
-  // Use minRaise from server (via PLAYER_TURN event) or fallback to big blind * 2
-  const minRaise = currentHand?.minRaise ?? room.config.bigBlind * 2;
-
-  // Get current player data from room.players to avoid stale data
-  const currentPlayer = room?.players.find((p) => p.id === player?.id);
-  const canCheck =
-    currentHand && currentPlayer
-      ? currentPlayer.currentBet === currentHand.currentBet
-      : false;
   const callAmount =
     currentHand && currentPlayer
-      ? currentHand.currentBet - currentPlayer.currentBet
+      ? Math.max(0, currentHand.currentBet - currentPlayer.currentBet)
       : 0;
+  const inferredPotFromBets = room
+    ? room.players.reduce((sum, seatPlayer) => sum + (seatPlayer.currentBet || 0), 0)
+    : 0;
+  const displayPot = Math.max(currentHand?.pot ?? 0, inferredPotFromBets);
+
+  const canCheck = callAmount === 0;
+  const maxRaise = currentPlayer?.chips ?? 0;
+  const isYourTurn = currentHand?.currentPlayerTurn === player?.id;
+
+  if (!room || !player) {
+    return <div className="p-4 text-white">Loading...</div>;
+  }
+
+  const handleAction = (action: PlayerAction) => {
+    if (action === "raise") {
+      if (raiseAmount < minRaise) {
+        setActionHint(`Raise must be at least $${minRaise}`);
+        return;
+      }
+
+      if (raiseAmount > maxRaise) {
+        setActionHint(`Raise cannot exceed your stack ($${maxRaise})`);
+        return;
+      }
+
+      setActionHint(null);
+      performAction("raise", raiseAmount);
+      return;
+    }
+
+    setActionHint(null);
+    performAction(action);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-900 to-green-950 p-4">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="bg-gray-900 rounded-lg p-3 mb-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold text-white">Room: {room.id}</h1>
-            <p className="text-gray-400 text-sm">
-              Players: {room.players.length}/{room.config.maxPlayers}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {isHost && !isGameStarted && room.players.length >= 2 && (
-              <button
-                onClick={startGame}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold text-sm"
+    <div className="min-h-screen px-3 pb-40 pt-3 md:px-6 md:pb-8">
+      <div className="mx-auto max-w-6xl space-y-3 md:space-y-4">
+        <header className="surface-panel sticky top-3 z-20 p-3 md:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-white" data-testid="room-title">
+                Room: {room.id}
+              </h1>
+              <p
+                className="text-sm text-emerald-100/70"
+                data-testid="room-player-count"
               >
-                Start Game
-              </button>
-            )}
-            <button
-              onClick={leaveRoom}
-              className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm"
-            >
-              Leave
-            </button>
-          </div>
-        </div>
-
-        {/* Pot and Community Cards */}
-        {currentHand && (
-          <div className="bg-poker-felt rounded-lg border-4 border-amber-900 p-4 mb-4">
-            <div className="text-center mb-3">
-              <div className="text-yellow-400 font-bold text-2xl">
-                Pot: ${currentHand.pot}
-              </div>
+                Players: {room.players.length}/{room.config.maxPlayers}
+              </p>
             </div>
-            {currentHand.communityCards.length > 0 && (
-              <div className="flex gap-2 justify-center">
-                {currentHand.communityCards.map((card, idx) => (
-                  <Card key={idx} card={card} size="medium" />
-                ))}
-              </div>
+
+            <div className="flex items-center gap-2">
+              {isHost && !isGameStarted && room.players.length >= 2 && (
+                <button
+                  onClick={startGame}
+                  data-testid="start-game-button"
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+                >
+                  Start Game
+                </button>
+              )}
+              <button
+                onClick={leaveRoom}
+                data-testid="leave-room-button"
+                className="rounded-xl border border-red-500/70 bg-red-900/25 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-800/40"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="surface-panel p-4 md:p-5" data-testid="hud-panel">
+          {lastError && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/60 bg-red-900/25 px-3 py-2 text-sm text-red-100">
+              <span>{lastError}</span>
+              <button
+                className="rounded-md border border-red-300/50 px-2 py-1 text-xs font-semibold text-red-100 transition hover:bg-red-500/15"
+                onClick={clearError}
+                data-testid="dismiss-error-button"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="hud-chip" data-testid="pot-value">
+              Pot: ${displayPot}
+            </span>
+            {currentHand && (
+              <span className="hud-chip" data-testid="round-value">
+                Current Round: {currentHand.bettingRound}
+              </span>
+            )}
+            <span className="hud-chip" data-testid="your-chips">
+              Your Chips: ${currentPlayer?.chips ?? 0}
+            </span>
+            {currentTurnPlayer && (
+              <span className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100" data-testid="turn-player">
+                Turn: {currentTurnPlayer.name}
+              </span>
             )}
           </div>
-        )}
 
-        {/* Players List */}
-        <div className="bg-gray-900 rounded-lg p-4 mb-4">
-          <h3 className="text-white font-semibold mb-3 text-sm">Players</h3>
-          <div className="space-y-2">
-            {room.players.map((p, idx) => {
-              const isYou = p.id === player.id;
-              const isCurrent = currentHand?.currentPlayerTurn === p.id;
-              const isDealer = currentHand?.dealerPosition === idx;
-              const isFolded = p.status === "folded";
-
-              return (
-                <div
-                  key={p.id}
-                  className={`flex items-center justify-between p-3 rounded-lg ${
-                    isCurrent
-                      ? "bg-yellow-900/50 ring-2 ring-yellow-400"
-                      : "bg-gray-800"
-                  } ${isFolded ? "opacity-50" : ""}`}
-                >
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="text-2xl font-bold text-gray-500">
-                      #{idx + 1}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold">
-                          {p.name} {isYou && "(You)"}
-                        </span>
-                        {isDealer && (
-                          <span className="bg-yellow-500 text-black px-2 py-0.5 rounded-full text-xs font-bold">
-                            D
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-green-400 text-sm">${p.chips}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    {p.currentBet > 0 && (
-                      <div className="text-yellow-300 text-sm font-semibold">
-                        Bet: ${p.currentBet}
-                      </div>
-                    )}
-                    {isFolded && (
-                      <div className="text-red-400 text-xs">FOLDED</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Your Cards (larger display) */}
-        {yourCards && yourCards.length > 0 && (
-          <div className="bg-gray-900 rounded-lg p-4 mb-4">
-            <h3 className="text-white font-semibold mb-2 text-sm">
-              Your Cards
-            </h3>
-            <div className="flex gap-3 justify-center">
-              {yourCards.map((card, idx) => (
-                <Card key={idx} card={card} size="large" />
+          {currentHand && currentHand.communityCards.length > 0 && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2" data-testid="community-cards">
+              {currentHand.communityCards.map((card, idx) => (
+                <Card
+                  key={idx}
+                  card={card}
+                  size="medium"
+                  dataTestId={`community-card-${idx}`}
+                />
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </section>
 
-        {/* Action Buttons */}
-        {isYourTurn && (
-          <div className="bg-gray-900 rounded-lg p-4 mb-4">
-            <h3 className="text-white font-semibold mb-3 text-sm">Your Turn</h3>
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleAction("fold")}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-semibold"
-                >
-                  Fold
-                </button>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
+          <section className="surface-panel p-4" data-testid="players-section">
+            <h3 className="mb-3 text-sm font-semibold text-emerald-100">Players</h3>
+            <div className="space-y-2">
+              {room.players.map((seatPlayer, idx) => (
+                <PlayerSeat
+                  key={seatPlayer.id}
+                  player={seatPlayer}
+                  position={seatPositions[idx % seatPositions.length]}
+                  seatNumber={idx + 1}
+                  isYou={seatPlayer.id === player.id}
+                  isCurrentPlayer={currentHand?.currentPlayerTurn === seatPlayer.id}
+                  isDealer={currentHand?.dealerPosition === idx}
+                  dataTestId={`player-seat-${seatPlayer.id}`}
+                />
+              ))}
+            </div>
+          </section>
 
-                {canCheck ? (
-                  <button
-                    onClick={() => handleAction("check")}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-semibold"
-                  >
-                    Check
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleAction("call")}
-                    className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 rounded-lg font-semibold"
-                  >
-                    Call ${callAmount}
-                  </button>
+          <div className="space-y-3">
+            {yourCards && yourCards.length > 0 && (
+              <section className="surface-panel p-4" data-testid="your-cards-section">
+                <h3 className="mb-2 text-sm font-semibold text-emerald-100">Your Cards</h3>
+                <div className="flex justify-center gap-3">
+                  {yourCards.map((card, idx) => (
+                    <Card
+                      key={idx}
+                      card={card}
+                      size="large"
+                      dataTestId={`your-card-${idx}`}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="surface-panel p-4" data-testid="game-info-panel">
+              <h3 className="mb-2 text-sm font-semibold text-emerald-100">Game Info</h3>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="text-emerald-100/70">
+                  Small Blind: <span className="text-white">${room.config.smallBlind}</span>
+                </div>
+                <div className="text-emerald-100/70">
+                  Big Blind: <span className="text-white">${room.config.bigBlind}</span>
+                </div>
+                <div className="text-emerald-100/70">
+                  Your Chips: <span className="text-green-400">${currentPlayer?.chips ?? 0}</span>
+                </div>
+                {currentHand && (
+                  <div className="text-emerald-100/70">
+                    Current Round: <span className="text-amber-300">{currentHand.bettingRound}</span>
+                  </div>
                 )}
               </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min={minRaise}
-                  max={currentPlayer?.chips || 0}
-                  value={raiseAmount}
-                  onChange={(e) => setRaiseAmount(Number(e.target.value))}
-                  className="flex-1 px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700"
-                  placeholder={`Min: $${minRaise}`}
-                />
-                <button
-                  onClick={() => handleAction("raise")}
-                  disabled={raiseAmount < minRaise}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
-                >
-                  Raise
-                </button>
-              </div>
-
-              <button
-                onClick={() => handleAction("all-in")}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-semibold"
-              >
-                All-In ${player.chips}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Game Info */}
-        <div className="bg-gray-900 rounded-lg p-4">
-          <h3 className="text-white font-semibold mb-2 text-sm">Game Info</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="text-gray-400">
-              Small Blind:{" "}
-              <span className="text-white">${room.config.smallBlind}</span>
-            </div>
-            <div className="text-gray-400">
-              Big Blind:{" "}
-              <span className="text-white">${room.config.bigBlind}</span>
-            </div>
-            <div className="text-gray-400">
-              Your Chips:{" "}
-              <span className="text-green-400">
-                ${currentPlayer?.chips || 0}
-              </span>
-            </div>
-            {currentHand && (
-              <div className="text-gray-400">
-                Current Round:{" "}
-                <span className="text-yellow-400">
-                  {currentHand.bettingRound}
-                </span>
-              </div>
-            )}
+            </section>
           </div>
         </div>
       </div>
+
+      {isYourTurn && (
+        <section
+          className="surface-panel fixed bottom-3 left-3 right-3 z-30 p-3 md:left-1/2 md:w-[min(720px,92vw)] md:-translate-x-1/2 md:p-4"
+          data-testid="action-dock"
+        >
+          <h3 className="mb-3 text-sm font-semibold text-amber-200">Your Turn</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleAction("fold")}
+                data-testid="action-fold"
+                className="rounded-xl border border-red-500/60 bg-red-900/30 px-4 py-3 font-semibold text-red-100 transition hover:bg-red-800/40"
+              >
+                Fold
+              </button>
+
+              {canCheck ? (
+                <button
+                  onClick={() => handleAction("check")}
+                  data-testid="action-check"
+                  className="rounded-xl bg-sky-500 px-4 py-3 font-semibold text-sky-950 transition hover:bg-sky-400"
+                >
+                  Check
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleAction("call")}
+                  data-testid="action-call"
+                  className="rounded-xl bg-amber-400 px-4 py-3 font-semibold text-amber-950 transition hover:bg-amber-300"
+                >
+                  Call ${callAmount}
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={minRaise}
+                max={maxRaise}
+                value={raiseAmount}
+                onChange={(e) => {
+                  setRaiseAmount(Number(e.target.value));
+                  setActionHint(null);
+                }}
+                placeholder={`Min: $${minRaise}`}
+                data-testid="raise-input"
+                className="flex-1 rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-2 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+              />
+              <button
+                onClick={() => handleAction("raise")}
+                disabled={raiseAmount < minRaise || raiseAmount > maxRaise}
+                data-testid="action-raise"
+                className="rounded-xl bg-emerald-500 px-6 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Raise
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-emerald-100/70">
+                Min raise: ${minRaise} • Max: ${maxRaise}
+              </div>
+              <button
+                onClick={() => handleAction("all-in")}
+                data-testid="action-all-in"
+                className="rounded-xl border border-orange-400/60 bg-orange-500/15 px-4 py-2 font-semibold text-orange-100 transition hover:bg-orange-500/25"
+              >
+                All-In ${maxRaise}
+              </button>
+            </div>
+
+            {actionHint && (
+              <div
+                className="rounded-lg border border-orange-400/60 bg-orange-500/10 px-3 py-2 text-xs text-orange-200"
+                data-testid="action-hint"
+              >
+                {actionHint}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

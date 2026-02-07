@@ -1,24 +1,56 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, {
   createContext,
   useContext,
   useState,
   useEffect,
+  useCallback,
   type ReactNode,
 } from "react";
-import type { Room, Player, Card, PlayerAction, Hand } from "poker-types";
+import type {
+  Room,
+  Player,
+  Card,
+  PlayerAction,
+  Hand,
+  ClientToServerEvents,
+} from "poker-types";
 import { useSocket } from "./SocketContext";
+
+type DebugApi = {
+  getRoom: () => Room | null;
+  getPlayer: () => Player | null;
+  getCards: () => Card[] | null;
+  getSocket: () => ReturnType<typeof useSocket>["socket"];
+  createRoom: (name: string) => void;
+  joinRoom: (roomId: string, name: string) => void;
+  startGame: () => void;
+  performAction: (action: PlayerAction, amount?: number) => void;
+  fold: () => void;
+  check: () => void;
+  call: () => void;
+  raise: (amount: number) => void;
+  allIn: () => void;
+  leaveRoom: () => void;
+  requestRebuy: (amount: number) => void;
+  clearError: () => void;
+  emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
+  logState: () => void;
+};
 
 interface GameContextType {
   room: Room | null;
   player: Player | null;
   yourCards: Card[] | null;
   isHost: boolean;
+  lastError: string | null;
   createRoom: (playerName: string) => void;
   joinRoom: (roomId: string, playerName: string) => void;
   startGame: () => void;
   performAction: (action: PlayerAction, amount?: number) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
+  clearError: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -35,18 +67,25 @@ interface GameProviderProps {
   children: ReactNode;
 }
 
+declare global {
+  interface Window {
+    pokerDebug?: DebugApi;
+  }
+}
+
 export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const { socket } = useSocket();
   const [room, setRoom] = useState<Room | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!socket) return;
 
     // Room created
     socket.on("ROOM_CREATED", (data) => {
-      setRoom(data.room as any); // SanitizedRoom from server
+      setRoom(data.room as unknown as Room); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
       console.log("Room created:", data.roomId);
@@ -54,7 +93,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     // Room joined
     socket.on("ROOM_JOINED", (data) => {
-      setRoom(data.room as any); // SanitizedRoom from server
+      setRoom(data.room as unknown as Room); // SanitizedRoom from server
       setPlayer(data.player);
     });
 
@@ -271,7 +310,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Error
     socket.on("ERROR", (data) => {
       console.error("Socket error:", data.message);
-      alert(data.message);
+      setLastError(data.message);
     });
 
     return () => {
@@ -292,56 +331,79 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     };
   }, [socket]);
 
-  const createRoom = (playerName: string) => {
+  const createRoom = useCallback((playerName: string) => {
     if (!socket) return;
+    setLastError(null);
     socket.emit("CREATE_ROOM", { playerName }, (response) => {
       console.log("Create room response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to create room");
+      }
     });
-  };
+  }, [socket]);
 
-  const joinRoom = (roomId: string, playerName: string) => {
+  const joinRoom = useCallback((roomId: string, playerName: string) => {
     if (!socket) return;
+    setLastError(null);
     socket.emit("JOIN_ROOM", { roomId, playerName }, (response) => {
       console.log("Join room response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to join room");
+      }
     });
-  };
+  }, [socket]);
 
-  const startGame = () => {
+  const startGame = useCallback(() => {
     if (!socket) return;
+    setLastError(null);
     socket.emit("START_GAME", (response) => {
       console.log("Start game response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to start game");
+      }
     });
-  };
+  }, [socket]);
 
-  const performAction = (action: PlayerAction, amount?: number) => {
+  const performAction = useCallback((action: PlayerAction, amount?: number) => {
     if (!socket) return;
+    setLastError(null);
     socket.emit("PLAYER_ACTION", { action, amount }, (response) => {
       console.log("Action response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Action rejected");
+      }
     });
-  };
+  }, [socket]);
 
-  const leaveRoom = () => {
+  const leaveRoom = useCallback(() => {
     if (!socket) return;
     socket.emit("LEAVE_ROOM", () => {
       setRoom(null);
       setPlayer(null);
       setYourCards(null);
+      setLastError(null);
     });
-  };
+  }, [socket]);
 
-  const requestRebuy = (amount: number) => {
+  const requestRebuy = useCallback((amount: number) => {
     if (!socket) return;
+    setLastError(null);
     socket.emit("REQUEST_REBUY", { amount }, (response) => {
       console.log("Rebuy response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Rebuy request failed");
+      }
     });
-  };
+  }, [socket]);
+
+  const clearError = useCallback(() => setLastError(null), []);
 
   const isHost = player?.id === room?.hostId;
 
   // Expose debug functions to window for testing
   useEffect(() => {
     if (typeof window !== "undefined") {
-      (window as any).pokerDebug = {
+      window.pokerDebug = {
         getRoom: () => room,
         getPlayer: () => player,
         getCards: () => yourCards,
@@ -357,8 +419,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         allIn: () => performAction("all-in"),
         leaveRoom,
         requestRebuy,
-        emitCustom: (event: string, data: any) =>
-          socket?.emit(event as any, data),
+        clearError,
+        emitCustom: (event, data) => {
+          const rawSocket = socket as unknown as {
+            emit: (...args: unknown[]) => void;
+          } | null;
+          rawSocket?.emit(event, data);
+        },
         logState: () => {
           console.log("Room:", room);
           console.log("Player:", player);
@@ -379,6 +446,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     performAction,
     leaveRoom,
     requestRebuy,
+    clearError,
   ]);
 
   return (
@@ -388,12 +456,14 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         player,
         yourCards,
         isHost,
+        lastError,
         createRoom,
         joinRoom,
         startGame,
         performAction,
         leaveRoom,
         requestRebuy,
+        clearError,
       }}
     >
       {children}
