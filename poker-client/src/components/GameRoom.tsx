@@ -4,7 +4,7 @@ import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
 import type { HandEvaluation, Player, PlayerAction } from "poker-types";
 
-const CHIP_DENOMINATIONS = [1, 5, 25, 100, 500] as const;
+const CHIP_DENOMINATIONS = [5, 10, 25, 100, 500] as const;
 const DRAG_SNAP_RADIUS_PX = 32;
 
 type SeatAnchor = {
@@ -45,6 +45,17 @@ type DragState = {
   clientX: number;
   clientY: number;
   overDropZone: boolean;
+};
+
+type TrayPresetTone = "call" | "raise" | "allin";
+
+type TrayPresetButton = {
+  key: string;
+  label: string;
+  amount: number;
+  testId: string;
+  tone: TrayPresetTone;
+  enabled: boolean;
 };
 
 const EMPTY_DRAG_STATE: DragState = {
@@ -235,7 +246,6 @@ export const GameRoom: React.FC = () => {
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [trayAmount, setTrayAmount] = useState(0);
   const [, setChipHistory] = useState<number[]>([]);
-  const [composerHint, setComposerHint] = useState<string | null>(null);
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -269,6 +279,8 @@ export const GameRoom: React.FC = () => {
     ? room.players.reduce((sum, seatPlayer) => sum + (seatPlayer.currentBet || 0), 0)
     : 0;
   const displayPot = Math.max(currentHand?.pot ?? 0, inferredPotFromBets);
+  const currentTableBet = currentHand?.currentBet ?? 0;
+  const myCommittedBet = currentPlayer?.currentBet ?? 0;
 
   const maxStack = currentPlayer?.chips ?? 0;
   const canCheck = callAmount === 0;
@@ -400,6 +412,90 @@ export const GameRoom: React.FC = () => {
       }),
     [callAmount, maxStack, minRaise, trayAmount],
   );
+  const canStartDrag = isYourTurn && trayAmount > 0 && Boolean(dropResolution.intent);
+
+  const trayPresetButtons = useMemo<TrayPresetButton[]>(() => {
+    const clampToStack = (value: number) =>
+      Math.max(0, Math.min(maxStack, Math.round(value)));
+    const commitToTargetTotalBet = (targetTotalBet: number) =>
+      clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
+    const halfPotCommit = clampToStack(Math.max(callAmount, Math.round(displayPot / 2)));
+    const fullPotCommit = clampToStack(Math.max(callAmount, displayPot));
+
+    const presets = [
+      {
+        key: "call",
+        label: "Call",
+        amount: Math.min(callAmount, maxStack),
+        testId: "chip-load-call",
+        tone: "call" as const,
+      },
+      {
+        key: "double",
+        label: "2x",
+        amount:
+          callAmount > 0
+            ? commitToTargetTotalBet(currentTableBet * 2)
+            : clampToStack(minRaise * 2),
+        testId: "chip-load-double",
+        tone: "raise" as const,
+      },
+      {
+        key: "three-bet",
+        label: "3-Bet",
+        amount:
+          callAmount > 0
+            ? commitToTargetTotalBet(currentTableBet * 3)
+            : clampToStack(minRaise * 3),
+        testId: "chip-load-3bet",
+        tone: "raise" as const,
+      },
+      {
+        key: "four-bet",
+        label: "4-Bet",
+        amount:
+          callAmount > 0
+            ? commitToTargetTotalBet(currentTableBet * 4)
+            : clampToStack(minRaise * 4),
+        testId: "chip-load-4bet",
+        tone: "raise" as const,
+      },
+      {
+        key: "half-pot",
+        label: "1/2 Pot",
+        amount: halfPotCommit,
+        testId: "chip-load-half-pot",
+        tone: "raise" as const,
+      },
+      {
+        key: "full-pot",
+        label: "Pot",
+        amount: fullPotCommit,
+        testId: "chip-load-full-pot",
+        tone: "raise" as const,
+      },
+      {
+        key: "all-in",
+        label: "All-In",
+        amount: maxStack,
+        testId: "chip-load-all-in",
+        tone: "allin" as const,
+      },
+    ];
+
+    return presets.map((preset) => {
+      const resolution = resolveDropIntent({
+        trayAmount: preset.amount,
+        callAmount,
+        minRaise,
+        stack: maxStack,
+      });
+      return {
+        ...preset,
+        enabled: isYourTurn && preset.amount > 0 && Boolean(resolution.intent),
+      };
+    });
+  }, [callAmount, currentTableBet, displayPot, isYourTurn, maxStack, minRaise, myCommittedBet]);
 
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
@@ -427,12 +523,6 @@ export const GameRoom: React.FC = () => {
   }, [confirmActions]);
 
   useEffect(() => {
-    if (!composerHint) return;
-    const timeoutId = window.setTimeout(() => setComposerHint(null), 2800);
-    return () => window.clearTimeout(timeoutId);
-  }, [composerHint]);
-
-  useEffect(() => {
     setLegacyRaiseAmount((prev) => {
       if (prev <= 0) return 0;
       return Math.min(prev, maxStack);
@@ -448,19 +538,18 @@ export const GameRoom: React.FC = () => {
   }, [isYourTurn]);
 
   useEffect(() => {
-    if (!lastError && !composerHint && !pendingAction && !showRankingsModal) return;
+    if (!lastError && !pendingAction && !showRankingsModal) return;
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
-      if (composerHint) setComposerHint(null);
       if (pendingAction) setPendingAction(null);
       if (showRankingsModal) setShowRankingsModal(false);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, composerHint, lastError, pendingAction, showRankingsModal]);
+  }, [clearError, lastError, pendingAction, showRankingsModal]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -478,12 +567,10 @@ export const GameRoom: React.FC = () => {
 
   const commitTrayDrop = useCallback(() => {
     if (!isYourTurn) {
-      setComposerHint("Wait for your turn.");
       return;
     }
 
     if (!dropResolution.intent) {
-      setComposerHint(dropResolution.reason ?? "Invalid chip amount.");
       return;
     }
 
@@ -509,15 +596,13 @@ export const GameRoom: React.FC = () => {
     }
     setTrayAmount(0);
     setChipHistory([]);
-    setComposerHint(null);
-  }, [callAmount, confirmActions, displayPot, dropResolution.intent, dropResolution.reason, isYourTurn, maxStack, performAction]);
+  }, [callAmount, confirmActions, displayPot, dropResolution.intent, isYourTurn, maxStack, performAction]);
 
   const handleChipAdd = (chipValue: number) => {
     if (!isYourTurn) return;
 
     const remaining = maxStack - trayAmount;
     if (remaining <= 0) {
-      setComposerHint(`You already loaded your full stack ($${maxStack}).`);
       return;
     }
 
@@ -528,7 +613,6 @@ export const GameRoom: React.FC = () => {
 
     setTrayAmount((prev) => prev + added);
     setChipHistory((prev) => [...prev, added]);
-    setComposerHint(null);
   };
 
   const handleUndoChip = () => {
@@ -551,29 +635,16 @@ export const GameRoom: React.FC = () => {
     const clamped = Math.max(0, Math.min(nextAmount, maxStack));
     setTrayAmount(clamped);
     setChipHistory(clamped > 0 ? [clamped] : []);
-    setComposerHint(null);
   };
 
   const clearTray = () => {
     if (!isYourTurn) return;
     setTrayAmount(0);
     setChipHistory([]);
-    setComposerHint(null);
   };
 
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isYourTurn) {
-      setComposerHint("Wait for your turn.");
-      return;
-    }
-
-    if (trayAmount <= 0) {
-      setComposerHint("Add chips first.");
-      return;
-    }
-
-    if (!dropResolution.intent) {
-      setComposerHint(dropResolution.reason ?? "Tray amount is not legal.");
+    if (!canStartDrag) {
       return;
     }
 
@@ -622,10 +693,7 @@ export const GameRoom: React.FC = () => {
 
     if (shouldCommit) {
       commitTrayDrop();
-      return;
     }
-
-    setComposerHint("Drop your chips in the glowing pot ring to commit.");
   };
 
   const handleCopyInviteLink = async () => {
@@ -687,11 +755,9 @@ export const GameRoom: React.FC = () => {
 
     if (action === "raise") {
       if (legacyRaiseAmount < minRaise) {
-        setComposerHint(`Raise must be at least $${minRaise}.`);
         return;
       }
       if (legacyRaiseAmount > maxStack) {
-        setComposerHint(`Raise cannot exceed your stack ($${maxStack}).`);
         return;
       }
 
@@ -1196,17 +1262,27 @@ export const GameRoom: React.FC = () => {
               onPointerUp={handleDragEnd}
               onPointerCancel={handleDragEnd}
               data-testid="chip-stack-draggable"
+              disabled={!canStartDrag}
               className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
             >
               <span className="chip-stack__label">Tray</span>
               <span className="chip-stack__value">${trayAmount}</span>
             </button>
+          </div>
 
-            <div className="chip-composer-dock__preview" data-testid="chip-drop-preview">
-              {dropResolution.intent
-                ? dropResolution.intent.label
-                : dropResolution.reason ?? "Add chips to continue."}
-            </div>
+          <div className="chip-composer-dock__presets">
+            {trayPresetButtons.map((preset) => (
+              <button
+                key={preset.key}
+                onClick={() => setTrayDirectly(preset.amount)}
+                className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
+                disabled={!preset.enabled}
+                data-testid={preset.testId}
+              >
+                <span>{preset.label}</span>
+                <span>${preset.amount}</span>
+              </button>
+            ))}
           </div>
 
           <div className="chip-composer-dock__denoms">
@@ -1215,6 +1291,7 @@ export const GameRoom: React.FC = () => {
                 key={chipValue}
                 onClick={() => handleChipAdd(chipValue)}
                 className="chip-pill"
+                disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
                 data-testid={`chip-add-${chipValue}`}
               >
                 +{chipValue}
@@ -1223,6 +1300,7 @@ export const GameRoom: React.FC = () => {
             <button
               onClick={() => setTrayDirectly(maxStack)}
               className="chip-pill chip-pill--max"
+              disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
               data-testid="chip-add-max"
             >
               MAX
@@ -1230,6 +1308,7 @@ export const GameRoom: React.FC = () => {
             <button
               onClick={handleUndoChip}
               className="chip-pill chip-pill--soft"
+              disabled={!isYourTurn || trayAmount <= 0}
               data-testid="chip-undo"
             >
               -LAST
@@ -1237,41 +1316,22 @@ export const GameRoom: React.FC = () => {
             <button
               onClick={clearTray}
               className="chip-pill chip-pill--soft"
+              disabled={!isYourTurn || trayAmount <= 0}
               data-testid="chip-clear"
             >
               CLEAR
             </button>
           </div>
 
-          <div className="chip-composer-dock__quick">
-            <button
-              onClick={() => setTrayDirectly(Math.min(callAmount, maxStack))}
-              className="chip-quick"
-              disabled={callAmount <= 0}
-              data-testid="chip-load-call"
-            >
-              Load Call ${Math.min(callAmount, maxStack)}
-            </button>
-            <button
-              onClick={() => setTrayDirectly(Math.min(callAmount + minRaise, maxStack))}
-              className="chip-quick"
-              disabled={maxStack <= 0}
-              data-testid="chip-load-min-raise"
-            >
-              Load Min ${Math.min(callAmount + minRaise, maxStack)}
-            </button>
-          </div>
-
           <div className="chip-composer-dock__footer">
-            {canCheck && (
-              <button
-                onClick={() => handleLegacyAction("check")}
-                data-testid="action-check"
-                className="chip-action chip-action--check chip-action--small"
-              >
-                Check
-              </button>
-            )}
+            <button
+              onClick={() => handleLegacyAction("check")}
+              disabled={!canCheck}
+              data-testid={canCheck ? "action-check" : "action-check-disabled"}
+              className="chip-action chip-action--check chip-action--small"
+            >
+              Check
+            </button>
             <label className="chip-composer-dock__confirm">
               <input
                 type="checkbox"
@@ -1290,21 +1350,9 @@ export const GameRoom: React.FC = () => {
             </button>
           </div>
 
-          {composerHint && (
-            <div
-              className="rounded-lg border border-orange-400/60 bg-orange-500/10 px-3 py-2 text-xs text-orange-200"
-              data-testid="action-hint"
-            >
-              {composerHint}
-            </div>
-          )}
-
           {isAutomationMode && (
             <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
-              <div className="text-[11px] text-emerald-100/70">
-                Automation fallback controls are enabled.
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="mt-1 grid grid-cols-2 gap-2">
                 {canCheck ? (
                   <button
                     onClick={() => handleLegacyAction("check")}
