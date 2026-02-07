@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
@@ -22,23 +22,16 @@ export const Home: React.FC<HomeProps> = ({
     clearError,
   } = useGame();
 
+  const normalizedPrefilledRoomId = useMemo(
+    () => prefilledRoomId?.trim().toUpperCase() ?? "",
+    [prefilledRoomId],
+  );
+  const defaultJoinMode = forceJoinMode || Boolean(normalizedPrefilledRoomId);
   const [playerName, setPlayerName] = useState("");
-  const [roomId, setRoomId] = useState("");
-  const [isJoining, setIsJoining] = useState(false);
+  const [roomId, setRoomId] = useState(normalizedPrefilledRoomId);
+  const [isJoining, setIsJoining] = useState(defaultJoinMode);
   const [feedback, setFeedback] = useState<string | null>(null);
-
-  useEffect(() => {
-    const normalizedRoomId = prefilledRoomId?.trim().toUpperCase();
-    if (normalizedRoomId) {
-      setIsJoining(true);
-      setRoomId(normalizedRoomId);
-      return;
-    }
-
-    if (forceJoinMode) {
-      setIsJoining(true);
-    }
-  }, [prefilledRoomId, forceJoinMode]);
+  const effectiveRoomId = normalizedPrefilledRoomId || roomId;
 
   const clearFeedback = () => {
     if (feedback) {
@@ -67,7 +60,7 @@ export const Home: React.FC<HomeProps> = ({
     if (isRecoveringSession) return;
 
     const trimmedName = playerName.trim();
-    const trimmedRoomId = roomId.trim();
+    const trimmedRoomId = effectiveRoomId.trim();
     const normalizedRoomId = trimmedRoomId.toUpperCase();
 
     if (!trimmedName || !normalizedRoomId) {
@@ -188,7 +181,7 @@ export const Home: React.FC<HomeProps> = ({
                   <input
                     id="room-code"
                     type="text"
-                    value={roomId}
+                    value={effectiveRoomId}
                     onChange={(e) => {
                       setRoomId(e.target.value.toUpperCase());
                       clearFeedback();
