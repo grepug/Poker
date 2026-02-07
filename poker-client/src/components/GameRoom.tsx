@@ -337,7 +337,7 @@ export const GameRoom: React.FC = () => {
   }, [room]);
 
   const seatAnchors = useMemo(() => getSeatAnchors(orbitCapacity), [orbitCapacity]);
-  const seatSlotWidth = orbitCapacity > 6 ? "min(24vw, 6.8rem)" : "min(28vw, 7.6rem)";
+  const seatSlotWidth = orbitCapacity > 6 ? "min(20vw, 5.4rem)" : "min(22vw, 5.8rem)";
   const playerRankings = useMemo(
     () => {
       if (!room) return [];
@@ -762,7 +762,7 @@ export const GameRoom: React.FC = () => {
   }
 
   return (
-    <main className="table-shell pb-36">
+    <main className="table-shell">
       <header className="table-micro-hud">
         <div className="min-w-0">
           <h1
@@ -933,19 +933,19 @@ export const GameRoom: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="seat-pod__row seat-pod__meta">
-                        <div className="seat-pod__stack text-green-400 text-sm">
-                          ${seatPlayer.chips}
-                        </div>
-                        {seatPlayer.currentBet > 0 && (
-                          <div className="seat-pod__bet">Bet: ${seatPlayer.currentBet}</div>
-                        )}
+                      <div className="seat-pod__row seat-pod__row--chips">
+                        <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
                       </div>
 
-                      <div className="seat-pod__row">
+                      <div className="seat-pod__row seat-pod__row--buyin">
                         <div className="seat-pod__buyin">Buy-in: ${seatPlayer.totalBuyIn}</div>
-                        {isAllIn && <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>}
-                        {isFolded && <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>}
+                        <div className="seat-pod__bet sr-only">Bet: ${seatPlayer.currentBet}</div>
+                        {isAllIn && (
+                          <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
+                        )}
+                        {isFolded && (
+                          <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>
+                        )}
                       </div>
                     </article>
                   ) : (
@@ -958,46 +958,45 @@ export const GameRoom: React.FC = () => {
             })}
           </div>
 
-          <div className="your-cards-tray" data-testid="your-cards-section">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
-                Your Cards
-              </h3>
-              <button
-                onClick={() =>
-                  setHiddenCardsHandNumber((prev) =>
-                    showHoleCards ? currentHandNumber ?? prev : null,
-                  )
-                }
-                data-testid="toggle-hole-cards"
-                disabled={shouldForceShowHoleCards}
-                className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {shouldForceShowHoleCards
-                  ? "Cards Revealed"
-                  : showHoleCards
-                    ? "Hide"
-                    : "Show"}
-              </button>
-            </div>
+        </div>
 
-            {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
-              <div className="mt-2 flex justify-center gap-2">
-                {yourCards.map((card, idx) => (
-                  <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
-                ))}
-              </div>
-            ) : (
-              <div
-                className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
-                data-testid="hole-cards-hidden-state"
-              >
-                {isShowingHoleCards
-                  ? "Cards appear when a hand starts."
-                  : "Hole cards hidden."}
-              </div>
-            )}
+        <div className="your-cards-tray" data-testid="your-cards-section">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
+              Your Cards
+            </h3>
+            <button
+              onClick={() =>
+                setHiddenCardsHandNumber((prev) =>
+                  showHoleCards ? currentHandNumber ?? prev : null,
+                )
+              }
+              data-testid="toggle-hole-cards"
+              disabled={shouldForceShowHoleCards}
+              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {shouldForceShowHoleCards
+                ? "Cards Revealed"
+                : showHoleCards
+                  ? "Hide"
+                  : "Show"}
+            </button>
           </div>
+
+          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
+            <div className="mt-2 flex justify-center gap-2">
+              {yourCards.map((card, idx) => (
+                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+              ))}
+            </div>
+          ) : (
+            <div
+              className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
+              data-testid="hole-cards-hidden-state"
+            >
+              {isShowingHoleCards ? "Cards appear when a hand starts." : "Hole cards hidden."}
+            </div>
+          )}
         </div>
       </section>
 
@@ -1191,38 +1190,27 @@ export const GameRoom: React.FC = () => {
             <span className="chip-composer-dock__title">Your Turn</span>
             <span className="chip-composer-dock__meta">To Call: ${callAmount}</span>
             <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
-            <label className="chip-composer-dock__confirm">
-              <input
-                type="checkbox"
-                checked={confirmActions}
-                onChange={(event) => setConfirmActions(event.target.checked)}
-                className="h-3.5 w-3.5 accent-emerald-400"
-              />
-              Confirm Actions
-            </label>
           </div>
 
-          <div className="chip-composer-dock__actions">
+          <div className="chip-composer-dock__tray-row">
             <button
-              onClick={() => handleLegacyAction("fold")}
-              data-testid="action-fold"
-              className="chip-action chip-action--fold"
+              type="button"
+              onPointerDown={handleDragStart}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+              onPointerCancel={handleDragEnd}
+              data-testid="chip-stack-draggable"
+              className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
             >
-              Fold
+              <span className="chip-stack__label">Tray</span>
+              <span className="chip-stack__value">${trayAmount}</span>
             </button>
-            {canCheck ? (
-              <button
-                onClick={() => handleLegacyAction("check")}
-                data-testid="action-check"
-                className="chip-action chip-action--check"
-              >
-                Check
-              </button>
-            ) : (
-              <div className="chip-action chip-action--check opacity-70">
-                Drag chips to call/raise
-              </div>
-            )}
+
+            <div className="chip-composer-dock__preview" data-testid="chip-drop-preview">
+              {dropResolution.intent
+                ? dropResolution.intent.label
+                : dropResolution.reason ?? "Add chips to continue."}
+            </div>
           </div>
 
           <div className="chip-composer-dock__denoms">
@@ -1278,25 +1266,32 @@ export const GameRoom: React.FC = () => {
             </button>
           </div>
 
-          <div className="chip-composer-dock__drag-row">
+          <div className="chip-composer-dock__footer">
+            {canCheck && (
+              <button
+                onClick={() => handleLegacyAction("check")}
+                data-testid="action-check"
+                className="chip-action chip-action--check chip-action--small"
+              >
+                Check
+              </button>
+            )}
+            <label className="chip-composer-dock__confirm">
+              <input
+                type="checkbox"
+                checked={confirmActions}
+                onChange={(event) => setConfirmActions(event.target.checked)}
+                className="h-3.5 w-3.5 accent-emerald-400"
+              />
+              Confirm Actions
+            </label>
             <button
-              type="button"
-              onPointerDown={handleDragStart}
-              onPointerMove={handleDragMove}
-              onPointerUp={handleDragEnd}
-              onPointerCancel={handleDragEnd}
-              data-testid="chip-stack-draggable"
-              className={`chip-stack ${dragState.active ? "chip-stack--dragging" : ""}`}
+              onClick={() => handleLegacyAction("fold")}
+              data-testid="action-fold"
+              className="chip-action chip-action--fold chip-action--small"
             >
-              <span className="chip-stack__label">Tray</span>
-              <span className="chip-stack__value">${trayAmount}</span>
+              Fold
             </button>
-
-            <div className="chip-composer-dock__preview" data-testid="chip-drop-preview">
-              {dropResolution.intent
-                ? dropResolution.intent.label
-                : dropResolution.reason ?? "Add chips to continue."}
-            </div>
           </div>
 
           {composerHint && (
