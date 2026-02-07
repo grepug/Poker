@@ -602,16 +602,16 @@ export const GameRoom: React.FC = () => {
   };
 
   const handleDragEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-    let shouldCommit = false;
+    const isSamePointer = dragState.active && dragState.pointerId === event.pointerId;
+    const isCancelled = event.type === "pointercancel";
+    const shouldCommit =
+      isSamePointer &&
+      !isCancelled &&
+      (dragState.overDropZone || isPointInDropZone(event.clientX, event.clientY));
 
-    setDragState((prev) => {
-      if (!prev.active || prev.pointerId !== event.pointerId) {
-        return prev;
-      }
-
-      shouldCommit = isPointInDropZone(event.clientX, event.clientY);
-      return EMPTY_DRAG_STATE;
-    });
+    setDragState((prev) =>
+      !prev.active || prev.pointerId !== event.pointerId ? prev : EMPTY_DRAG_STATE,
+    );
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
