@@ -388,6 +388,7 @@ export const GameRoom: React.FC = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
+  const hasHoleCards = Boolean(yourCards && yourCards.length > 0);
   const currentHandNumber = currentHand?.handNumber ?? null;
 
   const isHandPausedForNext =
@@ -1269,50 +1270,43 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
-      <section
-        className={`your-cards-flyout ${
-          isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-        } ${isYourTurn ? "your-cards-flyout--anchored" : ""}`}
-        style={
-          isYourTurn
-            ? {
-                bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
-              }
-            : undefined
-        }
-        data-testid="your-cards-flyout"
-      >
-        <div className="your-cards-flyout__panel" data-testid="your-cards-section">
-          <div className="your-cards-flyout__header">
-            <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
-          </div>
+      {hasHoleCards && (
+        <section
+          className={`your-cards-flyout ${
+            isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
+          } ${isYourTurn ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
+          style={
+            isYourTurn
+              ? {
+                  bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
+                }
+              : undefined
+          }
+          data-testid="your-cards-flyout"
+        >
+          <div className="your-cards-flyout__panel" data-testid="your-cards-section">
+            <div className="your-cards-flyout__header">
+              <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
+            </div>
 
-          {yourCards && yourCards.length > 0 ? (
             <div className="your-cards-flyout__cards">
-              {yourCards.map((card, idx) => (
+              {(yourCards ?? []).map((card, idx) => (
                 <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
               ))}
             </div>
-          ) : (
-            <div
-              className="your-cards-flyout__empty-state"
-              data-testid="hole-cards-hidden-state"
-            >
-              {t("game.cardsAppearWhenHandStarts")}
-            </div>
-          )}
-        </div>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCardsFlyoutOpen((prev) => !prev)}
-          className="your-cards-flyout__toggle"
-          data-testid="your-cards-flyout-toggle"
-          aria-label={`${isCardsFlyoutOpen ? t("game.hide") : t("game.show")} ${t("game.yourCards")}`}
-        >
-          {isCardsFlyoutOpen ? "<" : ">"}
-        </button>
-      </section>
+          <button
+            type="button"
+            onClick={() => setIsCardsFlyoutOpen((prev) => !prev)}
+            className="your-cards-flyout__toggle"
+            data-testid="your-cards-flyout-toggle"
+            aria-label={`${isCardsFlyoutOpen ? t("game.hide") : t("game.show")} ${t("game.yourCards")}`}
+          >
+            {isCardsFlyoutOpen ? "<" : ">"}
+          </button>
+        </section>
+      )}
 
       {actionCenterAlert !== null && (
         <div

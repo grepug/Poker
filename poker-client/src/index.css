@@ -571,6 +571,12 @@ body {
   top: auto;
 }
 
+.your-cards-flyout--bottom {
+  --your-cards-flyout-y-shift: 0%;
+  top: auto;
+  bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+}
+
 .your-cards-flyout__panel {
   border: 1px solid rgba(6, 95, 70, 0.78);
   border-right: none;
