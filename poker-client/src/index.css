@@ -496,6 +496,101 @@ body {
   color: #fffbeb;
 }
 
+.your-cards-flyout {
+  position: fixed;
+  left: max(0px, env(safe-area-inset-left, 0px));
+  top: 50%;
+  z-index: 61;
+  width: clamp(9.1rem, 30vw, 10.8rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.85rem;
+  transform: translateY(-50%);
+  transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.your-cards-flyout--closed {
+  transform: translateY(-50%) translateX(calc(-100% + 1.85rem));
+}
+
+.your-cards-flyout__panel {
+  border: 1px solid rgba(6, 95, 70, 0.78);
+  border-right: none;
+  border-radius: 0 0.85rem 0.85rem 0;
+  background:
+    radial-gradient(circle at 20% 6%, rgba(52, 211, 153, 0.2), transparent 42%),
+    rgba(4, 35, 25, 0.94);
+  backdrop-filter: blur(7px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  padding: 0.45rem;
+  min-height: 6.5rem;
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.your-cards-flyout--closed .your-cards-flyout__panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.your-cards-flyout__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.28rem;
+}
+
+.your-cards-flyout__title {
+  margin: 0;
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(209, 250, 229, 0.84);
+}
+
+.your-cards-flyout__cards {
+  margin-top: 0.36rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.your-cards-flyout__empty-state {
+  margin-top: 0.36rem;
+  border-radius: 0.5rem;
+  border: 1px dashed rgba(6, 95, 70, 0.75);
+  background: rgba(5, 43, 30, 0.62);
+  padding: 0.44rem;
+  text-align: center;
+  font-size: 0.64rem;
+  color: rgba(209, 250, 229, 0.75);
+}
+
+.your-cards-flyout__toggle {
+  border: 1px solid rgba(16, 185, 129, 0.65);
+  border-left: none;
+  border-radius: 0 0.72rem 0.72rem 0;
+  background:
+    radial-gradient(circle at 40% 20%, rgba(110, 231, 183, 0.28), transparent 55%),
+    rgba(6, 78, 59, 0.92);
+  color: #d1fae5;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  min-height: 2.9rem;
+  align-self: center;
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.your-cards-flyout__toggle:hover {
+  filter: brightness(1.08);
+}
+
+.your-cards-flyout__toggle:active {
+  transform: scale(0.97);
+}
+
 .chip-composer-dock {
   position: fixed;
   left: 0.55rem;
@@ -513,18 +608,10 @@ body {
   overflow: visible;
 }
 
-.chip-composer-dock__cards {
-  border: 1px solid rgba(6, 95, 70, 0.68);
-  border-radius: 0.85rem;
-  background: rgba(5, 43, 30, 0.86);
-  backdrop-filter: blur(4px);
-  padding: 0.36rem 0.46rem;
-}
-
 .chip-composer-dock__action-area {
-  margin-top: 0.46rem;
-  border-top: 1px solid rgba(16, 185, 129, 0.24);
-  padding-top: 0.44rem;
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
 }
 
 .chip-composer-dock__header {
@@ -887,6 +974,12 @@ body {
   .turn-center-alert {
     animation: none;
   }
+
+  .your-cards-flyout,
+  .your-cards-flyout__panel,
+  .your-cards-flyout__toggle {
+    transition: none;
+  }
 }
 
 .chip-stack:disabled {
@@ -919,6 +1012,10 @@ body {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
+  .your-cards-flyout {
+    width: clamp(8.6rem, 24vw, 10rem);
+  }
+
   .felt-oval {
     min-height: 24rem;
   }
@@ -1022,8 +1119,8 @@ body {
     width: min(96vw, 54rem);
   }
 
-  .chip-composer-dock__cards {
-    max-width: 19rem;
+  .your-cards-flyout {
+    width: clamp(10.2rem, 16vw, 12rem);
   }
 
   .chip-composer-dock__presets {

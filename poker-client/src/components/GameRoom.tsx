@@ -322,6 +322,7 @@ export const GameRoom: React.FC = () => {
     {},
   );
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
+  const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
@@ -1177,6 +1178,62 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
+      <section
+        className={`your-cards-flyout ${
+          isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
+        }`}
+        data-testid="your-cards-flyout"
+      >
+        <div className="your-cards-flyout__panel" data-testid="your-cards-section">
+          <div className="your-cards-flyout__header">
+            <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
+            <button
+              onClick={() =>
+                setHiddenCardsHandNumber((prev) =>
+                  showHoleCards ? currentHandNumber ?? prev : null,
+                )
+              }
+              data-testid="toggle-hole-cards"
+              disabled={shouldForceShowHoleCards}
+              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {shouldForceShowHoleCards
+                ? t("game.cardsRevealed")
+                : showHoleCards
+                  ? t("game.hide")
+                  : t("game.show")}
+            </button>
+          </div>
+
+          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
+            <div className="your-cards-flyout__cards">
+              {yourCards.map((card, idx) => (
+                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+              ))}
+            </div>
+          ) : (
+            <div
+              className="your-cards-flyout__empty-state"
+              data-testid="hole-cards-hidden-state"
+            >
+              {isShowingHoleCards
+                ? t("game.cardsAppearWhenHandStarts")
+                : t("game.holeCardsHidden")}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsCardsFlyoutOpen((prev) => !prev)}
+          className="your-cards-flyout__toggle"
+          data-testid="your-cards-flyout-toggle"
+          aria-label={`${isCardsFlyoutOpen ? t("game.hide") : t("game.show")} ${t("game.yourCards")}`}
+        >
+          {isCardsFlyoutOpen ? "<" : ">"}
+        </button>
+      </section>
+
       <section className="table-board-wrap" data-testid="table-board-section">
         <div className="felt-oval">
           <div className="board-center-stack">
@@ -1517,49 +1574,8 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
-      <section className="chip-composer-dock" data-testid="turn-overlay">
-        <div className="chip-composer-dock__cards" data-testid="your-cards-section">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
-              {t("game.yourCards")}
-            </h3>
-            <button
-              onClick={() =>
-                setHiddenCardsHandNumber((prev) =>
-                  showHoleCards ? currentHandNumber ?? prev : null,
-                )
-              }
-              data-testid="toggle-hole-cards"
-              disabled={shouldForceShowHoleCards}
-              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {shouldForceShowHoleCards
-                ? t("game.cardsRevealed")
-                : showHoleCards
-                  ? t("game.hide")
-                  : t("game.show")}
-            </button>
-          </div>
-
-          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
-            <div className="mt-2 flex justify-center gap-2">
-              {yourCards.map((card, idx) => (
-                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
-              ))}
-            </div>
-          ) : (
-            <div
-              className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
-              data-testid="hole-cards-hidden-state"
-            >
-              {isShowingHoleCards
-                ? t("game.cardsAppearWhenHandStarts")
-                : t("game.holeCardsHidden")}
-            </div>
-          )}
-        </div>
-
-        {isYourTurn && (
+      {isYourTurn && (
+        <section className="chip-composer-dock" data-testid="turn-overlay">
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">
               <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
@@ -1699,8 +1715,8 @@ export const GameRoom: React.FC = () => {
               </div>
             )}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {dragState.active && (
         <div
