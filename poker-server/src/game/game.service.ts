@@ -77,8 +77,8 @@ export class GameService {
       throw new Error('Room not found');
     }
 
-    if (room.gameState !== 'WAITING') {
-      throw new Error('Cannot join room - game already in progress');
+    if (room.gameState === 'ENDED') {
+      throw new Error('Cannot join room - game has ended');
     }
 
     // Check if name is taken
@@ -91,15 +91,18 @@ export class GameService {
       throw new Error('Room is full');
     }
 
+    const joinsDuringActiveGame = room.gameState === 'IN_PROGRESS';
     const playerId = generatePlayerId();
     const position = this.findNextAvailablePosition(room);
+    const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
+    const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
     const player: Player = {
       id: playerId,
       socketId,
       name: playerName,
-      chips: 0,
-      totalBuyIn: 0,
+      chips: initialChips,
+      totalBuyIn: initialBuyIn,
       position,
       status: 'waiting' as PlayerStatus,
       cards: null,

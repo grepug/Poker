@@ -18,6 +18,7 @@ import type {
   ClientToServerEvents,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
+import { writeLastPlayerName } from "../utils/player-name-storage";
 
 export interface PlayerActionFlashEvent {
   id: string;
@@ -98,6 +99,7 @@ type StoredSession = {
 };
 
 const SESSION_STORAGE_KEY = "poker.activeSession";
+const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
 const createActionId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -177,6 +179,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       playerName: player.name,
     });
   }, [player?.id, player?.name, room?.id]);
+
+  useEffect(() => {
+    if (!player?.name) return;
+    writeLastPlayerName(player.name);
+  }, [player?.name]);
 
   useEffect(() => {
     if (!socket) return;
@@ -680,17 +687,22 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   }, [socket]);
 
   const leaveRoom = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
+    }
+    clearStoredSession();
+    setRoom(null);
+    setPlayer(null);
+    setYourCards(null);
+    setLastHandResult(null);
+    setLastPlayerActionEvent(null);
+    setRevealedHandPlayerIds([]);
+    setIsRecoveringSession(false);
+    setLastError(null);
+
     if (!socket) return;
     socket.emit("LEAVE_ROOM", () => {
-      clearStoredSession();
-      setRoom(null);
-      setPlayer(null);
-      setYourCards(null);
-      setLastHandResult(null);
-      setLastPlayerActionEvent(null);
-      setRevealedHandPlayerIds([]);
-      setIsRecoveringSession(false);
-      setLastError(null);
+      // Local state is already cleared optimistically.
     });
   }, [socket]);
 
