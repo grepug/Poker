@@ -180,15 +180,15 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
 
   const centerX = 50;
   const centerY = 45;
-  const radiusX = 44;
-  const radiusY = 34;
+  const radiusX = 46;
+  const radiusY = 36;
 
   const left = centerX + Math.cos(angle) * radiusX;
   const top = centerY + Math.sin(angle) * radiusY;
 
   return {
-    top: `${Math.max(10, Math.min(82, top))}%`,
-    left: `${Math.max(6, Math.min(94, left))}%`,
+    top: `${Math.max(8, Math.min(84, top))}%`,
+    left: `${Math.max(5, Math.min(95, left))}%`,
   };
 };
 
@@ -1011,10 +1011,14 @@ export const GameRoom: React.FC = () => {
                       isFolded ? "seat-pod--folded" : ""
                     }`}
                   >
+                    {isSelfSeat && (
+                      <span className="seat-pod__you-indicator" aria-label="You" title="You">
+                        🫵
+                      </span>
+                    )}
                     <div className="seat-pod__row">
                       <span className="seat-pod__name text-white font-semibold">
                         {seatPlayer.name}
-                        {isSelfSeat ? " (You)" : ""}
                       </span>
                       <div className="seat-pod__badges">
                         {badges.map((badge) => (
@@ -1029,9 +1033,14 @@ export const GameRoom: React.FC = () => {
                       <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
                     </div>
 
-                    <div className="seat-pod__row seat-pod__row--buyin">
-                      <div className="seat-pod__buyin">Buy-in: ${seatPlayer.totalBuyIn}</div>
-                      <div className="seat-pod__bet sr-only">Bet: ${seatPlayer.currentBet}</div>
+                    <div className="seat-pod__row seat-pod__row--bet">
+                      <div
+                        className={`seat-pod__bet ${
+                          seatPlayer.currentBet > 0 ? "seat-pod__bet--active" : ""
+                        }`}
+                      >
+                        Bet: ${seatPlayer.currentBet}
+                      </div>
                       {isAllIn && (
                         <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
                       )}

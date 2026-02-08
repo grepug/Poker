@@ -11,6 +11,7 @@ type RuntimePokerConfig = {
 declare global {
   interface Window {
     __POKER_RUNTIME_CONFIG__?: RuntimePokerConfig;
+    __POKER_SERVER_URL__?: string;
   }
 }
 
@@ -27,10 +28,32 @@ const resolveSocketUrl = (explicitUrl?: string) => {
     return explicitUrl.trim();
   }
 
+  if (typeof window !== "undefined") {
+    const runtimeUrl = window.__POKER_SERVER_URL__?.trim();
+    if (runtimeUrl) {
+      return runtimeUrl;
+    }
+
+    const sessionUrl = window.sessionStorage
+      .getItem("poker.serverUrlOverride")
+      ?.trim();
+    if (sessionUrl) {
+      return sessionUrl;
+    }
+
+    const queryUrl = new URLSearchParams(window.location.search)
+      .get("server")
+      ?.trim();
+    if (queryUrl) {
+      window.sessionStorage.setItem("poker.serverUrlOverride", queryUrl);
+      return queryUrl;
+    }
+  }
+
   const runtimeConfig = readRuntimeConfig();
-  const runtimeUrl = runtimeConfig?.serverUrl?.trim();
-  if (runtimeUrl) {
-    return runtimeUrl;
+  const runtimeConfigUrl = runtimeConfig?.serverUrl?.trim();
+  if (runtimeConfigUrl) {
+    return runtimeConfigUrl;
   }
 
   const envUrl = import.meta.env.VITE_SERVER_URL?.trim();
@@ -48,7 +71,10 @@ const resolveSocketUrl = (explicitUrl?: string) => {
 
   if (typeof window !== "undefined") {
     const protocol =
-      runtimeProtocol || envProtocol || window.location.protocol.replace(":", "") || "http";
+      runtimeProtocol ||
+      envProtocol ||
+      window.location.protocol.replace(":", "") ||
+      "http";
     const host = runtimeHost || envHost || window.location.hostname;
     return `${protocol}://${host}:${port}`;
   }
