@@ -123,6 +123,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const playerInfo = this.socketToPlayer.get(client.id);
     if (!playerInfo) return;
+    this.socketToPlayer.delete(client.id);
 
     const { roomId, playerId } = playerInfo;
     const room = await this.getRoom(roomId);
@@ -169,10 +170,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(room.id);
 
       const host = room.players[0];
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: host.id,
-      });
+      this.trackPlayerSocket(client.id, room.id, host.id);
 
       const response: RoomCreatedData = {
         roomId: room.id,
@@ -205,10 +203,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.join(room.id);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: player.id,
-      });
+      this.trackPlayerSocket(client.id, room.id, player.id);
 
       // Notify all in room
       this.server.to(room.id).emit('PLAYER_JOINED', {
@@ -256,10 +251,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.join(data.roomId);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: data.roomId,
-        playerId: player.id,
-      });
+      this.trackPlayerSocket(client.id, data.roomId, player.id);
 
       // Get full room state - simplified, would need full sync
       client.emit('RECONNECT_SUCCESS', {
@@ -927,12 +919,39 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return await this.storageService.getRoom(roomId);
   }
 
-  private findSocketByPlayerId(playerId: string): Socket | null {
-    for (const [socketId, info] of this.socketToPlayer.entries()) {
-      if (info.playerId === playerId) {
-        return this.server.sockets.sockets.get(socketId) || null;
+  private trackPlayerSocket(socketId: string, roomId: string, playerId: string) {
+    for (const [trackedSocketId, tracked] of this.socketToPlayer.entries()) {
+      if (tracked.playerId === playerId && trackedSocketId !== socketId) {
+        this.socketToPlayer.delete(trackedSocketId);
       }
     }
+
+    this.socketToPlayer.set(socketId, { roomId, playerId });
+  }
+
+  private findSocketByPlayerId(playerId: string): Socket | null {
+    const staleSocketIds: string[] = [];
+
+    for (const [socketId, info] of this.socketToPlayer.entries()) {
+      if (info.playerId !== playerId) {
+        continue;
+      }
+
+      const socket = this.server.sockets.sockets.get(socketId) || null;
+      if (socket) {
+        for (const staleSocketId of staleSocketIds) {
+          this.socketToPlayer.delete(staleSocketId);
+        }
+        return socket;
+      }
+
+      staleSocketIds.push(socketId);
+    }
+
+    for (const staleSocketId of staleSocketIds) {
+      this.socketToPlayer.delete(staleSocketId);
+    }
+
     return null;
   }
 

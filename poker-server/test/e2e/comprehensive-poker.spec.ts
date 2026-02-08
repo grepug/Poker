@@ -471,6 +471,63 @@ function captureNextSocketEvent(
   );
 }
 
+async function forceSocketReconnect(page: Page) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async () => {
+    const pokerDebug = (window as any).pokerDebug;
+    const socket = pokerDebug?.getSocket?.();
+    const room = pokerDebug?.getRoom?.();
+    const player = pokerDebug?.getPlayer?.();
+
+    if (!socket || !room?.id || !player?.id || !player?.name) {
+      throw new Error('Unable to force reconnect: session context unavailable');
+    }
+
+    if (socket.connected) {
+      await new Promise<void>((resolve) => {
+        socket.once('disconnect', () => resolve());
+        socket.disconnect();
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for socket connect'));
+      }, 10000);
+
+      socket.once('connect', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.connect();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for RECONNECT ack'));
+      }, 10000);
+
+      socket.emit(
+        'RECONNECT',
+        {
+          roomId: room.id,
+          playerName: player.name,
+          playerId: player.id,
+        },
+        (response: { success?: boolean; error?: string }) => {
+          clearTimeout(timer);
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(response?.error || 'Unknown RECONNECT failure'));
+        },
+      );
+    });
+  });
+}
+
 async function completeCurrentHandWithPassiveActions(
   anchorPage: Page,
   pageByName: Record<string, Page>,
@@ -3976,6 +4033,28 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(finalState.aliceChips).toBe(1010);
       expect(finalState.bobChips).toBe(990);
       await verifyChipConservation(alicePage, 2000);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12c: Lobby Reconnect Still Receives Hole Cards After Start', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await forceSocketReconnect(bobPage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForHoleCards(bobPage);
+      const bobCardCount = await bobPage.evaluate(() => {
+        const cards = (window as any).pokerDebug?.getCards?.();
+        return Array.isArray(cards) ? cards.length : 0;
+      });
+      expect(bobCardCount).toBe(2);
     } finally {
       await teardownTwoPlayerSession(session);
     }
