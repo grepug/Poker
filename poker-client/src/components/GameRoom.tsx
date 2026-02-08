@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
-import type { HandEvaluation, Player, PlayerAction } from "poker-types";
+import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 
 const CHIP_DENOMINATIONS = [5, 10, 25, 100, 500] as const;
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -259,6 +259,8 @@ export const GameRoom: React.FC = () => {
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
+  const handResultsPanelRef = useRef<HTMLElement | null>(null);
+  const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
 
   const currentHand = room?.currentHand ?? null;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
@@ -521,6 +523,25 @@ export const GameRoom: React.FC = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("poker.confirmActions", confirmActions ? "on" : "off");
   }, [confirmActions]);
+
+  useEffect(() => {
+    if (!lastHandResult) {
+      lastAutoScrolledResultRef.current = null;
+      return;
+    }
+
+    if (lastAutoScrolledResultRef.current === lastHandResult) {
+      return;
+    }
+
+    lastAutoScrolledResultRef.current = lastHandResult;
+    window.requestAnimationFrame(() => {
+      handResultsPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [lastHandResult]);
 
   useEffect(() => {
     setLegacyRaiseAmount((prev) => {
@@ -866,53 +887,53 @@ export const GameRoom: React.FC = () => {
             </span>
           )}
         </div>
-      </header>
 
-      <section className="table-controls-strip">
-        <button
-          onClick={handleCopyInviteLink}
-          data-testid="copy-room-url-button"
-          className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-        >
-          Copy Invite
-        </button>
-        {inviteCopyStatus && (
-          <span
-            data-testid="copy-room-url-status"
-            className={`text-xs font-semibold ${
-              inviteCopyStatus.includes("failed") ? "text-amber-200" : "text-emerald-200"
-            }`}
+        <section className="table-controls-strip">
+          <button
+            onClick={handleCopyInviteLink}
+            data-testid="copy-room-url-button"
+            className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
           >
-            {inviteCopyStatus}
-          </span>
-        )}
-        <button
-          onClick={() => setShowRankingsModal(true)}
-          data-testid="open-rankings-button"
-          className="rounded-full border border-emerald-400/65 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-        >
-          Rankings
-        </button>
-
-        <div className="ml-auto flex items-center gap-2">
-          {isHost && !isGameStarted && room.players.length >= 2 && (
-            <button
-              onClick={startGame}
-              data-testid="start-game-button"
-              className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400"
+            Copy Invite
+          </button>
+          {inviteCopyStatus && (
+            <span
+              data-testid="copy-room-url-status"
+              className={`text-xs font-semibold ${
+                inviteCopyStatus.includes("failed") ? "text-amber-200" : "text-emerald-200"
+              }`}
             >
-              Start
-            </button>
+              {inviteCopyStatus}
+            </span>
           )}
           <button
-            onClick={handleLeave}
-            data-testid="leave-room-button"
-            className="rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
+            onClick={() => setShowRankingsModal(true)}
+            data-testid="open-rankings-button"
+            className="rounded-full border border-emerald-400/65 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
           >
-            Leave
+            Rankings
           </button>
-        </div>
-      </section>
+
+          <div className="ml-auto flex items-center gap-2">
+            {isHost && !isGameStarted && room.players.length >= 2 && (
+              <button
+                onClick={startGame}
+                data-testid="start-game-button"
+                className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400"
+              >
+                Start
+              </button>
+            )}
+            <button
+              onClick={handleLeave}
+              data-testid="leave-room-button"
+              className="rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
+            >
+              Leave
+            </button>
+          </div>
+        </section>
+      </header>
 
       <section className="table-board-wrap" data-testid="table-board-section">
         <div className="felt-oval">
@@ -969,6 +990,7 @@ export const GameRoom: React.FC = () => {
               const isSelfSeat = seatPlayer?.id === resolvedPlayerId;
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
+              const isDisconnected = seatPlayer?.status === "disconnected";
 
               return (
                 <div
@@ -984,6 +1006,8 @@ export const GameRoom: React.FC = () => {
                   <article
                     data-testid={`player-seat-${seatPlayer.id}`}
                     className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
+                      isDisconnected ? "seat-pod--disconnected" : ""
+                    } ${
                       isFolded ? "seat-pod--folded" : ""
                     }`}
                   >
@@ -1011,6 +1035,11 @@ export const GameRoom: React.FC = () => {
                       {isAllIn && (
                         <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
                       )}
+                      {isDisconnected && (
+                        <span className="seat-pod__state seat-pod__state--disconnected">
+                          DISCONNECTED
+                        </span>
+                      )}
                       {isFolded && (
                         <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>
                       )}
@@ -1021,49 +1050,14 @@ export const GameRoom: React.FC = () => {
             })}
           </div>
         </div>
-
-        <div className="your-cards-tray" data-testid="your-cards-section">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
-              Your Cards
-            </h3>
-            <button
-              onClick={() =>
-                setHiddenCardsHandNumber((prev) =>
-                  showHoleCards ? currentHandNumber ?? prev : null,
-                )
-              }
-              data-testid="toggle-hole-cards"
-              disabled={shouldForceShowHoleCards}
-              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {shouldForceShowHoleCards
-                ? "Cards Revealed"
-                : showHoleCards
-                  ? "Hide"
-                  : "Show"}
-            </button>
-          </div>
-
-          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
-            <div className="mt-2 flex justify-center gap-2">
-              {yourCards.map((card, idx) => (
-                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
-              ))}
-            </div>
-          ) : (
-            <div
-              className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
-              data-testid="hole-cards-hidden-state"
-            >
-              {isShowingHoleCards ? "Cards appear when a hand starts." : "Hole cards hidden."}
-            </div>
-          )}
-        </div>
       </section>
 
       {lastHandResult && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="hand-results-panel">
+        <section
+          ref={handResultsPanelRef}
+          className="surface-panel mx-3 mt-3 p-4"
+          data-testid="hand-results-panel"
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3
@@ -1246,162 +1240,203 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
-      {isYourTurn && (
-        <section className="chip-composer-dock" data-testid="action-dock">
-          <div className="chip-composer-dock__header">
-            <span className="chip-composer-dock__title">Your Turn</span>
-            <span className="chip-composer-dock__meta">To Call: ${callAmount}</span>
-            <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
-          </div>
-
-          <div className="chip-composer-dock__tray-row">
+      <section className="chip-composer-dock" data-testid="turn-overlay">
+        <div className="chip-composer-dock__cards" data-testid="your-cards-section">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
+              Your Cards
+            </h3>
             <button
-              type="button"
-              onPointerDown={handleDragStart}
-              onPointerMove={handleDragMove}
-              onPointerUp={handleDragEnd}
-              onPointerCancel={handleDragEnd}
-              data-testid="chip-stack-draggable"
-              disabled={!canStartDrag}
-              className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
+              onClick={() =>
+                setHiddenCardsHandNumber((prev) =>
+                  showHoleCards ? currentHandNumber ?? prev : null,
+                )
+              }
+              data-testid="toggle-hole-cards"
+              disabled={shouldForceShowHoleCards}
+              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <span className="chip-stack__label">Tray</span>
-              <span className="chip-stack__value">${trayAmount}</span>
+              {shouldForceShowHoleCards
+                ? "Cards Revealed"
+                : showHoleCards
+                  ? "Hide"
+                  : "Show"}
             </button>
           </div>
 
-          <div className="chip-composer-dock__presets">
-            {trayPresetButtons.map((preset) => (
-              <button
-                key={preset.key}
-                onClick={() => setTrayDirectly(preset.amount)}
-                className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
-                disabled={!preset.enabled}
-                data-testid={preset.testId}
-              >
-                <span>{preset.label}</span>
-                <span>${preset.amount}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="chip-composer-dock__denoms">
-            {CHIP_DENOMINATIONS.map((chipValue) => (
-              <button
-                key={chipValue}
-                onClick={() => handleChipAdd(chipValue)}
-                className="chip-pill"
-                disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
-                data-testid={`chip-add-${chipValue}`}
-              >
-                +{chipValue}
-              </button>
-            ))}
-            <button
-              onClick={() => setTrayDirectly(maxStack)}
-              className="chip-pill chip-pill--max"
-              disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
-              data-testid="chip-add-max"
+          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
+            <div className="mt-2 flex justify-center gap-2">
+              {yourCards.map((card, idx) => (
+                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+              ))}
+            </div>
+          ) : (
+            <div
+              className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
+              data-testid="hole-cards-hidden-state"
             >
-              MAX
-            </button>
-            <button
-              onClick={handleUndoChip}
-              className="chip-pill chip-pill--soft"
-              disabled={!isYourTurn || trayAmount <= 0}
-              data-testid="chip-undo"
-            >
-              -LAST
-            </button>
-            <button
-              onClick={clearTray}
-              className="chip-pill chip-pill--soft"
-              disabled={!isYourTurn || trayAmount <= 0}
-              data-testid="chip-clear"
-            >
-              CLEAR
-            </button>
-          </div>
-
-          <div className="chip-composer-dock__footer">
-            <button
-              onClick={() => handleLegacyAction("check")}
-              disabled={!canCheck}
-              data-testid={canCheck ? "action-check" : "action-check-disabled"}
-              className="chip-action chip-action--check chip-action--small"
-            >
-              Check
-            </button>
-            <label className="chip-composer-dock__confirm">
-              <input
-                type="checkbox"
-                checked={confirmActions}
-                onChange={(event) => setConfirmActions(event.target.checked)}
-                className="h-3.5 w-3.5 accent-emerald-400"
-              />
-              Confirm Actions
-            </label>
-            <button
-              onClick={() => handleLegacyAction("fold")}
-              data-testid="action-fold"
-              className="chip-action chip-action--fold chip-action--small"
-            >
-              Fold
-            </button>
-          </div>
-
-          {isAutomationMode && (
-            <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                {canCheck ? (
-                  <button
-                    onClick={() => handleLegacyAction("check")}
-                    data-testid="action-check-legacy"
-                    className="chip-action chip-action--check"
-                  >
-                    Check
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleLegacyAction("call")}
-                    data-testid="action-call"
-                    className="chip-action chip-action--call"
-                  >
-                    Call ${callAmount}
-                  </button>
-                )}
-                <button
-                  onClick={() => handleLegacyAction("all-in")}
-                  data-testid="action-all-in"
-                  className="chip-action chip-action--allin"
-                >
-                  All-In ${maxStack}
-                </button>
-              </div>
-
-              <div className="mt-2 flex gap-2">
-                <input
-                  type="number"
-                  min={minRaise}
-                  max={maxStack}
-                  value={legacyRaiseAmount}
-                  onChange={(event) => setLegacyRaiseAmount(Number(event.target.value))}
-                  data-testid="raise-input"
-                  className="flex-1 rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-2 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-                />
-                <button
-                  onClick={() => handleLegacyAction("raise")}
-                  disabled={legacyRaiseAmount < minRaise || legacyRaiseAmount > maxStack}
-                  data-testid="action-raise"
-                  className="chip-action chip-action--raise"
-                >
-                  Raise
-                </button>
-              </div>
+              {isShowingHoleCards ? "Cards appear when a hand starts." : "Hole cards hidden."}
             </div>
           )}
-        </section>
-      )}
+        </div>
+
+        {isYourTurn && (
+          <div data-testid="action-dock" className="chip-composer-dock__action-area">
+            <div className="chip-composer-dock__header">
+              <span className="chip-composer-dock__title">Your Turn</span>
+              <span className="chip-composer-dock__meta">To Call: ${callAmount}</span>
+              <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
+            </div>
+
+            <div className="chip-composer-dock__tray-row">
+              <button
+                type="button"
+                onPointerDown={handleDragStart}
+                onPointerMove={handleDragMove}
+                onPointerUp={handleDragEnd}
+                onPointerCancel={handleDragEnd}
+                data-testid="chip-stack-draggable"
+                disabled={!canStartDrag}
+                className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
+              >
+                <span className="chip-stack__label">Tray</span>
+                <span className="chip-stack__value">${trayAmount}</span>
+              </button>
+            </div>
+
+            <div className="chip-composer-dock__presets">
+              {trayPresetButtons.map((preset) => (
+                <button
+                  key={preset.key}
+                  onClick={() => setTrayDirectly(preset.amount)}
+                  className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
+                  disabled={!preset.enabled}
+                  data-testid={preset.testId}
+                >
+                  <span>{preset.label}</span>
+                  <span>${preset.amount}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="chip-composer-dock__denoms">
+              {CHIP_DENOMINATIONS.map((chipValue) => (
+                <button
+                  key={chipValue}
+                  onClick={() => handleChipAdd(chipValue)}
+                  className="chip-pill"
+                  disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
+                  data-testid={`chip-add-${chipValue}`}
+                >
+                  +{chipValue}
+                </button>
+              ))}
+              <button
+                onClick={() => setTrayDirectly(maxStack)}
+                className="chip-pill chip-pill--max"
+                disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
+                data-testid="chip-add-max"
+              >
+                MAX
+              </button>
+              <button
+                onClick={handleUndoChip}
+                className="chip-pill chip-pill--soft"
+                disabled={!isYourTurn || trayAmount <= 0}
+                data-testid="chip-undo"
+              >
+                -LAST
+              </button>
+              <button
+                onClick={clearTray}
+                className="chip-pill chip-pill--soft"
+                disabled={!isYourTurn || trayAmount <= 0}
+                data-testid="chip-clear"
+              >
+                CLEAR
+              </button>
+            </div>
+
+            <div className="chip-composer-dock__footer">
+              <button
+                onClick={() => handleLegacyAction("check")}
+                disabled={!canCheck}
+                data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                className="chip-action chip-action--check chip-action--small"
+              >
+                Check
+              </button>
+              <label className="chip-composer-dock__confirm">
+                <input
+                  type="checkbox"
+                  checked={confirmActions}
+                  onChange={(event) => setConfirmActions(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-emerald-400"
+                />
+                Confirm Actions
+              </label>
+              <button
+                onClick={() => handleLegacyAction("fold")}
+                data-testid="action-fold"
+                className="chip-action chip-action--fold chip-action--small"
+              >
+                Fold
+              </button>
+            </div>
+
+            {isAutomationMode && (
+              <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  {canCheck ? (
+                    <button
+                      onClick={() => handleLegacyAction("check")}
+                      data-testid="action-check-legacy"
+                      className="chip-action chip-action--check"
+                    >
+                      Check
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleLegacyAction("call")}
+                      data-testid="action-call"
+                      className="chip-action chip-action--call"
+                    >
+                      Call ${callAmount}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleLegacyAction("all-in")}
+                    data-testid="action-all-in"
+                    className="chip-action chip-action--allin"
+                  >
+                    All-In ${maxStack}
+                  </button>
+                </div>
+
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="number"
+                    min={minRaise}
+                    max={maxStack}
+                    value={legacyRaiseAmount}
+                    onChange={(event) => setLegacyRaiseAmount(Number(event.target.value))}
+                    data-testid="raise-input"
+                    className="flex-1 rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-2 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                  <button
+                    onClick={() => handleLegacyAction("raise")}
+                    disabled={legacyRaiseAmount < minRaise || legacyRaiseAmount > maxStack}
+                    data-testid="action-raise"
+                    className="chip-action chip-action--raise"
+                  >
+                    Raise
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {dragState.active && (
         <div
