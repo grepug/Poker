@@ -7,8 +7,8 @@ import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-typ
 import type { MessageKey } from "../i18n/messages";
 
 const DRAG_SNAP_RADIUS_PX = 32;
-const SEAT_BUBBLE_VISIBLE_MS = 1300;
-const SEAT_BUBBLE_TOTAL_MS = 1600;
+const ACTION_ALERT_VISIBLE_MS = 1300;
+const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
 const POT_ANIMATION_MS = 360;
 
@@ -57,14 +57,22 @@ type TrayPresetButton = {
 };
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
-type SeatActionBubbleTone = "neutral" | "aggressive" | "fold" | "allin";
+type ActionCenterAlertTone = "neutral" | "aggressive" | "fold" | "allin";
 
-type SeatActionBubble = {
+type ActionCenterAlert = {
   id: string;
   playerId: string;
+  playerName: string;
   text: string;
-  tone: SeatActionBubbleTone;
+  tone: ActionCenterAlertTone;
   exiting: boolean;
+};
+
+type ActionPointerVector = {
+  x: number;
+  y: number;
+  angle: number;
+  length: number;
 };
 
 const EMPTY_DRAG_STATE: DragState = {
@@ -235,7 +243,10 @@ const getPositionBadges = (
   return badges;
 };
 
-const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatActionBubble => {
+const toActionCenterAlert = (
+  event: PlayerActionFlashEvent,
+  t: Translate,
+): ActionCenterAlert => {
   const withAmount = (base: string, amount?: number) =>
     typeof amount === "number" && amount > 0 ? `${base} $${amount}` : base;
 
@@ -244,6 +255,7 @@ const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatAc
       return {
         id: event.id,
         playerId: event.playerId,
+        playerName: event.playerName,
         text: t("game.actionBubble.fold"),
         tone: "fold",
         exiting: false,
@@ -252,6 +264,7 @@ const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatAc
       return {
         id: event.id,
         playerId: event.playerId,
+        playerName: event.playerName,
         text: t("game.actionBubble.check"),
         tone: "neutral",
         exiting: false,
@@ -261,6 +274,7 @@ const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatAc
         id: event.id,
         playerId: event.playerId,
         text: withAmount(t("game.actionBubble.call"), event.amount),
+        playerName: event.playerName,
         tone: "neutral",
         exiting: false,
       };
@@ -269,6 +283,7 @@ const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatAc
         id: event.id,
         playerId: event.playerId,
         text: withAmount(t("game.actionBubble.allIn"), event.amount),
+        playerName: event.playerName,
         tone: "allin",
         exiting: false,
       };
@@ -280,6 +295,7 @@ const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatAc
           event.isOpeningBet ? t("game.actionBubble.bet") : t("game.actionBubble.raise"),
           event.amount,
         ),
+        playerName: event.playerName,
         tone: "aggressive",
         exiting: false,
       };
@@ -318,16 +334,17 @@ export const GameRoom: React.FC = () => {
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
-  const [seatActionBubbles, setSeatActionBubbles] = useState<Record<string, SeatActionBubble>>(
-    {},
-  );
+  const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
+  const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
-  const bubbleHideTimersRef = useRef(new Map<string, number>());
-  const bubbleRemoveTimersRef = useRef(new Map<string, number>());
+  const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
+  const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
+  const actionAlertHideTimeoutRef = useRef<number | null>(null);
+  const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
@@ -592,19 +609,63 @@ export const GameRoom: React.FC = () => {
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
 
-  const clearSeatBubbleTimers = useCallback((playerId: string) => {
-    const hideTimer = bubbleHideTimersRef.current.get(playerId);
-    if (typeof hideTimer === "number") {
-      window.clearTimeout(hideTimer);
-      bubbleHideTimersRef.current.delete(playerId);
+  const clearActionAlertTimers = useCallback(() => {
+    if (actionAlertHideTimeoutRef.current !== null) {
+      window.clearTimeout(actionAlertHideTimeoutRef.current);
+      actionAlertHideTimeoutRef.current = null;
     }
-
-    const removeTimer = bubbleRemoveTimersRef.current.get(playerId);
-    if (typeof removeTimer === "number") {
-      window.clearTimeout(removeTimer);
-      bubbleRemoveTimersRef.current.delete(playerId);
+    if (actionAlertClearTimeoutRef.current !== null) {
+      window.clearTimeout(actionAlertClearTimeoutRef.current);
+      actionAlertClearTimeoutRef.current = null;
     }
   }, []);
+
+  const updateActionPointerVector = useCallback(() => {
+    if (!actionCenterAlert) {
+      setActionPointerVector(null);
+      return;
+    }
+
+    const seatNode = seatNodeRefs.current[actionCenterAlert.playerId];
+    const alertNode = actionCenterAlertRef.current;
+    if (!seatNode || !alertNode) {
+      setActionPointerVector(null);
+      return;
+    }
+
+    const seatRect = seatNode.getBoundingClientRect();
+    const alertRect = alertNode.getBoundingClientRect();
+
+    const centerX = alertRect.left + alertRect.width / 2;
+    const centerY = alertRect.top + alertRect.height / 2;
+    const targetX = seatRect.left + seatRect.width / 2;
+    const targetY = seatRect.top + seatRect.height / 2;
+
+    const deltaX = targetX - centerX;
+    const deltaY = targetY - centerY;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance <= 1) {
+      setActionPointerVector(null);
+      return;
+    }
+
+    const unitX = deltaX / distance;
+    const unitY = deltaY / distance;
+    const alertRadius = Math.max(alertRect.width, alertRect.height) / 2;
+    const seatPadding = Math.min(seatRect.width, seatRect.height) * 0.35;
+    const lineLength = Math.max(20, distance - alertRadius - seatPadding);
+
+    const startX = centerX + unitX * (alertRadius - 8);
+    const startY = centerY + unitY * (alertRadius - 8);
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+
+    setActionPointerVector({
+      x: startX,
+      y: startY,
+      angle,
+      length: lineLength,
+    });
+  }, [actionCenterAlert]);
 
   const triggerTurnAlert = useCallback(() => {
     if (turnAlertTimeoutRef.current) {
@@ -756,49 +817,53 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     if (!lastPlayerActionEvent) return;
 
-    const bubble = toSeatActionBubble(lastPlayerActionEvent, t);
-    const { playerId } = bubble;
-    clearSeatBubbleTimers(playerId);
-    setSeatActionBubbles((prev) => ({
-      ...prev,
-      [playerId]: bubble,
-    }));
+    const alert = toActionCenterAlert(lastPlayerActionEvent, t);
+    clearActionAlertTimers();
+    setActionCenterAlert(alert);
 
-    const hideTimer = window.setTimeout(() => {
-      setSeatActionBubbles((prev) => {
-        const existing = prev[playerId];
-        if (!existing || existing.id !== bubble.id) return prev;
+    actionAlertHideTimeoutRef.current = window.setTimeout(() => {
+      setActionCenterAlert((prev) => {
+        if (!prev || prev.id !== alert.id) return prev;
         return {
           ...prev,
-          [playerId]: {
-            ...existing,
-            exiting: true,
-          },
+          exiting: true,
         };
       });
-    }, SEAT_BUBBLE_VISIBLE_MS);
-    bubbleHideTimersRef.current.set(playerId, hideTimer);
+    }, ACTION_ALERT_VISIBLE_MS);
 
-    const removeTimer = window.setTimeout(() => {
-      setSeatActionBubbles((prev) => {
-        const existing = prev[playerId];
-        if (!existing || existing.id !== bubble.id) return prev;
-        const next = { ...prev };
-        delete next[playerId];
-        return next;
-      });
-      clearSeatBubbleTimers(playerId);
-    }, SEAT_BUBBLE_TOTAL_MS);
-    bubbleRemoveTimersRef.current.set(playerId, removeTimer);
-  }, [clearSeatBubbleTimers, lastPlayerActionEvent, t]);
+    actionAlertClearTimeoutRef.current = window.setTimeout(() => {
+      setActionCenterAlert((prev) => (prev && prev.id === alert.id ? null : prev));
+      setActionPointerVector(null);
+      clearActionAlertTimers();
+    }, ACTION_ALERT_TOTAL_MS);
+  }, [clearActionAlertTimers, lastPlayerActionEvent, t]);
 
   useEffect(() => {
-    setSeatActionBubbles({});
-    bubbleHideTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    bubbleHideTimersRef.current.clear();
-    bubbleRemoveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    bubbleRemoveTimersRef.current.clear();
-  }, [room?.id]);
+    if (!actionCenterAlert) {
+      setActionPointerVector(null);
+      return;
+    }
+
+    const firstFrame = window.requestAnimationFrame(() => {
+      updateActionPointerVector();
+    });
+    const handleViewportChange = () => updateActionPointerVector();
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [actionCenterAlert, updateActionPointerVector, seatSlots]);
+
+  useEffect(() => {
+    setActionCenterAlert(null);
+    setActionPointerVector(null);
+    clearActionAlertTimers();
+  }, [clearActionAlertTimers, room?.id]);
 
   useEffect(
     () => () => {
@@ -808,12 +873,9 @@ export const GameRoom: React.FC = () => {
       if (turnAlertTimeoutRef.current) {
         window.clearTimeout(turnAlertTimeoutRef.current);
       }
-      bubbleHideTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-      bubbleHideTimersRef.current.clear();
-      bubbleRemoveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-      bubbleRemoveTimersRef.current.clear();
+      clearActionAlertTimers();
     },
-    [],
+    [clearActionAlertTimers],
   );
 
   useEffect(() => {
@@ -1177,6 +1239,39 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
+      {actionCenterAlert !== null && (
+        <div
+          className="action-center-alert-layer"
+          aria-live="polite"
+          data-testid="action-center-alert"
+        >
+          {actionPointerVector && (
+            <div
+              className="action-center-alert__arrow"
+              style={{
+                left: `${actionPointerVector.x}px`,
+                top: `${actionPointerVector.y}px`,
+                width: `${actionPointerVector.length}px`,
+                transform: `translateY(-50%) rotate(${actionPointerVector.angle}deg)`,
+              }}
+            >
+              <span className="action-center-alert__arrow-head" />
+            </div>
+          )}
+          <div
+            ref={actionCenterAlertRef}
+            key={`action-alert-${actionCenterAlert.id}`}
+            className={`action-center-alert action-center-alert--${actionCenterAlert.tone} ${
+              actionCenterAlert.exiting ? "action-center-alert--exit" : ""
+            }`}
+          >
+            <span className="action-center-alert__eyebrow">User Action</span>
+            <span className="action-center-alert__actor">{actionCenterAlert.playerName}</span>
+            <span className="action-center-alert__title">{actionCenterAlert.text}</span>
+          </div>
+        </div>
+      )}
+
       <section className="table-board-wrap" data-testid="table-board-section">
         <div className="felt-oval">
           <div className="board-center-stack">
@@ -1238,7 +1333,6 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
-              const seatBubble = seatActionBubbles[seatPlayer.id];
 
               return (
                 <div
@@ -1252,6 +1346,9 @@ export const GameRoom: React.FC = () => {
                   }}
                 >
                   <article
+                    ref={(node) => {
+                      seatNodeRefs.current[seatPlayer.id] = node;
+                    }}
                     data-testid={`player-seat-${seatPlayer.id}`}
                     className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
                       isDisconnected ? "seat-pod--disconnected" : ""
@@ -1259,16 +1356,6 @@ export const GameRoom: React.FC = () => {
                       isFolded ? "seat-pod--folded" : ""
                     }`}
                   >
-                    {seatBubble && (
-                      <div
-                        data-testid={`seat-action-bubble-${seatBubble.playerId}`}
-                        className={`seat-action-bubble seat-action-bubble--${seatBubble.tone} ${
-                          seatBubble.exiting ? "seat-action-bubble--exit" : ""
-                        }`}
-                      >
-                        {seatBubble.text}
-                      </div>
-                    )}
                     {isSelfSeat && (
                       <span
                         className="seat-pod__you-indicator"
