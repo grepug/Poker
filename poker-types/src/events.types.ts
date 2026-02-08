@@ -182,6 +182,29 @@ export interface GameEndedData {
     totalBuyIn: number;
     profit: number;
   }>;
+  summary: {
+    totalPlayers: number;
+    handsPlayed: number;
+    totalBuyIn: number;
+    totalChipsInPlay: number;
+    profitablePlayers: number;
+    averageFinalStack: number;
+    chipLeader: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestWinner: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestLoss: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+  };
 }
 
 export interface ErrorData {

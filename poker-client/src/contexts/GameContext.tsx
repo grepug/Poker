@@ -15,6 +15,7 @@ import type {
   PlayerAction,
   Hand,
   HandResult,
+  GameEndedData,
   ClientToServerEvents,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
@@ -36,6 +37,7 @@ type DebugApi = {
   getPlayer: () => Player | null;
   getCards: () => Card[] | null;
   getLastHandResult: () => HandResult | null;
+  getFinalGameResult: () => GameEndedData | null;
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
   getSocket: () => ReturnType<typeof useSocket>["socket"];
@@ -43,6 +45,7 @@ type DebugApi = {
   joinRoom: (roomId: string, name: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  endGame: () => void;
   showMyHand: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   fold: () => void;
@@ -62,6 +65,7 @@ interface GameContextType {
   player: Player | null;
   yourCards: Card[] | null;
   lastHandResult: HandResult | null;
+  finalGameResult: GameEndedData | null;
   lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
   isHost: boolean;
@@ -71,6 +75,7 @@ interface GameContextType {
   joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  endGame: () => void;
   showMyHand: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
@@ -157,6 +162,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [player, setPlayer] = useState<Player | null>(null);
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
   const [lastHandResult, setLastHandResult] = useState<HandResult | null>(null);
+  const [finalGameResult, setFinalGameResult] = useState<GameEndedData | null>(null);
   const [lastPlayerActionEvent, setLastPlayerActionEvent] =
     useState<PlayerActionFlashEvent | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
@@ -200,6 +206,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setPlayer({ ...host, cards: null } as Player);
       setYourCards(null);
       setLastPlayerActionEvent(null);
+      setFinalGameResult(null);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
@@ -210,6 +217,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setPlayer(data.player);
       setYourCards(data.player?.cards ?? null);
       setLastPlayerActionEvent(null);
+      setFinalGameResult(null);
       setIsRecoveringSession(false);
       setLastError(null);
     });
@@ -220,6 +228,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setPlayer(data.player as Player);
       setYourCards(data.yourCards ?? null);
       setLastPlayerActionEvent(null);
+      setFinalGameResult(null);
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;
@@ -333,6 +342,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Game started
     socket.on("GAME_STARTED", (data) => {
       setLastHandResult(null);
+      setFinalGameResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
       // Reset hole cards until private YOUR_CARDS event arrives for this hand.
@@ -438,6 +448,50 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRevealedHandPlayerIds((prev) =>
         prev.includes(data.playerId) ? prev : [...prev, data.playerId],
       );
+    });
+
+    socket.on("GAME_ENDED", (data) => {
+      setFinalGameResult(data);
+      setLastHandResult(null);
+      setLastPlayerActionEvent(null);
+      setRevealedHandPlayerIds([]);
+      setYourCards(null);
+
+      const standingsByPlayerId = new Map(
+        data.standings.map((entry) => [entry.playerId, entry]),
+      );
+
+      setRoom((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          gameState: "ENDED",
+          currentHand: null,
+          players: prev.players.map((seatPlayer) => {
+            const standing = standingsByPlayerId.get(seatPlayer.id);
+            return {
+              ...seatPlayer,
+              chips: standing ? standing.finalChips : seatPlayer.chips,
+              currentBet: 0,
+              lastAction: null,
+              cards: null,
+            };
+          }),
+        };
+      });
+
+      setPlayer((prev) => {
+        if (!prev) return prev;
+        const standing = standingsByPlayerId.get(prev.id);
+        return {
+          ...prev,
+          chips: standing ? standing.finalChips : prev.chips,
+          currentBet: 0,
+          lastAction: null,
+          cards: null,
+        };
+      });
     });
 
     // New hand starting
@@ -565,6 +619,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("COMMUNITY_CARDS_DEALT");
       socket.off("HAND_COMPLETE");
       socket.off("PLAYER_HAND_REVEALED");
+      socket.off("GAME_ENDED");
       socket.off("NEW_HAND_STARTING");
       socket.off("BETTING_ROUND_COMPLETE");
       socket.off("ERROR");
@@ -681,6 +736,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const endGame = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("END_GAME", (response) => {
+      console.log("End game response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to end game");
+      }
+    });
+  }, [socket]);
+
   const showMyHand = useCallback(() => {
     if (!socket) return;
     setLastError(null);
@@ -712,6 +778,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     setPlayer(null);
     setYourCards(null);
     setLastHandResult(null);
+    setFinalGameResult(null);
     setLastPlayerActionEvent(null);
     setRevealedHandPlayerIds([]);
     setIsRecoveringSession(false);
@@ -746,6 +813,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         getPlayer: () => player,
         getCards: () => yourCards,
         getLastHandResult: () => lastHandResult,
+        getFinalGameResult: () => finalGameResult,
         getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
         getSocket: () => socket,
@@ -753,6 +821,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         joinRoom,
         startGame,
         startNextHand,
+        endGame,
         showMyHand,
         performAction,
         fold: () => performAction("fold"),
@@ -782,6 +851,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     player,
     yourCards,
     lastHandResult,
+    finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
     socket,
@@ -790,6 +860,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     joinRoom,
     startGame,
     startNextHand,
+    endGame,
     showMyHand,
     performAction,
     leaveRoom,
@@ -804,6 +875,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         player,
         yourCards,
         lastHandResult,
+        finalGameResult,
         lastPlayerActionEvent,
         revealedHandPlayerIds,
         isHost,
@@ -813,6 +885,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         joinRoom,
         startGame,
         startNextHand,
+        endGame,
         showMyHand,
         performAction,
         leaveRoom,
