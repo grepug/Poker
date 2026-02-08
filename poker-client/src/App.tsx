@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { SocketProvider } from "./contexts/SocketContext";
 import { GameProvider, useGame } from "./contexts/GameContext";
+import { LocalizationProvider } from "./contexts/LocalizationContext";
 import { Home } from "./pages/Home";
 import { GameRoom } from "./components/GameRoom";
 
@@ -70,18 +71,20 @@ const RoomRoute: React.FC = () => {
 
 function App() {
   return (
-    <Router>
-      <SocketProvider>
-        <GameProvider>
-          <UrlStateSync />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/room" element={<RoomRoute />} />
-            <Route path="/room/:roomId" element={<RoomRoute />} />
-          </Routes>
-        </GameProvider>
-      </SocketProvider>
-    </Router>
+    <LocalizationProvider>
+      <Router>
+        <SocketProvider>
+          <GameProvider>
+            <UrlStateSync />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/room" element={<RoomRoute />} />
+              <Route path="/room/:roomId" element={<RoomRoute />} />
+            </Routes>
+          </GameProvider>
+        </SocketProvider>
+      </Router>
+    </LocalizationProvider>
   );
 }
 

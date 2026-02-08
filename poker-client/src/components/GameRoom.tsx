@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
+import { useLocalization } from "../contexts/LocalizationContext";
 import { Card } from "./Card";
 import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
+import type { MessageKey } from "../i18n/messages";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 
@@ -57,6 +59,8 @@ type TrayPresetButton = {
   enabled: boolean;
 };
 
+type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
+
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
   pointerId: null,
@@ -96,27 +100,29 @@ const resolveDropIntent = ({
   callAmount,
   minRaise,
   stack,
+  t,
 }: {
   trayAmount: number;
   callAmount: number;
   minRaise: number;
   stack: number;
+  t: Translate;
 }): DropResolution => {
   if (stack <= 0) {
-    return { intent: null, reason: "No chips available." };
+    return { intent: null, reason: t("game.drag.noChips") };
   }
 
   if (trayAmount <= 0) {
-    return { intent: null, reason: "Add chips before dragging to the pot." };
+    return { intent: null, reason: t("game.drag.addChips") };
   }
 
   if (trayAmount > stack) {
-    return { intent: null, reason: `Tray cannot exceed your stack ($${stack}).` };
+    return { intent: null, reason: t("game.drag.trayExceeds", { stack }) };
   }
 
   if (trayAmount === stack) {
     return {
-      intent: { action: "all-in", label: `All-In $${stack}` },
+      intent: { action: "all-in", label: t("game.drag.label.allIn", { amount: stack }) },
       reason: null,
     };
   }
@@ -125,13 +131,13 @@ const resolveDropIntent = ({
     if (trayAmount < callAmount) {
       return {
         intent: null,
-        reason: `Need at least $${callAmount} to call, or drag max for all-in.`,
+        reason: t("game.drag.needCall", { callAmount }),
       };
     }
 
     if (trayAmount === callAmount) {
       return {
-        intent: { action: "call", label: `Call $${callAmount}` },
+        intent: { action: "call", label: t("game.drag.label.call", { amount: callAmount }) },
         reason: null,
       };
     }
@@ -140,7 +146,7 @@ const resolveDropIntent = ({
     if (raiseAmount < minRaise) {
       return {
         intent: null,
-        reason: `Minimum raise is $${minRaise}. Add more chips.`,
+        reason: t("game.drag.minimumRaise", { minRaise }),
       };
     }
 
@@ -148,7 +154,7 @@ const resolveDropIntent = ({
       intent: {
         action: "raise",
         amount: raiseAmount,
-        label: `Raise by $${raiseAmount} (total $${trayAmount})`,
+        label: t("game.drag.label.raiseByTotal", { raiseAmount, trayAmount }),
       },
       reason: null,
     };
@@ -157,7 +163,7 @@ const resolveDropIntent = ({
   if (trayAmount < minRaise) {
     return {
       intent: null,
-      reason: `Minimum opening raise is $${minRaise}.`,
+      reason: t("game.drag.minimumOpenRaise", { minRaise }),
     };
   }
 
@@ -165,7 +171,7 @@ const resolveDropIntent = ({
     intent: {
       action: "raise",
       amount: trayAmount,
-      label: `Bet/Raise by $${trayAmount}`,
+      label: t("game.drag.label.betRaiseBy", { amount: trayAmount }),
     },
     reason: null,
   };
@@ -240,12 +246,17 @@ export const GameRoom: React.FC = () => {
     performAction,
     leaveRoom,
   } = useGame();
+  const { locale, setLocale, t } = useLocalization();
 
   const [hiddenCardsHandNumber, setHiddenCardsHandNumber] = useState<number | null>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
+  const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
+    null,
+  );
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [confirmActions, setConfirmActions] = useState<boolean>(() => {
@@ -374,10 +385,10 @@ export const GameRoom: React.FC = () => {
         .sort((a, b) => {
           if (b.tableStack !== a.tableStack) return b.tableStack - a.tableStack;
           if (b.net !== a.net) return b.net - a.net;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, locale === "zh_hans" ? "zh-Hans" : "en");
         });
     },
-    [room],
+    [locale, room],
   );
 
   const seatSlots = useMemo(() => {
@@ -414,8 +425,9 @@ export const GameRoom: React.FC = () => {
         callAmount,
         minRaise,
         stack: maxStack,
+        t,
       }),
-    [callAmount, maxStack, minRaise, trayAmount],
+    [callAmount, maxStack, minRaise, t, trayAmount],
   );
   const canStartDrag = isYourTurn && trayAmount > 0 && Boolean(dropResolution.intent);
 
@@ -429,7 +441,7 @@ export const GameRoom: React.FC = () => {
     const presets: TrayPresetButton[] = [
       {
         key: "min-raise",
-        label: callAmount > 0 ? "Min Raise" : "Min Bet",
+        label: callAmount > 0 ? t("game.preset.minRaise") : t("game.preset.minBet"),
         amount: minRaiseCommit,
         testId: "chip-load-min-raise",
         tone: "raise",
@@ -440,7 +452,7 @@ export const GameRoom: React.FC = () => {
     if (callAmount > 0) {
       presets.push({
         key: "call",
-        label: "Call",
+        label: t("game.preset.call"),
         amount: Math.min(callAmount, maxStack),
         testId: "chip-load-call",
         tone: "call",
@@ -451,7 +463,7 @@ export const GameRoom: React.FC = () => {
     presets.push(
       {
         key: "double",
-        label: "2x",
+        label: t("game.preset.double"),
         amount:
           callAmount > 0
             ? commitToTargetTotalBet(currentTableBet * 2)
@@ -462,7 +474,7 @@ export const GameRoom: React.FC = () => {
       },
       {
         key: "three-bet",
-        label: "3-Bet",
+        label: t("game.preset.threeBet"),
         amount:
           callAmount > 0
             ? commitToTargetTotalBet(currentTableBet * 3)
@@ -473,7 +485,7 @@ export const GameRoom: React.FC = () => {
       },
       {
         key: "half-pot",
-        label: "1/2 Pot",
+        label: t("game.preset.halfPot"),
         amount: halfPotCommit,
         testId: "chip-load-half-pot",
         tone: "raise",
@@ -481,7 +493,7 @@ export const GameRoom: React.FC = () => {
       },
       {
         key: "all-in",
-        label: "All-In",
+        label: t("game.preset.allIn"),
         amount: maxStack,
         testId: "chip-load-all-in",
         tone: "allin",
@@ -495,6 +507,7 @@ export const GameRoom: React.FC = () => {
         callAmount,
         minRaise,
         stack: maxStack,
+        t,
       });
       return {
         ...preset,
@@ -510,6 +523,7 @@ export const GameRoom: React.FC = () => {
     maxStack,
     minRaise,
     myCommittedBet,
+    t,
   ]);
 
   const isAutomationMode =
@@ -528,7 +542,10 @@ export const GameRoom: React.FC = () => {
 
   useEffect(() => {
     if (!inviteCopyStatus) return;
-    const timeoutId = window.setTimeout(() => setInviteCopyStatus(null), 2200);
+    const timeoutId = window.setTimeout(() => {
+      setInviteCopyStatus(null);
+      setInviteCopyStatusTone(null);
+    }, 2200);
     return () => window.clearTimeout(timeoutId);
   }, [inviteCopyStatus]);
 
@@ -575,18 +592,19 @@ export const GameRoom: React.FC = () => {
   }, [trayAmount]);
 
   useEffect(() => {
-    if (!lastError && !pendingAction && !showRankingsModal) return;
+    if (!lastError && !pendingAction && !showRankingsModal && !showSettingsModal) return;
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
       if (pendingAction) setPendingAction(null);
       if (showRankingsModal) setShowRankingsModal(false);
+      if (showSettingsModal) setShowSettingsModal(false);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, lastError, pendingAction, showRankingsModal]);
+  }, [clearError, lastError, pendingAction, showRankingsModal, showSettingsModal]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -734,10 +752,12 @@ export const GameRoom: React.FC = () => {
         throw new Error("Clipboard API unavailable");
       }
 
-      setInviteCopyStatus("Copied invite link");
+      setInviteCopyStatus(t("game.copiedInvite"));
+      setInviteCopyStatusTone("success");
     } catch (error) {
       console.error("Failed to copy invite link:", error);
-      setInviteCopyStatus("Copy failed");
+      setInviteCopyStatus(t("game.copyFailed"));
+      setInviteCopyStatusTone("error");
     }
   };
 
@@ -763,12 +783,14 @@ export const GameRoom: React.FC = () => {
         label:
           label ??
           (nextAction === "raise"
-            ? `Raise by $${amount ?? 0}`
+            ? t("game.drag.label.betRaiseBy", { amount: amount ?? 0 })
             : nextAction === "call"
-              ? `Call $${callAmount}`
+              ? t("game.callWithAmount", { amount: callAmount })
               : nextAction === "all-in"
-                ? `All-In $${maxStack}`
-                : nextAction[0].toUpperCase() + nextAction.slice(1)),
+                ? t("game.allInWithAmount", { amount: maxStack })
+                : nextAction === "check"
+                  ? t("common.check")
+                  : t("common.fold")),
         chipsCommitted,
         projectedPot: displayPot + chipsCommitted,
         projectedStack: Math.max(0, maxStack - chipsCommitted),
@@ -789,7 +811,11 @@ export const GameRoom: React.FC = () => {
         return;
       }
 
-      submit("raise", legacyRaiseAmount, `Raise by $${legacyRaiseAmount}`);
+      submit(
+        "raise",
+        legacyRaiseAmount,
+        t("game.drag.label.betRaiseBy", { amount: legacyRaiseAmount }),
+      );
       return;
     }
 
@@ -803,55 +829,58 @@ export const GameRoom: React.FC = () => {
 
     const normalized = lastError.toLowerCase();
     const insight: FeedbackInsight = {
-      title: "Action Rejected",
+      title: t("game.error.actionRejected"),
       reason: lastError,
-      suggestions: ["Try again after the game state updates."],
+      suggestions: [t("game.error.tryAgain")],
       technicalDetail: lastError,
     };
 
     if (normalized.includes("not your turn")) {
-      insight.title = "Not Your Turn";
-      insight.reason = "Another player must act first.";
+      insight.title = t("game.error.notYourTurn");
+      insight.reason = t("game.error.notYourTurnReason");
       insight.suggestions = [
-        `Wait until the Turn indicator shows ${currentTurnPlayer?.name ?? "the active player"}.`,
-        "Review the pot and choose fold, call/check, or raise.",
+        t("game.error.waitTurn", { name: currentTurnPlayer?.name ?? t("common.player") }),
+        t("game.error.reviewPot"),
       ];
     } else if (normalized.includes("cannot check")) {
-      insight.title = "Check Not Allowed";
-      insight.reason = "You are facing a bet, so check is not legal right now.";
+      insight.title = t("game.error.checkNotAllowed");
+      insight.reason = t("game.error.checkNotAllowedReason");
       insight.suggestions = [
-        `Call $${callAmount}, raise at least $${minRaise}, or fold.`,
-        "Use the To Call value in the action dock to verify required chips.",
+        t("game.error.callRaiseFold", { callAmount, minRaise }),
+        t("game.error.useToCall"),
       ];
     } else if (normalized.includes("minimum")) {
-      insight.title = "Raise Too Small";
-      insight.reason = "Your raise is below the minimum allowed for this betting round.";
+      insight.title = t("game.error.raiseTooSmall");
+      insight.reason = t("game.error.raiseTooSmallReason");
       insight.suggestions = [
-        `Raise at least $${minRaise}.`,
-        "Or use call/check if you do not want to raise.",
+        t("game.error.raiseAtLeast", { minRaise }),
+        t("game.error.useCallCheck"),
       ];
     } else if (normalized.includes("insufficient chips")) {
-      insight.title = "Insufficient Chips";
-      insight.reason = "Your stack is not enough for this action.";
-      insight.suggestions = [`Current stack: $${maxStack}.`, "Use all-in or lower commitment."];
+      insight.title = t("game.error.insufficientChips");
+      insight.reason = t("game.error.insufficientChipsReason");
+      insight.suggestions = [
+        t("game.error.currentStack", { stack: maxStack }),
+        t("game.error.useAllInOrLower"),
+      ];
     }
 
     return insight;
-  }, [callAmount, currentTurnPlayer?.name, lastError, maxStack, minRaise]);
+  }, [callAmount, currentTurnPlayer?.name, lastError, maxStack, minRaise, t]);
 
   if (!room || !player) {
     return (
       <main className="min-h-screen px-4 py-10">
         <div className="mx-auto max-w-lg rounded-2xl border border-emerald-700/70 bg-emerald-950/60 p-6 text-emerald-50 shadow-lg">
-          <h1 className="text-lg font-semibold">Restoring your room...</h1>
+          <h1 className="text-lg font-semibold">{t("game.restoringRoom")}</h1>
           <p className="mt-2 text-sm text-emerald-100/80">
-            If this takes too long, we will return you to the lobby automatically.
+            {t("game.restoringRoomHint")}
           </p>
           <button
             onClick={() => navigate("/", { replace: true })}
             className="mt-4 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/35"
           >
-            Go to Lobby Now
+            {t("game.goToLobbyNow")}
           </button>
         </div>
       </main>
@@ -866,26 +895,29 @@ export const GameRoom: React.FC = () => {
             className="truncate text-base font-black tracking-tight text-white"
             data-testid="room-title"
           >
-            Room: {room.id}
+            {t("game.room", { roomId: room.id })}
           </h1>
           <p className="text-[11px] text-emerald-100/70" data-testid="room-player-count">
-            Players: {room.players.length}/{room.config.maxPlayers}
+            {t("game.playersCount", {
+              count: room.players.length,
+              max: room.config.maxPlayers,
+            })}
           </p>
         </div>
 
         <div className="hidden" aria-live="polite">
           <span className="hud-chip" data-testid="pot-value">
-            Pot: ${displayPot}
+            {t("game.pot", { amount: displayPot })}
           </span>
           <span className="hud-chip" data-testid="your-chips">
-            Your Chips: ${currentPlayer?.chips ?? 0}
+            {t("game.yourChips", { amount: currentPlayer?.chips ?? 0 })}
           </span>
           {currentTurnPlayer && (
             <span
               className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100"
               data-testid="turn-player"
             >
-              Turn: {currentTurnPlayer.name}
+              {t("game.turn", { name: currentTurnPlayer.name })}
             </span>
           )}
         </div>
@@ -893,7 +925,7 @@ export const GameRoom: React.FC = () => {
         <section className="table-controls-strip">
           {currentHand && (
             <span className="hud-chip" data-testid="round-value">
-              Round: {currentHand.bettingRound}
+              {t("game.round", { round: currentHand.bettingRound })}
             </span>
           )}
           <button
@@ -901,24 +933,31 @@ export const GameRoom: React.FC = () => {
             data-testid="copy-room-url-button"
             className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
           >
-            Copy Invite
+            {t("game.copyInvite")}
           </button>
           {inviteCopyStatus && (
             <span
               data-testid="copy-room-url-status"
               className={`text-xs font-semibold ${
-                inviteCopyStatus.includes("failed") ? "text-amber-200" : "text-emerald-200"
+                inviteCopyStatusTone === "error" ? "text-amber-200" : "text-emerald-200"
               }`}
             >
               {inviteCopyStatus}
             </span>
           )}
           <button
+            onClick={() => setShowSettingsModal(true)}
+            data-testid="open-settings-button"
+            className="rounded-full border border-cyan-400/65 bg-cyan-950/40 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-900/45"
+          >
+            {t("common.settings")}
+          </button>
+          <button
             onClick={() => setShowRankingsModal(true)}
             data-testid="open-rankings-button"
             className="rounded-full border border-emerald-400/65 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
           >
-            Rankings
+            {t("game.rankings")}
           </button>
 
           <div className="ml-auto flex items-center gap-2">
@@ -928,7 +967,7 @@ export const GameRoom: React.FC = () => {
                 data-testid="start-game-button"
                 className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400"
               >
-                Start
+                {t("common.start")}
               </button>
             )}
             <button
@@ -936,7 +975,7 @@ export const GameRoom: React.FC = () => {
               data-testid="leave-room-button"
               className="rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
             >
-              Leave
+              {t("common.leave")}
             </button>
           </div>
         </section>
@@ -972,10 +1011,10 @@ export const GameRoom: React.FC = () => {
                 isYourTurn ? "pot-drop-zone--active" : ""
               } ${dragState.overDropZone ? "pot-drop-zone--hover" : ""}`}
             >
-              <span className="pot-drop-zone__label">Pot</span>
+              <span className="pot-drop-zone__label">{t("game.potCenter")}</span>
               <span className="pot-drop-zone__value">${displayPot}</span>
               {isYourTurn && (
-                <span className="pot-drop-zone__hint">Drag chips here</span>
+                <span className="pot-drop-zone__hint">{t("game.dragHint")}</span>
               )}
             </div>
           </div>
@@ -1019,7 +1058,11 @@ export const GameRoom: React.FC = () => {
                     }`}
                   >
                     {isSelfSeat && (
-                      <span className="seat-pod__you-indicator" aria-label="You" title="You">
+                      <span
+                        className="seat-pod__you-indicator"
+                        aria-label={t("common.you")}
+                        title={t("common.you")}
+                      >
                         🫵
                       </span>
                     )}
@@ -1046,18 +1089,22 @@ export const GameRoom: React.FC = () => {
                           seatPlayer.currentBet > 0 ? "seat-pod__bet--active" : ""
                         }`}
                       >
-                        Bet: ${seatPlayer.currentBet}
+                        {t("game.bet", { amount: seatPlayer.currentBet })}
                       </div>
                       {isAllIn && (
-                        <span className="seat-pod__state seat-pod__state--allin">ALL-IN</span>
+                        <span className="seat-pod__state seat-pod__state--allin">
+                          {t("game.status.allIn")}
+                        </span>
                       )}
                       {isDisconnected && (
                         <span className="seat-pod__state seat-pod__state--disconnected">
-                          DISCONNECTED
+                          {t("game.status.disconnected")}
                         </span>
                       )}
                       {isFolded && (
-                        <span className="seat-pod__state seat-pod__state--folded">FOLDED</span>
+                        <span className="seat-pod__state seat-pod__state--folded">
+                          {t("game.status.folded")}
+                        </span>
                       )}
                     </div>
                   </article>
@@ -1080,20 +1127,20 @@ export const GameRoom: React.FC = () => {
                 className="text-sm font-semibold text-emerald-100"
                 data-testid="hand-results-title"
               >
-                Hand #{currentHandNumber ?? "?"} Results
+                {t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
               </h3>
               <p className="mt-1 text-xs text-emerald-100/75" data-testid="hand-results-mode">
                 {isShowdownComplete
-                  ? "Showdown complete: hands are automatically revealed."
-                  : "Hand ended without showdown: players may reveal manually."}
+                  ? t("game.showdownComplete")
+                  : t("game.showdownManual")}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="hud-chip" data-testid="hand-results-pot">
-                Pot: ${lastHandResult.totalPot}
+                {t("game.pot", { amount: lastHandResult.totalPot })}
               </span>
               <span className="hud-chip" data-testid="hand-results-winner-count">
-                Winners: {lastHandResult.winners.length}
+                {t("game.winnersCount", { count: lastHandResult.winners.length })}
               </span>
             </div>
           </div>
@@ -1104,7 +1151,7 @@ export const GameRoom: React.FC = () => {
               data-testid="show-my-hand-button"
               className="mt-3 rounded-lg border border-cyan-400/60 bg-cyan-900/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
             >
-              Show My Hand
+              {t("game.showMyHand")}
             </button>
           )}
 
@@ -1113,7 +1160,7 @@ export const GameRoom: React.FC = () => {
               className="mt-3 text-xs font-semibold uppercase tracking-wide text-cyan-100/90"
               data-testid="my-hand-revealed-indicator"
             >
-              Your hand is revealed to the table.
+              {t("game.yourHandRevealed")}
             </p>
           )}
 
@@ -1122,7 +1169,7 @@ export const GameRoom: React.FC = () => {
             data-testid="hand-results-winners"
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-              Winners
+              {t("game.winners")}
             </p>
             <div className="mt-2 space-y-2 text-sm text-emerald-50">
               {lastHandResult.winners.map((winner) => {
@@ -1138,7 +1185,7 @@ export const GameRoom: React.FC = () => {
                   >
                     <span className="font-semibold">
                       {winner.playerName}
-                      {isSelf ? " (You)" : ""}
+                      {isSelf ? ` (${t("common.you")})` : ""}
                     </span>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 font-semibold">
@@ -1152,9 +1199,9 @@ export const GameRoom: React.FC = () => {
                           {formatHandRank(winnerHand.rank)}
                         </span>
                       ) : showWinnerHand ? (
-                        <span className="text-emerald-200/70">Cards shown</span>
+                        <span className="text-emerald-200/70">{t("game.cardsShown")}</span>
                       ) : (
-                        <span className="text-emerald-200/70">Hand hidden</span>
+                        <span className="text-emerald-200/70">{t("game.handHidden")}</span>
                       )}
                     </div>
                   </div>
@@ -1184,15 +1231,17 @@ export const GameRoom: React.FC = () => {
                       <div>
                         <p className="text-sm font-semibold text-white">
                           #{entry.rankOrder} {entry.playerName}
-                          {isSelf ? " (You)" : ""}
+                          {isSelf ? ` (${t("common.you")})` : ""}
                         </p>
                         <p className="text-xs text-emerald-100/70">
-                          {entry.isWinner ? `Won $${entry.amountWon}` : "No payout"}
+                          {entry.isWinner
+                            ? t("game.wonAmount", { amount: entry.amountWon })
+                            : t("game.noPayout")}
                         </p>
                       </div>
                       {entry.isWinner && (
                         <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-1 text-xs font-semibold text-amber-100">
-                          Winner
+                          {t("game.winner")}
                         </span>
                       )}
                     </div>
@@ -1225,8 +1274,8 @@ export const GameRoom: React.FC = () => {
                       {showCards
                         ? evaluatedHand
                           ? `${formatHandRank(evaluatedHand.rank)} - ${evaluatedHand.description}`
-                          : "Cards shown (no evaluated hand)."
-                        : "Hand hidden"}
+                          : t("game.cardsShownNoEvaluated")
+                        : t("game.handHidden")}
                     </p>
                   </article>
                 );
@@ -1240,9 +1289,9 @@ export const GameRoom: React.FC = () => {
         <section className="surface-panel mx-3 mt-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-emerald-100">Hand complete</h3>
+              <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
               <p className="text-xs text-emerald-100/70">
-                Host can start the next hand when everyone is ready.
+                {t("game.handCompleteHint")}
               </p>
             </div>
             <button
@@ -1250,7 +1299,7 @@ export const GameRoom: React.FC = () => {
               data-testid="start-next-hand-button"
               className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
             >
-              Start Next Hand
+              {t("game.startNextHand")}
             </button>
           </div>
         </section>
@@ -1260,7 +1309,7 @@ export const GameRoom: React.FC = () => {
         <div className="chip-composer-dock__cards" data-testid="your-cards-section">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
-              Your Cards
+              {t("game.yourCards")}
             </h3>
             <button
               onClick={() =>
@@ -1273,10 +1322,10 @@ export const GameRoom: React.FC = () => {
               className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {shouldForceShowHoleCards
-                ? "Cards Revealed"
+                ? t("game.cardsRevealed")
                 : showHoleCards
-                  ? "Hide"
-                  : "Show"}
+                  ? t("game.hide")
+                  : t("game.show")}
             </button>
           </div>
 
@@ -1291,7 +1340,9 @@ export const GameRoom: React.FC = () => {
               className="mt-2 rounded-lg border border-dashed border-emerald-700/70 bg-emerald-950/45 px-3 py-2 text-center text-xs text-emerald-100/70"
               data-testid="hole-cards-hidden-state"
             >
-              {isShowingHoleCards ? "Cards appear when a hand starts." : "Hole cards hidden."}
+              {isShowingHoleCards
+                ? t("game.cardsAppearWhenHandStarts")
+                : t("game.holeCardsHidden")}
             </div>
           )}
         </div>
@@ -1299,9 +1350,9 @@ export const GameRoom: React.FC = () => {
         {isYourTurn && (
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">
-              <span className="chip-composer-dock__title">Your Turn</span>
-              <span className="chip-composer-dock__meta">To Call: ${callAmount}</span>
-              <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
+              <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
+              <span className="chip-composer-dock__meta">{t("game.toCall", { amount: callAmount })}</span>
+              <span className="chip-composer-dock__meta">{t("game.minRaise", { amount: minRaise })}</span>
             </div>
 
             <div className="chip-composer-dock__tray-row">
@@ -1316,7 +1367,7 @@ export const GameRoom: React.FC = () => {
                   disabled={!canStartDrag}
                   className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
                 >
-                  <span className="chip-stack__label">Tray</span>
+                  <span className="chip-stack__label">{t("game.tray")}</span>
                   <span
                     key={trayAmount}
                     className="chip-stack__value chip-stack__value--animated"
@@ -1352,7 +1403,7 @@ export const GameRoom: React.FC = () => {
                     onChange={handleCustomTrayInputChange}
                     onBlur={handleCustomTrayInputBlur}
                     data-testid="chip-custom-input"
-                    aria-label="Tray amount"
+                    aria-label={t("game.trayAmountAria")}
                     className="chip-input"
                   />
                   <button
@@ -1361,7 +1412,7 @@ export const GameRoom: React.FC = () => {
                     disabled={!isYourTurn || trayAmount <= 0}
                     data-testid="chip-clear"
                   >
-                    Clear
+                    {t("common.clear")}
                   </button>
                 </div>
               </div>
@@ -1374,7 +1425,7 @@ export const GameRoom: React.FC = () => {
                 data-testid={canCheck ? "action-check" : "action-check-disabled"}
                 className="chip-action chip-action--check chip-action--small"
               >
-                Check
+                {t("common.check")}
               </button>
               <label className="chip-composer-dock__confirm">
                 <input
@@ -1383,14 +1434,14 @@ export const GameRoom: React.FC = () => {
                   onChange={(event) => setConfirmActions(event.target.checked)}
                   className="h-3.5 w-3.5 accent-emerald-400"
                 />
-                Confirm Actions
+                {t("game.confirmActions")}
               </label>
               <button
                 onClick={() => handleLegacyAction("fold")}
                 data-testid="action-fold"
                 className="chip-action chip-action--fold chip-action--small"
               >
-                Fold
+                {t("common.fold")}
               </button>
             </div>
 
@@ -1403,7 +1454,7 @@ export const GameRoom: React.FC = () => {
                       data-testid="action-check-legacy"
                       className="chip-action chip-action--check"
                     >
-                      Check
+                      {t("common.check")}
                     </button>
                   ) : (
                     <button
@@ -1411,7 +1462,7 @@ export const GameRoom: React.FC = () => {
                       data-testid="action-call"
                       className="chip-action chip-action--call"
                     >
-                      Call ${callAmount}
+                      {t("game.callWithAmount", { amount: callAmount })}
                     </button>
                   )}
                   <button
@@ -1419,7 +1470,7 @@ export const GameRoom: React.FC = () => {
                     data-testid="action-all-in"
                     className="chip-action chip-action--allin"
                   >
-                    All-In ${maxStack}
+                    {t("game.allInWithAmount", { amount: maxStack })}
                   </button>
                 </div>
 
@@ -1439,7 +1490,7 @@ export const GameRoom: React.FC = () => {
                     data-testid="action-raise"
                     className="chip-action chip-action--raise"
                   >
-                    Raise
+                    {t("game.raise")}
                   </button>
                 </div>
               </div>
@@ -1460,6 +1511,49 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
+      {showSettingsModal && (
+        <div
+          className="fixed inset-0 z-[76] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
+          data-testid="settings-modal"
+        >
+          <div className="surface-panel w-full max-w-xl p-4 md:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-black text-white">{t("game.settings.title")}</h3>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                data-testid="close-settings-button"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.onlyLanguage")}</p>
+
+            <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
+              <label
+                htmlFor="language-select"
+                className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70"
+              >
+                {t("common.language")}
+              </label>
+              <p className="mt-1 text-xs text-emerald-100/70">{t("game.settings.languageHelp")}</p>
+              <select
+                id="language-select"
+                value={locale}
+                onChange={(event) =>
+                  setLocale(event.target.value === "zh_hans" ? "zh_hans" : "en")
+                }
+                data-testid="language-select"
+                className="mt-3 w-full rounded-xl border border-emerald-700/60 bg-emerald-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+              >
+                <option value="en">{t("game.settings.english")}</option>
+                <option value="zh_hans">{t("game.settings.chineseSimplified")}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRankingsModal && (
         <div
           className="fixed inset-0 z-[75] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
@@ -1467,28 +1561,28 @@ export const GameRoom: React.FC = () => {
         >
           <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-black text-white">Player Rankings</h3>
+              <h3 className="text-lg font-black text-white">{t("game.rankings.title")}</h3>
               <button
                 onClick={() => setShowRankingsModal(false)}
                 data-testid="close-rankings-button"
                 className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
             <p className="mt-1 text-sm text-emerald-100/80">
-              Sorted by table stack (`chips + current bet`).
+              {t("game.rankings.sortedBy")}
             </p>
 
             <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
               <table className="min-w-full text-sm">
                 <thead className="bg-emerald-950/70 text-emerald-100/70">
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Rank</th>
-                    <th className="px-3 py-2 text-left font-semibold">Player</th>
-                    <th className="px-3 py-2 text-right font-semibold">Stack</th>
-                    <th className="px-3 py-2 text-right font-semibold">Buy-in</th>
-                    <th className="px-3 py-2 text-right font-semibold">Net</th>
+                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.rank")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.stack")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
                   </tr>
                 </thead>
                 <tbody className="bg-emerald-950/45">
@@ -1501,7 +1595,7 @@ export const GameRoom: React.FC = () => {
                       <td className="px-3 py-2">#{idx + 1}</td>
                       <td className="px-3 py-2">
                         {rankedPlayer.name}
-                        {rankedPlayer.id === player.id ? " (You)" : ""}
+                        {rankedPlayer.id === player.id ? ` (${t("common.you")})` : ""}
                       </td>
                       <td className="px-3 py-2 text-right">${rankedPlayer.tableStack}</td>
                       <td className="px-3 py-2 text-right">${rankedPlayer.totalBuyIn}</td>
@@ -1528,44 +1622,46 @@ export const GameRoom: React.FC = () => {
           data-testid="action-confirm-modal"
         >
           <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
-            <h3 className="text-lg font-black text-white">Confirm Action</h3>
+            <h3 className="text-lg font-black text-white">{t("game.confirmAction.title")}</h3>
             <p className="mt-1 text-sm text-emerald-100/80">
-              Review the hand context before committing to this move.
+              {t("game.confirmAction.reviewHint")}
             </p>
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Action</p>
+                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.action")}</p>
                 <p className="mt-1 font-semibold text-white">{pendingAction.label}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Pot</p>
+                <p className="text-xs text-emerald-100/70">{t("game.potCenter")}</p>
                 <p className="mt-1 font-semibold text-white">${displayPot}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Pot After</p>
+                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.potAfter")}</p>
                 <p className="mt-1 font-semibold text-white">${pendingAction.projectedPot}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Your Stack</p>
+                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.yourStack")}</p>
                 <p className="mt-1 font-semibold text-white">${maxStack}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Stack After</p>
+                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.stackAfter")}</p>
                 <p className="mt-1 font-semibold text-white">${pendingAction.projectedStack}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">To Call</p>
+                <p className="text-xs text-emerald-100/70">{t("game.toCallLabel")}</p>
                 <p className="mt-1 font-semibold text-white">${callAmount}</p>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                Round: <span className="font-semibold text-white">{currentHand?.bettingRound ?? "-"}</span>
+                {t("game.confirmAction.roundLabel")}:{" "}
+                <span className="font-semibold text-white">{currentHand?.bettingRound ?? "-"}</span>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                Turn: <span className="font-semibold text-white">{currentTurnPlayer?.name ?? "-"}</span>
+                {t("game.confirmAction.turnLabel")}:{" "}
+                <span className="font-semibold text-white">{currentTurnPlayer?.name ?? "-"}</span>
               </div>
             </div>
 
@@ -1575,7 +1671,7 @@ export const GameRoom: React.FC = () => {
                 data-testid="cancel-action-button"
                 className="rounded-xl border border-emerald-500/60 bg-emerald-900/30 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-800/35"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -1585,7 +1681,7 @@ export const GameRoom: React.FC = () => {
                 data-testid="confirm-action-button"
                 className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-300"
               >
-                Confirm {pendingAction.label}
+                {t("game.confirmAction.confirmWithLabel", { label: pendingAction.label })}
               </button>
             </div>
           </div>
@@ -1605,26 +1701,26 @@ export const GameRoom: React.FC = () => {
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Pot</p>
+                <p className="text-xs text-emerald-100/70">{t("game.potCenter")}</p>
                 <p className="mt-1 font-semibold text-white">${displayPot}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">To Call</p>
+                <p className="text-xs text-emerald-100/70">{t("game.toCallLabel")}</p>
                 <p className="mt-1 font-semibold text-white">${callAmount}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Your Stack</p>
+                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.yourStack")}</p>
                 <p className="mt-1 font-semibold text-white">${maxStack}</p>
               </div>
               <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Min Raise</p>
+                <p className="text-xs text-emerald-100/70">{t("game.minRaiseLabel")}</p>
                 <p className="mt-1 font-semibold text-white">${minRaise}</p>
               </div>
             </div>
 
             <div className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                What you can do
+                {t("game.error.whatYouCanDo")}
               </p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-100/90">
                 {feedbackInsight.suggestions.map((tip) => (
@@ -1635,7 +1731,7 @@ export const GameRoom: React.FC = () => {
 
             {feedbackInsight.technicalDetail && (
               <details className="mt-4 rounded-lg border border-emerald-700/70 bg-emerald-950/55 p-3 text-xs text-emerald-100/75">
-                <summary className="cursor-pointer font-semibold">Technical detail</summary>
+                <summary className="cursor-pointer font-semibold">{t("game.error.technicalDetail")}</summary>
                 <p className="mt-2 break-words font-mono text-[11px]">
                   {feedbackInsight.technicalDetail}
                 </p>
@@ -1648,7 +1744,7 @@ export const GameRoom: React.FC = () => {
                 onClick={clearError}
                 data-testid="dismiss-error-button"
               >
-                Got It
+                {t("game.error.gotIt")}
               </button>
             </div>
           </div>
