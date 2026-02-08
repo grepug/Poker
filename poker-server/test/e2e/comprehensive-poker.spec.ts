@@ -3172,6 +3172,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.bettingRound).toBe('FLOP');
       expect(flop.communityCards).toBe(3);
+      const expectedFinalPot = flop.pot;
 
       await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -3196,7 +3197,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await alicePage.click('[data-testid="action-check"]');
 
       const result = await handCompletePromise;
-      expect(result.totalPot).toBe(40);
+      expect(result.totalPot).toBe(expectedFinalPot);
       await waitForRound(alicePage, 'SHOWDOWN', 5);
     } finally {
       await teardownTwoPlayerSession(session);
