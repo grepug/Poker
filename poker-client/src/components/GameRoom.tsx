@@ -322,7 +322,6 @@ export const GameRoom: React.FC = () => {
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
-  const [hiddenCardsHandNumber, setHiddenCardsHandNumber] = useState<number | null>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
     null,
@@ -338,10 +337,12 @@ export const GameRoom: React.FC = () => {
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
   const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
+  const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
+  const turnOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
   const actionAlertHideTimeoutRef = useRef<number | null>(null);
@@ -388,8 +389,6 @@ export const GameRoom: React.FC = () => {
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
   const currentHandNumber = currentHand?.handNumber ?? null;
-  const showHoleCards =
-    currentHandNumber === null || hiddenCardsHandNumber !== currentHandNumber;
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
@@ -400,8 +399,6 @@ export const GameRoom: React.FC = () => {
     Boolean(lastHandResult) &&
     isHandPausedForNext &&
     currentHand?.bettingRound === "SHOWDOWN";
-  const shouldForceShowHoleCards = isShowdownComplete;
-  const isShowingHoleCards = shouldForceShowHoleCards || showHoleCards;
 
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
@@ -732,6 +729,38 @@ export const GameRoom: React.FC = () => {
       setQuickConfirmAction(null);
       setDragState(EMPTY_DRAG_STATE);
     }
+  }, [isYourTurn]);
+
+  useEffect(() => {
+    if (!isYourTurn) {
+      setTurnOverlayHeight(0);
+      return;
+    }
+
+    const overlayNode = turnOverlayRef.current;
+    if (!overlayNode) {
+      return;
+    }
+
+    const updateOverlayHeight = () => {
+      const nextHeight = Math.ceil(overlayNode.getBoundingClientRect().height);
+      setTurnOverlayHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    };
+
+    updateOverlayHeight();
+    window.addEventListener("resize", updateOverlayHeight);
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", updateOverlayHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(updateOverlayHeight);
+    resizeObserver.observe(overlayNode);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateOverlayHeight);
+    };
   }, [isYourTurn]);
 
   useEffect(() => {
@@ -1243,31 +1272,22 @@ export const GameRoom: React.FC = () => {
       <section
         className={`your-cards-flyout ${
           isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-        }`}
+        } ${isYourTurn ? "your-cards-flyout--anchored" : ""}`}
+        style={
+          isYourTurn
+            ? {
+                bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
+              }
+            : undefined
+        }
         data-testid="your-cards-flyout"
       >
         <div className="your-cards-flyout__panel" data-testid="your-cards-section">
           <div className="your-cards-flyout__header">
             <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
-            <button
-              onClick={() =>
-                setHiddenCardsHandNumber((prev) =>
-                  showHoleCards ? currentHandNumber ?? prev : null,
-                )
-              }
-              data-testid="toggle-hole-cards"
-              disabled={shouldForceShowHoleCards}
-              className="rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {shouldForceShowHoleCards
-                ? t("game.cardsRevealed")
-                : showHoleCards
-                  ? t("game.hide")
-                  : t("game.show")}
-            </button>
           </div>
 
-          {isShowingHoleCards && yourCards && yourCards.length > 0 ? (
+          {yourCards && yourCards.length > 0 ? (
             <div className="your-cards-flyout__cards">
               {yourCards.map((card, idx) => (
                 <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
@@ -1278,9 +1298,7 @@ export const GameRoom: React.FC = () => {
               className="your-cards-flyout__empty-state"
               data-testid="hole-cards-hidden-state"
             >
-              {isShowingHoleCards
-                ? t("game.cardsAppearWhenHandStarts")
-                : t("game.holeCardsHidden")}
+              {t("game.cardsAppearWhenHandStarts")}
             </div>
           )}
         </div>
@@ -1662,7 +1680,7 @@ export const GameRoom: React.FC = () => {
       )}
 
       {isYourTurn && (
-        <section className="chip-composer-dock" data-testid="turn-overlay">
+        <section ref={turnOverlayRef} className="chip-composer-dock" data-testid="turn-overlay">
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">
               <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
