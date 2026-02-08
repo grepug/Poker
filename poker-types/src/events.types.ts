@@ -26,6 +26,7 @@ export interface ReconnectData {
 export interface PlayerActionData {
   action: PlayerAction;
   amount?: number; // For raises
+  actionId?: string; // Idempotency key for deduplicating retries
 }
 
 export interface RequestRebuyData {

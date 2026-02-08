@@ -251,6 +251,7 @@ body {
 }
 
 .seat-pod {
+  position: relative;
   border: 1px solid rgba(6, 95, 70, 0.85);
   border-radius: 0.6rem;
   background: rgba(6, 34, 24, 0.84);
@@ -296,7 +297,7 @@ body {
 }
 
 .seat-pod__row--chips,
-.seat-pod__row--buyin {
+.seat-pod__row--bet {
   justify-content: flex-start;
 }
 
@@ -316,10 +317,33 @@ body {
   font-weight: 700;
 }
 
-.seat-pod__buyin {
+.seat-pod__bet {
   font-size: 0.46rem;
-  color: rgba(209, 250, 229, 0.6);
+  color: rgba(253, 230, 138, 0.7);
   white-space: nowrap;
+  font-weight: 700;
+}
+
+.seat-pod__bet--active {
+  color: #fcd34d;
+}
+
+.seat-pod__you-indicator {
+  position: absolute;
+  top: -0.3rem;
+  left: -0.3rem;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(125, 211, 252, 0.68);
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+  line-height: 1;
+  z-index: 2;
 }
 
 .seat-pod__badges {
@@ -744,7 +768,7 @@ body {
     font-size: 0.54rem;
   }
 
-  .seat-pod__buyin {
+  .seat-pod__bet {
     font-size: 0.38rem;
   }
 
@@ -803,7 +827,7 @@ body {
     font-size: 0.74rem;
   }
 
-  .seat-pod__buyin {
+  .seat-pod__bet {
     font-size: 0.5rem;
   }
 

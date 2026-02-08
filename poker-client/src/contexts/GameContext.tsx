@@ -31,7 +31,7 @@ type DebugApi = {
   startGame: () => void;
   startNextHand: () => void;
   showMyHand: () => void;
-  performAction: (action: PlayerAction, amount?: number) => void;
+  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   fold: () => void;
   check: () => void;
   call: () => void;
@@ -58,7 +58,7 @@ interface GameContextType {
   startGame: () => void;
   startNextHand: () => void;
   showMyHand: () => void;
-  performAction: (action: PlayerAction, amount?: number) => void;
+  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
   clearError: () => void;
@@ -85,6 +85,10 @@ type StoredSession = {
 };
 
 const SESSION_STORAGE_KEY = "poker.activeSession";
+const createActionId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function readStoredSession(): StoredSession | null {
   if (typeof window === "undefined") return null;
@@ -619,10 +623,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
-  const performAction = useCallback((action: PlayerAction, amount?: number) => {
+  const performAction = useCallback((action: PlayerAction, amount?: number, actionId?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("PLAYER_ACTION", { action, amount }, (response) => {
+    socket.emit("PLAYER_ACTION", { action, amount, actionId: actionId || createActionId() }, (response) => {
       console.log("Action response:", response);
       if (response && "success" in response && !response.success && response.error) {
         setLastError(response.error);

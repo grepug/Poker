@@ -78,6 +78,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
+  private roomActionQueues: Map<string, Promise<void>> = new Map();
+  private processedActionFingerprints: Map<string, number> = new Map();
+  private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
+  private readonly maxProcessedActionFingerprints = 10000;
 
   private getRoomShareUrl(client: Socket, roomId: string) {
     const configuredClientUrl = process.env.CLIENT_URL?.trim();
@@ -119,21 +123,31 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const playerInfo = this.socketToPlayer.get(client.id);
     if (!playerInfo) return;
+    this.socketToPlayer.delete(client.id);
 
     const { roomId, playerId } = playerInfo;
+    const room = await this.getRoom(roomId);
+    const gracePeriod = room?.config?.reconnectGracePeriod ?? 30000;
+    const playerName =
+      room?.players?.find((player) => player.id === playerId)?.name ?? '';
+
+    const existingTimer = this.disconnectTimers.get(playerId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
 
     // Start grace period timer
     const timer = setTimeout(async () => {
       await this.handleDisconnectTimeout(roomId, playerId);
-    }, 30000); // 30 second grace period
+    }, gracePeriod);
 
     this.disconnectTimers.set(playerId, timer);
 
     // Notify room of disconnect
     this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
       playerId,
-      playerName: '', // Would need to fetch from room
-      gracePeriod: 30000,
+      playerName,
+      gracePeriod,
     });
   }
 
@@ -156,10 +170,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(room.id);
 
       const host = room.players[0];
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: host.id,
-      });
+      this.trackPlayerSocket(client.id, room.id, host.id);
 
       const response: RoomCreatedData = {
         roomId: room.id,
@@ -192,10 +203,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.join(room.id);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: player.id,
-      });
+      this.trackPlayerSocket(client.id, room.id, player.id);
 
       // Notify all in room
       this.server.to(room.id).emit('PLAYER_JOINED', {
@@ -243,10 +251,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.join(data.roomId);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: data.roomId,
-        playerId: player.id,
-      });
+      this.trackPlayerSocket(client.id, data.roomId, player.id);
 
       // Get full room state - simplified, would need full sync
       client.emit('RECONNECT_SUCCESS', {
@@ -421,59 +426,116 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: PlayerActionData,
   ) {
+    const playerInfo = this.socketToPlayer.get(client.id);
+    const requestActionId = data.actionId?.trim();
+    const baseActionLog = {
+      roomId: playerInfo?.roomId ?? null,
+      playerId: playerInfo?.playerId ?? null,
+      action: data.action,
+      amount: data.amount ?? null,
+      actionId: requestActionId ?? null,
+      socketId: client.id,
+    };
+
     try {
-      const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
 
-      const room = await this.getRoom(playerInfo.roomId);
-      const player = room.players.find((p) => p.id === playerInfo.playerId);
-      if (!player) throw new Error('Player not found');
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const player = room.players.find((p) => p.id === playerInfo.playerId);
+        if (!player) throw new Error('Player not found');
+        if (!room.currentHand) throw new Error('No active hand');
 
-      await this.bettingService.processAction(
-        room,
-        playerInfo.playerId,
-        data.action,
-        data.amount,
-      );
+        const actionId = requestActionId;
+        const actionLog = {
+          ...baseActionLog,
+          roomId: room.id,
+          playerId: player.id,
+          handNumber: room.currentHand.handNumber,
+          playerName: player.name,
+        };
 
-      const updatedRoom = await this.getRoom(playerInfo.roomId);
-
-      // Broadcast action
-      const actionData: PlayerActedData = {
-        playerId: player.id,
-        playerName: player.name,
-        action: data.action,
-        amount: data.amount,
-        newPot: updatedRoom.currentHand!.pot,
-        newChips: player.chips,
-      };
-
-      this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
-
-      // Check if betting round complete
-      const isComplete =
-        this.bettingService.isBettingRoundComplete(updatedRoom);
-      this.logger.debug(`Betting round complete: ${isComplete}`);
-
-      if (isComplete) {
-        await this.handleBettingRoundComplete(updatedRoom);
-      } else {
-        // Move to next player
-        const nextPlayer = this.handService.getNextPlayer(updatedRoom);
-        this.logger.debug(
-          `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
-        );
-        if (nextPlayer) {
-          updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
-          await this.storageService.saveRoom(updatedRoom);
-          this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
-          this.emitPlayerTurn(updatedRoom, nextPlayer);
+        if (
+          actionId &&
+          this.hasProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          )
+        ) {
+          this.logger.warn(
+            `Duplicate action ignored ${this.serializeForLog(actionLog)}`,
+          );
+          return { success: true, duplicate: true };
         }
-      }
 
-      return { success: true };
+        await this.bettingService.processAction(
+          room,
+          playerInfo.playerId,
+          data.action,
+          data.amount,
+        );
+
+        if (actionId) {
+          this.markProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          );
+        }
+
+        const updatedRoom = await this.getRoom(playerInfo.roomId);
+
+        // Broadcast action
+        const actionData: PlayerActedData = {
+          playerId: player.id,
+          playerName: player.name,
+          action: data.action,
+          amount: data.amount,
+          newPot: updatedRoom.currentHand!.pot,
+          newChips: player.chips,
+        };
+
+        this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
+        this.logger.log(
+          `Action applied ${this.serializeForLog({
+            ...actionLog,
+            newPot: updatedRoom.currentHand!.pot,
+            newChips: player.chips,
+          })}`,
+        );
+
+        // Check if betting round complete
+        const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
+        this.logger.debug(`Betting round complete: ${isComplete}`);
+
+        if (isComplete) {
+          await this.handleBettingRoundComplete(updatedRoom);
+        } else {
+          // Move to next player
+          const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+          this.logger.debug(
+            `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
+          );
+          if (nextPlayer) {
+            updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
+            await this.storageService.saveRoom(updatedRoom);
+            this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
+            this.emitPlayerTurn(updatedRoom, nextPlayer);
+          }
+        }
+
+        return { success: true };
+      });
     } catch (error) {
-      this.logger.error(`Player action error: ${error.message}`);
+      this.logger.warn(
+        `Player action rejected ${this.serializeForLog({
+          ...baseActionLog,
+          reason: error.message,
+        })}`,
+      );
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
@@ -551,6 +613,93 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Helper methods
+
+  private serializeForLog(payload: Record<string, unknown>): string {
+    return JSON.stringify(payload);
+  }
+
+  private async runRoomActionSequentially<T>(
+    roomId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.roomActionQueues.get(roomId) ?? Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const queuePromise = previous.finally(() => gate);
+    this.roomActionQueues.set(roomId, queuePromise);
+
+    await previous;
+
+    try {
+      return await task();
+    } finally {
+      releaseCurrent();
+      if (this.roomActionQueues.get(roomId) === queuePromise) {
+        this.roomActionQueues.delete(roomId);
+      }
+    }
+  }
+
+  private buildActionFingerprint(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): string {
+    return `${roomId}:${handNumber}:${playerId}:${actionId}`;
+  }
+
+  private hasProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): boolean {
+    this.pruneProcessedActions();
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    return this.processedActionFingerprints.has(fingerprint);
+  }
+
+  private markProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ) {
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    this.processedActionFingerprints.set(fingerprint, Date.now());
+    this.pruneProcessedActions();
+  }
+
+  private pruneProcessedActions() {
+    const cutoff = Date.now() - this.processedActionTtlMs;
+    for (const [key, timestamp] of this.processedActionFingerprints.entries()) {
+      if (timestamp < cutoff) {
+        this.processedActionFingerprints.delete(key);
+      }
+    }
+
+    while (
+      this.processedActionFingerprints.size >
+      this.maxProcessedActionFingerprints
+    ) {
+      const oldestKey = this.processedActionFingerprints.keys().next().value;
+      if (!oldestKey) break;
+      this.processedActionFingerprints.delete(oldestKey);
+    }
+  }
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
@@ -770,12 +919,39 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return await this.storageService.getRoom(roomId);
   }
 
-  private findSocketByPlayerId(playerId: string): Socket | null {
-    for (const [socketId, info] of this.socketToPlayer.entries()) {
-      if (info.playerId === playerId) {
-        return this.server.sockets.sockets.get(socketId) || null;
+  private trackPlayerSocket(socketId: string, roomId: string, playerId: string) {
+    for (const [trackedSocketId, tracked] of this.socketToPlayer.entries()) {
+      if (tracked.playerId === playerId && trackedSocketId !== socketId) {
+        this.socketToPlayer.delete(trackedSocketId);
       }
     }
+
+    this.socketToPlayer.set(socketId, { roomId, playerId });
+  }
+
+  private findSocketByPlayerId(playerId: string): Socket | null {
+    const staleSocketIds: string[] = [];
+
+    for (const [socketId, info] of this.socketToPlayer.entries()) {
+      if (info.playerId !== playerId) {
+        continue;
+      }
+
+      const socket = this.server.sockets.sockets.get(socketId) || null;
+      if (socket) {
+        for (const staleSocketId of staleSocketIds) {
+          this.socketToPlayer.delete(staleSocketId);
+        }
+        return socket;
+      }
+
+      staleSocketIds.push(socketId);
+    }
+
+    for (const staleSocketId of staleSocketIds) {
+      this.socketToPlayer.delete(staleSocketId);
+    }
+
     return null;
   }
 

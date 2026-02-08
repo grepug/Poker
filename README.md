@@ -144,6 +144,19 @@ cd poker-server
 npm test
 ```
 
+Pre-game readiness (build + health + LAN URL + critical smoke checks):
+
+```bash
+cd /Users/kai/Developer/games/Poker
+./scripts/pregame-readiness.sh
+```
+
+Quick mode (skip Playwright smoke):
+
+```bash
+./scripts/pregame-readiness.sh --fast
+```
+
 Current test coverage:
 
 - ✅ Deck utilities (17/17 tests passing)
