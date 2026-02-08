@@ -1,9 +1,33 @@
 import { io, Socket } from "socket.io-client";
 import type { ClientToServerEvents, ServerToClientEvents } from "poker-types";
 
+declare global {
+  interface Window {
+    __POKER_SERVER_URL__?: string;
+  }
+}
+
 const resolveSocketUrl = (explicitUrl?: string) => {
   if (explicitUrl && explicitUrl.trim()) {
     return explicitUrl.trim();
+  }
+
+  if (typeof window !== "undefined") {
+    const runtimeUrl = window.__POKER_SERVER_URL__?.trim();
+    if (runtimeUrl) {
+      return runtimeUrl;
+    }
+
+    const sessionUrl = window.sessionStorage.getItem("poker.serverUrlOverride")?.trim();
+    if (sessionUrl) {
+      return sessionUrl;
+    }
+
+    const queryUrl = new URLSearchParams(window.location.search).get("server")?.trim();
+    if (queryUrl) {
+      window.sessionStorage.setItem("poker.serverUrlOverride", queryUrl);
+      return queryUrl;
+    }
   }
 
   const envUrl = import.meta.env.VITE_SERVER_URL?.trim();

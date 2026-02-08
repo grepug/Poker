@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const frontendPort = process.env.E2E_FRONTEND_PORT ?? '5174';
+const backendPort = process.env.E2E_BACKEND_PORT ?? '3001';
+const frontendUrl = `http://localhost:${frontendPort}`;
+const backendUrl = `http://localhost:${backendPort}`;
+
 export default defineConfig({
   testDir: './test/e2e',
   fullyParallel: true, // Run tests in parallel - each test uses isolated browser contexts
@@ -40,22 +45,22 @@ export default defineConfig({
     {
       // Use prebuilt static assets for stability under Node versions that
       // may not meet Vite dev-server requirements.
-      command: 'python3 -m http.server 5174 --directory ../poker-client/dist',
-      url: 'http://localhost:5174',
+      command: `python3 -m http.server ${frontendPort} --directory ../poker-client/dist`,
+      url: frontendUrl,
       reuseExistingServer: false,
       timeout: 30000,
     },
     {
       // Avoid watch mode restarts during long e2e runs.
       command:
-        'PORT=3001 CORS_ORIGIN=http://localhost:5174 CLIENT_URL=http://localhost:5174 TEST_MODE=true npm run start',
-      url: 'http://localhost:3001',
+        `PORT=${backendPort} CORS_ORIGIN=${frontendUrl} CLIENT_URL=${frontendUrl} TEST_MODE=true npm run start`,
+      url: backendUrl,
       reuseExistingServer: false,
       timeout: 60000,
       env: {
-        PORT: '3001',
-        CORS_ORIGIN: 'http://localhost:5174',
-        CLIENT_URL: 'http://localhost:5174',
+        PORT: backendPort,
+        CORS_ORIGIN: frontendUrl,
+        CLIENT_URL: frontendUrl,
         TEST_MODE: 'true',
       },
     },
