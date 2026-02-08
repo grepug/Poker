@@ -22,15 +22,6 @@ type DropResolution = {
   reason: string | null;
 };
 
-type PendingAction = {
-  action: PlayerAction;
-  amount?: number;
-  label: string;
-  chipsCommitted: number;
-  projectedPot: number;
-  projectedStack: number;
-};
-
 type FeedbackInsight = {
   title: string;
   reason: string;
@@ -247,14 +238,6 @@ export const GameRoom: React.FC = () => {
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [confirmActions, setConfirmActions] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const saved = window.localStorage.getItem("poker.confirmActions");
-    if (saved === "off") return false;
-    if (saved === "on") return true;
-    return !window.navigator.webdriver;
-  });
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
@@ -533,11 +516,6 @@ export const GameRoom: React.FC = () => {
   }, [inviteCopyStatus]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("poker.confirmActions", confirmActions ? "on" : "off");
-  }, [confirmActions]);
-
-  useEffect(() => {
     if (!lastHandResult) {
       lastAutoScrolledResultRef.current = null;
       return;
@@ -575,18 +553,17 @@ export const GameRoom: React.FC = () => {
   }, [trayAmount]);
 
   useEffect(() => {
-    if (!lastError && !pendingAction && !showRankingsModal) return;
+    if (!lastError && !showRankingsModal) return;
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
-      if (pendingAction) setPendingAction(null);
       if (showRankingsModal) setShowRankingsModal(false);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, lastError, pendingAction, showRankingsModal]);
+  }, [clearError, lastError, showRankingsModal]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -611,28 +588,9 @@ export const GameRoom: React.FC = () => {
       return;
     }
 
-    const chipsCommitted =
-      dropResolution.intent.action === "call"
-        ? Math.min(callAmount, maxStack)
-        : dropResolution.intent.action === "raise"
-          ? Math.min(maxStack, callAmount + (dropResolution.intent.amount ?? 0))
-          : maxStack;
-    const nextPendingAction: PendingAction = {
-      action: dropResolution.intent.action,
-      amount: dropResolution.intent.amount,
-      label: dropResolution.intent.label,
-      chipsCommitted,
-      projectedPot: displayPot + chipsCommitted,
-      projectedStack: Math.max(0, maxStack - chipsCommitted),
-    };
-
-    if (confirmActions) {
-      setPendingAction(nextPendingAction);
-    } else {
-      performAction(nextPendingAction.action, nextPendingAction.amount);
-    }
+    performAction(dropResolution.intent.action, dropResolution.intent.amount);
     setTrayAmount(0);
-  }, [callAmount, confirmActions, displayPot, dropResolution.intent, isYourTurn, maxStack, performAction]);
+  }, [dropResolution.intent, isYourTurn, performAction]);
 
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
@@ -747,40 +705,6 @@ export const GameRoom: React.FC = () => {
   };
 
   const handleLegacyAction = (action: PlayerAction) => {
-    const submit = (nextAction: PlayerAction, amount?: number, label?: string) => {
-      const chipsCommitted =
-        nextAction === "call"
-          ? Math.min(callAmount, maxStack)
-          : nextAction === "raise"
-            ? Math.min(maxStack, callAmount + (amount ?? 0))
-            : nextAction === "all-in"
-              ? maxStack
-              : 0;
-
-      const nextPendingAction: PendingAction = {
-        action: nextAction,
-        amount,
-        label:
-          label ??
-          (nextAction === "raise"
-            ? `Raise by $${amount ?? 0}`
-            : nextAction === "call"
-              ? `Call $${callAmount}`
-              : nextAction === "all-in"
-                ? `All-In $${maxStack}`
-                : nextAction[0].toUpperCase() + nextAction.slice(1)),
-        chipsCommitted,
-        projectedPot: displayPot + chipsCommitted,
-        projectedStack: Math.max(0, maxStack - chipsCommitted),
-      };
-
-      if (confirmActions) {
-        setPendingAction(nextPendingAction);
-      } else {
-        performAction(nextPendingAction.action, nextPendingAction.amount);
-      }
-    };
-
     if (action === "raise") {
       if (legacyRaiseAmount < minRaise) {
         return;
@@ -789,11 +713,11 @@ export const GameRoom: React.FC = () => {
         return;
       }
 
-      submit("raise", legacyRaiseAmount, `Raise by $${legacyRaiseAmount}`);
+      performAction("raise", legacyRaiseAmount);
       return;
     }
 
-    submit(action);
+    performAction(action);
   };
 
   const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
@@ -1376,15 +1300,6 @@ export const GameRoom: React.FC = () => {
               >
                 Check
               </button>
-              <label className="chip-composer-dock__confirm">
-                <input
-                  type="checkbox"
-                  checked={confirmActions}
-                  onChange={(event) => setConfirmActions(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-emerald-400"
-                />
-                Confirm Actions
-              </label>
               <button
                 onClick={() => handleLegacyAction("fold")}
                 data-testid="action-fold"
@@ -1517,76 +1432,6 @@ export const GameRoom: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pendingAction && (
-        <div
-          className="fixed inset-0 z-[85] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-          data-testid="action-confirm-modal"
-        >
-          <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
-            <h3 className="text-lg font-black text-white">Confirm Action</h3>
-            <p className="mt-1 text-sm text-emerald-100/80">
-              Review the hand context before committing to this move.
-            </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Action</p>
-                <p className="mt-1 font-semibold text-white">{pendingAction.label}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Pot</p>
-                <p className="mt-1 font-semibold text-white">${displayPot}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Pot After</p>
-                <p className="mt-1 font-semibold text-white">${pendingAction.projectedPot}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Your Stack</p>
-                <p className="mt-1 font-semibold text-white">${maxStack}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">Stack After</p>
-                <p className="mt-1 font-semibold text-white">${pendingAction.projectedStack}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">To Call</p>
-                <p className="mt-1 font-semibold text-white">${callAmount}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                Round: <span className="font-semibold text-white">{currentHand?.bettingRound ?? "-"}</span>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                Turn: <span className="font-semibold text-white">{currentTurnPlayer?.name ?? "-"}</span>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button
-                onClick={() => setPendingAction(null)}
-                data-testid="cancel-action-button"
-                className="rounded-xl border border-emerald-500/60 bg-emerald-900/30 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-800/35"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  performAction(pendingAction.action, pendingAction.amount);
-                  setPendingAction(null);
-                }}
-                data-testid="confirm-action-button"
-                className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-300"
-              >
-                Confirm {pendingAction.label}
-              </button>
             </div>
           </div>
         </div>
