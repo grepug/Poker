@@ -125,19 +125,28 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!playerInfo) return;
 
     const { roomId, playerId } = playerInfo;
+    const room = await this.getRoom(roomId);
+    const gracePeriod = room?.config?.reconnectGracePeriod ?? 30000;
+    const playerName =
+      room?.players?.find((player) => player.id === playerId)?.name ?? '';
+
+    const existingTimer = this.disconnectTimers.get(playerId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
 
     // Start grace period timer
     const timer = setTimeout(async () => {
       await this.handleDisconnectTimeout(roomId, playerId);
-    }, 30000); // 30 second grace period
+    }, gracePeriod);
 
     this.disconnectTimers.set(playerId, timer);
 
     // Notify room of disconnect
     this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
       playerId,
-      playerName: '', // Would need to fetch from room
-      gracePeriod: 30000,
+      playerName,
+      gracePeriod,
     });
   }
 

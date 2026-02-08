@@ -63,7 +63,56 @@ type ThreePlayerSession = {
   roomCode: string;
 };
 
-async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
+type SetupTwoPlayerOptions = {
+  roomConfig?: Record<string, unknown>;
+};
+
+async function createRoomViaSocket(
+  page: Page,
+  playerName: string,
+  config?: Record<string, unknown>,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    async ({ requestedName, requestedConfig }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error('Unable to create room: socket unavailable');
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        socket.emit(
+          'CREATE_ROOM',
+          { playerName: requestedName, config: requestedConfig },
+          (response: { success?: boolean; error?: string }) => {
+            if (response?.success) {
+              resolve();
+            } else {
+              reject(
+                new Error(response?.error || 'Unknown CREATE_ROOM failure'),
+              );
+            }
+          },
+        );
+      });
+    },
+    { requestedName: playerName, requestedConfig: config },
+  );
+
+  await page.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await page.textContent('[data-testid="room-title"]');
+  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+  if (!roomCode) {
+    throw new Error('Failed to create room code');
+  }
+
+  return roomCode;
+}
+
+async function setupTwoPlayerSession(
+  browser: any,
+  options?: SetupTwoPlayerOptions,
+): Promise<TwoPlayerSession> {
   const aliceContext = await browser.newContext();
   const bobContext = await browser.newContext();
   const alicePage = await aliceContext.newPage();
@@ -80,15 +129,9 @@ async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
     'Connected',
   );
 
-  await alicePage.fill('[data-testid="name-input"]', 'Alice');
-  await alicePage.click('[data-testid="create-room-button"]');
-  await alicePage.waitForSelector('[data-testid="room-title"]');
-  const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
-  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
-
-  if (!roomCode) {
-    throw new Error('Failed to create room code for two-player setup');
-  }
+  const roomCode = options?.roomConfig
+    ? await createRoomViaSocket(alicePage, 'Alice', options.roomConfig)
+    : await createRoomViaSocket(alicePage, 'Alice');
 
   await bobPage.click('[data-testid="join-toggle-button"]');
   await bobPage.fill('[data-testid="name-input"]', 'Bob');
@@ -400,6 +443,32 @@ function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
       });
     });
   }, timeoutMs);
+}
+
+function captureNextSocketEvent(
+  page: Page,
+  eventName: string,
+  timeoutMs = 10000,
+): Promise<any> {
+  return page.evaluate(
+    ({ event, timeoutLimit }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error(`Unable to capture ${event}: socket unavailable`);
+      }
+
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`Timed out waiting for ${event}`));
+        }, timeoutLimit);
+        socket.once(event, (data: any) => {
+          clearTimeout(timer);
+          resolve(data);
+        });
+      });
+    },
+    { event: eventName, timeoutLimit: timeoutMs },
+  );
 }
 
 async function completeCurrentHandWithPassiveActions(
@@ -3858,6 +3927,55 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(afterDuplicate.currentPlayerName).toBe('Alice');
       expect(afterDuplicate.aliceCurrentBet).toBe(afterFirst.aliceCurrentBet);
       expect(afterDuplicate.bobCurrentBet).toBe(afterFirst.bobCurrentBet);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12b: Disconnect Timeout Auto-Folds Current Player', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+
+    try {
+      const { alicePage, bobPage, bobContext } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const disconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const autoFoldPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_AUTO_FOLDED',
+        8000,
+      );
+      const handCompletePromise = captureNextHandComplete(alicePage, 12000);
+
+      await bobContext.close();
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerName).toBe('Bob');
+      expect(disconnectedEvent.gracePeriod).toBe(1200);
+
+      const autoFoldEvent = await autoFoldPromise;
+      expect(autoFoldEvent.playerName).toBe('Bob');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(30);
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Alice');
+      expect(result.winners[0].amountWon).toBe(30);
+
+      const finalState = await getRoomSnapshot(alicePage);
+      expect(finalState.currentPlayerTurn).toBeNull();
+      expect(finalState.aliceChips).toBe(1010);
+      expect(finalState.bobChips).toBe(990);
+      await verifyChipConservation(alicePage, 2000);
     } finally {
       await teardownTwoPlayerSession(session);
     }
