@@ -745,12 +745,6 @@ export const GameRoom: React.FC = () => {
       return;
     }
 
-    if (quickConfirmAction === action) {
-      setQuickConfirmAction(null);
-      performAction(action);
-      return;
-    }
-
     setQuickConfirmAction(action);
   };
 
@@ -1330,48 +1324,18 @@ export const GameRoom: React.FC = () => {
                 onClick={() => handleQuickDecisionAction("check")}
                 disabled={!canCheck}
                 data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                className={`chip-action chip-action--check chip-action--small ${
-                  quickConfirmAction === "check" ? "chip-action--confirming" : ""
-                }`}
+                className="chip-action chip-action--check chip-action--small"
               >
-                {quickConfirmAction === "check" ? "Confirm Check" : "Check"}
+                Check
               </button>
               <button
                 onClick={() => handleQuickDecisionAction("fold")}
                 data-testid="action-fold"
-                className={`chip-action chip-action--fold chip-action--small ${
-                  quickConfirmAction === "fold" ? "chip-action--confirming" : ""
-                }`}
+                className="chip-action chip-action--fold chip-action--small"
               >
-                {quickConfirmAction === "fold" ? "Confirm Fold" : "Fold"}
+                Fold
               </button>
             </div>
-
-            {!isAutomationMode && quickConfirmAction && (
-              <div className="chip-quick-confirm-popover" data-testid="action-quick-confirm-popover">
-                <span className="chip-quick-confirm-popover__text">
-                  Confirm {quickConfirmAction}?
-                </span>
-                <button
-                  onClick={() => {
-                    const actionToApply = quickConfirmAction;
-                    setQuickConfirmAction(null);
-                    performAction(actionToApply);
-                  }}
-                  data-testid="action-quick-confirm-accept"
-                  className="chip-quick-confirm-popover__button chip-quick-confirm-popover__button--confirm"
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setQuickConfirmAction(null)}
-                  data-testid="action-quick-confirm-cancel"
-                  className="chip-quick-confirm-popover__button chip-quick-confirm-popover__button--cancel"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
 
             {isAutomationMode && (
               <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
@@ -1496,6 +1460,39 @@ export const GameRoom: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isAutomationMode && quickConfirmAction && (
+        <div
+          className="fixed inset-0 z-[84] flex items-center justify-center bg-emerald-950/80 p-4 backdrop-blur-sm"
+          data-testid="action-quick-confirm-modal"
+        >
+          <div className="surface-panel w-full max-w-xs p-4">
+            <p className="text-sm font-semibold text-white">
+              Confirm {quickConfirmAction}?
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setQuickConfirmAction(null)}
+                data-testid="action-quick-confirm-cancel"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const actionToApply = quickConfirmAction;
+                  setQuickConfirmAction(null);
+                  performAction(actionToApply);
+                }}
+                data-testid="action-quick-confirm-accept"
+                className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-300"
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>
