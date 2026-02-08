@@ -3805,6 +3805,55 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4d: Player Emoji Selection Shows On Seats', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await alicePage.goto(FRONTEND_URL);
+      await bobPage.goto(FRONTEND_URL);
+
+      await alicePage.waitForSelector('[data-testid="connection-status"]');
+      await bobPage.waitForSelector('[data-testid="connection-status"]');
+
+      await alicePage.fill('[data-testid="name-input"]', 'Alice');
+      await alicePage.selectOption('[data-testid="emoji-select"]', '😎');
+      await alicePage.click('[data-testid="create-room-button"]');
+      await alicePage.waitForSelector('[data-testid="room-title"]');
+
+      const roomTitle = await alicePage.textContent('[data-testid="room-title"]');
+      const roomCode = roomTitle?.match(/Room: (.+)/)?.[1];
+      expect(roomCode).toBeTruthy();
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="name-input"]', 'Bob');
+      await bobPage.selectOption('[data-testid="emoji-select"]', '🐯');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+      await bobPage.click('[data-testid="join-room-button"]');
+      await bobPage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 2/")',
+      );
+
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('🐯');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('🐯');
+
+      const emojiMap = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return Object.fromEntries(
+          (room?.players ?? []).map((player: any) => [player.name, player.emoji ?? null]),
+        );
+      });
+      expect(emojiMap.Alice).toBe('😎');
+      expect(emojiMap.Bob).toBe('🐯');
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+    }
+  });
+
   test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 

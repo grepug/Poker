@@ -1456,6 +1456,11 @@ export const GameRoom: React.FC = () => {
                       </span>
                     )}
                     <div className="seat-pod__row">
+                      {seatPlayer.emoji && (
+                        <span className="text-sm" aria-hidden="true">
+                          {seatPlayer.emoji}
+                        </span>
+                      )}
                       <span className="seat-pod__name text-white font-semibold">
                         {seatPlayer.name}
                       </span>
