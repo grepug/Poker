@@ -494,7 +494,7 @@ async function getPotFromUi(page: Page): Promise<number> {
 
 async function getRoundFromUi(page: Page): Promise<string> {
   const roundText = await page.textContent('[data-testid="round-value"]');
-  const match = roundText?.match(/Current Round:\s*([A-Z_]+)/);
+  const match = roundText?.match(/(?:Current\s+)?Round:\s*([A-Z_]+)/);
   if (!match) {
     throw new Error(`Unable to parse round from text: ${roundText ?? '<null>'}`);
   }
@@ -3375,6 +3375,79 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(await alicePage.locator('[data-testid="action-call"]').count()).toBe(0);
       const turnState = await getRoomSnapshot(alicePage);
       expect(turnState.currentPlayerName).toBe('Alice');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.2b: Top Overlay Drops Redundant Stat Chips', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await expect(alicePage.locator('[data-testid="pot-value"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="your-chips"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-player"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="round-value"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.2c: Tray Composer Uses Min-Raise First And Clamped Custom Input', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      // Remove pre-flop call pressure so min raise becomes the opening amount.
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const firstPreset = bobPage.locator('.chip-composer-dock__presets button').first();
+      await expect(firstPreset).toHaveAttribute('data-testid', 'chip-load-min-raise');
+      await expect(bobPage.locator('[data-testid="chip-load-min-raise"]')).toContainText(
+        '$20',
+      );
+      await expect(bobPage.locator('[data-testid="chip-load-min-raise"]')).toBeEnabled();
+
+      await bobPage.click('[data-testid="chip-load-min-raise"]');
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$20');
+
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toBeVisible();
+      const stackSnapshot = await getRoomSnapshot(bobPage);
+      const bobStack = stackSnapshot.bobChips;
+      await bobPage.fill('[data-testid="chip-custom-input"]', '999999');
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toHaveValue(
+        String(bobStack),
+      );
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText(
+        `$${bobStack}`,
+      );
+
+      // Removed controls should no longer exist in the tray composer.
+      expect(await bobPage.locator('[data-testid="chip-load-4bet"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-load-full-pot"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-5"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-10"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-25"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-100"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-500"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-max"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-undo"]').count()).toBe(0);
+
+      await bobPage.click('[data-testid="chip-clear"]');
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$0');
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toHaveValue('0');
     } finally {
       await teardownTwoPlayerSession(session);
     }
