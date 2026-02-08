@@ -16,6 +16,7 @@ export interface Player {
   id: string;
   socketId: string;
   name: string;
+  emoji?: string;
   chips: number;
   totalBuyIn: number;
   position: number; // Seat position 0-9

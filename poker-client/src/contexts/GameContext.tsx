@@ -18,7 +18,7 @@ import type {
   ClientToServerEvents,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
-import { writeLastPlayerName } from "../utils/player-name-storage";
+import { writeLastPlayerEmoji, writeLastPlayerName } from "../utils/player-name-storage";
 
 export interface PlayerActionFlashEvent {
   id: string;
@@ -39,8 +39,8 @@ type DebugApi = {
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
   getSocket: () => ReturnType<typeof useSocket>["socket"];
-  createRoom: (name: string) => void;
-  joinRoom: (roomId: string, name: string) => void;
+  createRoom: (name: string, emoji?: string) => void;
+  joinRoom: (roomId: string, name: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
   showMyHand: () => void;
@@ -67,8 +67,8 @@ interface GameContextType {
   isHost: boolean;
   isRecoveringSession: boolean;
   lastError: string | null;
-  createRoom: (playerName: string) => void;
-  joinRoom: (roomId: string, playerName: string) => void;
+  createRoom: (playerName: string, playerEmoji?: string) => void;
+  joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
   showMyHand: () => void;
@@ -184,6 +184,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     if (!player?.name) return;
     writeLastPlayerName(player.name);
   }, [player?.name]);
+
+  useEffect(() => {
+    if (!player?.emoji) return;
+    writeLastPlayerEmoji(player.emoji);
+  }, [player?.emoji]);
 
   useEffect(() => {
     if (!socket) return;
@@ -620,10 +625,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     };
   }, [socket]);
 
-  const createRoom = useCallback((playerName: string) => {
+  const createRoom = useCallback((playerName: string, playerEmoji?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("CREATE_ROOM", { playerName }, (response) => {
+    socket.emit("CREATE_ROOM", { playerName, playerEmoji }, (response) => {
       console.log("Create room response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to create room");
@@ -631,10 +636,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
-  const joinRoom = useCallback((roomId: string, playerName: string) => {
+  const joinRoom = useCallback((roomId: string, playerName: string, playerEmoji?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("JOIN_ROOM", { roomId, playerName }, (response) => {
+    socket.emit("JOIN_ROOM", { roomId, playerName, playerEmoji }, (response) => {
       console.log("Join room response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to join room");

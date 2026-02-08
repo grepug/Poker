@@ -3,12 +3,19 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
 import { useLocalization } from "../contexts/LocalizationContext";
-import { readLastPlayerName, writeLastPlayerName } from "../utils/player-name-storage";
+import {
+  readLastPlayerEmoji,
+  readLastPlayerName,
+  writeLastPlayerEmoji,
+  writeLastPlayerName,
+} from "../utils/player-name-storage";
 
 interface HomeProps {
   prefilledRoomId?: string;
   forceJoinMode?: boolean;
 }
+
+const EMOJI_OPTIONS = ["😀", "😎", "🤠", "🥳", "🧠", "🐯", "🐼", "🦊", "🐙", "🚀"];
 
 export const Home: React.FC<HomeProps> = ({
   prefilledRoomId,
@@ -37,6 +44,7 @@ export const Home: React.FC<HomeProps> = ({
   const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
   const [playerName, setPlayerName] = useState(() => readLastPlayerName());
+  const [playerEmoji, setPlayerEmoji] = useState(() => readLastPlayerEmoji());
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -65,7 +73,8 @@ export const Home: React.FC<HomeProps> = ({
 
     clearFeedback();
     writeLastPlayerName(trimmedName);
-    createRoom(trimmedName);
+    writeLastPlayerEmoji(playerEmoji);
+    createRoom(trimmedName, playerEmoji);
   };
 
   const handleJoinRoom = () => {
@@ -82,7 +91,8 @@ export const Home: React.FC<HomeProps> = ({
 
     clearFeedback();
     writeLastPlayerName(trimmedName);
-    joinRoom(normalizedRoomId, trimmedName);
+    writeLastPlayerEmoji(playerEmoji);
+    joinRoom(normalizedRoomId, trimmedName, playerEmoji);
   };
 
   return (
@@ -146,6 +156,31 @@ export const Home: React.FC<HomeProps> = ({
                 data-testid="name-input"
                 className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
               />
+            </div>
+
+            <div>
+              <label
+                htmlFor="player-emoji"
+                className="mb-2 block text-sm font-semibold text-emerald-100"
+              >
+                {t("home.avatarEmoji")}
+              </label>
+              <select
+                id="player-emoji"
+                value={playerEmoji}
+                onChange={(e) => {
+                  setPlayerEmoji(e.target.value);
+                  clearFeedback();
+                }}
+                data-testid="emoji-select"
+                className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+              >
+                {EMOJI_OPTIONS.map((emoji) => (
+                  <option key={emoji} value={emoji}>
+                    {emoji}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {(feedback || lastError) && (

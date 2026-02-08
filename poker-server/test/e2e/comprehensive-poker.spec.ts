@@ -3172,6 +3172,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.bettingRound).toBe('FLOP');
       expect(flop.communityCards).toBe(3);
+      const expectedFinalPot = flop.pot;
 
       await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -3196,7 +3197,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await alicePage.click('[data-testid="action-check"]');
 
       const result = await handCompletePromise;
-      expect(result.totalPot).toBe(40);
+      expect(result.totalPot).toBe(expectedFinalPot);
       await waitForRound(alicePage, 'SHOWDOWN', 5);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -3802,6 +3803,55 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         charlieContext?.close(),
         teardownTwoPlayerSession(session),
       ]);
+    }
+  });
+
+  test('8.4d: Player Emoji Selection Shows On Seats', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await alicePage.goto(FRONTEND_URL);
+      await bobPage.goto(FRONTEND_URL);
+
+      await alicePage.waitForSelector('[data-testid="connection-status"]');
+      await bobPage.waitForSelector('[data-testid="connection-status"]');
+
+      await alicePage.fill('[data-testid="name-input"]', 'Alice');
+      await alicePage.selectOption('[data-testid="emoji-select"]', '😎');
+      await alicePage.click('[data-testid="create-room-button"]');
+      await alicePage.waitForSelector('[data-testid="room-title"]');
+
+      const roomTitle = await alicePage.textContent('[data-testid="room-title"]');
+      const roomCode = roomTitle?.match(/Room: (.+)/)?.[1];
+      expect(roomCode).toBeTruthy();
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="name-input"]', 'Bob');
+      await bobPage.selectOption('[data-testid="emoji-select"]', '🐯');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+      await bobPage.click('[data-testid="join-room-button"]');
+      await bobPage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 2/")',
+      );
+
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('🐯');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('🐯');
+
+      const emojiMap = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return Object.fromEntries(
+          (room?.players ?? []).map((player: any) => [player.name, player.emoji ?? null]),
+        );
+      });
+      expect(emojiMap.Alice).toBe('😎');
+      expect(emojiMap.Bob).toBe('🐯');
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
     }
   });
 

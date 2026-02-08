@@ -19,6 +19,7 @@ export class GameService {
   async createRoom(
     hostSocketId: string,
     hostName: string,
+    hostEmoji?: string,
     config?: Partial<RoomConfig>,
   ): Promise<Room> {
     const roomId = generateRoomId();
@@ -36,6 +37,7 @@ export class GameService {
       id: hostId,
       socketId: hostSocketId,
       name: hostName,
+      emoji: hostEmoji,
       chips: 0, // Chips assigned when game starts
       totalBuyIn: 0,
       position: 0,
@@ -70,6 +72,7 @@ export class GameService {
     roomId: string,
     socketId: string,
     playerName: string,
+    playerEmoji?: string,
   ): Promise<{ room: Room; player: Player }> {
     const room = await this.storageService.getRoom(roomId);
 
@@ -101,6 +104,7 @@ export class GameService {
       id: playerId,
       socketId,
       name: playerName,
+      emoji: playerEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,
       position,

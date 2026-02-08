@@ -163,6 +163,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const room = await this.gameService.createRoom(
         client.id,
         data.playerName || hostName,
+        data.playerEmoji,
         data.config,
       );
 
@@ -199,6 +200,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.roomId,
         client.id,
         data.playerName,
+        data.playerEmoji,
       );
 
       client.join(room.id);

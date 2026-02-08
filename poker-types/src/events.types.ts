@@ -9,12 +9,14 @@ import { Hand, HandResult, BettingRound } from "./game.types";
 
 export interface CreateRoomData {
   playerName: string;
+  playerEmoji?: string;
   config?: Partial<RoomConfig>;
 }
 
 export interface JoinRoomData {
   roomId: string;
   playerName: string;
+  playerEmoji?: string;
 }
 
 export interface ReconnectData {

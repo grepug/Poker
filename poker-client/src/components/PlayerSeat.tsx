@@ -66,6 +66,11 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
                 #{seatNumber}
               </span>
             )}
+            {player.emoji && (
+              <span className="text-sm" aria-hidden="true">
+                {player.emoji}
+              </span>
+            )}
             <span className="truncate text-white font-semibold">
               {player.name} {isYou ? "(You)" : ""}
             </span>
