@@ -12,6 +12,8 @@ import { LocalizationProvider } from "./contexts/LocalizationContext";
 import { Home } from "./pages/Home";
 import { GameRoom } from "./components/GameRoom";
 
+const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
+
 const UrlStateSync: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,10 +41,19 @@ const UrlStateSync: React.FC = () => {
       return;
     }
 
+    const justLeftRoom =
+      typeof window !== "undefined" &&
+      window.sessionStorage.getItem(JUST_LEFT_ROOM_STORAGE_KEY) === "1";
+    if (justLeftRoom && typeof window !== "undefined") {
+      window.sessionStorage.removeItem(JUST_LEFT_ROOM_STORAGE_KEY);
+    }
+
     const roomIdFromPath = roomPathMatch?.[1]?.toUpperCase();
-    const targetPath = roomIdFromPath
-      ? `/?roomId=${encodeURIComponent(roomIdFromPath)}`
-      : "/";
+    const targetPath = justLeftRoom
+      ? "/"
+      : roomIdFromPath
+        ? `/?roomId=${encodeURIComponent(roomIdFromPath)}`
+        : "/";
     const currentPathAndSearch = `${location.pathname}${location.search}`;
     if (currentPathAndSearch !== targetPath) {
       navigate(targetPath, { replace: true });

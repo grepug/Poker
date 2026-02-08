@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
 import { useLocalization } from "../contexts/LocalizationContext";
+import { readLastPlayerName, writeLastPlayerName } from "../utils/player-name-storage";
 
 interface HomeProps {
   prefilledRoomId?: string;
@@ -35,7 +36,7 @@ export const Home: React.FC<HomeProps> = ({
   );
   const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
-  const [playerName, setPlayerName] = useState("");
+  const [playerName, setPlayerName] = useState(() => readLastPlayerName());
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export const Home: React.FC<HomeProps> = ({
     }
 
     clearFeedback();
+    writeLastPlayerName(trimmedName);
     createRoom(trimmedName);
   };
 
@@ -79,6 +81,7 @@ export const Home: React.FC<HomeProps> = ({
     }
 
     clearFeedback();
+    writeLastPlayerName(trimmedName);
     joinRoom(normalizedRoomId, trimmedName);
   };
 

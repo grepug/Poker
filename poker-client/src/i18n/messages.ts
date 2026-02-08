@@ -75,6 +75,7 @@ export const EN_MESSAGES = {
   "game.status.allIn": "ALL-IN",
   "game.status.disconnected": "DISCONNECTED",
   "game.status.folded": "FOLDED",
+  "game.status.waiting": "WAITING",
 
   "game.handResults": "Hand #{handNumber} Results",
   "game.showdownComplete": "Showdown complete: hands are automatically revealed.",
@@ -247,6 +248,7 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.status.allIn": "全下",
   "game.status.disconnected": "已断线",
   "game.status.folded": "已弃牌",
+  "game.status.waiting": "等待中",
 
   "game.handResults": "第 #{handNumber} 局结果",
   "game.showdownComplete": "摊牌完成：手牌已自动展示。",

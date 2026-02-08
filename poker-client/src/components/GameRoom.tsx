@@ -464,6 +464,8 @@ export const GameRoom: React.FC = () => {
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
   const hasHoleCards = Boolean(yourCards && yourCards.length > 0);
+  const isWaitingForNextHand =
+    Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
   const currentHandNumber = currentHand?.handNumber ?? null;
 
   const isHandPausedForNext =
@@ -877,6 +879,12 @@ export const GameRoom: React.FC = () => {
 
     previousIsYourTurnRef.current = null;
     setTurnAlertToken(null);
+  }, [room?.id, currentHandNumber]);
+
+  useEffect(() => {
+    // Reset hand-level UI state for each new hand.
+    setShowRankingsModal(false);
+    setIsCardsFlyoutOpen(true);
   }, [room?.id, currentHandNumber]);
 
   useEffect(() => {
@@ -1307,6 +1315,12 @@ export const GameRoom: React.FC = () => {
         </section>
       </header>
 
+      {isWaitingForNextHand && (
+        <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">
+          {t("game.cardsAppearWhenHandStarts")}
+        </section>
+      )}
+
       {turnAlertToken !== null && (
         <div
           className="turn-center-alert-layer"
@@ -1339,18 +1353,24 @@ export const GameRoom: React.FC = () => {
               <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
             </div>
 
-            <div className="your-cards-flyout__cards">
-              {(yourCards ?? []).map((card, idx) => (
-                <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
-              ))}
-            </div>
+            {isCardsFlyoutOpen ? (
+              <div className="your-cards-flyout__cards">
+                {(yourCards ?? []).map((card, idx) => (
+                  <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+                ))}
+              </div>
+            ) : (
+              <div className="your-cards-flyout__empty-state" data-testid="hole-cards-hidden-state">
+                {t("game.hide")} {t("game.yourCards")}
+              </div>
+            )}
           </div>
 
           <button
             type="button"
             onClick={() => setIsCardsFlyoutOpen((prev) => !prev)}
             className="your-cards-flyout__toggle"
-            data-testid="your-cards-flyout-toggle"
+            data-testid="toggle-hole-cards"
             aria-label={`${isCardsFlyoutOpen ? t("game.hide") : t("game.show")} ${t("game.yourCards")}`}
           >
             {isCardsFlyoutOpen ? "<" : ">"}
@@ -1452,6 +1472,7 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
+              const isWaiting = seatPlayer?.status === "waiting";
 
               return (
                 <div
@@ -1501,6 +1522,12 @@ export const GameRoom: React.FC = () => {
                       <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
                     </div>
 
+                    <div className="seat-pod__row">
+                      <div className="text-[11px] text-emerald-100/65">
+                        Buy-in: ${seatPlayer.totalBuyIn ?? 0}
+                      </div>
+                    </div>
+
                     <div className="seat-pod__row seat-pod__row--bet">
                       <div
                         className={`seat-pod__bet ${
@@ -1517,6 +1544,11 @@ export const GameRoom: React.FC = () => {
                       {isDisconnected && (
                         <span className="seat-pod__state seat-pod__state--disconnected">
                           {t("game.status.disconnected")}
+                        </span>
+                      )}
+                      {isWaiting && (
+                        <span className="seat-pod__state seat-pod__state--disconnected">
+                          {t("game.status.waiting")}
                         </span>
                       )}
                       {isFolded && (

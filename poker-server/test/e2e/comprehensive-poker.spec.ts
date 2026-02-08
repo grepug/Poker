@@ -3704,6 +3704,107 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4b: Home Prefills Last Used Player Name', async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="connection-status"]');
+      await expect(page.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await page.fill('[data-testid="name-input"]', 'RememberMe');
+      await page.click('[data-testid="create-room-button"]');
+      await page.waitForSelector('[data-testid="room-title"]');
+
+      await page.click('[data-testid="leave-room-button"]');
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('[data-testid="name-input"]')).toHaveValue(
+        'RememberMe',
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('8.4c: Player Can Join Mid-Hand And Wait For Next Hand', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+    let charlieContext: BrowserContext | null = null;
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      charlieContext = await browser.newContext();
+      const charliePage = await charlieContext.newPage();
+      await charliePage.goto(FRONTEND_URL);
+      await charliePage.waitForSelector('[data-testid="connection-status"]');
+      await expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await charliePage.click('[data-testid="join-toggle-button"]');
+      await charliePage.fill('[data-testid="name-input"]', 'Charlie');
+      await charliePage.fill('[data-testid="room-id-input"]', roomCode);
+      await charliePage.click('[data-testid="join-room-button"]');
+      await charliePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 3/")',
+      );
+
+      const waitingState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        const activePlayers = room?.currentHand?.activePlayers ?? [];
+
+        return {
+          status: player?.status ?? null,
+          chips: player?.chips ?? 0,
+          totalBuyIn: player?.totalBuyIn ?? 0,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+          inActiveHand: Boolean(player?.id && activePlayers.includes(player.id)),
+        };
+      });
+      expect(waitingState.status).toBe('waiting');
+      expect(waitingState.cardsCount).toBe(0);
+      expect(waitingState.inActiveHand).toBe(false);
+      expect(waitingState.chips).toBe(1000);
+      expect(waitingState.totalBuyIn).toBe(1000);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="start-next-hand-button"]');
+
+      await waitForHoleCards(charliePage);
+      const nextHandState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+
+        return {
+          status: player?.status ?? null,
+          totalBuyIn: player?.totalBuyIn ?? 0,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+        };
+      });
+      expect(nextHandState.status).toBe('connected');
+      expect(nextHandState.cardsCount).toBe(2);
+      expect(nextHandState.totalBuyIn).toBe(1000);
+    } finally {
+      await Promise.allSettled([
+        charlieContext?.close(),
+        teardownTwoPlayerSession(session),
+      ]);
+    }
+  });
+
   test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
