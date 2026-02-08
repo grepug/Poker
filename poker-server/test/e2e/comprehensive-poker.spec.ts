@@ -6,8 +6,9 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
  * Uses window.pokerDebug API for deterministic testing with predetermined cards
  */
 
-const FRONTEND_URL = 'http://localhost:5174';
-const BACKEND_URL = 'http://localhost:3001';
+const FRONTEND_URL =
+  process.env.PW_FRONTEND_URL ??
+  `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
 
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
@@ -62,7 +63,56 @@ type ThreePlayerSession = {
   roomCode: string;
 };
 
-async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
+type SetupTwoPlayerOptions = {
+  roomConfig?: Record<string, unknown>;
+};
+
+async function createRoomViaSocket(
+  page: Page,
+  playerName: string,
+  config?: Record<string, unknown>,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    async ({ requestedName, requestedConfig }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error('Unable to create room: socket unavailable');
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        socket.emit(
+          'CREATE_ROOM',
+          { playerName: requestedName, config: requestedConfig },
+          (response: { success?: boolean; error?: string }) => {
+            if (response?.success) {
+              resolve();
+            } else {
+              reject(
+                new Error(response?.error || 'Unknown CREATE_ROOM failure'),
+              );
+            }
+          },
+        );
+      });
+    },
+    { requestedName: playerName, requestedConfig: config },
+  );
+
+  await page.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await page.textContent('[data-testid="room-title"]');
+  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+  if (!roomCode) {
+    throw new Error('Failed to create room code');
+  }
+
+  return roomCode;
+}
+
+async function setupTwoPlayerSession(
+  browser: any,
+  options?: SetupTwoPlayerOptions,
+): Promise<TwoPlayerSession> {
   const aliceContext = await browser.newContext();
   const bobContext = await browser.newContext();
   const alicePage = await aliceContext.newPage();
@@ -79,15 +129,9 @@ async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
     'Connected',
   );
 
-  await alicePage.fill('[data-testid="name-input"]', 'Alice');
-  await alicePage.click('[data-testid="create-room-button"]');
-  await alicePage.waitForSelector('[data-testid="room-title"]');
-  const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
-  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
-
-  if (!roomCode) {
-    throw new Error('Failed to create room code for two-player setup');
-  }
+  const roomCode = options?.roomConfig
+    ? await createRoomViaSocket(alicePage, 'Alice', options.roomConfig)
+    : await createRoomViaSocket(alicePage, 'Alice');
 
   await bobPage.click('[data-testid="join-toggle-button"]');
   await bobPage.fill('[data-testid="name-input"]', 'Bob');
@@ -355,6 +399,32 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
+async function emitPlayerActionWithId(
+  page: Page,
+  payload: { action: string; amount?: number; actionId?: string },
+) {
+  await waitForPokerDebug(page);
+  return page.evaluate(
+    ({ action, amount, actionId }) =>
+      new Promise<{ success?: boolean; error?: string; duplicate?: boolean }>(
+        (resolve) => {
+          const socket = (window as any).pokerDebug?.getSocket?.();
+          if (!socket) {
+            resolve({ success: false, error: 'socket unavailable' });
+            return;
+          }
+          socket.emit(
+            'PLAYER_ACTION',
+            { action, amount, actionId },
+            (response: { success?: boolean; error?: string; duplicate?: boolean }) =>
+              resolve(response ?? { success: false, error: 'empty response' }),
+          );
+        },
+      ),
+    payload,
+  );
+}
+
 function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
   return page.evaluate((timeoutLimit) => {
     const pokerDebug = (window as any).pokerDebug;
@@ -373,6 +443,89 @@ function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
       });
     });
   }, timeoutMs);
+}
+
+function captureNextSocketEvent(
+  page: Page,
+  eventName: string,
+  timeoutMs = 10000,
+): Promise<any> {
+  return page.evaluate(
+    ({ event, timeoutLimit }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error(`Unable to capture ${event}: socket unavailable`);
+      }
+
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`Timed out waiting for ${event}`));
+        }, timeoutLimit);
+        socket.once(event, (data: any) => {
+          clearTimeout(timer);
+          resolve(data);
+        });
+      });
+    },
+    { event: eventName, timeoutLimit: timeoutMs },
+  );
+}
+
+async function forceSocketReconnect(page: Page) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async () => {
+    const pokerDebug = (window as any).pokerDebug;
+    const socket = pokerDebug?.getSocket?.();
+    const room = pokerDebug?.getRoom?.();
+    const player = pokerDebug?.getPlayer?.();
+
+    if (!socket || !room?.id || !player?.id || !player?.name) {
+      throw new Error('Unable to force reconnect: session context unavailable');
+    }
+
+    if (socket.connected) {
+      await new Promise<void>((resolve) => {
+        socket.once('disconnect', () => resolve());
+        socket.disconnect();
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for socket connect'));
+      }, 10000);
+
+      socket.once('connect', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.connect();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for RECONNECT ack'));
+      }, 10000);
+
+      socket.emit(
+        'RECONNECT',
+        {
+          roomId: room.id,
+          playerName: player.name,
+          playerId: player.id,
+        },
+        (response: { success?: boolean; error?: string }) => {
+          clearTimeout(timer);
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(response?.error || 'Unknown RECONNECT failure'));
+        },
+      );
+    });
+  });
 }
 
 async function completeCurrentHandWithPassiveActions(
@@ -2072,7 +2225,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     await bobContext.close();
   });
 
-  test('4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
+  test('@critical 4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
     browser,
   }) => {
     const aliceContext = await browser.newContext();
@@ -2260,7 +2413,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 });
 
 test.describe('Poker E2E - Chip Conservation', () => {
-  test('6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
+  test('@critical 6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
     browser,
   }) => {
     // Create two browser contexts (Alice and Bob)
@@ -3001,7 +3154,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
     }
   });
 
-  test('5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
+  test('@critical 5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3478,7 +3631,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
+  test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -3703,7 +3856,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
+  test('@critical 8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3793,6 +3946,115 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12a: Duplicate PLAYER_ACTION actionId Is Idempotent', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const actionId = `dup-call-${Date.now()}`;
+      const firstResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(firstResponse.success).toBe(true);
+      expect(firstResponse.duplicate).not.toBe(true);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const afterFirst = await getRoomSnapshot(alicePage);
+      expect(afterFirst.pot).toBe(40);
+      expect(afterFirst.currentPlayerName).toBe('Alice');
+
+      const duplicateResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(duplicateResponse.success).toBe(true);
+      expect(duplicateResponse.duplicate).toBe(true);
+
+      const afterDuplicate = await getRoomSnapshot(alicePage);
+      expect(afterDuplicate.pot).toBe(afterFirst.pot);
+      expect(afterDuplicate.currentPlayerName).toBe('Alice');
+      expect(afterDuplicate.aliceCurrentBet).toBe(afterFirst.aliceCurrentBet);
+      expect(afterDuplicate.bobCurrentBet).toBe(afterFirst.bobCurrentBet);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12b: Disconnect Timeout Auto-Folds Current Player', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+
+    try {
+      const { alicePage, bobPage, bobContext } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const disconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const autoFoldPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_AUTO_FOLDED',
+        8000,
+      );
+      const handCompletePromise = captureNextHandComplete(alicePage, 12000);
+
+      await bobContext.close();
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerName).toBe('Bob');
+      expect(disconnectedEvent.gracePeriod).toBe(1200);
+
+      const autoFoldEvent = await autoFoldPromise;
+      expect(autoFoldEvent.playerName).toBe('Bob');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(30);
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Alice');
+      expect(result.winners[0].amountWon).toBe(30);
+
+      const finalState = await getRoomSnapshot(alicePage);
+      expect(finalState.currentPlayerTurn).toBeNull();
+      expect(finalState.aliceChips).toBe(1010);
+      expect(finalState.bobChips).toBe(990);
+      await verifyChipConservation(alicePage, 2000);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12c: Lobby Reconnect Still Receives Hole Cards After Start', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await forceSocketReconnect(bobPage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForHoleCards(bobPage);
+      const bobCardCount = await bobPage.evaluate(() => {
+        const cards = (window as any).pokerDebug?.getCards?.();
+        return Array.isArray(cards) ? cards.length : 0;
+      });
+      expect(bobCardCount).toBe(2);
     } finally {
       await teardownTwoPlayerSession(session);
     }

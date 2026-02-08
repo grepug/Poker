@@ -1,5 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
 
+const FRONTEND_URL =
+  process.env.PW_FRONTEND_URL ??
+  `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
+
 test('Debug - Two players room creation and game', async ({ browser }) => {
   const context1 = await browser.newContext();
   const context2 = await browser.newContext();
@@ -11,8 +15,8 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
   alice.on('console', (msg) => console.log('ALICE:', msg.text()));
   bob.on('console', (msg) => console.log('BOB:', msg.text()));
 
-  await alice.goto('http://localhost:5174');
-  await bob.goto('http://localhost:5174');
+  await alice.goto(FRONTEND_URL);
+  await bob.goto(FRONTEND_URL);
 
   // Wait for pokerDebug
   await alice.waitForFunction(() => window.pokerDebug !== undefined, {

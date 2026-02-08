@@ -338,7 +338,7 @@ export class HandService {
         totalPot: hand.pot,
       };
 
-      await this.cleanupHand(room);
+      await this.cleanupHand(room, winner.id);
       return result;
     }
 
@@ -454,7 +454,7 @@ export class HandService {
       totalPot: hand.pot,
     };
 
-    await this.cleanupHand(room);
+    await this.cleanupHand(room, winners[0]?.playerId);
     return result;
   }
 
@@ -612,7 +612,10 @@ export class HandService {
   /**
    * Cleanup after hand ends
    */
-  private async cleanupHand(room: Room): Promise<void> {
+  private async cleanupHand(
+    room: Room,
+    preferredPlayerId?: string,
+  ): Promise<void> {
     this.logger.debug(
       `[cleanupHand] BEFORE cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
@@ -627,6 +630,8 @@ export class HandService {
       }
     }
 
+    this.reconcileChipConservation(room, 'cleanupHand', preferredPlayerId);
+
     this.logger.debug(
       `[cleanupHand] AFTER cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
@@ -636,5 +641,81 @@ export class HandService {
 
     room.lastActivityAt = Date.now();
     await this.storageService.saveRoom(room);
+  }
+
+  private reconcileChipConservation(
+    room: Room,
+    context: string,
+    preferredPlayerId?: string,
+  ): void {
+    const expectedTotal = room.players.reduce(
+      (sum, player) => sum + (player.totalBuyIn ?? 0),
+      0,
+    );
+    const actualTotal = room.players.reduce(
+      (sum, player) => sum + player.chips + player.currentBet,
+      0,
+    );
+    const delta = expectedTotal - actualTotal;
+
+    if (delta === 0) {
+      return;
+    }
+
+    this.logger.error(
+      `[chip-conservation] ${context} mismatch in room ${room.id}: expected=${expectedTotal}, actual=${actualTotal}, delta=${delta}`,
+    );
+
+    const maxAutoAdjustment = Math.max(1, room.players.length);
+    if (Math.abs(delta) > maxAutoAdjustment) {
+      this.logger.error(
+        `[chip-conservation] Large mismatch in room ${room.id}; skipped auto-reconciliation to avoid unfair balance correction`,
+      );
+      return;
+    }
+
+    if (delta > 0) {
+      const recipient =
+        room.players.find((player) => player.id === preferredPlayerId) ??
+        [...room.players].sort((a, b) => b.chips - a.chips || a.position - b.position)[0];
+      if (!recipient) {
+        return;
+      }
+
+      recipient.chips += delta;
+      this.logger.warn(
+        `[chip-conservation] Credited ${delta} chips to ${recipient.name} in room ${room.id} to restore table invariants`,
+      );
+      return;
+    }
+
+    let remainingToRemove = Math.abs(delta);
+    const debitOrder = [...room.players].sort((a, b) => {
+      if (preferredPlayerId) {
+        if (a.id === preferredPlayerId && b.id !== preferredPlayerId) return -1;
+        if (b.id === preferredPlayerId && a.id !== preferredPlayerId) return 1;
+      }
+      return b.chips - a.chips || a.position - b.position;
+    });
+
+    for (const player of debitOrder) {
+      if (remainingToRemove <= 0) {
+        break;
+      }
+      const debit = Math.min(player.chips, remainingToRemove);
+      player.chips -= debit;
+      remainingToRemove -= debit;
+    }
+
+    if (remainingToRemove > 0) {
+      this.logger.error(
+        `[chip-conservation] Failed to fully debit mismatch in room ${room.id}, remaining=${remainingToRemove}`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `[chip-conservation] Debited ${Math.abs(delta)} chips across stacks in room ${room.id} to restore table invariants`,
+    );
   }
 }
