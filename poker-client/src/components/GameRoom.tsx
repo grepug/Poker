@@ -514,25 +514,26 @@ export const GameRoom: React.FC = () => {
     const clampToStack = (value: number) => clampTrayAmount(value);
     const commitToTargetTotalBet = (targetTotalBet: number) =>
       clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
-    const minRaiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise);
+    const continueCommit = clampToStack(callAmount > 0 ? callAmount : minRaise);
+    const continueLabel = callAmount > 0 ? t("game.preset.call") : t("game.preset.minBet");
     const frequentRaiseCommit = (() => {
       const baseline =
         callAmount > 0 ? commitToTargetTotalBet(currentTableBet * 3) : clampToStack(minRaise * 3);
-      if (baseline > minRaiseCommit) return baseline;
+      if (baseline > continueCommit && baseline < maxStack) return baseline;
 
-      const steppedUp = clampToStack(minRaiseCommit + Math.max(minRaise, 1));
-      if (steppedUp > minRaiseCommit) return steppedUp;
+      const steppedUp = clampToStack(continueCommit + Math.max(minRaise, 1));
+      if (steppedUp > continueCommit && steppedUp < maxStack) return steppedUp;
 
       return maxStack;
     })();
 
     const presets: TrayPresetButton[] = [
       {
-        key: "min-raise",
-        label: callAmount > 0 ? t("game.preset.minRaise") : t("game.preset.minBet"),
-        amount: minRaiseCommit,
-        testId: "chip-load-min-raise",
-        tone: "raise",
+        key: "continue",
+        label: continueLabel,
+        amount: continueCommit,
+        testId: "chip-load-continue",
+        tone: callAmount > 0 ? "call" : "raise",
         enabled: false,
       },
       {

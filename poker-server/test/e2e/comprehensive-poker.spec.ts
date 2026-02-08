@@ -3567,13 +3567,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(bobPage, 'Bob');
 
       const firstPreset = bobPage.locator('.chip-composer-dock__presets button').first();
-      await expect(firstPreset).toHaveAttribute('data-testid', 'chip-load-min-raise');
-      await expect(bobPage.locator('[data-testid="chip-load-min-raise"]')).toContainText(
+      await expect(firstPreset).toHaveAttribute('data-testid', 'chip-load-continue');
+      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toContainText(
         '$20',
       );
-      await expect(bobPage.locator('[data-testid="chip-load-min-raise"]')).toBeEnabled();
+      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toBeEnabled();
 
-      await bobPage.click('[data-testid="chip-load-min-raise"]');
+      await bobPage.click('[data-testid="chip-load-continue"]');
       await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$20');
 
       await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toBeVisible();
