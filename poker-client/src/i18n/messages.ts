@@ -92,6 +92,7 @@ export const EN_MESSAGES = {
 
   "game.handComplete": "Hand complete",
   "game.handCompleteHint": "Host can start the next hand when everyone is ready.",
+  "game.waitingHostStartNextHand": "Waiting for host to start the next hand.",
   "game.startNextHand": "Start Next Hand",
 
   "game.yourCards": "Your Cards",
@@ -263,6 +264,7 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
 
   "game.handComplete": "本局结束",
   "game.handCompleteHint": "所有人准备好后，房主可以开始下一局。",
+  "game.waitingHostStartNextHand": "等待房主开始下一局。",
   "game.startNextHand": "开始下一局",
 
   "game.yourCards": "你的手牌",

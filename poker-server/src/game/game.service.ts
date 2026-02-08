@@ -26,8 +26,8 @@ export class GameService {
 
     const defaultConfig: RoomConfig = {
       startingChips: 1000,
-      smallBlind: 10,
-      bigBlind: 20,
+      smallBlind: 5,
+      bigBlind: 10,
       maxPlayers: 10,
       reconnectGracePeriod: 30000,
     };

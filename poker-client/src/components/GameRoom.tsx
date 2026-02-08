@@ -4,7 +4,7 @@ import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
 import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
-import type { MessageKey } from "../i18n/messages";
+import type { Locale, MessageKey } from "../i18n/messages";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -103,11 +103,86 @@ const fallbackCopyText = (text: string) => {
   return copied;
 };
 
-const formatHandRank = (rank: HandEvaluation["rank"]) =>
-  rank
-    .split("_")
-    .map((part) => part[0] + part.slice(1).toLowerCase())
-    .join(" ");
+const HAND_RANK_LABELS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+  en: {
+    ROYAL_FLUSH: "Royal Flush",
+    STRAIGHT_FLUSH: "Straight Flush",
+    FOUR_OF_A_KIND: "Four Of A Kind",
+    FULL_HOUSE: "Full House",
+    FLUSH: "Flush",
+    STRAIGHT: "Straight",
+    THREE_OF_A_KIND: "Three Of A Kind",
+    TWO_PAIR: "Two Pair",
+    ONE_PAIR: "One Pair",
+    HIGH_CARD: "High Card",
+  },
+  zh_hans: {
+    ROYAL_FLUSH: "皇家同花顺",
+    STRAIGHT_FLUSH: "同花顺",
+    FOUR_OF_A_KIND: "四条",
+    FULL_HOUSE: "葫芦",
+    FLUSH: "同花",
+    STRAIGHT: "顺子",
+    THREE_OF_A_KIND: "三条",
+    TWO_PAIR: "两对",
+    ONE_PAIR: "一对",
+    HIGH_CARD: "高牌",
+  },
+};
+
+const normalizeRankToken = (raw: string): string => {
+  const value = raw.trim().toUpperCase();
+  if (value === "14") return "A";
+  if (value === "13") return "K";
+  if (value === "12") return "Q";
+  if (value === "11") return "J";
+  return value;
+};
+
+const formatHandRank = (rank: HandEvaluation["rank"], locale: Locale): string =>
+  HAND_RANK_LABELS[locale][rank] ?? HAND_RANK_LABELS.en[rank];
+
+const formatHandDescription = (
+  hand: HandEvaluation,
+  locale: Locale,
+): string => {
+  if (locale !== "zh_hans") {
+    return hand.description;
+  }
+
+  const text = hand.description;
+
+  if (text === "Royal Flush") return "皇家同花顺";
+  if (text === "Flush") return "同花";
+
+  const straightFlush = text.match(/^Straight Flush,\s*(\d+)\s*high$/i);
+  if (straightFlush) return `同花顺，${normalizeRankToken(straightFlush[1])}高`;
+
+  const fourOfAKind = text.match(/^Four\s+([2-9]|10|[JQKA])s$/i);
+  if (fourOfAKind) return `四条${normalizeRankToken(fourOfAKind[1])}`;
+
+  const fullHouse = text.match(/^Full House,\s*([2-9]|10|[JQKA])s\s+over\s+([2-9]|10|[JQKA])s$/i);
+  if (fullHouse) {
+    return `葫芦，${normalizeRankToken(fullHouse[1])}带${normalizeRankToken(fullHouse[2])}`;
+  }
+
+  const straight = text.match(/^Straight,\s*(\d+)\s*high$/i);
+  if (straight) return `顺子，${normalizeRankToken(straight[1])}高`;
+
+  const threeOfAKind = text.match(/^Three\s+([2-9]|10|[JQKA])s$/i);
+  if (threeOfAKind) return `三条${normalizeRankToken(threeOfAKind[1])}`;
+
+  const twoPair = text.match(/^Two Pair,\s*([2-9]|10|[JQKA])s\s+and\s+([2-9]|10|[JQKA])s$/i);
+  if (twoPair) return `两对，${normalizeRankToken(twoPair[1])}和${normalizeRankToken(twoPair[2])}`;
+
+  const onePair = text.match(/^Pair of\s+([2-9]|10|[JQKA])s$/i);
+  if (onePair) return `一对${normalizeRankToken(onePair[1])}`;
+
+  const highCard = text.match(/^High Card\s+([2-9]|10|[JQKA]|\d+)$/i);
+  if (highCard) return `高牌${normalizeRankToken(highCard[1])}`;
+
+  return text;
+};
 
 const resolveDropIntent = ({
   trayAmount,
@@ -212,10 +287,10 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
-  if (occupiedSeats <= 2) return "min(14vw, 3.9rem)";
-  if (occupiedSeats <= 4) return "min(13vw, 3.7rem)";
-  if (occupiedSeats <= 6) return "min(12vw, 3.5rem)";
-  return "min(11vw, 3.3rem)";
+  if (occupiedSeats <= 2) return "min(14.8vw, 4.2rem)";
+  if (occupiedSeats <= 4) return "min(13.8vw, 4rem)";
+  if (occupiedSeats <= 6) return "min(12.8vw, 3.8rem)";
+  return "min(11.8vw, 3.6rem)";
 };
 
 const getPositionBadges = (
@@ -395,6 +470,8 @@ export const GameRoom: React.FC = () => {
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const canHostStartNextHand =
     isHost && isGameStarted && isHandPausedForNext && (room?.players.length ?? 0) >= 2;
+  const isWaitingForHostToStartNextHand =
+    !isHost && isGameStarted && isHandPausedForNext && Boolean(lastHandResult);
 
   const isShowdownComplete =
     Boolean(lastHandResult) &&
@@ -1537,7 +1614,7 @@ export const GameRoom: React.FC = () => {
                           className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 font-semibold text-cyan-100"
                           data-testid={`winner-rank-${winner.playerId}`}
                         >
-                          {formatHandRank(winnerHand.rank)}
+                          {formatHandRank(winnerHand.rank, locale)}
                         </span>
                       ) : showWinnerHand ? (
                         <span className="text-emerald-200/70">{t("game.cardsShown")}</span>
@@ -1614,7 +1691,7 @@ export const GameRoom: React.FC = () => {
                     >
                       {showCards
                         ? evaluatedHand
-                          ? `${formatHandRank(evaluatedHand.rank)} - ${evaluatedHand.description}`
+                          ? `${formatHandRank(evaluatedHand.rank, locale)} - ${formatHandDescription(evaluatedHand, locale)}`
                           : t("game.cardsShownNoEvaluated")
                         : t("game.handHidden")}
                     </p>
@@ -1642,6 +1719,16 @@ export const GameRoom: React.FC = () => {
             >
               {t("game.startNextHand")}
             </button>
+          </div>
+        </section>
+      )}
+      {isWaitingForHostToStartNextHand && (
+        <section className="surface-panel mx-3 mt-3 p-4" data-testid="waiting-host-start-next-hand">
+          <div>
+            <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
+            <p className="text-xs text-emerald-100/70">
+              {t("game.waitingHostStartNextHand")}
+            </p>
           </div>
         </section>
       )}
