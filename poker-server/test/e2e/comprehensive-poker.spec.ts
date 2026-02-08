@@ -355,6 +355,32 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
+async function emitPlayerActionWithId(
+  page: Page,
+  payload: { action: string; amount?: number; actionId?: string },
+) {
+  await waitForPokerDebug(page);
+  return page.evaluate(
+    ({ action, amount, actionId }) =>
+      new Promise<{ success?: boolean; error?: string; duplicate?: boolean }>(
+        (resolve) => {
+          const socket = (window as any).pokerDebug?.getSocket?.();
+          if (!socket) {
+            resolve({ success: false, error: 'socket unavailable' });
+            return;
+          }
+          socket.emit(
+            'PLAYER_ACTION',
+            { action, amount, actionId },
+            (response: { success?: boolean; error?: string; duplicate?: boolean }) =>
+              resolve(response ?? { success: false, error: 'empty response' }),
+          );
+        },
+      ),
+    payload,
+  );
+}
+
 function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
   return page.evaluate((timeoutLimit) => {
     const pokerDebug = (window as any).pokerDebug;
@@ -2072,7 +2098,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     await bobContext.close();
   });
 
-  test('4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
+  test('@critical 4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
     browser,
   }) => {
     const aliceContext = await browser.newContext();
@@ -2260,7 +2286,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 });
 
 test.describe('Poker E2E - Chip Conservation', () => {
-  test('6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
+  test('@critical 6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
     browser,
   }) => {
     // Create two browser contexts (Alice and Bob)
@@ -3001,7 +3027,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
     }
   });
 
-  test('5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
+  test('@critical 5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3478,7 +3504,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
+  test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -3703,7 +3729,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
+  test('@critical 8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3793,6 +3819,44 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12a: Duplicate PLAYER_ACTION actionId Is Idempotent', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const actionId = `dup-call-${Date.now()}`;
+      const firstResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(firstResponse.success).toBe(true);
+      expect(firstResponse.duplicate).not.toBe(true);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const afterFirst = await getRoomSnapshot(alicePage);
+      expect(afterFirst.pot).toBe(40);
+      expect(afterFirst.currentPlayerName).toBe('Alice');
+
+      const duplicateResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(duplicateResponse.success).toBe(true);
+      expect(duplicateResponse.duplicate).toBe(true);
+
+      const afterDuplicate = await getRoomSnapshot(alicePage);
+      expect(afterDuplicate.pot).toBe(afterFirst.pot);
+      expect(afterDuplicate.currentPlayerName).toBe('Alice');
+      expect(afterDuplicate.aliceCurrentBet).toBe(afterFirst.aliceCurrentBet);
+      expect(afterDuplicate.bobCurrentBet).toBe(afterFirst.bobCurrentBet);
     } finally {
       await teardownTwoPlayerSession(session);
     }

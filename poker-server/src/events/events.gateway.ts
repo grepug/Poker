@@ -78,6 +78,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
+  private roomActionQueues: Map<string, Promise<void>> = new Map();
+  private processedActionFingerprints: Map<string, number> = new Map();
+  private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
+  private readonly maxProcessedActionFingerprints = 10000;
 
   private getRoomShareUrl(client: Socket, roomId: string) {
     const configuredClientUrl = process.env.CLIENT_URL?.trim();
@@ -425,53 +429,80 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
 
-      const room = await this.getRoom(playerInfo.roomId);
-      const player = room.players.find((p) => p.id === playerInfo.playerId);
-      if (!player) throw new Error('Player not found');
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const player = room.players.find((p) => p.id === playerInfo.playerId);
+        if (!player) throw new Error('Player not found');
+        if (!room.currentHand) throw new Error('No active hand');
 
-      await this.bettingService.processAction(
-        room,
-        playerInfo.playerId,
-        data.action,
-        data.amount,
-      );
-
-      const updatedRoom = await this.getRoom(playerInfo.roomId);
-
-      // Broadcast action
-      const actionData: PlayerActedData = {
-        playerId: player.id,
-        playerName: player.name,
-        action: data.action,
-        amount: data.amount,
-        newPot: updatedRoom.currentHand!.pot,
-        newChips: player.chips,
-      };
-
-      this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
-
-      // Check if betting round complete
-      const isComplete =
-        this.bettingService.isBettingRoundComplete(updatedRoom);
-      this.logger.debug(`Betting round complete: ${isComplete}`);
-
-      if (isComplete) {
-        await this.handleBettingRoundComplete(updatedRoom);
-      } else {
-        // Move to next player
-        const nextPlayer = this.handService.getNextPlayer(updatedRoom);
-        this.logger.debug(
-          `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
-        );
-        if (nextPlayer) {
-          updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
-          await this.storageService.saveRoom(updatedRoom);
-          this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
-          this.emitPlayerTurn(updatedRoom, nextPlayer);
+        const actionId = data.actionId?.trim();
+        if (
+          actionId &&
+          this.hasProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          )
+        ) {
+          this.logger.debug(
+            `Ignoring duplicate PLAYER_ACTION ${actionId} from ${player.name} in room ${room.id}`,
+          );
+          return { success: true, duplicate: true };
         }
-      }
 
-      return { success: true };
+        await this.bettingService.processAction(
+          room,
+          playerInfo.playerId,
+          data.action,
+          data.amount,
+        );
+
+        if (actionId) {
+          this.markProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          );
+        }
+
+        const updatedRoom = await this.getRoom(playerInfo.roomId);
+
+        // Broadcast action
+        const actionData: PlayerActedData = {
+          playerId: player.id,
+          playerName: player.name,
+          action: data.action,
+          amount: data.amount,
+          newPot: updatedRoom.currentHand!.pot,
+          newChips: player.chips,
+        };
+
+        this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
+
+        // Check if betting round complete
+        const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
+        this.logger.debug(`Betting round complete: ${isComplete}`);
+
+        if (isComplete) {
+          await this.handleBettingRoundComplete(updatedRoom);
+        } else {
+          // Move to next player
+          const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+          this.logger.debug(
+            `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
+          );
+          if (nextPlayer) {
+            updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
+            await this.storageService.saveRoom(updatedRoom);
+            this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
+            this.emitPlayerTurn(updatedRoom, nextPlayer);
+          }
+        }
+
+        return { success: true };
+      });
     } catch (error) {
       this.logger.error(`Player action error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
@@ -551,6 +582,89 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Helper methods
+
+  private async runRoomActionSequentially<T>(
+    roomId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.roomActionQueues.get(roomId) ?? Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const queuePromise = previous.finally(() => gate);
+    this.roomActionQueues.set(roomId, queuePromise);
+
+    await previous;
+
+    try {
+      return await task();
+    } finally {
+      releaseCurrent();
+      if (this.roomActionQueues.get(roomId) === queuePromise) {
+        this.roomActionQueues.delete(roomId);
+      }
+    }
+  }
+
+  private buildActionFingerprint(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): string {
+    return `${roomId}:${handNumber}:${playerId}:${actionId}`;
+  }
+
+  private hasProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): boolean {
+    this.pruneProcessedActions();
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    return this.processedActionFingerprints.has(fingerprint);
+  }
+
+  private markProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ) {
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    this.processedActionFingerprints.set(fingerprint, Date.now());
+    this.pruneProcessedActions();
+  }
+
+  private pruneProcessedActions() {
+    const cutoff = Date.now() - this.processedActionTtlMs;
+    for (const [key, timestamp] of this.processedActionFingerprints.entries()) {
+      if (timestamp < cutoff) {
+        this.processedActionFingerprints.delete(key);
+      }
+    }
+
+    while (
+      this.processedActionFingerprints.size >
+      this.maxProcessedActionFingerprints
+    ) {
+      const oldestKey = this.processedActionFingerprints.keys().next().value;
+      if (!oldestKey) break;
+      this.processedActionFingerprints.delete(oldestKey);
+    }
+  }
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
