@@ -534,6 +534,11 @@ body {
   cursor: not-allowed;
 }
 
+.chip-action--confirming {
+  box-shadow: 0 0 0 2px rgba(253, 224, 71, 0.45);
+  transform: translateY(-1px);
+}
+
 .chip-action--fold {
   border-color: rgba(251, 113, 133, 0.6);
   background: rgba(136, 19, 55, 0.44);
@@ -716,6 +721,43 @@ body {
   margin-top: 0.7rem;
   border-top: 1px dashed rgba(110, 231, 183, 0.35);
   padding-top: 0.65rem;
+}
+
+.chip-quick-confirm-popover {
+  margin-top: 0.35rem;
+  border: 1px solid rgba(251, 191, 36, 0.62);
+  border-radius: 0.62rem;
+  background: rgba(12, 24, 20, 0.94);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.45rem;
+}
+
+.chip-quick-confirm-popover__text {
+  font-size: 0.64rem;
+  color: #fde68a;
+  font-weight: 700;
+}
+
+.chip-quick-confirm-popover__button {
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid transparent;
+}
+
+.chip-quick-confirm-popover__button--confirm {
+  border-color: rgba(251, 191, 36, 0.72);
+  background: rgba(245, 158, 11, 0.25);
+  color: #fde68a;
+}
+
+.chip-quick-confirm-popover__button--cancel {
+  border-color: rgba(148, 163, 184, 0.58);
+  background: rgba(15, 23, 42, 0.58);
+  color: #cbd5e1;
 }
 
 .chip-drag-ghost {

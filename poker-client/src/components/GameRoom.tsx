@@ -22,6 +22,8 @@ type DropResolution = {
   reason: string | null;
 };
 
+type QuickConfirmAction = "check" | "fold";
+
 type FeedbackInsight = {
   title: string;
   reason: string;
@@ -237,6 +239,7 @@ export const GameRoom: React.FC = () => {
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
+  const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
 
@@ -544,26 +547,34 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     if (!isYourTurn) {
       setTrayAmount(0);
+      setQuickConfirmAction(null);
       setDragState(EMPTY_DRAG_STATE);
     }
   }, [isYourTurn]);
+
+  useEffect(() => {
+    if (!quickConfirmAction || isAutomationMode) return;
+    const timer = window.setTimeout(() => setQuickConfirmAction(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [isAutomationMode, quickConfirmAction]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
 
   useEffect(() => {
-    if (!lastError && !showRankingsModal) return;
+    if (!lastError && !showRankingsModal && !quickConfirmAction) return;
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
       if (showRankingsModal) setShowRankingsModal(false);
+      if (quickConfirmAction) setQuickConfirmAction(null);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, lastError, showRankingsModal]);
+  }, [clearError, lastError, quickConfirmAction, showRankingsModal]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -588,6 +599,7 @@ export const GameRoom: React.FC = () => {
       return;
     }
 
+    setQuickConfirmAction(null);
     performAction(dropResolution.intent.action, dropResolution.intent.amount);
     setTrayAmount(0);
   }, [dropResolution.intent, isYourTurn, performAction]);
@@ -713,11 +725,33 @@ export const GameRoom: React.FC = () => {
         return;
       }
 
+      setQuickConfirmAction(null);
       performAction("raise", legacyRaiseAmount);
       return;
     }
 
+    if (action !== "check" && action !== "fold") {
+      setQuickConfirmAction(null);
+    }
     performAction(action);
+  };
+
+  const handleQuickDecisionAction = (action: QuickConfirmAction) => {
+    if (!isYourTurn) return;
+    if (action === "check" && !canCheck) return;
+
+    if (isAutomationMode) {
+      performAction(action);
+      return;
+    }
+
+    if (quickConfirmAction === action) {
+      setQuickConfirmAction(null);
+      performAction(action);
+      return;
+    }
+
+    setQuickConfirmAction(action);
   };
 
   const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
@@ -1228,24 +1262,6 @@ export const GameRoom: React.FC = () => {
               <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
             </div>
 
-            <div className="chip-composer-dock__footer">
-              <button
-                onClick={() => handleLegacyAction("check")}
-                disabled={!canCheck}
-                data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                className="chip-action chip-action--check chip-action--small"
-              >
-                Check
-              </button>
-              <button
-                onClick={() => handleLegacyAction("fold")}
-                data-testid="action-fold"
-                className="chip-action chip-action--fold chip-action--small"
-              >
-                Fold
-              </button>
-            </div>
-
             <div className="chip-composer-dock__tray-row">
               <div className="chip-composer-dock__tray-panel">
                 <button
@@ -1308,6 +1324,54 @@ export const GameRoom: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            <div className="chip-composer-dock__footer">
+              <button
+                onClick={() => handleQuickDecisionAction("check")}
+                disabled={!canCheck}
+                data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                className={`chip-action chip-action--check chip-action--small ${
+                  quickConfirmAction === "check" ? "chip-action--confirming" : ""
+                }`}
+              >
+                {quickConfirmAction === "check" ? "Confirm Check" : "Check"}
+              </button>
+              <button
+                onClick={() => handleQuickDecisionAction("fold")}
+                data-testid="action-fold"
+                className={`chip-action chip-action--fold chip-action--small ${
+                  quickConfirmAction === "fold" ? "chip-action--confirming" : ""
+                }`}
+              >
+                {quickConfirmAction === "fold" ? "Confirm Fold" : "Fold"}
+              </button>
+            </div>
+
+            {!isAutomationMode && quickConfirmAction && (
+              <div className="chip-quick-confirm-popover" data-testid="action-quick-confirm-popover">
+                <span className="chip-quick-confirm-popover__text">
+                  Confirm {quickConfirmAction}?
+                </span>
+                <button
+                  onClick={() => {
+                    const actionToApply = quickConfirmAction;
+                    setQuickConfirmAction(null);
+                    performAction(actionToApply);
+                  }}
+                  data-testid="action-quick-confirm-accept"
+                  className="chip-quick-confirm-popover__button chip-quick-confirm-popover__button--confirm"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setQuickConfirmAction(null)}
+                  data-testid="action-quick-confirm-cancel"
+                  className="chip-quick-confirm-popover__button chip-quick-confirm-popover__button--cancel"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
 
             {isAutomationMode && (
               <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
