@@ -6,8 +6,9 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
  * Uses window.pokerDebug API for deterministic testing with predetermined cards
  */
 
-const FRONTEND_URL = 'http://localhost:5174';
-const BACKEND_URL = 'http://localhost:3001';
+const FRONTEND_URL =
+  process.env.PW_FRONTEND_URL ??
+  `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
 
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {

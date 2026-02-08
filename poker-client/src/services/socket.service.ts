@@ -1,9 +1,36 @@
 import { io, Socket } from "socket.io-client";
 import type { ClientToServerEvents, ServerToClientEvents } from "poker-types";
 
+type RuntimePokerConfig = {
+  serverUrl?: string;
+  serverProtocol?: string;
+  serverHost?: string;
+  serverPort?: string;
+};
+
+declare global {
+  interface Window {
+    __POKER_RUNTIME_CONFIG__?: RuntimePokerConfig;
+  }
+}
+
+const readRuntimeConfig = (): RuntimePokerConfig | undefined => {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return window.__POKER_RUNTIME_CONFIG__;
+};
+
 const resolveSocketUrl = (explicitUrl?: string) => {
   if (explicitUrl && explicitUrl.trim()) {
     return explicitUrl.trim();
+  }
+
+  const runtimeConfig = readRuntimeConfig();
+  const runtimeUrl = runtimeConfig?.serverUrl?.trim();
+  if (runtimeUrl) {
+    return runtimeUrl;
   }
 
   const envUrl = import.meta.env.VITE_SERVER_URL?.trim();
@@ -11,19 +38,24 @@ const resolveSocketUrl = (explicitUrl?: string) => {
     return envUrl;
   }
 
+  const runtimeProtocol = runtimeConfig?.serverProtocol?.trim();
+  const runtimeHost = runtimeConfig?.serverHost?.trim();
+  const runtimePort = runtimeConfig?.serverPort?.trim();
   const envProtocol = import.meta.env.VITE_SERVER_PROTOCOL?.trim();
   const envHost = import.meta.env.VITE_SERVER_HOST?.trim();
-  const envPort = import.meta.env.VITE_SERVER_PORT?.trim() || "3001";
+  const envPort = import.meta.env.VITE_SERVER_PORT?.trim();
+  const port = runtimePort || envPort || "3001";
 
   if (typeof window !== "undefined") {
-    const protocol = envProtocol || window.location.protocol.replace(":", "") || "http";
-    const host = envHost || window.location.hostname;
-    return `${protocol}://${host}:${envPort}`;
+    const protocol =
+      runtimeProtocol || envProtocol || window.location.protocol.replace(":", "") || "http";
+    const host = runtimeHost || envHost || window.location.hostname;
+    return `${protocol}://${host}:${port}`;
   }
 
-  const protocol = envProtocol || "http";
-  const host = envHost || "127.0.0.1";
-  return `${protocol}://${host}:${envPort}`;
+  const protocol = runtimeProtocol || envProtocol || "http";
+  const host = runtimeHost || envHost || "127.0.0.1";
+  return `${protocol}://${host}:${port}`;
 };
 
 class SocketService {
