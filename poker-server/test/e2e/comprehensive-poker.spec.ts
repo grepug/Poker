@@ -3812,6 +3812,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { alicePage, bobPage } = session;
+      await alicePage.setViewportSize({ width: 1280, height: 620 });
+      await bobPage.setViewportSize({ width: 1280, height: 620 });
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
@@ -3826,8 +3828,27 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
 
       await waitForPlayerTurn(alicePage, 'Alice');
-      const stateAfterConfirm = await getRoomSnapshot(alicePage);
-      expect(stateAfterConfirm.currentPlayerName).toBe('Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(bobPage.locator('[data-testid="action-check"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      const controlsAreInViewport = await bobPage.evaluate(() => {
+        const fold = document.querySelector<HTMLElement>('[data-testid="action-fold"]');
+        const check = document.querySelector<HTMLElement>('[data-testid="action-check"]');
+        if (!fold || !check) return false;
+
+        const foldRect = fold.getBoundingClientRect();
+        const checkRect = check.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+
+        const isInsideViewport = (rect: DOMRect) =>
+          rect.top >= 0 && rect.bottom <= viewportHeight;
+
+        return isInsideViewport(foldRect) && isInsideViewport(checkRect);
+      });
+      expect(controlsAreInViewport).toBe(true);
     } finally {
       await teardownTwoPlayerSession(session);
     }

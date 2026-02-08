@@ -1228,6 +1228,24 @@ export const GameRoom: React.FC = () => {
               <span className="chip-composer-dock__meta">Min Raise: ${minRaise}</span>
             </div>
 
+            <div className="chip-composer-dock__footer">
+              <button
+                onClick={() => handleLegacyAction("check")}
+                disabled={!canCheck}
+                data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                className="chip-action chip-action--check chip-action--small"
+              >
+                Check
+              </button>
+              <button
+                onClick={() => handleLegacyAction("fold")}
+                data-testid="action-fold"
+                className="chip-action chip-action--fold chip-action--small"
+              >
+                Fold
+              </button>
+            </div>
+
             <div className="chip-composer-dock__tray-row">
               <div className="chip-composer-dock__tray-panel">
                 <button
@@ -1289,24 +1307,6 @@ export const GameRoom: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
-
-            <div className="chip-composer-dock__footer">
-              <button
-                onClick={() => handleLegacyAction("check")}
-                disabled={!canCheck}
-                data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                className="chip-action chip-action--check chip-action--small"
-              >
-                Check
-              </button>
-              <button
-                onClick={() => handleLegacyAction("fold")}
-                data-testid="action-fold"
-                className="chip-action chip-action--fold chip-action--small"
-              >
-                Fold
-              </button>
             </div>
 
             {isAutomationMode && (
