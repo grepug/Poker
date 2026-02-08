@@ -3834,6 +3834,18 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(bobPage.locator('[data-testid="action-check"]')).toBeVisible();
       await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      const dockScrollBehavior = await bobPage.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>('[data-testid="turn-overlay"]');
+        if (!dock) return null;
+        const styles = window.getComputedStyle(dock);
+        return {
+          overflowY: styles.overflowY,
+          overflow: styles.overflow,
+        };
+      });
+      expect(dockScrollBehavior).not.toBeNull();
+      expect(dockScrollBehavior?.overflowY).not.toBe("auto");
+      expect(dockScrollBehavior?.overflowY).not.toBe("scroll");
       const controlsAreInViewport = await bobPage.evaluate(() => {
         const fold = document.querySelector<HTMLElement>('[data-testid="action-fold"]');
         const check = document.querySelector<HTMLElement>('[data-testid="action-check"]');
