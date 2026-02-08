@@ -233,6 +233,11 @@ body {
   color: #f0fdf4;
 }
 
+.pot-drop-zone__value--pulse {
+  display: inline-block;
+  animation: potValuePulse 350ms cubic-bezier(0.18, 0.92, 0.24, 1);
+}
+
 .pot-drop-zone__hint {
   margin-top: 0.2rem;
   font-size: 0.6rem;
@@ -271,7 +276,8 @@ body {
 }
 
 .seat-pod--folded {
-  opacity: 0.58;
+  opacity: 0.48;
+  filter: grayscale(0.72) saturate(0.45);
 }
 
 .seat-pod--disconnected {
@@ -388,6 +394,106 @@ body {
   color: rgba(209, 250, 229, 0.55);
   text-align: center;
   padding: 0 0.2rem;
+}
+
+.seat-action-bubble {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -124%);
+  min-width: 3.9rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(226, 232, 240, 0.48);
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  font-size: 0.47rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 0.26rem 0.4rem;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow:
+    0 7px 20px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(15, 23, 42, 0.65);
+  animation: seatActionBubbleIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  z-index: 3;
+}
+
+.seat-action-bubble--neutral {
+  border-color: rgba(148, 163, 184, 0.62);
+  background: rgba(30, 41, 59, 0.95);
+  color: #e2e8f0;
+}
+
+.seat-action-bubble--aggressive {
+  border-color: rgba(74, 222, 128, 0.7);
+  background: rgba(5, 46, 22, 0.96);
+  color: #dcfce7;
+}
+
+.seat-action-bubble--fold {
+  border-color: rgba(251, 113, 133, 0.7);
+  background: rgba(76, 5, 25, 0.96);
+  color: #fecdd3;
+}
+
+.seat-action-bubble--allin {
+  border-color: rgba(253, 186, 116, 0.82);
+  background: rgba(124, 45, 18, 0.98);
+  color: #ffedd5;
+}
+
+.seat-action-bubble--exit {
+  animation: seatActionBubbleOut 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.turn-center-alert-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 1rem;
+}
+
+.turn-center-alert {
+  border-radius: 1rem;
+  border: 1px solid rgba(252, 211, 77, 0.72);
+  background:
+    radial-gradient(circle at 12% 15%, rgba(252, 211, 77, 0.26), transparent 50%),
+    linear-gradient(165deg, rgba(113, 63, 18, 0.97), rgba(69, 26, 3, 0.94));
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.54),
+    0 0 0 1px rgba(251, 191, 36, 0.48),
+    0 0 46px rgba(251, 191, 36, 0.35);
+  min-width: min(90vw, 22rem);
+  text-align: center;
+  padding: 0.95rem 1.2rem;
+  animation: turnCenterAlert 1.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.turn-center-alert__eyebrow {
+  display: block;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(254, 243, 199, 0.9);
+}
+
+.turn-center-alert__title {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: clamp(1.4rem, 2.8vw, 2.1rem);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #fffbeb;
 }
 
 .chip-composer-dock {
@@ -705,6 +811,82 @@ body {
   100% {
     transform: translateY(0) scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes potValuePulse {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.5;
+    text-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+  55% {
+    transform: scale(1.11);
+    opacity: 1;
+    text-shadow: 0 0 14px rgba(252, 211, 77, 0.65);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    text-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+}
+
+@keyframes seatActionBubbleIn {
+  0% {
+    transform: translate(-50%, -108%) scale(0.83);
+    opacity: 0;
+    filter: blur(0.5px);
+  }
+  100% {
+    transform: translate(-50%, -124%) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes seatActionBubbleOut {
+  0% {
+    transform: translate(-50%, -124%) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: translate(-50%, -140%) scale(0.94);
+    opacity: 0;
+    filter: blur(0.8px);
+  }
+}
+
+@keyframes turnCenterAlert {
+  0% {
+    transform: translateY(14px) scale(0.88);
+    opacity: 0;
+    filter: blur(2px);
+  }
+  16% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+  78% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: translateY(-10px) scale(0.95);
+    opacity: 0;
+    filter: blur(1.1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pot-drop-zone__value--pulse,
+  .seat-action-bubble,
+  .seat-action-bubble--exit,
+  .turn-center-alert {
+    animation: none;
   }
 }
 
