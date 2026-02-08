@@ -198,6 +198,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
+      setYourCards(null);
       setLastPlayerActionEvent(null);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
@@ -207,6 +208,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("ROOM_JOINED", (data) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       setPlayer(data.player);
+      setYourCards(data.player?.cards ?? null);
       setLastPlayerActionEvent(null);
       setIsRecoveringSession(false);
       setLastError(null);
@@ -333,6 +335,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setLastHandResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      // Reset hole cards until private YOUR_CARDS event arrives for this hand.
+      setYourCards(null);
       setRoom((prev) => {
         if (!prev) return null;
         // Map players with cards field added
@@ -388,6 +392,14 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Hand complete:", data.result);
       setLastHandResult(data.result);
       setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
+      setYourCards((prevCards) => {
+        const currentPlayerId = playerRef.current?.id;
+        if (!currentPlayerId) return prevCards;
+        const myHand = data.result.playerHands.find(
+          (entry) => entry.playerId === currentPlayerId,
+        );
+        return myHand?.cards ?? prevCards;
+      });
       // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
       setRoom((prev) => {
         if (!prev || !prev.currentHand) return prev;

@@ -6,6 +6,7 @@ import {
   Player,
   BettingRound,
   HandResult,
+  PotPayout,
   Card,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
@@ -336,6 +337,21 @@ export class HandService {
           },
         ],
         totalPot: hand.pot,
+        payouts: [
+          {
+            segmentIndex: 0,
+            potType: 'MAIN',
+            amount: hand.pot,
+            eligiblePlayerIds: activePlayers.map((player) => player.id),
+            winnerShares: [
+              {
+                playerId: winner.id,
+                amountWon: hand.pot,
+              },
+            ],
+            uncontested: activePlayers.length === 1,
+          },
+        ],
       };
 
       await this.cleanupHand(room, winner.id);
@@ -360,9 +376,10 @@ export class HandService {
     hand.sidePots = sidePotSegments.slice(1);
 
     const payoutByPlayerId = new Map<string, number>();
+    const payouts: PotPayout[] = [];
     let distributedTotal = 0;
 
-    for (const segment of sidePotSegments) {
+    for (const [segmentIndex, segment] of sidePotSegments.entries()) {
       const eligibleEvaluations = segment.eligiblePlayers
         .map((playerId) => evaluationsByPlayerId.get(playerId))
         .filter((entry): entry is (typeof evaluations)[number] => !!entry)
@@ -392,16 +409,33 @@ export class HandService {
         segment.amount / winningEvaluations.length,
       );
       const remainder = segment.amount % winningEvaluations.length;
+      const winnerShares: PotPayout['winnerShares'] = [];
 
       for (let i = 0; i < winningEvaluations.length; i++) {
         const winner = winningEvaluations[i];
         const award = amountPerWinner + (i < remainder ? 1 : 0);
+        if (award <= 0) {
+          continue;
+        }
         payoutByPlayerId.set(
           winner.player.id,
           (payoutByPlayerId.get(winner.player.id) || 0) + award,
         );
+        winnerShares.push({
+          playerId: winner.player.id,
+          amountWon: award,
+        });
         distributedTotal += award;
       }
+
+      payouts.push({
+        segmentIndex,
+        potType: segmentIndex === 0 ? 'MAIN' : 'SIDE',
+        amount: segment.amount,
+        eligiblePlayerIds: segment.eligiblePlayers,
+        winnerShares,
+        uncontested: segment.eligiblePlayers.length === 1,
+      });
     }
 
     if (distributedTotal !== hand.pot && evaluations.length > 0) {
@@ -413,6 +447,26 @@ export class HandService {
         fallbackWinner.player.id,
         (payoutByPlayerId.get(fallbackWinner.player.id) || 0) + adjustment,
       );
+      const targetPayout =
+        payouts.find((segment) =>
+          segment.winnerShares.some(
+            (share) => share.playerId === fallbackWinner.player.id,
+          ),
+        ) ?? payouts[0];
+      if (targetPayout) {
+        const existingShare = targetPayout.winnerShares.find(
+          (share) => share.playerId === fallbackWinner.player.id,
+        );
+        if (existingShare) {
+          existingShare.amountWon += adjustment;
+        } else {
+          targetPayout.winnerShares.push({
+            playerId: fallbackWinner.player.id,
+            amountWon: adjustment,
+          });
+        }
+        targetPayout.amount += adjustment;
+      }
       distributedTotal += adjustment;
       this.logger.warn(
         `[determineWinner] Pot distribution adjusted by ${adjustment} to preserve chip conservation`,
@@ -452,6 +506,7 @@ export class HandService {
           hand: evaluation,
         })),
       totalPot: hand.pot,
+      payouts,
     };
 
     await this.cleanupHand(room, winners[0]?.playerId);

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
@@ -463,9 +464,6 @@ export const GameRoom: React.FC = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
-  const hasHoleCards = Boolean(yourCards && yourCards.length > 0);
-  const isWaitingForNextHand =
-    Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
   const currentHandNumber = currentHand?.handNumber ?? null;
 
   const isHandPausedForNext =
@@ -484,6 +482,13 @@ export const GameRoom: React.FC = () => {
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
   const canRevealMyCompletedHand =
     Boolean(lastHandResult) && Boolean(myCompletedHand) && !isShowdownComplete;
+  const displayHoleCards =
+    isHandPausedForNext && myCompletedHand?.cards?.length
+      ? myCompletedHand.cards
+      : yourCards;
+  const hasHoleCards = Boolean(displayHoleCards && displayHoleCards.length > 0);
+  const isWaitingForNextHand =
+    Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
@@ -512,6 +517,53 @@ export const GameRoom: React.FC = () => {
       rankOrder: idx + 1,
     }));
   }, [lastHandResult, winnersByPlayerId]);
+
+  const payoutBreakdownRows = useMemo(() => {
+    if (!lastHandResult) return [];
+
+    const playerNameById = new Map<string, string>();
+    for (const seatPlayer of room?.players ?? []) {
+      playerNameById.set(seatPlayer.id, seatPlayer.name);
+    }
+    for (const handPlayer of lastHandResult.playerHands) {
+      playerNameById.set(handPlayer.playerId, handPlayer.playerName);
+    }
+
+    const normalizedPayouts = (lastHandResult.payouts ?? [])
+      .filter((segment) => segment.amount > 0 && segment.winnerShares.length > 0)
+      .sort((a, b) => a.segmentIndex - b.segmentIndex);
+
+    const payoutSegments =
+      normalizedPayouts.length > 0
+        ? normalizedPayouts
+        : [
+            {
+              segmentIndex: 0,
+              potType: "MAIN" as const,
+              amount: lastHandResult.totalPot,
+              eligiblePlayerIds: lastHandResult.winners.map((winner) => winner.playerId),
+              winnerShares: lastHandResult.winners.map((winner) => ({
+                playerId: winner.playerId,
+                amountWon: winner.amountWon,
+              })),
+              uncontested: lastHandResult.winners.length === 1,
+            },
+          ];
+
+    return payoutSegments.map((segment) => ({
+      segmentIndex: segment.segmentIndex,
+      label:
+        segment.potType === "MAIN"
+          ? t("game.payout.mainPot")
+          : t("game.payout.sidePot", { index: segment.segmentIndex }),
+      amount: segment.amount,
+      uncontested: segment.uncontested,
+      winnerShares: segment.winnerShares.map((share) => ({
+        ...share,
+        playerName: playerNameById.get(share.playerId) ?? share.playerId,
+      })),
+    }));
+  }, [lastHandResult, room?.players, t]);
 
   const inviteUrl = useMemo(() => {
     if (!room?.id || typeof window === "undefined") return "";
@@ -1119,6 +1171,75 @@ export const GameRoom: React.FC = () => {
     }
   };
 
+  const handleSaveResultScreenshot = async () => {
+    if (!lastHandResult || !room || !handResultsPanelRef.current) return;
+
+    try {
+      const screenshotDataUrl = await toPng(handResultsPanelRef.current, {
+        cacheBust: true,
+        pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
+        backgroundColor: "#032b26",
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          return node.dataset.testid !== "save-result-screenshot-button";
+        },
+      });
+
+      const screenshotImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = (error) => reject(error);
+        image.src = screenshotDataUrl;
+      });
+
+      const padding = 44;
+      const canvasWidth = screenshotImage.width + padding * 2;
+      const minimumPortraitHeight = Math.round(canvasWidth * 1.35);
+      const canvasHeight = Math.max(screenshotImage.height + padding * 2, minimumPortraitHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        throw new Error("Canvas unavailable");
+      }
+
+      const background = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
+      background.addColorStop(0, "#052e2b");
+      background.addColorStop(1, "#021b18");
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      const imageX = Math.round((canvasWidth - screenshotImage.width) / 2);
+      const imageY = Math.round((canvasHeight - screenshotImage.height) / 2);
+      ctx.drawImage(screenshotImage, imageX, imageY);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/png");
+      });
+      if (!blob) {
+        throw new Error("Failed to create image blob");
+      }
+
+      const link = document.createElement("a");
+      const imageUrl = URL.createObjectURL(blob);
+      link.href = imageUrl;
+      link.download = `${room.id}-hand-${currentHandNumber ?? "result"}-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(imageUrl);
+
+      setInviteCopyStatus(t("game.resultScreenshotSaved"));
+      setInviteCopyStatusTone("success");
+    } catch (error) {
+      console.error("Failed to save result screenshot:", error);
+      setInviteCopyStatus(t("game.resultScreenshotFailed"));
+      setInviteCopyStatusTone("error");
+    }
+  };
+
   const handleLeave = () => {
     leaveRoom();
     navigate("/");
@@ -1355,7 +1476,7 @@ export const GameRoom: React.FC = () => {
 
             {isCardsFlyoutOpen ? (
               <div className="your-cards-flyout__cards">
-                {(yourCards ?? []).map((card, idx) => (
+                {(displayHoleCards ?? []).map((card, idx) => (
                   <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
                 ))}
               </div>
@@ -1527,12 +1648,6 @@ export const GameRoom: React.FC = () => {
                       <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
                     </div>
 
-                    <div className="seat-pod__row">
-                      <div className="text-[11px] text-emerald-100/65">
-                        Buy-in: ${seatPlayer.totalBuyIn ?? 0}
-                      </div>
-                    </div>
-
                     <div className="seat-pod__row seat-pod__row--bet">
                       <div
                         className={`seat-pod__bet ${
@@ -1597,6 +1712,13 @@ export const GameRoom: React.FC = () => {
               <span className="hud-chip" data-testid="hand-results-winner-count">
                 {t("game.winnersCount", { count: lastHandResult.winners.length })}
               </span>
+              <button
+                onClick={handleSaveResultScreenshot}
+                data-testid="save-result-screenshot-button"
+                className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
+              >
+                {t("game.saveResultScreenshot")}
+              </button>
             </div>
           </div>
 
@@ -1621,49 +1743,74 @@ export const GameRoom: React.FC = () => {
 
           <div
             className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
-            data-testid="hand-results-winners"
+            data-testid="hand-results-community"
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-              {t("game.winners")}
+              {t("game.communityCards")}
             </p>
-            <div className="mt-2 space-y-2 text-sm text-emerald-50">
-              {lastHandResult.winners.map((winner) => {
-                const isSelf = winner.playerId === player.id;
-                const showWinnerHand = isPlayerHandVisible(winner.playerId);
-                const winnerHand = winner.hand as HandEvaluation | null;
-
-                return (
-                  <div
-                    key={`winner-${winner.playerId}`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
-                    data-testid={`winner-row-${winner.playerId}`}
-                  >
-                    <span className="font-semibold">
-                      {winner.playerName}
-                      {isSelf ? ` (${t("common.you")})` : ""}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 font-semibold">
-                        +${winner.amountWon}
-                      </span>
-                      {showWinnerHand && winnerHand ? (
-                        <span
-                          className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 font-semibold text-cyan-100"
-                          data-testid={`winner-rank-${winner.playerId}`}
-                        >
-                          {formatHandRank(winnerHand.rank, locale)}
-                        </span>
-                      ) : showWinnerHand ? (
-                        <span className="text-emerald-200/70">{t("game.cardsShown")}</span>
-                      ) : (
-                        <span className="text-emerald-200/70">{t("game.handHidden")}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="mt-2 flex flex-wrap gap-2 text-sm text-emerald-50">
+              {Array.from({ length: 5 }, (_, idx) => currentHand?.communityCards[idx] ?? null).map(
+                (card, idx) => (
+                  <Card
+                    key={`hand-results-community-card-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                    card={card}
+                    size="small"
+                    faceDown={!card}
+                    dataTestId={card ? `hand-results-community-card-${idx}` : `hand-results-community-back-${idx}`}
+                  />
+                ),
+              )}
             </div>
           </div>
+
+          {payoutBreakdownRows.length > 0 && (
+            <div
+              className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
+              data-testid="hand-results-payouts"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                {t("game.payoutBreakdown")}
+              </p>
+              <div className="mt-2 space-y-2">
+                {payoutBreakdownRows.map((segment) => (
+                  <div
+                    key={`payout-segment-${segment.segmentIndex}`}
+                    className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
+                    data-testid={`payout-segment-${segment.segmentIndex}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-emerald-50">
+                          {segment.label}
+                        </span>
+                        {segment.uncontested && (
+                          <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                            {t("game.payout.uncontested")}
+                          </span>
+                        )}
+                      </div>
+                      <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 text-xs font-semibold text-emerald-50">
+                        ${segment.amount}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {segment.winnerShares.map((share) => (
+                        <span
+                          key={`payout-share-${segment.segmentIndex}-${share.playerId}`}
+                          className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 text-xs font-semibold text-cyan-100"
+                          data-testid={`payout-share-${segment.segmentIndex}-${share.playerId}`}
+                        >
+                          {share.playerName}
+                          {share.playerId === player.id ? ` (${t("common.you")})` : ""} +$
+                          {share.amountWon}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {handResultRows.length > 0 && (
             <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">

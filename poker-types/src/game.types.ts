@@ -35,6 +35,18 @@ export interface Hand {
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }
 
+export interface PotPayout {
+  segmentIndex: number; // 0 = main pot, 1+ = side pots
+  potType: "MAIN" | "SIDE";
+  amount: number;
+  eligiblePlayerIds: string[];
+  winnerShares: Array<{
+    playerId: string;
+    amountWon: number;
+  }>;
+  uncontested: boolean;
+}
+
 // Result of a completed hand
 export interface HandResult {
   winners: Array<{
@@ -50,4 +62,5 @@ export interface HandResult {
     hand: HandEvaluation;
   }>;
   totalPot: number;
+  payouts: PotPayout[];
 }
