@@ -4,7 +4,6 @@ import { useGame } from "../contexts/GameContext";
 import { Card } from "./Card";
 import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 
-const CHIP_DENOMINATIONS = [5, 10, 25, 100, 500] as const;
 const DRAG_SNAP_RADIUS_PX = 32;
 
 type SeatAnchor = {
@@ -245,7 +244,7 @@ export const GameRoom: React.FC = () => {
   const [hiddenCardsHandNumber, setHiddenCardsHandNumber] = useState<number | null>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [trayAmount, setTrayAmount] = useState(0);
-  const [, setChipHistory] = useState<number[]>([]);
+  const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -285,6 +284,10 @@ export const GameRoom: React.FC = () => {
   const myCommittedBet = currentPlayer?.currentBet ?? 0;
 
   const maxStack = currentPlayer?.chips ?? 0;
+  const clampTrayAmount = useCallback(
+    (value: number) => Math.max(0, Math.min(maxStack, Math.round(value))),
+    [maxStack],
+  );
   const canCheck = callAmount === 0;
   const resolvedPlayerId = currentPlayer?.id ?? player?.id ?? null;
   const isYourTurn = Boolean(
@@ -417,21 +420,35 @@ export const GameRoom: React.FC = () => {
   const canStartDrag = isYourTurn && trayAmount > 0 && Boolean(dropResolution.intent);
 
   const trayPresetButtons = useMemo<TrayPresetButton[]>(() => {
-    const clampToStack = (value: number) =>
-      Math.max(0, Math.min(maxStack, Math.round(value)));
+    const clampToStack = (value: number) => clampTrayAmount(value);
     const commitToTargetTotalBet = (targetTotalBet: number) =>
       clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
     const halfPotCommit = clampToStack(Math.max(callAmount, Math.round(displayPot / 2)));
-    const fullPotCommit = clampToStack(Math.max(callAmount, displayPot));
+    const minRaiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise);
 
-    const presets = [
+    const presets: TrayPresetButton[] = [
       {
+        key: "min-raise",
+        label: callAmount > 0 ? "Min Raise" : "Min Bet",
+        amount: minRaiseCommit,
+        testId: "chip-load-min-raise",
+        tone: "raise",
+        enabled: false,
+      },
+    ];
+
+    if (callAmount > 0) {
+      presets.push({
         key: "call",
         label: "Call",
         amount: Math.min(callAmount, maxStack),
         testId: "chip-load-call",
-        tone: "call" as const,
-      },
+        tone: "call",
+        enabled: false,
+      });
+    }
+
+    presets.push(
       {
         key: "double",
         label: "2x",
@@ -440,7 +457,8 @@ export const GameRoom: React.FC = () => {
             ? commitToTargetTotalBet(currentTableBet * 2)
             : clampToStack(minRaise * 2),
         testId: "chip-load-double",
-        tone: "raise" as const,
+        tone: "raise",
+        enabled: false,
       },
       {
         key: "three-bet",
@@ -450,40 +468,26 @@ export const GameRoom: React.FC = () => {
             ? commitToTargetTotalBet(currentTableBet * 3)
             : clampToStack(minRaise * 3),
         testId: "chip-load-3bet",
-        tone: "raise" as const,
-      },
-      {
-        key: "four-bet",
-        label: "4-Bet",
-        amount:
-          callAmount > 0
-            ? commitToTargetTotalBet(currentTableBet * 4)
-            : clampToStack(minRaise * 4),
-        testId: "chip-load-4bet",
-        tone: "raise" as const,
+        tone: "raise",
+        enabled: false,
       },
       {
         key: "half-pot",
         label: "1/2 Pot",
         amount: halfPotCommit,
         testId: "chip-load-half-pot",
-        tone: "raise" as const,
-      },
-      {
-        key: "full-pot",
-        label: "Pot",
-        amount: fullPotCommit,
-        testId: "chip-load-full-pot",
-        tone: "raise" as const,
+        tone: "raise",
+        enabled: false,
       },
       {
         key: "all-in",
         label: "All-In",
         amount: maxStack,
         testId: "chip-load-all-in",
-        tone: "allin" as const,
+        tone: "allin",
+        enabled: false,
       },
-    ];
+    );
 
     return presets.map((preset) => {
       const resolution = resolveDropIntent({
@@ -497,7 +501,16 @@ export const GameRoom: React.FC = () => {
         enabled: isYourTurn && preset.amount > 0 && Boolean(resolution.intent),
       };
     });
-  }, [callAmount, currentTableBet, displayPot, isYourTurn, maxStack, minRaise, myCommittedBet]);
+  }, [
+    callAmount,
+    clampTrayAmount,
+    currentTableBet,
+    displayPot,
+    isYourTurn,
+    maxStack,
+    minRaise,
+    myCommittedBet,
+  ]);
 
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
@@ -553,10 +566,13 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     if (!isYourTurn) {
       setTrayAmount(0);
-      setChipHistory([]);
       setDragState(EMPTY_DRAG_STATE);
     }
   }, [isYourTurn]);
+
+  useEffect(() => {
+    setTrayInputValue(String(trayAmount));
+  }, [trayAmount]);
 
   useEffect(() => {
     if (!lastError && !pendingAction && !showRankingsModal) return;
@@ -616,52 +632,43 @@ export const GameRoom: React.FC = () => {
       performAction(nextPendingAction.action, nextPendingAction.amount);
     }
     setTrayAmount(0);
-    setChipHistory([]);
   }, [callAmount, confirmActions, displayPot, dropResolution.intent, isYourTurn, maxStack, performAction]);
-
-  const handleChipAdd = (chipValue: number) => {
-    if (!isYourTurn) return;
-
-    const remaining = maxStack - trayAmount;
-    if (remaining <= 0) {
-      return;
-    }
-
-    const added = Math.min(chipValue, remaining);
-    if (added <= 0) {
-      return;
-    }
-
-    setTrayAmount((prev) => prev + added);
-    setChipHistory((prev) => [...prev, added]);
-  };
-
-  const handleUndoChip = () => {
-    if (!isYourTurn) return;
-
-    setChipHistory((prev) => {
-      if (prev.length === 0) {
-        return prev;
-      }
-      const next = prev.slice(0, -1);
-      const nextAmount = next.reduce((sum, chip) => sum + chip, 0);
-      setTrayAmount(nextAmount);
-      return next;
-    });
-  };
 
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
 
-    const clamped = Math.max(0, Math.min(nextAmount, maxStack));
+    const clamped = clampTrayAmount(nextAmount);
     setTrayAmount(clamped);
-    setChipHistory(clamped > 0 ? [clamped] : []);
   };
 
   const clearTray = () => {
     if (!isYourTurn) return;
     setTrayAmount(0);
-    setChipHistory([]);
+  };
+
+  const handleCustomTrayInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isYourTurn) return;
+
+    const numericText = event.target.value.replace(/\D/g, "");
+    if (!numericText) {
+      setTrayInputValue("");
+      setTrayAmount(0);
+      return;
+    }
+
+    const parsed = Number(numericText);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+
+    const clamped = clampTrayAmount(parsed);
+    setTrayInputValue(String(clamped));
+    setTrayAmount(clamped);
+  };
+
+  const handleCustomTrayInputBlur = () => {
+    if (!isYourTurn) return;
+    setTrayInputValue(String(trayAmount));
   };
 
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -866,15 +873,10 @@ export const GameRoom: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="hidden" aria-live="polite">
           <span className="hud-chip" data-testid="pot-value">
             Pot: ${displayPot}
           </span>
-          {currentHand && (
-            <span className="hud-chip" data-testid="round-value">
-              Current Round: {currentHand.bettingRound}
-            </span>
-          )}
           <span className="hud-chip" data-testid="your-chips">
             Your Chips: ${currentPlayer?.chips ?? 0}
           </span>
@@ -889,6 +891,11 @@ export const GameRoom: React.FC = () => {
         </div>
 
         <section className="table-controls-strip">
+          {currentHand && (
+            <span className="hud-chip" data-testid="round-value">
+              Round: {currentHand.bettingRound}
+            </span>
+          )}
           <button
             onClick={handleCopyInviteLink}
             data-testid="copy-room-url-button"
@@ -1298,72 +1305,66 @@ export const GameRoom: React.FC = () => {
             </div>
 
             <div className="chip-composer-dock__tray-row">
-              <button
-                type="button"
-                onPointerDown={handleDragStart}
-                onPointerMove={handleDragMove}
-                onPointerUp={handleDragEnd}
-                onPointerCancel={handleDragEnd}
-                data-testid="chip-stack-draggable"
-                disabled={!canStartDrag}
-                className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
-              >
-                <span className="chip-stack__label">Tray</span>
-                <span className="chip-stack__value">${trayAmount}</span>
-              </button>
-            </div>
-
-            <div className="chip-composer-dock__presets">
-              {trayPresetButtons.map((preset) => (
+              <div className="chip-composer-dock__tray-panel">
                 <button
-                  key={preset.key}
-                  onClick={() => setTrayDirectly(preset.amount)}
-                  className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
-                  disabled={!preset.enabled}
-                  data-testid={preset.testId}
+                  type="button"
+                  onPointerDown={handleDragStart}
+                  onPointerMove={handleDragMove}
+                  onPointerUp={handleDragEnd}
+                  onPointerCancel={handleDragEnd}
+                  data-testid="chip-stack-draggable"
+                  disabled={!canStartDrag}
+                  className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
                 >
-                  <span>{preset.label}</span>
-                  <span>${preset.amount}</span>
+                  <span className="chip-stack__label">Tray</span>
+                  <span
+                    key={trayAmount}
+                    className="chip-stack__value chip-stack__value--animated"
+                    data-testid="tray-amount-value"
+                  >
+                    ${trayAmount}
+                  </span>
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <div className="chip-composer-dock__denoms">
-              {CHIP_DENOMINATIONS.map((chipValue) => (
-                <button
-                  key={chipValue}
-                  onClick={() => handleChipAdd(chipValue)}
-                  className="chip-pill"
-                  disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
-                  data-testid={`chip-add-${chipValue}`}
-                >
-                  +{chipValue}
-                </button>
-              ))}
-              <button
-                onClick={() => setTrayDirectly(maxStack)}
-                className="chip-pill chip-pill--max"
-                disabled={!isYourTurn || maxStack <= 0 || trayAmount >= maxStack}
-                data-testid="chip-add-max"
-              >
-                MAX
-              </button>
-              <button
-                onClick={handleUndoChip}
-                className="chip-pill chip-pill--soft"
-                disabled={!isYourTurn || trayAmount <= 0}
-                data-testid="chip-undo"
-              >
-                -LAST
-              </button>
-              <button
-                onClick={clearTray}
-                className="chip-pill chip-pill--soft"
-                disabled={!isYourTurn || trayAmount <= 0}
-                data-testid="chip-clear"
-              >
-                CLEAR
-              </button>
+              <div className="chip-composer-dock__control-panel">
+                <div className="chip-composer-dock__presets">
+                  {trayPresetButtons.map((preset) => (
+                    <button
+                      key={preset.key}
+                      onClick={() => setTrayDirectly(preset.amount)}
+                      className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
+                      disabled={!preset.enabled}
+                      data-testid={preset.testId}
+                    >
+                      <span>{preset.label}</span>
+                      <span>${preset.amount}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="chip-composer-dock__manual">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={trayInputValue}
+                    onChange={handleCustomTrayInputChange}
+                    onBlur={handleCustomTrayInputBlur}
+                    data-testid="chip-custom-input"
+                    aria-label="Tray amount"
+                    className="chip-input"
+                  />
+                  <button
+                    onClick={clearTray}
+                    className="chip-clear"
+                    disabled={!isYourTurn || trayAmount <= 0}
+                    data-testid="chip-clear"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="chip-composer-dock__footer">
