@@ -514,8 +514,17 @@ export const GameRoom: React.FC = () => {
     const clampToStack = (value: number) => clampTrayAmount(value);
     const commitToTargetTotalBet = (targetTotalBet: number) =>
       clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
-    const halfPotCommit = clampToStack(Math.max(callAmount, Math.round(displayPot / 2)));
     const minRaiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise);
+    const frequentRaiseCommit = (() => {
+      const baseline =
+        callAmount > 0 ? commitToTargetTotalBet(currentTableBet * 3) : clampToStack(minRaise * 3);
+      if (baseline > minRaiseCommit) return baseline;
+
+      const steppedUp = clampToStack(minRaiseCommit + Math.max(minRaise, 1));
+      if (steppedUp > minRaiseCommit) return steppedUp;
+
+      return maxStack;
+    })();
 
     const presets: TrayPresetButton[] = [
       {
@@ -526,47 +535,11 @@ export const GameRoom: React.FC = () => {
         tone: "raise",
         enabled: false,
       },
-    ];
-
-    if (callAmount > 0) {
-      presets.push({
-        key: "call",
-        label: t("game.preset.call"),
-        amount: Math.min(callAmount, maxStack),
-        testId: "chip-load-call",
-        tone: "call",
-        enabled: false,
-      });
-    }
-
-    presets.push(
       {
-        key: "double",
-        label: t("game.preset.double"),
-        amount:
-          callAmount > 0
-            ? commitToTargetTotalBet(currentTableBet * 2)
-            : clampToStack(minRaise * 2),
-        testId: "chip-load-double",
-        tone: "raise",
-        enabled: false,
-      },
-      {
-        key: "three-bet",
+        key: "frequent-raise",
         label: t("game.preset.threeBet"),
-        amount:
-          callAmount > 0
-            ? commitToTargetTotalBet(currentTableBet * 3)
-            : clampToStack(minRaise * 3),
+        amount: frequentRaiseCommit,
         testId: "chip-load-3bet",
-        tone: "raise",
-        enabled: false,
-      },
-      {
-        key: "half-pot",
-        label: t("game.preset.halfPot"),
-        amount: halfPotCommit,
-        testId: "chip-load-half-pot",
         tone: "raise",
         enabled: false,
       },
@@ -578,7 +551,7 @@ export const GameRoom: React.FC = () => {
         tone: "allin",
         enabled: false,
       },
-    );
+    ];
 
     return presets.map((preset) => {
       const resolution = resolveDropIntent({
@@ -597,7 +570,6 @@ export const GameRoom: React.FC = () => {
     callAmount,
     clampTrayAmount,
     currentTableBet,
-    displayPot,
     isYourTurn,
     maxStack,
     minRaise,
@@ -1742,25 +1714,25 @@ export const GameRoom: React.FC = () => {
                     {t("common.clear")}
                   </button>
                 </div>
-              </div>
-            </div>
 
-            <div className="chip-composer-dock__footer">
-              <button
-                onClick={() => handleQuickDecisionAction("check")}
-                disabled={!canCheck}
-                data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                className="chip-action chip-action--check chip-action--small"
-              >
-                {t("common.check")}
-              </button>
-              <button
-                onClick={() => handleQuickDecisionAction("fold")}
-                data-testid="action-fold"
-                className="chip-action chip-action--fold chip-action--small"
-              >
-                {t("common.fold")}
-              </button>
+                <div className="chip-composer-dock__footer">
+                  <button
+                    onClick={() => handleQuickDecisionAction("check")}
+                    disabled={!canCheck}
+                    data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                    className="chip-action chip-action--check"
+                  >
+                    {t("common.check")}
+                  </button>
+                  <button
+                    onClick={() => handleQuickDecisionAction("fold")}
+                    data-testid="action-fold"
+                    className="chip-action chip-action--fold"
+                  >
+                    {t("common.fold")}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {isAutomationMode && (

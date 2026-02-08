@@ -717,7 +717,8 @@ body {
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 0.4rem;
+  grid-template-rows: auto auto auto;
+  gap: 0.35rem;
 }
 
 .chip-composer-dock__presets {
@@ -765,11 +766,18 @@ body {
 }
 
 .chip-composer-dock__footer {
-  margin-top: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.32rem;
+}
+
+.chip-composer-dock__footer .chip-action {
+  width: 100%;
+  min-height: 2.45rem;
+  font-size: 0.86rem;
+  padding: 0.52rem 0.72rem;
+  border-radius: 0.72rem;
 }
 
 .chip-action {
