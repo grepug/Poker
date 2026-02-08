@@ -3443,6 +3443,41 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4a: Entrance Screen Keeps URL At Root', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="connection-status"]');
+      await expect(page.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await page.click('[data-testid="join-toggle-button"]');
+      await page.fill('[data-testid="name-input"]', 'RouteCheck');
+      await page.fill('[data-testid="room-id-input"]', 'ZZZZZZ');
+      await page.click('[data-testid="join-room-button"]');
+
+      await page.waitForSelector('[data-testid="name-input"]');
+      const pathnameAfterJoinAttempt = await page.evaluate(
+        () => window.location.pathname,
+      );
+      expect(pathnameAfterJoinAttempt).toBe('/');
+
+      await expect(page).toHaveURL(/\/(\?roomId=ZZZZZZ)?$/);
+      await page.click('[data-testid="back-button"]');
+
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('[data-testid="name-input"]')).toBeVisible();
+      await expect(page.locator('[data-testid="create-room-button"]')).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
   test('8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
