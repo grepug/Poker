@@ -19,11 +19,23 @@ import type {
 } from "poker-types";
 import { useSocket } from "./SocketContext";
 
+export interface PlayerActionFlashEvent {
+  id: string;
+  playerId: string;
+  playerName: string;
+  action: PlayerAction;
+  amount?: number;
+  isOpeningBet?: boolean;
+  newPot: number;
+  createdAt: number;
+}
+
 type DebugApi = {
   getRoom: () => Room | null;
   getPlayer: () => Player | null;
   getCards: () => Card[] | null;
   getLastHandResult: () => HandResult | null;
+  getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
   getSocket: () => ReturnType<typeof useSocket>["socket"];
   createRoom: (name: string) => void;
@@ -49,6 +61,7 @@ interface GameContextType {
   player: Player | null;
   yourCards: Card[] | null;
   lastHandResult: HandResult | null;
+  lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
   isHost: boolean;
   isRecoveringSession: boolean;
@@ -142,6 +155,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [player, setPlayer] = useState<Player | null>(null);
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
   const [lastHandResult, setLastHandResult] = useState<HandResult | null>(null);
+  const [lastPlayerActionEvent, setLastPlayerActionEvent] =
+    useState<PlayerActionFlashEvent | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -171,6 +186,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
+      setLastPlayerActionEvent(null);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
@@ -179,6 +195,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("ROOM_JOINED", (data) => {
       setRoom(data.room as unknown as Room); // SanitizedRoom from server
       setPlayer(data.player);
+      setLastPlayerActionEvent(null);
       setIsRecoveringSession(false);
       setLastError(null);
     });
@@ -188,6 +205,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(data.room as unknown as Room);
       setPlayer(data.player as Player);
       setYourCards(data.yourCards ?? null);
+      setLastPlayerActionEvent(null);
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;
@@ -264,6 +282,14 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
 
     socket.on("PLAYER_AUTO_FOLDED", (data) => {
+      setLastPlayerActionEvent({
+        id: `${Date.now()}-${data.playerId}-auto-fold`,
+        playerId: data.playerId,
+        playerName: data.playerName,
+        action: "fold",
+        newPot: roomRef.current?.currentHand?.pot ?? 0,
+        createdAt: Date.now(),
+      });
       setRoom((prev) => {
         if (!prev) return prev;
         return {
@@ -293,6 +319,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Game started
     socket.on("GAME_STARTED", (data) => {
       setLastHandResult(null);
+      setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
       setRoom((prev) => {
         if (!prev) return null;
@@ -415,6 +442,24 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Player acted
     socket.on("PLAYER_ACTED", (data) => {
       console.log("Player acted:", data);
+      const roomSnapshot = roomRef.current;
+      const actedPlayerBefore = roomSnapshot?.players.find((p) => p.id === data.playerId);
+      const chipsCommitted = actedPlayerBefore
+        ? Math.max(0, actedPlayerBefore.chips - data.newChips)
+        : undefined;
+      const resolvedAmount =
+        data.amount ??
+        (data.action === "check" || data.action === "fold" ? undefined : chipsCommitted);
+      setLastPlayerActionEvent({
+        id: `${Date.now()}-${data.playerId}-${data.action}`,
+        playerId: data.playerId,
+        playerName: data.playerName,
+        action: data.action,
+        amount: resolvedAmount,
+        isOpeningBet: (roomSnapshot?.currentHand?.currentBet ?? 0) === 0,
+        newPot: data.newPot,
+        createdAt: Date.now(),
+      });
       setRoom((prev) => {
         if (!prev) return prev;
         return {
@@ -642,6 +687,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setPlayer(null);
       setYourCards(null);
       setLastHandResult(null);
+      setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
       setIsRecoveringSession(false);
       setLastError(null);
@@ -671,6 +717,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         getPlayer: () => player,
         getCards: () => yourCards,
         getLastHandResult: () => lastHandResult,
+        getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
         getSocket: () => socket,
         createRoom,
@@ -706,6 +753,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     player,
     yourCards,
     lastHandResult,
+    lastPlayerActionEvent,
     revealedHandPlayerIds,
     socket,
     isHost,
@@ -727,6 +775,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         player,
         yourCards,
         lastHandResult,
+        lastPlayerActionEvent,
         revealedHandPlayerIds,
         isHost,
         isRecoveringSession,

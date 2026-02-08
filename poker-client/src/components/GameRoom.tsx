@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGame } from "../contexts/GameContext";
 import { useLocalization } from "../contexts/LocalizationContext";
+import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
 import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { MessageKey } from "../i18n/messages";
 
 const DRAG_SNAP_RADIUS_PX = 32;
+const SEAT_BUBBLE_VISIBLE_MS = 1300;
+const SEAT_BUBBLE_TOTAL_MS = 1600;
+const TURN_ALERT_VISIBLE_MS = 1650;
+const POT_ANIMATION_MS = 360;
 
 type SeatAnchor = {
   top: string;
@@ -53,6 +57,15 @@ type TrayPresetButton = {
 };
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
+type SeatActionBubbleTone = "neutral" | "aggressive" | "fold" | "allin";
+
+type SeatActionBubble = {
+  id: string;
+  playerId: string;
+  text: string;
+  tone: SeatActionBubbleTone;
+  exiting: boolean;
+};
 
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
@@ -222,6 +235,57 @@ const getPositionBadges = (
   return badges;
 };
 
+const toSeatActionBubble = (event: PlayerActionFlashEvent, t: Translate): SeatActionBubble => {
+  const withAmount = (base: string, amount?: number) =>
+    typeof amount === "number" && amount > 0 ? `${base} $${amount}` : base;
+
+  switch (event.action) {
+    case "fold":
+      return {
+        id: event.id,
+        playerId: event.playerId,
+        text: t("game.actionBubble.fold"),
+        tone: "fold",
+        exiting: false,
+      };
+    case "check":
+      return {
+        id: event.id,
+        playerId: event.playerId,
+        text: t("game.actionBubble.check"),
+        tone: "neutral",
+        exiting: false,
+      };
+    case "call":
+      return {
+        id: event.id,
+        playerId: event.playerId,
+        text: withAmount(t("game.actionBubble.call"), event.amount),
+        tone: "neutral",
+        exiting: false,
+      };
+    case "all-in":
+      return {
+        id: event.id,
+        playerId: event.playerId,
+        text: withAmount(t("game.actionBubble.allIn"), event.amount),
+        tone: "allin",
+        exiting: false,
+      };
+    case "raise":
+      return {
+        id: event.id,
+        playerId: event.playerId,
+        text: withAmount(
+          event.isOpeningBet ? t("game.actionBubble.bet") : t("game.actionBubble.raise"),
+          event.amount,
+        ),
+        tone: "aggressive",
+        exiting: false,
+      };
+  }
+};
+
 export const GameRoom: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -229,6 +293,7 @@ export const GameRoom: React.FC = () => {
     player,
     yourCards,
     lastHandResult,
+    lastPlayerActionEvent,
     revealedHandPlayerIds,
     isHost,
     lastError,
@@ -253,10 +318,18 @@ export const GameRoom: React.FC = () => {
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
+  const [seatActionBubbles, setSeatActionBubbles] = useState<Record<string, SeatActionBubble>>(
+    {},
+  );
+  const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
+  const bubbleHideTimersRef = useRef(new Map<string, number>());
+  const bubbleRemoveTimersRef = useRef(new Map<string, number>());
+  const turnAlertTimeoutRef = useRef<number | null>(null);
+  const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
@@ -277,6 +350,10 @@ export const GameRoom: React.FC = () => {
     ? room.players.reduce((sum, seatPlayer) => sum + (seatPlayer.currentBet || 0), 0)
     : 0;
   const displayPot = Math.max(currentHand?.pot ?? 0, inferredPotFromBets);
+  const [animatedPotValue, setAnimatedPotValue] = useState(displayPot);
+  const [potAnimationTick, setPotAnimationTick] = useState(0);
+  const animatedPotRef = useRef(displayPot);
+  const potAnimationFrameRef = useRef<number | null>(null);
   const currentTableBet = currentHand?.currentBet ?? 0;
   const myCommittedBet = currentPlayer?.currentBet ?? 0;
 
@@ -515,6 +592,32 @@ export const GameRoom: React.FC = () => {
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
 
+  const clearSeatBubbleTimers = useCallback((playerId: string) => {
+    const hideTimer = bubbleHideTimersRef.current.get(playerId);
+    if (typeof hideTimer === "number") {
+      window.clearTimeout(hideTimer);
+      bubbleHideTimersRef.current.delete(playerId);
+    }
+
+    const removeTimer = bubbleRemoveTimersRef.current.get(playerId);
+    if (typeof removeTimer === "number") {
+      window.clearTimeout(removeTimer);
+      bubbleRemoveTimersRef.current.delete(playerId);
+    }
+  }, []);
+
+  const triggerTurnAlert = useCallback(() => {
+    if (turnAlertTimeoutRef.current) {
+      window.clearTimeout(turnAlertTimeoutRef.current);
+    }
+
+    setTurnAlertToken(Date.now());
+    turnAlertTimeoutRef.current = window.setTimeout(() => {
+      setTurnAlertToken(null);
+      turnAlertTimeoutRef.current = null;
+    }, TURN_ALERT_VISIBLE_MS);
+  }, []);
+
   useEffect(() => {
     if (!room || !player) {
       const redirectTimer = window.setTimeout(() => {
@@ -578,6 +681,140 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
+
+  useEffect(() => {
+    animatedPotRef.current = animatedPotValue;
+  }, [animatedPotValue]);
+
+  useEffect(() => {
+    if (displayPot === animatedPotRef.current) {
+      return;
+    }
+
+    if (potAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(potAnimationFrameRef.current);
+    }
+
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      setAnimatedPotValue(displayPot);
+      animatedPotRef.current = displayPot;
+      setPotAnimationTick((prev) => prev + 1);
+      return;
+    }
+
+    const startValue = animatedPotRef.current;
+    const delta = displayPot - startValue;
+    const startAt = performance.now();
+    setPotAnimationTick((prev) => prev + 1);
+
+    const step = (timestamp: number) => {
+      const progress = Math.min(1, (timestamp - startAt) / POT_ANIMATION_MS);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextValue = Math.round(startValue + delta * eased);
+      animatedPotRef.current = nextValue;
+      setAnimatedPotValue(nextValue);
+
+      if (progress < 1) {
+        potAnimationFrameRef.current = window.requestAnimationFrame(step);
+      } else {
+        potAnimationFrameRef.current = null;
+      }
+    };
+
+    potAnimationFrameRef.current = window.requestAnimationFrame(step);
+  }, [displayPot]);
+
+  useEffect(() => {
+    if (turnAlertTimeoutRef.current) {
+      window.clearTimeout(turnAlertTimeoutRef.current);
+      turnAlertTimeoutRef.current = null;
+    }
+
+    previousIsYourTurnRef.current = null;
+    setTurnAlertToken(null);
+  }, [room?.id, currentHandNumber]);
+
+  useEffect(() => {
+    const previousIsYourTurn = previousIsYourTurnRef.current;
+    if (previousIsYourTurn === null) {
+      if (isYourTurn) {
+        triggerTurnAlert();
+      }
+      previousIsYourTurnRef.current = isYourTurn;
+      return;
+    }
+
+    if (!previousIsYourTurn && isYourTurn) {
+      triggerTurnAlert();
+    }
+    previousIsYourTurnRef.current = isYourTurn;
+  }, [isYourTurn, triggerTurnAlert]);
+
+  useEffect(() => {
+    if (!lastPlayerActionEvent) return;
+
+    const bubble = toSeatActionBubble(lastPlayerActionEvent, t);
+    const { playerId } = bubble;
+    clearSeatBubbleTimers(playerId);
+    setSeatActionBubbles((prev) => ({
+      ...prev,
+      [playerId]: bubble,
+    }));
+
+    const hideTimer = window.setTimeout(() => {
+      setSeatActionBubbles((prev) => {
+        const existing = prev[playerId];
+        if (!existing || existing.id !== bubble.id) return prev;
+        return {
+          ...prev,
+          [playerId]: {
+            ...existing,
+            exiting: true,
+          },
+        };
+      });
+    }, SEAT_BUBBLE_VISIBLE_MS);
+    bubbleHideTimersRef.current.set(playerId, hideTimer);
+
+    const removeTimer = window.setTimeout(() => {
+      setSeatActionBubbles((prev) => {
+        const existing = prev[playerId];
+        if (!existing || existing.id !== bubble.id) return prev;
+        const next = { ...prev };
+        delete next[playerId];
+        return next;
+      });
+      clearSeatBubbleTimers(playerId);
+    }, SEAT_BUBBLE_TOTAL_MS);
+    bubbleRemoveTimersRef.current.set(playerId, removeTimer);
+  }, [clearSeatBubbleTimers, lastPlayerActionEvent, t]);
+
+  useEffect(() => {
+    setSeatActionBubbles({});
+    bubbleHideTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    bubbleHideTimersRef.current.clear();
+    bubbleRemoveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    bubbleRemoveTimersRef.current.clear();
+  }, [room?.id]);
+
+  useEffect(
+    () => () => {
+      if (potAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(potAnimationFrameRef.current);
+      }
+      if (turnAlertTimeoutRef.current) {
+        window.clearTimeout(turnAlertTimeoutRef.current);
+      }
+      bubbleHideTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      bubbleHideTimersRef.current.clear();
+      bubbleRemoveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      bubbleRemoveTimersRef.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!lastError && !showRankingsModal && !showSettingsModal && !quickConfirmAction) return;
@@ -927,6 +1164,19 @@ export const GameRoom: React.FC = () => {
         </section>
       </header>
 
+      {turnAlertToken !== null && (
+        <div
+          className="turn-center-alert-layer"
+          aria-live="assertive"
+          data-testid="turn-center-alert"
+        >
+          <div key={`turn-alert-${turnAlertToken}`} className="turn-center-alert">
+            <span className="turn-center-alert__eyebrow">{t("game.turnAlert.eyebrow")}</span>
+            <span className="turn-center-alert__title">{t("game.turnAlert.title")}</span>
+          </div>
+        </div>
+      )}
+
       <section className="table-board-wrap" data-testid="table-board-section">
         <div className="felt-oval">
           <div className="board-center-stack">
@@ -958,7 +1208,12 @@ export const GameRoom: React.FC = () => {
               } ${dragState.overDropZone ? "pot-drop-zone--hover" : ""}`}
             >
               <span className="pot-drop-zone__label">{t("game.potCenter")}</span>
-              <span className="pot-drop-zone__value">${displayPot}</span>
+              <span
+                key={`pot-animation-${potAnimationTick}`}
+                className="pot-drop-zone__value pot-drop-zone__value--pulse"
+              >
+                ${animatedPotValue}
+              </span>
               {isYourTurn && (
                 <span className="pot-drop-zone__hint">{t("game.dragHint")}</span>
               )}
@@ -983,6 +1238,7 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
+              const seatBubble = seatActionBubbles[seatPlayer.id];
 
               return (
                 <div
@@ -1003,6 +1259,16 @@ export const GameRoom: React.FC = () => {
                       isFolded ? "seat-pod--folded" : ""
                     }`}
                   >
+                    {seatBubble && (
+                      <div
+                        data-testid={`seat-action-bubble-${seatBubble.playerId}`}
+                        className={`seat-action-bubble seat-action-bubble--${seatBubble.tone} ${
+                          seatBubble.exiting ? "seat-action-bubble--exit" : ""
+                        }`}
+                      >
+                        {seatBubble.text}
+                      </div>
+                    )}
                     {isSelfSeat && (
                       <span
                         className="seat-pod__you-indicator"
