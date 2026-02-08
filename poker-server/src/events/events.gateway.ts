@@ -425,8 +425,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: PlayerActionData,
   ) {
+    const playerInfo = this.socketToPlayer.get(client.id);
+    const requestActionId = data.actionId?.trim();
+    const baseActionLog = {
+      roomId: playerInfo?.roomId ?? null,
+      playerId: playerInfo?.playerId ?? null,
+      action: data.action,
+      amount: data.amount ?? null,
+      actionId: requestActionId ?? null,
+      socketId: client.id,
+    };
+
     try {
-      const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
 
       return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
@@ -435,7 +445,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (!player) throw new Error('Player not found');
         if (!room.currentHand) throw new Error('No active hand');
 
-        const actionId = data.actionId?.trim();
+        const actionId = requestActionId;
+        const actionLog = {
+          ...baseActionLog,
+          roomId: room.id,
+          playerId: player.id,
+          handNumber: room.currentHand.handNumber,
+          playerName: player.name,
+        };
+
         if (
           actionId &&
           this.hasProcessedAction(
@@ -445,8 +463,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             actionId,
           )
         ) {
-          this.logger.debug(
-            `Ignoring duplicate PLAYER_ACTION ${actionId} from ${player.name} in room ${room.id}`,
+          this.logger.warn(
+            `Duplicate action ignored ${this.serializeForLog(actionLog)}`,
           );
           return { success: true, duplicate: true };
         }
@@ -480,6 +498,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
+        this.logger.log(
+          `Action applied ${this.serializeForLog({
+            ...actionLog,
+            newPot: updatedRoom.currentHand!.pot,
+            newChips: player.chips,
+          })}`,
+        );
 
         // Check if betting round complete
         const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
@@ -504,7 +529,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return { success: true };
       });
     } catch (error) {
-      this.logger.error(`Player action error: ${error.message}`);
+      this.logger.warn(
+        `Player action rejected ${this.serializeForLog({
+          ...baseActionLog,
+          reason: error.message,
+        })}`,
+      );
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
@@ -582,6 +612,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Helper methods
+
+  private serializeForLog(payload: Record<string, unknown>): string {
+    return JSON.stringify(payload);
+  }
 
   private async runRoomActionSequentially<T>(
     roomId: string,
