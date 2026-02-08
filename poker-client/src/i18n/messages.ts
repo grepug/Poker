@@ -138,6 +138,7 @@ export const EN_MESSAGES = {
   "game.confirmAction.round": "Round: {round}",
   "game.confirmAction.turn": "Turn: {name}",
   "game.confirmAction.confirmWithLabel": "Confirm {label}",
+  "game.quickConfirm.prompt": "Confirm {action}?",
 
   "game.error.actionRejected": "Action Rejected",
   "game.error.tryAgain": "Try again after the game state updates.",
@@ -300,6 +301,7 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.confirmAction.round": "轮次：{round}",
   "game.confirmAction.turn": "行动玩家：{name}",
   "game.confirmAction.confirmWithLabel": "确认 {label}",
+  "game.quickConfirm.prompt": "确认{action}？",
 
   "game.error.actionRejected": "操作被拒绝",
   "game.error.tryAgain": "请等待牌局状态更新后重试。",

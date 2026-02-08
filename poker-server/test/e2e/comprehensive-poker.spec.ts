@@ -3805,36 +3805,62 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.8: Action Confirmation Modal Helps Decision Before Commit', async ({
+  test('8.8: Fold Is Always Available On Turn And Actions Apply Immediately', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await alicePage.setViewportSize({ width: 1280, height: 620 });
+      await bobPage.setViewportSize({ width: 1280, height: 620 });
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      await bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]').check();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeEnabled();
+      await expect(
+        bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]'),
+      ).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
+
       await bobPage.click('[data-testid="action-call"]');
-
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toBeVisible();
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Confirm Action',
-      );
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Pot',
-      );
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Your Stack',
-      );
-
-      await bobPage.click('[data-testid="confirm-action-button"]');
       await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
 
       await waitForPlayerTurn(alicePage, 'Alice');
-      const stateAfterConfirm = await getRoomSnapshot(alicePage);
-      expect(stateAfterConfirm.currentPlayerName).toBe('Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(bobPage.locator('[data-testid="action-check"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      const dockScrollBehavior = await bobPage.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>('[data-testid="turn-overlay"]');
+        if (!dock) return null;
+        const styles = window.getComputedStyle(dock);
+        return {
+          overflowY: styles.overflowY,
+          overflow: styles.overflow,
+        };
+      });
+      expect(dockScrollBehavior).not.toBeNull();
+      expect(dockScrollBehavior?.overflowY).not.toBe("auto");
+      expect(dockScrollBehavior?.overflowY).not.toBe("scroll");
+      const controlsAreInViewport = await bobPage.evaluate(() => {
+        const fold = document.querySelector<HTMLElement>('[data-testid="action-fold"]');
+        const check = document.querySelector<HTMLElement>('[data-testid="action-check"]');
+        if (!fold || !check) return false;
+
+        const foldRect = fold.getBoundingClientRect();
+        const checkRect = check.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+
+        const isInsideViewport = (rect: DOMRect) =>
+          rect.top >= 0 && rect.bottom <= viewportHeight;
+
+        return isInsideViewport(foldRect) && isInsideViewport(checkRect);
+      });
+      expect(controlsAreInViewport).toBe(true);
     } finally {
       await teardownTwoPlayerSession(session);
     }

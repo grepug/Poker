@@ -24,14 +24,7 @@ type DropResolution = {
   reason: string | null;
 };
 
-type PendingAction = {
-  action: PlayerAction;
-  amount?: number;
-  label: string;
-  chipsCommitted: number;
-  projectedPot: number;
-  projectedStack: number;
-};
+type QuickConfirmAction = "check" | "fold";
 
 type FeedbackInsight = {
   title: string;
@@ -257,15 +250,8 @@ export const GameRoom: React.FC = () => {
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [confirmActions, setConfirmActions] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const saved = window.localStorage.getItem("poker.confirmActions");
-    if (saved === "off") return false;
-    if (saved === "on") return true;
-    return !window.navigator.webdriver;
-  });
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
@@ -550,11 +536,6 @@ export const GameRoom: React.FC = () => {
   }, [inviteCopyStatus]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("poker.confirmActions", confirmActions ? "on" : "off");
-  }, [confirmActions]);
-
-  useEffect(() => {
     if (!lastHandResult) {
       lastAutoScrolledResultRef.current = null;
       return;
@@ -583,28 +564,35 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     if (!isYourTurn) {
       setTrayAmount(0);
+      setQuickConfirmAction(null);
       setDragState(EMPTY_DRAG_STATE);
     }
   }, [isYourTurn]);
+
+  useEffect(() => {
+    if (!quickConfirmAction || isAutomationMode) return;
+    const timer = window.setTimeout(() => setQuickConfirmAction(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [isAutomationMode, quickConfirmAction]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
 
   useEffect(() => {
-    if (!lastError && !pendingAction && !showRankingsModal && !showSettingsModal) return;
+    if (!lastError && !showRankingsModal && !showSettingsModal && !quickConfirmAction) return;
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
-      if (pendingAction) setPendingAction(null);
       if (showRankingsModal) setShowRankingsModal(false);
       if (showSettingsModal) setShowSettingsModal(false);
+      if (quickConfirmAction) setQuickConfirmAction(null);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, lastError, pendingAction, showRankingsModal, showSettingsModal]);
+  }, [clearError, lastError, quickConfirmAction, showRankingsModal, showSettingsModal]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -629,28 +617,10 @@ export const GameRoom: React.FC = () => {
       return;
     }
 
-    const chipsCommitted =
-      dropResolution.intent.action === "call"
-        ? Math.min(callAmount, maxStack)
-        : dropResolution.intent.action === "raise"
-          ? Math.min(maxStack, callAmount + (dropResolution.intent.amount ?? 0))
-          : maxStack;
-    const nextPendingAction: PendingAction = {
-      action: dropResolution.intent.action,
-      amount: dropResolution.intent.amount,
-      label: dropResolution.intent.label,
-      chipsCommitted,
-      projectedPot: displayPot + chipsCommitted,
-      projectedStack: Math.max(0, maxStack - chipsCommitted),
-    };
-
-    if (confirmActions) {
-      setPendingAction(nextPendingAction);
-    } else {
-      performAction(nextPendingAction.action, nextPendingAction.amount);
-    }
+    setQuickConfirmAction(null);
+    performAction(dropResolution.intent.action, dropResolution.intent.amount);
     setTrayAmount(0);
-  }, [callAmount, confirmActions, displayPot, dropResolution.intent, isYourTurn, maxStack, performAction]);
+  }, [dropResolution.intent, isYourTurn, performAction]);
 
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
@@ -767,42 +737,6 @@ export const GameRoom: React.FC = () => {
   };
 
   const handleLegacyAction = (action: PlayerAction) => {
-    const submit = (nextAction: PlayerAction, amount?: number, label?: string) => {
-      const chipsCommitted =
-        nextAction === "call"
-          ? Math.min(callAmount, maxStack)
-          : nextAction === "raise"
-            ? Math.min(maxStack, callAmount + (amount ?? 0))
-            : nextAction === "all-in"
-              ? maxStack
-              : 0;
-
-      const nextPendingAction: PendingAction = {
-        action: nextAction,
-        amount,
-        label:
-          label ??
-          (nextAction === "raise"
-            ? t("game.drag.label.betRaiseBy", { amount: amount ?? 0 })
-            : nextAction === "call"
-              ? t("game.callWithAmount", { amount: callAmount })
-              : nextAction === "all-in"
-                ? t("game.allInWithAmount", { amount: maxStack })
-                : nextAction === "check"
-                  ? t("common.check")
-                  : t("common.fold")),
-        chipsCommitted,
-        projectedPot: displayPot + chipsCommitted,
-        projectedStack: Math.max(0, maxStack - chipsCommitted),
-      };
-
-      if (confirmActions) {
-        setPendingAction(nextPendingAction);
-      } else {
-        performAction(nextPendingAction.action, nextPendingAction.amount);
-      }
-    };
-
     if (action === "raise") {
       if (legacyRaiseAmount < minRaise) {
         return;
@@ -811,15 +745,27 @@ export const GameRoom: React.FC = () => {
         return;
       }
 
-      submit(
-        "raise",
-        legacyRaiseAmount,
-        t("game.drag.label.betRaiseBy", { amount: legacyRaiseAmount }),
-      );
+      setQuickConfirmAction(null);
+      performAction("raise", legacyRaiseAmount);
       return;
     }
 
-    submit(action);
+    if (action !== "check" && action !== "fold") {
+      setQuickConfirmAction(null);
+    }
+    performAction(action);
+  };
+
+  const handleQuickDecisionAction = (action: QuickConfirmAction) => {
+    if (!isYourTurn) return;
+    if (action === "check" && !canCheck) return;
+
+    if (isAutomationMode) {
+      performAction(action);
+      return;
+    }
+
+    setQuickConfirmAction(action);
   };
 
   const feedbackInsight = useMemo<FeedbackInsight | null>(() => {
@@ -1420,24 +1366,15 @@ export const GameRoom: React.FC = () => {
 
             <div className="chip-composer-dock__footer">
               <button
-                onClick={() => handleLegacyAction("check")}
+                onClick={() => handleQuickDecisionAction("check")}
                 disabled={!canCheck}
                 data-testid={canCheck ? "action-check" : "action-check-disabled"}
                 className="chip-action chip-action--check chip-action--small"
               >
                 {t("common.check")}
               </button>
-              <label className="chip-composer-dock__confirm">
-                <input
-                  type="checkbox"
-                  checked={confirmActions}
-                  onChange={(event) => setConfirmActions(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-emerald-400"
-                />
-                {t("game.confirmActions")}
-              </label>
               <button
-                onClick={() => handleLegacyAction("fold")}
+                onClick={() => handleQuickDecisionAction("fold")}
                 data-testid="action-fold"
                 className="chip-action chip-action--fold chip-action--small"
               >
@@ -1616,72 +1553,38 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
-      {pendingAction && (
+      {!isAutomationMode && quickConfirmAction && (
         <div
-          className="fixed inset-0 z-[85] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-          data-testid="action-confirm-modal"
+          className="fixed inset-0 z-[84] flex items-center justify-center bg-emerald-950/80 p-4 backdrop-blur-sm"
+          data-testid="action-quick-confirm-modal"
         >
-          <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
-            <h3 className="text-lg font-black text-white">{t("game.confirmAction.title")}</h3>
-            <p className="mt-1 text-sm text-emerald-100/80">
-              {t("game.confirmAction.reviewHint")}
+          <div className="surface-panel w-full max-w-xs p-4">
+            <p className="text-sm font-semibold text-white">
+              {t("game.quickConfirm.prompt", {
+                action:
+                  quickConfirmAction === "check"
+                    ? t("common.check")
+                    : t("common.fold"),
+              })}
             </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.action")}</p>
-                <p className="mt-1 font-semibold text-white">{pendingAction.label}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.potCenter")}</p>
-                <p className="mt-1 font-semibold text-white">${displayPot}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.potAfter")}</p>
-                <p className="mt-1 font-semibold text-white">${pendingAction.projectedPot}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.yourStack")}</p>
-                <p className="mt-1 font-semibold text-white">${maxStack}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.confirmAction.stackAfter")}</p>
-                <p className="mt-1 font-semibold text-white">${pendingAction.projectedStack}</p>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3">
-                <p className="text-xs text-emerald-100/70">{t("game.toCallLabel")}</p>
-                <p className="mt-1 font-semibold text-white">${callAmount}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                {t("game.confirmAction.roundLabel")}:{" "}
-                <span className="font-semibold text-white">{currentHand?.bettingRound ?? "-"}</span>
-              </div>
-              <div className="rounded-lg border border-emerald-700/70 bg-emerald-950/60 p-3 text-emerald-100/80">
-                {t("game.confirmAction.turnLabel")}:{" "}
-                <span className="font-semibold text-white">{currentTurnPlayer?.name ?? "-"}</span>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <div className="mt-3 flex justify-end gap-2">
               <button
-                onClick={() => setPendingAction(null)}
-                data-testid="cancel-action-button"
-                className="rounded-xl border border-emerald-500/60 bg-emerald-900/30 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-800/35"
+                onClick={() => setQuickConfirmAction(null)}
+                data-testid="action-quick-confirm-cancel"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
               >
                 {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
-                  performAction(pendingAction.action, pendingAction.amount);
-                  setPendingAction(null);
+                  const actionToApply = quickConfirmAction;
+                  setQuickConfirmAction(null);
+                  performAction(actionToApply);
                 }}
-                data-testid="confirm-action-button"
-                className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-300"
+                data-testid="action-quick-confirm-accept"
+                className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-300"
               >
-                {t("game.confirmAction.confirmWithLabel", { label: pendingAction.label })}
+                {t("common.confirm")}
               </button>
             </div>
           </div>
