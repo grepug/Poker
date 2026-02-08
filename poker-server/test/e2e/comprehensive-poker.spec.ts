@@ -709,6 +709,17 @@ async function getPlayersMoneyFromUi(
       string,
       { chips: number; currentBet: number; totalBuyIn: number }
     > = {};
+    const roomPlayersByName: Record<string, { totalBuyIn: number }> = {};
+    const room = (window as any).pokerDebug?.getRoom?.();
+    if (room?.players && Array.isArray(room.players)) {
+      for (const p of room.players) {
+        if (p?.name) {
+          roomPlayersByName[p.name] = {
+            totalBuyIn: Number(p.totalBuyIn ?? 0),
+          };
+        }
+      }
+    }
     const playersSection = document.querySelector('[data-testid="players-section"]');
     const seatRows = playersSection?.querySelectorAll('[data-testid^="player-seat-"]');
     if (seatRows && seatRows.length > 0) {
@@ -731,7 +742,9 @@ async function getPlayersMoneyFromUi(
           .map((el) => el.textContent || '')
           .find((text) => text.includes('Buy-in: $'));
         const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
-        const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
+        const totalBuyIn = buyInMatch
+          ? Number(buyInMatch[1])
+          : roomPlayersByName[name]?.totalBuyIn ?? 0;
 
         result[name] = { chips, currentBet, totalBuyIn };
       }
@@ -766,7 +779,9 @@ async function getPlayersMoneyFromUi(
         .map((el) => el.textContent || '')
         .find((text) => text.includes('Buy-in: $'));
       const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
-      const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
+      const totalBuyIn = buyInMatch
+        ? Number(buyInMatch[1])
+        : roomPlayersByName[name]?.totalBuyIn ?? 0;
 
       result[name] = { chips, currentBet, totalBuyIn };
     }
@@ -1806,6 +1821,13 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
         0,
       );
       expect(totalAwarded).toBe(4000);
+      await expect(alicePage.locator('[data-testid="hand-results-payouts"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="payout-segment-0"]')).toContainText(
+        'Main Pot',
+      );
+      await expect(alicePage.locator('[data-testid="payout-segment-1"]')).toContainText(
+        'Side Pot #1',
+      );
 
       await verifyChipConservation(alicePage, 5000);
     } finally {
@@ -4339,8 +4361,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
         'Showdown complete',
       );
+      await expect(alicePage.locator('[data-testid="hand-results-community"]')).toBeVisible();
       await expect(
-        alicePage.locator('[data-testid^="winner-rank-"]').first(),
+        alicePage.locator('[data-testid^="hand-results-community-card-"]'),
+      ).toHaveCount(5);
+      await expect(
+        alicePage.locator('[data-testid="save-result-screenshot-button"]'),
       ).toBeVisible();
       await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
@@ -4349,6 +4375,34 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(
         0,
       );
+
+      const alicePlayerId = await alicePage.evaluate(
+        () => (window as any).pokerDebug?.getPlayer?.()?.id,
+      );
+      if (!alicePlayerId) {
+        throw new Error('Missing player id for showdown card consistency assertion');
+      }
+
+      const resultCardLocator = alicePage.locator(
+        `[data-testid^="hand-result-card-${alicePlayerId}-"]`,
+      );
+      const flyoutCardLocator = alicePage.locator('[data-testid^="your-card-"]');
+      await expect(resultCardLocator).toHaveCount(2);
+      await expect(flyoutCardLocator).toHaveCount(2);
+
+      const resultCards = await resultCardLocator.evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          rank: node.getAttribute('data-rank'),
+          suit: node.getAttribute('data-suit'),
+        })),
+      );
+      const flyoutCards = await flyoutCardLocator.evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          rank: node.getAttribute('data-rank'),
+          suit: node.getAttribute('data-suit'),
+        })),
+      );
+      expect(flyoutCards).toEqual(resultCards);
     } finally {
       await teardownTwoPlayerSession(session);
     }
