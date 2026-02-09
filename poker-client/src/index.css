@@ -190,7 +190,17 @@ body {
 .community-lane {
   display: flex;
   justify-content: center;
-  gap: 0.35rem;
+  gap: clamp(0.2rem, 0.9vw, 0.55rem);
+}
+
+.community-lane > div {
+  flex: 0 0 auto;
+}
+
+.community-lane [data-testid^="community-card-"],
+.community-lane [data-testid^="board-back-"] {
+  width: clamp(2.55rem, 8.8vw, 4rem) !important;
+  height: clamp(3.8rem, 13.2vw, 6rem) !important;
 }
 
 .pot-drop-zone {
@@ -1174,7 +1184,7 @@ body {
   }
 
   .community-lane {
-    gap: 0.65rem;
+    gap: clamp(0.28rem, 0.8vw, 0.6rem);
   }
 
   .pot-drop-zone {
