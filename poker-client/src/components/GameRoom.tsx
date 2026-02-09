@@ -275,24 +275,28 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const angle = startAngle + slotIndex * angleStep;
 
   const centerX = 50;
-  const centerY = 45;
-  const radiusX = 46;
-  const radiusY = 36;
+  const centerY =
+    safeTotal <= 3 ? 47 : safeTotal <= 5 ? 46 : safeTotal <= 7 ? 45.5 : safeTotal <= 9 ? 45 : 44.5;
+  const radiusX =
+    safeTotal <= 3 ? 42 : safeTotal <= 5 ? 44 : safeTotal <= 7 ? 45.5 : safeTotal <= 9 ? 47 : 48;
+  const radiusY =
+    safeTotal <= 3 ? 33 : safeTotal <= 5 ? 34 : safeTotal <= 7 ? 35.5 : safeTotal <= 9 ? 36.5 : 37.2;
 
   const left = centerX + Math.cos(angle) * radiusX;
   const top = centerY + Math.sin(angle) * radiusY;
 
   return {
-    top: `${Math.max(8, Math.min(84, top))}%`,
+    top: `${Math.max(7, Math.min(86, top))}%`,
     left: `${Math.max(5, Math.min(95, left))}%`,
   };
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
-  if (occupiedSeats <= 2) return "min(14.8vw, 4.2rem)";
-  if (occupiedSeats <= 4) return "min(13.8vw, 4rem)";
-  if (occupiedSeats <= 6) return "min(12.8vw, 3.8rem)";
-  return "min(11.8vw, 3.6rem)";
+  if (occupiedSeats <= 2) return "clamp(4.8rem, 19vw, 6.2rem)";
+  if (occupiedSeats <= 4) return "clamp(4.4rem, 16vw, 5.6rem)";
+  if (occupiedSeats <= 6) return "clamp(4rem, 14vw, 5rem)";
+  if (occupiedSeats <= 8) return "clamp(3.55rem, 12vw, 4.45rem)";
+  return "clamp(3.2rem, 10.8vw, 4rem)";
 };
 
 const getPositionBadges = (
@@ -1754,6 +1758,12 @@ export const GameRoom: React.FC = () => {
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
               const isWaiting = seatPlayer?.status === "waiting";
+              const seatDensityClass =
+                seatSlots.length >= 9
+                  ? "seat-pod--dense"
+                  : seatSlots.length >= 7
+                    ? "seat-pod--compact"
+                    : "seat-pod--spacious";
 
               return (
                 <div
@@ -1772,6 +1782,8 @@ export const GameRoom: React.FC = () => {
                     }}
                     data-testid={`player-seat-${seatPlayer.id}`}
                     className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
+                      seatDensityClass
+                    } ${
                       isDisconnected ? "seat-pod--disconnected" : ""
                     } ${
                       isFolded ? "seat-pod--folded" : ""
@@ -1788,11 +1800,11 @@ export const GameRoom: React.FC = () => {
                     )}
                     <div className="seat-pod__row">
                       {seatPlayer.emoji && (
-                        <span className="text-sm" aria-hidden="true">
+                        <span className="seat-pod__emoji" aria-hidden="true">
                           {seatPlayer.emoji}
                         </span>
                       )}
-                      <span className="seat-pod__name text-white font-semibold">
+                      <span className="seat-pod__name">
                         {seatPlayer.name}
                       </span>
                       <div className="seat-pod__badges">
@@ -1805,7 +1817,7 @@ export const GameRoom: React.FC = () => {
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--chips">
-                      <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
+                      <div className="seat-pod__stack">${seatPlayer.chips}</div>
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--bet">
