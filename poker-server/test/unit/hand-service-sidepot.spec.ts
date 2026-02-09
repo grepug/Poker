@@ -241,12 +241,159 @@ describe('HandService side-pot distribution', () => {
     expect(winnersByName.get('Alice')).toBe(3000);
     expect(winnersByName.get('Bob')).toBe(1000);
     expect(winnersByName.get('Charlie') || 0).toBe(0);
+    expect(result.payouts).toHaveLength(2);
+    expect(result.payouts[0]).toMatchObject({
+      segmentIndex: 0,
+      potType: 'MAIN',
+      amount: 3000,
+      eligiblePlayerIds: ['p1', 'p2', 'p3'],
+      uncontested: false,
+      winnerShares: [{ playerId: 'p1', amountWon: 3000 }],
+    });
+    expect(result.payouts[1]).toMatchObject({
+      segmentIndex: 1,
+      potType: 'SIDE',
+      amount: 1000,
+      eligiblePlayerIds: ['p2', 'p3'],
+      uncontested: false,
+      winnerShares: [{ playerId: 'p2', amountWon: 1000 }],
+    });
 
     expect(room.players.find((p) => p.name === 'Alice')?.chips).toBe(3000);
     expect(room.players.find((p) => p.name === 'Bob')?.chips).toBe(1500);
     expect(room.players.find((p) => p.name === 'Charlie')?.chips).toBe(500);
 
     expect(storageService.saveRoom).toHaveBeenCalled();
+  });
+
+  it('marks uncontested side pot when only one active player is eligible', async () => {
+    const room: Room = {
+      id: 'ROOM-UNCONTESTED',
+      hostId: 'p1',
+      config: {
+        startingChips: 1000,
+        smallBlind: 10,
+        bigBlind: 20,
+        maxPlayers: 10,
+        reconnectGracePeriod: 30000,
+      },
+      players: [
+        {
+          id: 'p1',
+          socketId: 's1',
+          name: 'kai',
+          chips: 0,
+          totalBuyIn: 3000,
+          position: 0,
+          status: 'all-in',
+          cards: [
+            { suit: 'spades', rank: '8' },
+            { suit: 'diamonds', rank: '10' },
+          ],
+          currentBet: 0,
+          lastAction: 'all-in',
+          lastConnectedAt: Date.now(),
+        },
+        {
+          id: 'p2',
+          socketId: 's2',
+          name: 'Lisa',
+          chips: 0,
+          totalBuyIn: 1000,
+          position: 1,
+          status: 'all-in',
+          cards: [
+            { suit: 'hearts', rank: '7' },
+            { suit: 'clubs', rank: 'A' },
+          ],
+          currentBet: 0,
+          lastAction: 'all-in',
+          lastConnectedAt: Date.now(),
+        },
+        {
+          id: 'p3',
+          socketId: 's3',
+          name: 'kkk',
+          chips: 980,
+          totalBuyIn: 1000,
+          position: 2,
+          status: 'folded',
+          cards: [
+            { suit: 'clubs', rank: '4' },
+            { suit: 'clubs', rank: '5' },
+          ],
+          currentBet: 0,
+          lastAction: 'fold',
+          lastConnectedAt: Date.now(),
+        },
+      ],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 5,
+        dealerPosition: 2,
+        smallBlindPosition: 0,
+        bigBlindPosition: 1,
+        currentPlayerTurn: null,
+        pot: 4020,
+        communityCards: [
+          { suit: 'spades', rank: 'A' },
+          { suit: 'diamonds', rank: '6' },
+          { suit: 'spades', rank: '2' },
+          { suit: 'spades', rank: '9' },
+          { suit: 'spades', rank: '10' },
+        ],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 20,
+        activePlayers: ['p1', 'p2'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {
+          p1: 980,
+          p2: 3020,
+          p3: 20,
+        },
+        startedAt: Date.now(),
+      },
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const result = await handService.determineWinner(room);
+    const winnersByName = new Map(
+      result.winners.map((winner) => [winner.playerName, winner.amountWon]),
+    );
+
+    expect(winnersByName.get('kai')).toBe(1980);
+    expect(winnersByName.get('Lisa')).toBe(2040);
+    expect(result.payouts).toHaveLength(3);
+
+    expect(result.payouts[0]).toMatchObject({
+      segmentIndex: 0,
+      potType: 'MAIN',
+      amount: 60,
+      eligiblePlayerIds: ['p1', 'p2'],
+      winnerShares: [{ playerId: 'p1', amountWon: 60 }],
+      uncontested: false,
+    });
+
+    expect(result.payouts[1]).toMatchObject({
+      segmentIndex: 1,
+      potType: 'SIDE',
+      amount: 1920,
+      eligiblePlayerIds: ['p1', 'p2'],
+      winnerShares: [{ playerId: 'p1', amountWon: 1920 }],
+      uncontested: false,
+    });
+
+    expect(result.payouts[2]).toMatchObject({
+      segmentIndex: 2,
+      potType: 'SIDE',
+      amount: 2040,
+      eligiblePlayerIds: ['p2'],
+      winnerShares: [{ playerId: 'p2', amountWon: 2040 }],
+      uncontested: true,
+    });
   });
 
   it('splits odd chips deterministically by position when tied on side pots', async () => {

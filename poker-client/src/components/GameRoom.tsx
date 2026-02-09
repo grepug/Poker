@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
@@ -385,6 +386,7 @@ export const GameRoom: React.FC = () => {
     player,
     yourCards,
     lastHandResult,
+    finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
     isHost,
@@ -392,6 +394,7 @@ export const GameRoom: React.FC = () => {
     clearError,
     startGame,
     startNextHand,
+    endGame,
     showMyHand,
     performAction,
     leaveRoom,
@@ -406,6 +409,8 @@ export const GameRoom: React.FC = () => {
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showEndGameConfirmModal, setShowEndGameConfirmModal] = useState(false);
+  const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
@@ -423,6 +428,7 @@ export const GameRoom: React.FC = () => {
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
+  const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
   const turnOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
@@ -434,6 +440,7 @@ export const GameRoom: React.FC = () => {
 
   const currentHand = room?.currentHand ?? null;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
+  const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
   const currentTurnPlayer =
     room?.players.find((entry) => entry.id === currentHand?.currentPlayerTurn) ?? null;
@@ -471,15 +478,13 @@ export const GameRoom: React.FC = () => {
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
   const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
-  const hasHoleCards = Boolean(yourCards && yourCards.length > 0);
-  const isWaitingForNextHand =
-    Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
   const currentHandNumber = currentHand?.handNumber ?? null;
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const canHostStartNextHand =
     isHost && isGameStarted && isHandPausedForNext && (room?.players.length ?? 0) >= 2;
+  const canHostEndGame = isHost && isGameStarted && isHandPausedForNext;
   const isWaitingForHostToStartNextHand =
     !isHost && isGameStarted && isHandPausedForNext && Boolean(lastHandResult);
 
@@ -492,6 +497,13 @@ export const GameRoom: React.FC = () => {
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
   const canRevealMyCompletedHand =
     Boolean(lastHandResult) && Boolean(myCompletedHand) && !isShowdownComplete;
+  const displayHoleCards =
+    isHandPausedForNext && myCompletedHand?.cards?.length
+      ? myCompletedHand.cards
+      : yourCards;
+  const hasHoleCards = Boolean(displayHoleCards && displayHoleCards.length > 0);
+  const isWaitingForNextHand =
+    Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
@@ -520,6 +532,53 @@ export const GameRoom: React.FC = () => {
       rankOrder: idx + 1,
     }));
   }, [lastHandResult, winnersByPlayerId]);
+
+  const payoutBreakdownRows = useMemo(() => {
+    if (!lastHandResult) return [];
+
+    const playerNameById = new Map<string, string>();
+    for (const seatPlayer of room?.players ?? []) {
+      playerNameById.set(seatPlayer.id, seatPlayer.name);
+    }
+    for (const handPlayer of lastHandResult.playerHands) {
+      playerNameById.set(handPlayer.playerId, handPlayer.playerName);
+    }
+
+    const normalizedPayouts = (lastHandResult.payouts ?? [])
+      .filter((segment) => segment.amount > 0 && segment.winnerShares.length > 0)
+      .sort((a, b) => a.segmentIndex - b.segmentIndex);
+
+    const payoutSegments =
+      normalizedPayouts.length > 0
+        ? normalizedPayouts
+        : [
+            {
+              segmentIndex: 0,
+              potType: "MAIN" as const,
+              amount: lastHandResult.totalPot,
+              eligiblePlayerIds: lastHandResult.winners.map((winner) => winner.playerId),
+              winnerShares: lastHandResult.winners.map((winner) => ({
+                playerId: winner.playerId,
+                amountWon: winner.amountWon,
+              })),
+              uncontested: lastHandResult.winners.length === 1,
+            },
+          ];
+
+    return payoutSegments.map((segment) => ({
+      segmentIndex: segment.segmentIndex,
+      label:
+        segment.potType === "MAIN"
+          ? t("game.payout.mainPot")
+          : t("game.payout.sidePot", { index: segment.segmentIndex }),
+      amount: segment.amount,
+      uncontested: segment.uncontested,
+      winnerShares: segment.winnerShares.map((share) => ({
+        ...share,
+        playerName: playerNameById.get(share.playerId) ?? share.playerId,
+      })),
+    }));
+  }, [lastHandResult, room?.players, t]);
 
   const inviteUrl = useMemo(() => {
     if (!room?.id || typeof window === "undefined") return "";
@@ -556,6 +615,56 @@ export const GameRoom: React.FC = () => {
     },
     [locale, room],
   );
+
+  const finalStandings = useMemo(
+    () =>
+      (finalGameResult?.standings ?? []).map((entry, idx) => ({
+        ...entry,
+        rankOrder: idx + 1,
+      })),
+    [finalGameResult],
+  );
+
+  const finalSummaryCards = useMemo(() => {
+    if (!finalGameResult) return [];
+
+    const summary = finalGameResult.summary;
+    return [
+      {
+        key: "hands",
+        label: t("game.final.summary.handsPlayed"),
+        value: String(summary.handsPlayed),
+      },
+      {
+        key: "players",
+        label: t("game.final.summary.totalPlayers"),
+        value: String(summary.totalPlayers),
+      },
+      {
+        key: "profitable",
+        label: t("game.final.summary.profitablePlayers"),
+        value: t("game.final.summary.profitablePlayersValue", {
+          profitable: summary.profitablePlayers,
+          total: summary.totalPlayers,
+        }),
+      },
+      {
+        key: "avgStack",
+        label: t("game.final.summary.averageStack"),
+        value: `$${summary.averageFinalStack}`,
+      },
+      {
+        key: "totalBuyIn",
+        label: t("game.final.summary.totalBuyIn"),
+        value: `$${summary.totalBuyIn}`,
+      },
+      {
+        key: "chips",
+        label: t("game.final.summary.totalChips"),
+        value: `$${summary.totalChipsInPlay}`,
+      },
+    ];
+  }, [finalGameResult, t]);
 
   const seatSlots = useMemo(() => {
     if (!room || !player) return [] as Array<{
@@ -909,7 +1018,14 @@ export const GameRoom: React.FC = () => {
     // Reset hand-level UI state for each new hand.
     setShowRankingsModal(false);
     setIsCardsFlyoutOpen(true);
+    setShowEndGameConfirmModal(false);
   }, [room?.id, currentHandNumber]);
+
+  useEffect(() => {
+    if (!finalGameResult) return;
+    setShowEndGameConfirmModal(false);
+    setShowFinalSummaryModal(true);
+  }, [finalGameResult]);
 
   useEffect(() => {
     const previousIsYourTurn = previousIsYourTurnRef.current;
@@ -992,19 +1108,38 @@ export const GameRoom: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!lastError && !showRankingsModal && !showSettingsModal && !quickConfirmAction) return;
+    if (
+      !lastError &&
+      !showRankingsModal &&
+      !showSettingsModal &&
+      !showEndGameConfirmModal &&
+      !showFinalSummaryModal &&
+      !quickConfirmAction
+    ) {
+      return;
+    }
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
       if (showRankingsModal) setShowRankingsModal(false);
       if (showSettingsModal) setShowSettingsModal(false);
+      if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
+      if (showFinalSummaryModal) setShowFinalSummaryModal(false);
       if (quickConfirmAction) setQuickConfirmAction(null);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [clearError, lastError, quickConfirmAction, showRankingsModal, showSettingsModal]);
+  }, [
+    clearError,
+    lastError,
+    quickConfirmAction,
+    showEndGameConfirmModal,
+    showFinalSummaryModal,
+    showRankingsModal,
+    showSettingsModal,
+  ]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -1141,6 +1276,117 @@ export const GameRoom: React.FC = () => {
       setInviteCopyStatus(t("game.copyFailed"));
       setInviteCopyStatusTone("error");
     }
+  };
+
+  const saveShareablePanelScreenshot = async ({
+    panel,
+    hiddenControlTestId,
+    fileSuffix,
+    successMessageKey,
+    failureMessageKey,
+  }: {
+    panel: HTMLElement;
+    hiddenControlTestId: string;
+    fileSuffix: string;
+    successMessageKey: MessageKey;
+    failureMessageKey: MessageKey;
+  }) => {
+    if (!room) return;
+
+    try {
+      const screenshotDataUrl = await toPng(panel, {
+        cacheBust: true,
+        pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
+        backgroundColor: "#032b26",
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          return node.dataset.testid !== hiddenControlTestId;
+        },
+      });
+
+      const screenshotImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = (error) => reject(error);
+        image.src = screenshotDataUrl;
+      });
+
+      const padding = 44;
+      const canvasWidth = screenshotImage.width + padding * 2;
+      const minimumPortraitHeight = Math.round(canvasWidth * 1.35);
+      const canvasHeight = Math.max(screenshotImage.height + padding * 2, minimumPortraitHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        throw new Error("Canvas unavailable");
+      }
+
+      const background = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
+      background.addColorStop(0, "#052e2b");
+      background.addColorStop(1, "#021b18");
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      const imageX = Math.round((canvasWidth - screenshotImage.width) / 2);
+      const imageY = Math.round((canvasHeight - screenshotImage.height) / 2);
+      ctx.drawImage(screenshotImage, imageX, imageY);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/png");
+      });
+      if (!blob) {
+        throw new Error("Failed to create image blob");
+      }
+
+      const link = document.createElement("a");
+      const imageUrl = URL.createObjectURL(blob);
+      link.href = imageUrl;
+      link.download = `${room.id}-${fileSuffix}-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(imageUrl);
+
+      setInviteCopyStatus(t(successMessageKey));
+      setInviteCopyStatusTone("success");
+    } catch (error) {
+      console.error("Failed to save screenshot:", error);
+      setInviteCopyStatus(t(failureMessageKey));
+      setInviteCopyStatusTone("error");
+    }
+  };
+
+  const handleSaveResultScreenshot = async () => {
+    if (!lastHandResult || !handResultsPanelRef.current) return;
+
+    await saveShareablePanelScreenshot({
+      panel: handResultsPanelRef.current,
+      hiddenControlTestId: "save-result-screenshot-button",
+      fileSuffix: `hand-${currentHandNumber ?? "result"}`,
+      successMessageKey: "game.resultScreenshotSaved",
+      failureMessageKey: "game.resultScreenshotFailed",
+    });
+  };
+
+  const handleSaveFinalSummaryScreenshot = async () => {
+    if (!finalGameResult || !finalSummaryPanelRef.current) return;
+
+    await saveShareablePanelScreenshot({
+      panel: finalSummaryPanelRef.current,
+      hiddenControlTestId: "save-final-summary-screenshot-button",
+      fileSuffix: "final-results",
+      successMessageKey: "game.final.screenshotSaved",
+      failureMessageKey: "game.final.screenshotFailed",
+    });
+  };
+
+  const handleConfirmEndGame = () => {
+    if (!canHostEndGame) return;
+    setShowEndGameConfirmModal(false);
+    endGame();
   };
 
   const handleLeave = () => {
@@ -1319,6 +1565,15 @@ export const GameRoom: React.FC = () => {
           >
             {t("game.rankings")}
           </button>
+          {isGameEnded && finalGameResult && (
+            <button
+              onClick={() => setShowFinalSummaryModal(true)}
+              data-testid="open-final-results-button"
+              className="rounded-full border border-amber-300/70 bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/30"
+            >
+              {t("game.final.title")}
+            </button>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             {isHost && !isGameStarted && room.players.length >= 2 && (
@@ -1381,7 +1636,7 @@ export const GameRoom: React.FC = () => {
 
             {isCardsFlyoutOpen ? (
               <div className="your-cards-flyout__cards">
-                {(yourCards ?? []).map((card, idx) => (
+                {(displayHoleCards ?? []).map((card, idx) => (
                   <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
                 ))}
               </div>
@@ -1532,6 +1787,11 @@ export const GameRoom: React.FC = () => {
                       </span>
                     )}
                     <div className="seat-pod__row">
+                      {seatPlayer.emoji && (
+                        <span className="text-sm" aria-hidden="true">
+                          {seatPlayer.emoji}
+                        </span>
+                      )}
                       <span className="seat-pod__name text-white font-semibold">
                         {seatPlayer.name}
                       </span>
@@ -1546,12 +1806,6 @@ export const GameRoom: React.FC = () => {
 
                     <div className="seat-pod__row seat-pod__row--chips">
                       <div className="seat-pod__stack text-green-400 text-sm">${seatPlayer.chips}</div>
-                    </div>
-
-                    <div className="seat-pod__row">
-                      <div className="text-[11px] text-emerald-100/65">
-                        Buy-in: ${seatPlayer.totalBuyIn ?? 0}
-                      </div>
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--bet">
@@ -1618,6 +1872,13 @@ export const GameRoom: React.FC = () => {
               <span className="hud-chip" data-testid="hand-results-winner-count">
                 {t("game.winnersCount", { count: lastHandResult.winners.length })}
               </span>
+              <button
+                onClick={handleSaveResultScreenshot}
+                data-testid="save-result-screenshot-button"
+                className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
+              >
+                {t("game.saveResultScreenshot")}
+              </button>
             </div>
           </div>
 
@@ -1642,49 +1903,74 @@ export const GameRoom: React.FC = () => {
 
           <div
             className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
-            data-testid="hand-results-winners"
+            data-testid="hand-results-community"
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-              {t("game.winners")}
+              {t("game.communityCards")}
             </p>
-            <div className="mt-2 space-y-2 text-sm text-emerald-50">
-              {lastHandResult.winners.map((winner) => {
-                const isSelf = winner.playerId === player.id;
-                const showWinnerHand = isPlayerHandVisible(winner.playerId);
-                const winnerHand = winner.hand as HandEvaluation | null;
-
-                return (
-                  <div
-                    key={`winner-${winner.playerId}`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
-                    data-testid={`winner-row-${winner.playerId}`}
-                  >
-                    <span className="font-semibold">
-                      {winner.playerName}
-                      {isSelf ? ` (${t("common.you")})` : ""}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 font-semibold">
-                        +${winner.amountWon}
-                      </span>
-                      {showWinnerHand && winnerHand ? (
-                        <span
-                          className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 font-semibold text-cyan-100"
-                          data-testid={`winner-rank-${winner.playerId}`}
-                        >
-                          {formatHandRank(winnerHand.rank, locale)}
-                        </span>
-                      ) : showWinnerHand ? (
-                        <span className="text-emerald-200/70">{t("game.cardsShown")}</span>
-                      ) : (
-                        <span className="text-emerald-200/70">{t("game.handHidden")}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="mt-2 flex flex-wrap gap-2 text-sm text-emerald-50">
+              {Array.from({ length: 5 }, (_, idx) => currentHand?.communityCards[idx] ?? null).map(
+                (card, idx) => (
+                  <Card
+                    key={`hand-results-community-card-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                    card={card}
+                    size="small"
+                    faceDown={!card}
+                    dataTestId={card ? `hand-results-community-card-${idx}` : `hand-results-community-back-${idx}`}
+                  />
+                ),
+              )}
             </div>
           </div>
+
+          {payoutBreakdownRows.length > 0 && (
+            <div
+              className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
+              data-testid="hand-results-payouts"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                {t("game.payoutBreakdown")}
+              </p>
+              <div className="mt-2 space-y-2">
+                {payoutBreakdownRows.map((segment) => (
+                  <div
+                    key={`payout-segment-${segment.segmentIndex}`}
+                    className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
+                    data-testid={`payout-segment-${segment.segmentIndex}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-emerald-50">
+                          {segment.label}
+                        </span>
+                        {segment.uncontested && (
+                          <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                            {t("game.payout.uncontested")}
+                          </span>
+                        )}
+                      </div>
+                      <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 text-xs font-semibold text-emerald-50">
+                        ${segment.amount}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {segment.winnerShares.map((share) => (
+                        <span
+                          key={`payout-share-${segment.segmentIndex}-${share.playerId}`}
+                          className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 text-xs font-semibold text-cyan-100"
+                          data-testid={`payout-share-${segment.segmentIndex}-${share.playerId}`}
+                        >
+                          {share.playerName}
+                          {share.playerId === player.id ? ` (${t("common.you")})` : ""} +$
+                          {share.amountWon}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {handResultRows.length > 0 && (
             <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
@@ -1770,13 +2056,22 @@ export const GameRoom: React.FC = () => {
                 {t("game.handCompleteHint")}
               </p>
             </div>
-            <button
-              onClick={startNextHand}
-              data-testid="start-next-hand-button"
-              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
-            >
-              {t("game.startNextHand")}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={startNextHand}
+                data-testid="start-next-hand-button"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+              >
+                {t("game.startNextHand")}
+              </button>
+              <button
+                onClick={() => setShowEndGameConfirmModal(true)}
+                data-testid="end-game-button"
+                className="rounded-xl border border-rose-300/70 bg-rose-500/25 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35"
+              >
+                {t("game.endGame")}
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -2049,6 +2344,156 @@ export const GameRoom: React.FC = () => {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {showEndGameConfirmModal && (
+        <div
+          className="fixed inset-0 z-[79] flex items-center justify-center bg-emerald-950/88 p-4 backdrop-blur-sm"
+          data-testid="end-game-confirm-modal"
+        >
+          <div className="surface-panel w-full max-w-md p-5">
+            <h3 className="text-lg font-black text-white">{t("game.endGameConfirm.title")}</h3>
+            <p className="mt-2 text-sm text-emerald-100/85">
+              {t("game.endGameConfirm.body")}
+            </p>
+            <p className="mt-3 rounded-lg border border-amber-300/60 bg-amber-300/15 px-3 py-2 text-xs font-semibold text-amber-100">
+              {t("game.endGameConfirm.warning")}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowEndGameConfirmModal(false)}
+                data-testid="end-game-confirm-cancel"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={handleConfirmEndGame}
+                data-testid="end-game-confirm-accept"
+                className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400"
+              >
+                {t("game.endGameConfirm.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFinalSummaryModal && finalGameResult && (
+        <div
+          className="fixed inset-0 z-[78] overflow-y-auto bg-emerald-950/88 p-4 backdrop-blur-sm"
+          data-testid="final-summary-modal"
+        >
+          <section
+            ref={finalSummaryPanelRef}
+            className="surface-panel mx-auto w-full max-w-4xl p-4 md:p-6"
+            data-testid="final-summary-panel"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-white">{t("game.final.title")}</h3>
+                <p className="mt-1 text-sm text-emerald-100/80">{t("game.final.subtitle")}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleSaveFinalSummaryScreenshot}
+                  data-testid="save-final-summary-screenshot-button"
+                  className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
+                >
+                  {t("game.final.saveScreenshot")}
+                </button>
+                <button
+                  onClick={() => setShowFinalSummaryModal(false)}
+                  data-testid="close-final-summary-button"
+                  className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                >
+                  {t("common.close")}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+              {finalSummaryCards.map((card) => (
+                <article
+                  key={card.key}
+                  className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3"
+                >
+                  <p className="text-xs uppercase tracking-wide text-emerald-100/70">{card.label}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{card.value}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <article className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3">
+                <p className="text-xs uppercase tracking-wide text-emerald-100/70">
+                  {t("game.final.chipLeader")}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {finalGameResult.summary.chipLeader
+                    ? `${finalGameResult.summary.chipLeader.playerName} ($${finalGameResult.summary.chipLeader.amount})`
+                    : t("game.final.none")}
+                </p>
+              </article>
+              <article className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3">
+                <p className="text-xs uppercase tracking-wide text-emerald-100/70">
+                  {t("game.final.biggestSwing")}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {finalGameResult.summary.biggestWinner
+                    ? `${t("game.final.biggestWinner")}: ${finalGameResult.summary.biggestWinner.playerName} (+$${finalGameResult.summary.biggestWinner.amount})`
+                    : `${t("game.final.biggestWinner")}: ${t("game.final.none")}`}
+                </p>
+                <p className="mt-1 text-xs text-emerald-100/80">
+                  {finalGameResult.summary.biggestLoss
+                    ? `${t("game.final.biggestLoss")}: ${finalGameResult.summary.biggestLoss.playerName} (-$${finalGameResult.summary.biggestLoss.amount})`
+                    : `${t("game.final.biggestLoss")}: ${t("game.final.none")}`}
+                </p>
+              </article>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
+              <table className="min-w-full text-sm">
+                <thead className="bg-emerald-950/70 text-emerald-100/70">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.rank")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-emerald-950/45">
+                  {finalStandings.map((entry) => {
+                    const isSelf = entry.playerId === player.id;
+                    return (
+                      <tr
+                        key={entry.playerId}
+                        className="border-t border-emerald-800/60 text-emerald-50"
+                        data-testid={`final-ranking-row-${entry.rankOrder}`}
+                      >
+                        <td className="px-3 py-2">#{entry.rankOrder}</td>
+                        <td className="px-3 py-2">
+                          {entry.playerName}
+                          {isSelf ? ` (${t("common.you")})` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right">${entry.finalChips}</td>
+                        <td className="px-3 py-2 text-right">${entry.totalBuyIn}</td>
+                        <td
+                          className={`px-3 py-2 text-right font-semibold ${
+                            entry.profit >= 0 ? "text-emerald-300" : "text-red-300"
+                          }`}
+                        >
+                          {entry.profit >= 0 ? "+" : ""}${entry.profit}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       )}
 

@@ -83,9 +83,15 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-bob', 'Bob');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-bob',
+      'Bob',
+      '😎',
+    );
 
     expect(player.name).toBe('Bob');
+    expect((player as any).emoji).toBe('😎');
     expect(player.chips).toBe(0);
     expect(player.totalBuyIn).toBe(0);
     expect(player.status).toBe('waiting');

@@ -9,12 +9,14 @@ import { Hand, HandResult, BettingRound } from "./game.types";
 
 export interface CreateRoomData {
   playerName: string;
+  playerEmoji?: string;
   config?: Partial<RoomConfig>;
 }
 
 export interface JoinRoomData {
   roomId: string;
   playerName: string;
+  playerEmoji?: string;
 }
 
 export interface ReconnectData {
@@ -180,6 +182,29 @@ export interface GameEndedData {
     totalBuyIn: number;
     profit: number;
   }>;
+  summary: {
+    totalPlayers: number;
+    handsPlayed: number;
+    totalBuyIn: number;
+    totalChipsInPlay: number;
+    profitablePlayers: number;
+    averageFinalStack: number;
+    chipLeader: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestWinner: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestLoss: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+  };
 }
 
 export interface ErrorData {
