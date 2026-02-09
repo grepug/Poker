@@ -1,0 +1,12 @@
+.git
+.github
+.agents
+.qwen
+.opencode
+**/node_modules
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/.DS_Store
+**/.env
