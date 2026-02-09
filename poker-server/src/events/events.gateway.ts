@@ -295,16 +295,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const hand = await this.handService.startNewHand(room);
       const updatedRoom = await this.getRoom(playerInfo.roomId);
 
-      // Send cards to each player privately
-      for (const player of updatedRoom.players) {
-        if (player.cards) {
-          const socket = this.findSocketByPlayerId(player.id);
-          if (socket) {
-            socket.emit('YOUR_CARDS', { cards: player.cards });
-          }
-        }
-      }
-
       // Broadcast game started
       const { activePlayers, ...handWithoutActivePlayers } = hand;
       const gameStartedData: GameStartedData = {
@@ -316,6 +306,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       this.server.to(playerInfo.roomId).emit('GAME_STARTED', gameStartedData);
+
+      // Send cards to each player privately after GAME_STARTED.
+      // Client state resets cards on GAME_STARTED to avoid stale hand data.
+      for (const seatPlayer of updatedRoom.players) {
+        if (seatPlayer.cards && seatPlayer.socketId) {
+          this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
+            cards: seatPlayer.cards,
+          } as YourCardsData);
+        }
+      }
 
       // Emit first player's turn
       const currentPlayer = updatedRoom.players.find(
