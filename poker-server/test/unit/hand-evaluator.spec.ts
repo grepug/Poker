@@ -357,6 +357,32 @@ describe('Hand Evaluator', () => {
 
       expect(compareHands(hand1, hand2)).toBe(0);
     });
+
+    it('should rank pair of kings above pair of queens even with ace kicker', () => {
+      const board: Card[] = [
+        { suit: 'spades', rank: 'Q' },
+        { suit: 'clubs', rank: 'K' },
+        { suit: 'diamonds', rank: '3' },
+        { suit: 'spades', rank: 'J' },
+        { suit: 'spades', rank: '6' },
+      ];
+
+      const pairOfQueens = evaluateHand([
+        { suit: 'diamonds', rank: 'A' },
+        { suit: 'hearts', rank: 'Q' },
+        ...board,
+      ]);
+
+      const pairOfKings = evaluateHand([
+        { suit: 'spades', rank: '5' },
+        { suit: 'hearts', rank: 'K' },
+        ...board,
+      ]);
+
+      expect(pairOfQueens.rank).toBe('ONE_PAIR');
+      expect(pairOfKings.rank).toBe('ONE_PAIR');
+      expect(compareHands(pairOfKings, pairOfQueens)).toBeGreaterThan(0);
+    });
   });
 
   describe('Edge Cases', () => {
