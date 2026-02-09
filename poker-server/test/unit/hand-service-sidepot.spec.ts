@@ -31,6 +31,9 @@ describe('HandService side-pot distribution', () => {
       name,
       chips: 0,
       totalBuyIn: 1000,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
       position,
       status,
       // Cards chosen so board always determines final hand rank.
@@ -158,6 +161,9 @@ describe('HandService side-pot distribution', () => {
           name: 'Alice',
           chips: 0,
           totalBuyIn: 1000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 0,
           status: 'all-in',
           cards: [
@@ -174,6 +180,9 @@ describe('HandService side-pot distribution', () => {
           name: 'Bob',
           chips: 500,
           totalBuyIn: 2000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 1,
           status: 'connected',
           cards: [
@@ -190,6 +199,9 @@ describe('HandService side-pot distribution', () => {
           name: 'Charlie',
           chips: 500,
           totalBuyIn: 2000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 2,
           status: 'connected',
           cards: [
@@ -287,6 +299,9 @@ describe('HandService side-pot distribution', () => {
           name: 'kai',
           chips: 0,
           totalBuyIn: 3000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 0,
           status: 'all-in',
           cards: [
@@ -303,6 +318,9 @@ describe('HandService side-pot distribution', () => {
           name: 'Lisa',
           chips: 0,
           totalBuyIn: 1000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 1,
           status: 'all-in',
           cards: [
@@ -319,6 +337,9 @@ describe('HandService side-pot distribution', () => {
           name: 'kkk',
           chips: 980,
           totalBuyIn: 1000,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
           position: 2,
           status: 'folded',
           cards: [
