@@ -589,8 +589,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
         this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', revealState);
 
-        const allReady =
-          required.size === 0 || [...required].every((playerId) => ready.has(playerId));
+        const allReady = ready.size > 0;
         if (allReady) {
           await this.advanceRoundAndBroadcast(room);
         }
@@ -935,8 +934,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const nextRound = this.getNextBettingRound(hand.bettingRound);
     const shouldWaitForPlayerReveal =
       allowPlayerStreetReveal &&
-      !this.testDeckService.isTestMode() &&
-      nextRound !== 'SHOWDOWN' &&
       !this.shouldAutoDealRemainingCommunityCards(room);
 
     if (shouldWaitForPlayerReveal) {

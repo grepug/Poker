@@ -662,6 +662,8 @@ export const GameRoom: React.FC = () => {
     ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
+  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
+  const isAwaitingStreetReveal = showNextStreetActionArea;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -2224,13 +2226,14 @@ export const GameRoom: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-emerald-100">
-                {t("game.streetReveal.actionTitle")}
+                {isResultRevealStep
+                  ? t("game.streetReveal.resultActionTitle")
+                  : t("game.streetReveal.actionTitle")}
               </h3>
               <p className="text-xs text-emerald-100/70">
-                {t("game.streetReveal.actionHint", {
-                  ready: nextStreetRevealState?.readyPlayerIds.length ?? 0,
-                  total: nextStreetRevealState?.requiredPlayerIds.length ?? 0,
-                })}
+                {isResultRevealStep
+                  ? t("game.streetReveal.resultActionHint")
+                  : t("game.streetReveal.actionHint")}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2242,6 +2245,8 @@ export const GameRoom: React.FC = () => {
               >
                 {hasRevealedNextStreet
                   ? t("game.streetReveal.revealed")
+                  : isResultRevealStep
+                  ? t("game.streetReveal.revealResult")
                   : t("game.streetReveal.revealNextStreet")}
               </button>
             </div>
@@ -2249,7 +2254,7 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
-      {isYourTurn && (
+      {isYourTurn && !isAwaitingStreetReveal && (
         <section ref={turnOverlayRef} className="chip-composer-dock" data-testid="turn-overlay">
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">

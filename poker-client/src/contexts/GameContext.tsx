@@ -646,6 +646,18 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
         return {
           ...prev,
+          currentHand: prev.currentHand
+            ? {
+                ...prev.currentHand,
+                currentBet: 0,
+                currentPlayerTurn: data.awaitingPlayerStreetReveal
+                  ? null
+                  : prev.currentHand.currentPlayerTurn,
+                pendingStreetRevealRound: data.awaitingPlayerStreetReveal
+                  ? data.nextRound
+                  : null,
+              }
+            : prev.currentHand,
           players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
         };
       });
