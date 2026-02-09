@@ -207,6 +207,9 @@ export interface GameEndedData {
     finalChips: number;
     totalBuyIn: number;
     profit: number;
+    handsPlayedCount: number;
+    handsWonCount: number;
+    vpipHandsCount: number;
   }>;
   summary: {
     totalPlayers: number;

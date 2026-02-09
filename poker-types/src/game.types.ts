@@ -29,6 +29,7 @@ export interface Hand {
   roundActions: Record<string, boolean>; // Track if player acted this round
   sidePots: SidePot[];
   potContributions: Record<string, number>; // Total chips each player put into the pot this hand
+  vpipPlayerIds?: string[]; // Runtime-only: players who voluntarily entered the pot pre-flop
   lastResult?: HandResult | null; // Runtime-only: final hand result for paused hand state
   revealedPlayerIds?: string[]; // Runtime-only: players who revealed their hand to the table
   pendingStreetRevealRound?: BettingRound | null; // Runtime-only: next round waiting for player confirmation

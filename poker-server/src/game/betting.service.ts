@@ -127,6 +127,8 @@ export class BettingService {
         break;
     }
 
+    this.trackVpip(room, player.id, action);
+
     // Mark player as acted this round
     hand.roundActions[playerId] = true;
 
@@ -298,6 +300,23 @@ export class BettingService {
     }
     hand.potContributions[playerId] =
       (hand.potContributions[playerId] || 0) + amount;
+  }
+
+  private trackVpip(room: Room, playerId: string, action: PlayerAction): void {
+    const hand = room.currentHand;
+    if (!hand) return;
+    if (hand.bettingRound !== 'PRE_FLOP') return;
+    if (action !== 'call' && action !== 'raise' && action !== 'all-in') return;
+
+    const vpipPlayerIds = hand.vpipPlayerIds ?? [];
+    if (vpipPlayerIds.includes(playerId)) return;
+
+    vpipPlayerIds.push(playerId);
+    hand.vpipPlayerIds = vpipPlayerIds;
+
+    const player = room.players.find((entry) => entry.id === playerId);
+    if (!player) return;
+    player.vpipHandsCount = (player.vpipHandsCount ?? 0) + 1;
   }
 
   /**

@@ -640,6 +640,7 @@ export const GameRoom: React.FC = () => {
       ? myCompletedHand.cards
       : yourCards;
   const hasHoleCards = Boolean(displayHoleCards && displayHoleCards.length > 0);
+  const shouldRenderCardsFlyout = Boolean(isGameStarted || hasHoleCards);
   const isWaitingForNextHand =
     Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
@@ -1180,6 +1181,11 @@ export const GameRoom: React.FC = () => {
   }, [finalGameResult]);
 
   useEffect(() => {
+    if (!isGameEnded || !finalGameResult) return;
+    setShowFinalSummaryModal(true);
+  }, [finalGameResult, isGameEnded]);
+
+  useEffect(() => {
     const previousIsYourTurn = previousIsYourTurnRef.current;
     if (previousIsYourTurn === null) {
       if (isYourTurn) {
@@ -1279,7 +1285,7 @@ export const GameRoom: React.FC = () => {
       if (showRulesModal) setShowRulesModal(false);
       if (showSettingsModal) setShowSettingsModal(false);
       if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
-      if (showFinalSummaryModal) setShowFinalSummaryModal(false);
+      if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
       if (quickConfirmAction) setQuickConfirmAction(null);
     };
 
@@ -1291,6 +1297,7 @@ export const GameRoom: React.FC = () => {
     quickConfirmAction,
     showEndGameConfirmModal,
     showFinalSummaryModal,
+    isGameEnded,
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
@@ -1749,7 +1756,7 @@ export const GameRoom: React.FC = () => {
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {isHost && !isGameStarted && room.players.length >= 2 && (
+            {isHost && !isGameStarted && !isGameEnded && room.players.length >= 2 && (
               <button
                 onClick={startGame}
                 data-testid="start-game-button"
@@ -1781,7 +1788,7 @@ export const GameRoom: React.FC = () => {
         </div>
       )}
 
-      {hasHoleCards && (
+      {shouldRenderCardsFlyout && (
         <section
           className={`your-cards-flyout ${
             isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
@@ -1800,7 +1807,7 @@ export const GameRoom: React.FC = () => {
               <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
             </div>
 
-            {isCardsFlyoutOpen ? (
+            {isCardsFlyoutOpen && hasHoleCards ? (
               <div className="your-cards-flyout__cards">
                 {(displayHoleCards ?? []).map((card, idx) => (
                   <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
@@ -1808,7 +1815,9 @@ export const GameRoom: React.FC = () => {
               </div>
             ) : (
               <div className="your-cards-flyout__empty-state" data-testid="hole-cards-hidden-state">
-                {t("game.hide")} {t("game.yourCards")}
+                {isCardsFlyoutOpen
+                  ? t("game.cardsAppearWhenHandStarts")
+                  : `${t("game.hide")} ${t("game.yourCards")}`}
               </div>
             )}
           </div>
@@ -2503,7 +2512,7 @@ export const GameRoom: React.FC = () => {
               {t("game.rankings.sortedBy")}
             </p>
 
-            <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
+            <div className="mt-4 overflow-x-auto rounded-xl border border-emerald-700/60">
               <table className="min-w-full text-sm">
                 <thead className="bg-emerald-950/70 text-emerald-100/70">
                   <tr>
@@ -2691,17 +2700,27 @@ export const GameRoom: React.FC = () => {
                 >
                   {t("game.final.saveScreenshot")}
                 </button>
-                <button
-                  onClick={() => setShowFinalSummaryModal(false)}
-                  data-testid="close-final-summary-button"
-                  className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-                >
-                  {t("common.close")}
-                </button>
+                {isGameEnded ? (
+                  <button
+                    onClick={handleLeave}
+                    data-testid="leave-from-final-summary-button"
+                    className="rounded-lg border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
+                  >
+                    {t("common.leave")}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowFinalSummaryModal(false)}
+                    data-testid="close-final-summary-button"
+                    className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                  >
+                    {t("common.close")}
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-2 min-[520px]:grid-cols-2 xl:grid-cols-3">
               {finalSummaryCards.map((card) => (
                 <article
                   key={card.key}
@@ -2713,7 +2732,7 @@ export const GameRoom: React.FC = () => {
               ))}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 min-[520px]:grid-cols-2">
               <article className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3">
                 <p className="text-xs uppercase tracking-wide text-emerald-100/70">
                   {t("game.final.chipLeader")}
@@ -2749,6 +2768,8 @@ export const GameRoom: React.FC = () => {
                     <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
                     <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
                     <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.handsWon")}</th>
+                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.vpipHands")}</th>
                     <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
                   </tr>
                 </thead>
@@ -2768,6 +2789,8 @@ export const GameRoom: React.FC = () => {
                         </td>
                         <td className="px-3 py-2 text-right">${entry.finalChips}</td>
                         <td className="px-3 py-2 text-right">${entry.totalBuyIn}</td>
+                        <td className="px-3 py-2 text-right">{entry.handsWonCount ?? 0}</td>
+                        <td className="px-3 py-2 text-right">{entry.vpipHandsCount ?? 0}</td>
                         <td
                           className={`px-3 py-2 text-right font-semibold ${
                             entry.profit >= 0 ? "text-emerald-300" : "text-red-300"

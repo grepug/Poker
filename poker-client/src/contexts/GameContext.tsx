@@ -123,6 +123,7 @@ type StoredSession = {
 
 const SESSION_STORAGE_KEY = "poker.activeSession";
 const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
+const FINAL_RESULT_STORAGE_PREFIX = "poker.finalResult.";
 const createActionId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -161,6 +162,27 @@ function clearStoredSession() {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function readStoredFinalResult(roomId: string): GameEndedData | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as GameEndedData;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredFinalResult(roomId: string, result: GameEndedData) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`, JSON.stringify(result));
+}
+
+function clearStoredFinalResult(roomId: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`);
 }
 
 function isInvalidReconnectReason(reason: string): boolean {
@@ -254,6 +276,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      clearStoredFinalResult(data.room.id);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
@@ -267,7 +290,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setLastHandResult(deriveLastHandResultFromRoom(roomState));
       setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
       setLastPlayerActionEvent(null);
-      setFinalGameResult(null);
+      const restoredFinalResult =
+        roomState.gameState === "ENDED" && roomState.id
+          ? readStoredFinalResult(roomState.id)
+          : null;
+      setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       setIsRecoveringSession(false);
       setLastError(null);
@@ -282,7 +309,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setLastHandResult(deriveLastHandResultFromRoom(roomState));
       setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
       setLastPlayerActionEvent(null);
-      setFinalGameResult(null);
+      const restoredFinalResult =
+        roomState.gameState === "ENDED" && roomState.id
+          ? readStoredFinalResult(roomState.id)
+          : null;
+      setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       setLastError(null);
       setIsRecoveringSession(false);
@@ -408,11 +439,21 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("GAME_STARTED", (data) => {
       setLastHandResult(null);
       setFinalGameResult(null);
+      const currentRoomId = roomRef.current?.id;
+      if (currentRoomId) {
+        clearStoredFinalResult(currentRoomId);
+      }
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
       setNextStreetRevealState(null);
-      // Reset hole cards until private YOUR_CARDS event arrives for this hand.
-      setYourCards(null);
+      // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
+      // If this player is not dealt in, clear cards immediately.
+      setYourCards((prevCards) => {
+        const currentPlayerId = playerRef.current?.id;
+        if (!currentPlayerId) return null;
+        const seatForCurrentPlayer = data.players?.find((p) => p.id === currentPlayerId);
+        return seatForCurrentPlayer?.hasCards ? prevCards : null;
+      });
       setRoom((prev) => {
         if (!prev) return null;
         // Map players with cards field added
@@ -520,6 +561,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     socket.on("GAME_ENDED", (data) => {
       setFinalGameResult(data);
+      const currentRoomId = roomRef.current?.id;
+      if (currentRoomId) {
+        writeStoredFinalResult(currentRoomId, data);
+      }
       setLastHandResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
@@ -883,6 +928,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   }, [socket]);
 
   const leaveRoom = useCallback(() => {
+    const currentRoomId = roomRef.current?.id;
+    if (currentRoomId) {
+      clearStoredFinalResult(currentRoomId);
+    }
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
     }

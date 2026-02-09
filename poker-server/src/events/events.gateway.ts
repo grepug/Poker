@@ -307,10 +307,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!playerInfo) throw new Error('Not in a room');
 
       const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
 
       // Verify host
       if (room.hostId !== playerInfo.playerId) {
         throw new Error('Only host can start game');
+      }
+
+      if (room.gameState === 'ENDED') {
+        throw new Error('Game has ended. Leave room to start a new game.');
       }
 
       const hand = await this.handService.startNewHand(room);
@@ -369,6 +374,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Only host can start next hand');
       }
 
+      if (room.gameState === 'ENDED') {
+        throw new Error('Game has ended. Leave room to start a new game.');
+      }
+
       if (!room.currentHand) {
         throw new Error('No hand state found');
       }
@@ -421,6 +430,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             finalChips,
             totalBuyIn,
             profit: finalChips - totalBuyIn,
+            handsPlayedCount: seatPlayer.handsPlayedCount ?? 0,
+            handsWonCount: seatPlayer.handsWonCount ?? 0,
+            vpipHandsCount: seatPlayer.vpipHandsCount ?? 0,
           };
         })
         .sort((a, b) => {

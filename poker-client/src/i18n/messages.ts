@@ -169,6 +169,8 @@ export const EN_MESSAGES = {
   "game.rankings.player": "Player",
   "game.rankings.stack": "Stack",
   "game.rankings.buyIn": "Buy-in",
+  "game.rankings.handsWon": "Wins",
+  "game.rankings.vpipHands": "VPIP Hands",
   "game.rankings.net": "Net",
 
   "game.settings.title": "Game Settings",
@@ -394,6 +396,8 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.rankings.player": "玩家",
   "game.rankings.stack": "筹码",
   "game.rankings.buyIn": "买入",
+  "game.rankings.handsWon": "获胜次数",
+  "game.rankings.vpipHands": "入池次数",
   "game.rankings.net": "净收益",
 
   "game.settings.title": "游戏设置",
