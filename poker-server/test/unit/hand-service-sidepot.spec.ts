@@ -41,6 +41,9 @@ describe('HandService side-pot distribution', () => {
       currentBet: 0,
       lastAction: null,
       lastConnectedAt: Date.now(),
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
     };
   }
 
@@ -167,6 +170,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'all-in',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
         {
           id: 'p2',
@@ -183,6 +189,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'check',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
         {
           id: 'p3',
@@ -199,6 +208,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'check',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
       ],
       gameState: 'IN_PROGRESS',
@@ -296,6 +308,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'all-in',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
         {
           id: 'p2',
@@ -312,6 +327,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'all-in',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
         {
           id: 'p3',
@@ -328,6 +346,9 @@ describe('HandService side-pot distribution', () => {
           currentBet: 0,
           lastAction: 'fold',
           lastConnectedAt: Date.now(),
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
         },
       ],
       gameState: 'IN_PROGRESS',
