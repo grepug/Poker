@@ -1981,6 +1981,25 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
+              const seatStatusLabel = isFolded
+                ? t("game.status.folded")
+                : isDisconnected
+                  ? t("game.status.disconnected")
+                  : null;
+              const seatBetText = seatStatusLabel
+                ? seatStatusLabel
+                : isAllIn
+                  ? `${t("game.status.allIn")} • $${seatPlayer.currentBet}`
+                  : seatPlayer.currentBet > 0
+                    ? t("game.bet", { amount: seatPlayer.currentBet })
+                    : t("game.actionBubble.check");
+              const seatBetToneClass = seatStatusLabel
+                ? isFolded
+                  ? "seat-pod__bet--folded"
+                  : "seat-pod__bet--disconnected"
+                : seatPlayer.currentBet > 0 || isAllIn
+                  ? "seat-pod__bet--active"
+                  : "";
               const seatDensityClass =
                 seatSlots.length >= 9
                   ? "seat-pod--dense"
@@ -2041,6 +2060,17 @@ export const GameRoom: React.FC = () => {
                       <span className="seat-pod__name">
                         {seatPlayer.name}
                       </span>
+                      {seatStatusLabel && (
+                        <span
+                          className={`seat-pod__status-badge ${
+                            isFolded
+                              ? "seat-pod__status-badge--folded"
+                              : "seat-pod__status-badge--disconnected"
+                          }`}
+                        >
+                          {seatStatusLabel}
+                        </span>
+                      )}
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--chips">
@@ -2048,17 +2078,7 @@ export const GameRoom: React.FC = () => {
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--bet">
-                      <div
-                        className={`seat-pod__bet ${
-                          seatPlayer.currentBet > 0 ? "seat-pod__bet--active" : ""
-                        }`}
-                      >
-                        {isAllIn
-                          ? `${t("game.status.allIn")} • $${seatPlayer.currentBet}`
-                          : seatPlayer.currentBet > 0
-                            ? t("game.bet", { amount: seatPlayer.currentBet })
-                            : t("game.actionBubble.check")}
-                      </div>
+                      <div className={`seat-pod__bet ${seatBetToneClass}`}>{seatBetText}</div>
                     </div>
                   </article>
                 </div>

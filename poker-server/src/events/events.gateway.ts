@@ -278,9 +278,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.trackPlayerSocket(client.id, data.roomId, player.id);
 
       // Get full room state - simplified, would need full sync
+      const room = await this.getRoom(data.roomId);
       client.emit('RECONNECT_SUCCESS', {
         player,
-        room: this.sanitizeRoom(await this.getRoom(data.roomId)),
+        room: this.sanitizeRoom(room),
         yourCards: player.cards,
       });
 
@@ -1164,25 +1165,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleDisconnectTimeout(roomId: string, playerId: string) {
     try {
-      const room = await this.getRoom(roomId);
-
-      // Auto-fold if it's their turn
-      if (room.currentHand?.currentPlayerTurn === playerId) {
-        await this.bettingService.processAction(room, playerId, 'fold');
-
-        this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
-          playerId,
-          playerName: room.players.find((p) => p.id === playerId)?.name || '',
-        });
-
-        // Continue game
-        const updatedRoom = await this.getRoom(roomId);
-        if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
-          await this.handleBettingRoundComplete(updatedRoom);
+      await this.runRoomActionSequentially(roomId, async () => {
+        const room = await this.getRoom(roomId);
+        if (!room) {
+          return;
         }
-      }
 
-      await this.gameService.markPlayerDisconnected(roomId, playerId);
+        const player = room.players.find((p) => p.id === playerId);
+        if (!player || player.status !== 'disconnected') {
+          // Player already reconnected (or left); stale timeout should do nothing.
+          return;
+        }
+
+        // Auto-fold if it's their turn
+        if (room.currentHand?.currentPlayerTurn === playerId) {
+          await this.bettingService.processAction(room, playerId, 'fold');
+
+          this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
+            playerId,
+            playerName: room.players.find((p) => p.id === playerId)?.name || '',
+          });
+
+          // Continue game
+          const updatedRoom = await this.getRoom(roomId);
+          if (!updatedRoom?.currentHand) {
+            await this.gameService.markPlayerDisconnected(roomId, playerId);
+            return;
+          }
+
+          if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
+            await this.handleBettingRoundComplete(updatedRoom);
+          } else {
+            const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+            if (nextPlayer) {
+              updatedRoom.currentHand.currentPlayerTurn = nextPlayer.id;
+              await this.storageService.saveRoom(updatedRoom);
+              this.emitPlayerTurn(updatedRoom, nextPlayer);
+            }
+          }
+        }
+
+        await this.gameService.markPlayerDisconnected(roomId, playerId);
+      });
     } catch (error) {
       this.logger.error(`Disconnect timeout error: ${error.message}`);
     }

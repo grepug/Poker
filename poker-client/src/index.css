@@ -449,6 +449,33 @@ body {
   min-width: 0;
 }
 
+.seat-pod__status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0.08rem 0.32rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-size: 0.46rem;
+  font-weight: 780;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.seat-pod__status-badge--folded {
+  color: #fecdd3;
+  border-color: rgba(251, 113, 133, 0.58);
+  background: rgba(136, 19, 55, 0.45);
+}
+
+.seat-pod__status-badge--disconnected {
+  color: #dbeafe;
+  border-color: rgba(148, 163, 184, 0.62);
+  background: rgba(30, 41, 59, 0.58);
+}
+
 .seat-pod__row--chips,
 .seat-pod__row--bet {
   justify-content: flex-start;
@@ -494,6 +521,16 @@ body {
 
 .seat-pod__bet--active {
   color: #fcd34d;
+}
+
+.seat-pod__bet--folded {
+  color: #fda4af;
+  font-weight: 760;
+}
+
+.seat-pod__bet--disconnected {
+  color: #cbd5e1;
+  font-weight: 740;
 }
 
 .seat-pod__you-indicator {
