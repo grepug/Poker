@@ -168,6 +168,21 @@ function isInvalidReconnectReason(reason: string): boolean {
   return normalized.includes("not found");
 }
 
+function deriveNextStreetRevealStateFromRoom(
+  roomState: Room | null | undefined,
+): NextStreetRevealState | null {
+  const currentHand = roomState?.currentHand;
+  if (!currentHand?.pendingStreetRevealRound) {
+    return null;
+  }
+
+  return {
+    nextRound: currentHand.pendingStreetRevealRound,
+    readyPlayerIds: currentHand.nextStreetReadyPlayerIds ?? [],
+    requiredPlayerIds: currentHand.nextStreetRequiredPlayerIds ?? [],
+  };
+}
+
 declare global {
   interface Window {
     pokerDebug?: DebugApi;
@@ -221,37 +236,40 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     // Room created
     socket.on("ROOM_CREATED", (data) => {
-      setRoom(data.room as unknown as Room); // SanitizedRoom from server
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
       setYourCards(null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
-      setNextStreetRevealState(null);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
 
     // Room joined
     socket.on("ROOM_JOINED", (data) => {
-      setRoom(data.room as unknown as Room); // SanitizedRoom from server
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState); // SanitizedRoom from server
       setPlayer(data.player);
       setYourCards(data.player?.cards ?? null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
-      setNextStreetRevealState(null);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       setIsRecoveringSession(false);
       setLastError(null);
     });
 
     // Explicit reconnect success
     socket.on("RECONNECT_SUCCESS", (data) => {
-      setRoom(data.room as unknown as Room);
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState);
       setPlayer(data.player as Player);
       setYourCards(data.yourCards ?? null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
-      setNextStreetRevealState(null);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;

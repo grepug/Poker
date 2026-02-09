@@ -4403,6 +4403,59 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12d: Reconnect During Pending Street Reveal Keeps Reveal Controls', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await alicePage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toBeEnabled();
+
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {
