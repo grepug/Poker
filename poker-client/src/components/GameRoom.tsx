@@ -77,6 +77,24 @@ type ActionPointerVector = {
   length: number;
 };
 
+type RulesCopy = {
+  buttonLabel: string;
+  modalTitle: string;
+  modalSubtitle: string;
+  objectiveTitle: string;
+  objectiveBullets: string[];
+  flowTitle: string;
+  flowSteps: string[];
+  actionsTitle: string;
+  actionsBullets: string[];
+  showdownTitle: string;
+  showdownBullets: string[];
+  tiebreakTitle: string;
+  tiebreakBullets: string[];
+  rankingTitle: string;
+  rankingHint: string;
+};
+
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
   pointerId: null,
@@ -184,6 +202,130 @@ const formatHandDescription = (
   if (highCard) return `高牌${normalizeRankToken(highCard[1])}`;
 
   return text;
+};
+
+const HAND_RANK_ORDER: HandEvaluation["rank"][] = [
+  "ROYAL_FLUSH",
+  "STRAIGHT_FLUSH",
+  "FOUR_OF_A_KIND",
+  "FULL_HOUSE",
+  "FLUSH",
+  "STRAIGHT",
+  "THREE_OF_A_KIND",
+  "TWO_PAIR",
+  "ONE_PAIR",
+  "HIGH_CARD",
+];
+
+const HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+  en: {
+    ROYAL_FLUSH: "A-K-Q-J-10, all same suit.",
+    STRAIGHT_FLUSH: "Five consecutive cards, all same suit.",
+    FOUR_OF_A_KIND: "Four cards of the same rank plus one kicker.",
+    FULL_HOUSE: "Three cards of one rank plus one pair.",
+    FLUSH: "Any five cards of the same suit (not consecutive).",
+    STRAIGHT: "Five consecutive ranks; A can be high or low (A-2-3-4-5).",
+    THREE_OF_A_KIND: "Three cards of the same rank plus two kickers.",
+    TWO_PAIR: "Two different pairs plus one kicker.",
+    ONE_PAIR: "One pair plus three kickers.",
+    HIGH_CARD: "No made hand; compare highest cards in order.",
+  },
+  zh_hans: {
+    ROYAL_FLUSH: "同一花色的 A-K-Q-J-10。",
+    STRAIGHT_FLUSH: "同一花色的连续五张牌。",
+    FOUR_OF_A_KIND: "四张同点数牌 + 1 张踢脚牌。",
+    FULL_HOUSE: "三条 + 一对。",
+    FLUSH: "任意同花五张（不要求连续）。",
+    STRAIGHT: "任意连续五张；A 可作最大或最小（A-2-3-4-5）。",
+    THREE_OF_A_KIND: "三张同点数牌 + 2 张踢脚牌。",
+    TWO_PAIR: "两组对子 + 1 张踢脚牌。",
+    ONE_PAIR: "一组对子 + 3 张踢脚牌。",
+    HIGH_CARD: "无成牌时，按最大单牌依次比较。",
+  },
+};
+
+const RULES_COPY: Record<Locale, RulesCopy> = {
+  en: {
+    buttonLabel: "Game Rules",
+    modalTitle: "Texas Hold'em Rules",
+    modalSubtitle:
+      "No-Limit Texas Hold'em quick reference for this table, including hand rankings.",
+    objectiveTitle: "1) Objective",
+    objectiveBullets: [
+      "Win chips by making the best 5-card hand from 7 cards (2 hole + 5 community), or by making everyone else fold.",
+      "Each hand starts with forced blinds, then betting progresses across rounds.",
+    ],
+    flowTitle: "2) Hand Flow",
+    flowSteps: [
+      "Pre-flop: each player receives 2 hole cards; betting starts after blinds.",
+      "Flop: reveal 3 community cards, then betting round.",
+      "Turn: reveal 4th community card, then betting round.",
+      "River: reveal 5th community card, then final betting round.",
+      "Showdown: remaining players reveal and best hand wins.",
+    ],
+    actionsTitle: "3) Betting Actions",
+    actionsBullets: [
+      "Fold: give up this hand and forfeit chips already committed.",
+      "Check: pass action when no bet is facing you.",
+      "Call: match the current highest bet.",
+      "Raise: increase the bet; raise amount must meet minimum raise requirement.",
+      "All-in: push your remaining chips in. Side pots may be created.",
+    ],
+    showdownTitle: "4) Showdown & Pots",
+    showdownBullets: [
+      "At showdown, always use the best 5-card combination out of 7 cards.",
+      "If multiple players tie exactly, the pot (or side pot) is split equally.",
+      "Players can only win the pots they contributed to.",
+    ],
+    tiebreakTitle: "5) Tiebreak Basics",
+    tiebreakBullets: [
+      "Same hand type: compare key ranks first (for example, pair value, then kickers).",
+      "For straights, compare highest card in the straight (A-2-3-4-5 is the lowest straight).",
+      "For flush/high card, compare highest cards from top to bottom.",
+    ],
+    rankingTitle: "6) Hand Rankings (Strongest -> Weakest)",
+    rankingHint: "Higher category always beats lower category.",
+  },
+  zh_hans: {
+    buttonLabel: "游戏规则",
+    modalTitle: "德州扑克规则",
+    modalSubtitle: "本桌为无限注德州扑克。以下为完整流程、操作说明与牌型大小排序。",
+    objectiveTitle: "1）游戏目标",
+    objectiveBullets: [
+      "用 7 张牌（2 张手牌 + 5 张公共牌）组合出最佳 5 张牌，或通过下注让其他玩家弃牌，从而赢得底池。",
+      "每一局会先下盲注，再按轮次进行下注。",
+    ],
+    flowTitle: "2）每局流程",
+    flowSteps: [
+      "Pre-flop：发 2 张手牌，从盲注后首位玩家开始行动。",
+      "Flop：发出前 3 张公共牌，进行一轮下注。",
+      "Turn：发第 4 张公共牌，进行一轮下注。",
+      "River：发第 5 张公共牌，进行最后一轮下注。",
+      "Showdown：未弃牌玩家比牌，最佳牌型获胜。",
+    ],
+    actionsTitle: "3）可执行操作",
+    actionsBullets: [
+      "弃牌（Fold）：放弃本局，已投入筹码不退回。",
+      "过牌（Check）：当前无需跟注时可选择过牌。",
+      "跟注（Call）：补齐到当前最高下注额。",
+      "加注（Raise）：提高下注，金额需满足最小加注要求。",
+      "全下（All-in）：把剩余筹码全部投入；可能产生边池。",
+    ],
+    showdownTitle: "4）摊牌与奖池",
+    showdownBullets: [
+      "摊牌时从 7 张牌中取最佳 5 张进行比较。",
+      "完全同牌则平分对应底池（主池/边池）。",
+      "玩家只能赢取自己参与过的底池。",
+    ],
+    tiebreakTitle: "5）同牌型比大小",
+    tiebreakBullets: [
+      "同一牌型先比主体牌值（如对子点数），再比踢脚牌。",
+      "顺子比较最大那张（A-2-3-4-5 为最小顺子）。",
+      "同花/高牌按从大到小逐张比较。",
+    ],
+    rankingTitle: "6）牌型大小排序（从大到小）",
+    rankingHint: "高一级牌型永远大于低一级牌型。",
+  },
 };
 
 const resolveDropIntent = ({
@@ -408,6 +550,7 @@ export const GameRoom: React.FC = () => {
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
   const [showEndGameConfirmModal, setShowEndGameConfirmModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
@@ -623,6 +766,7 @@ export const GameRoom: React.FC = () => {
       })),
     [finalGameResult],
   );
+  const rulesCopy = useMemo(() => RULES_COPY[locale], [locale]);
 
   const finalSummaryCards = useMemo(() => {
     if (!finalGameResult) return [];
@@ -1016,6 +1160,7 @@ export const GameRoom: React.FC = () => {
   useEffect(() => {
     // Reset hand-level UI state for each new hand.
     setShowRankingsModal(false);
+    setShowRulesModal(false);
     setIsCardsFlyoutOpen(true);
     setShowEndGameConfirmModal(false);
   }, [room?.id, currentHandNumber]);
@@ -1110,6 +1255,7 @@ export const GameRoom: React.FC = () => {
     if (
       !lastError &&
       !showRankingsModal &&
+      !showRulesModal &&
       !showSettingsModal &&
       !showEndGameConfirmModal &&
       !showFinalSummaryModal &&
@@ -1122,6 +1268,7 @@ export const GameRoom: React.FC = () => {
       if (event.key !== "Escape") return;
       if (lastError) clearError();
       if (showRankingsModal) setShowRankingsModal(false);
+      if (showRulesModal) setShowRulesModal(false);
       if (showSettingsModal) setShowSettingsModal(false);
       if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
       if (showFinalSummaryModal) setShowFinalSummaryModal(false);
@@ -1137,6 +1284,7 @@ export const GameRoom: React.FC = () => {
     showEndGameConfirmModal,
     showFinalSummaryModal,
     showRankingsModal,
+    showRulesModal,
     showSettingsModal,
   ]);
 
@@ -1510,13 +1658,18 @@ export const GameRoom: React.FC = () => {
           </p>
         </div>
 
-        <div className="hidden" aria-live="polite">
+        <div className="pointer-events-none absolute -left-[9999px] top-0" aria-live="polite">
           <span className="hud-chip" data-testid="pot-value">
             {t("game.pot", { amount: displayPot })}
           </span>
           <span className="hud-chip" data-testid="your-chips">
             {t("game.yourChips", { amount: currentPlayer?.chips ?? 0 })}
           </span>
+          {currentHand && (
+            <span className="hud-chip" data-testid="round-value">
+              {t("game.round", { round: currentHand.bettingRound })}
+            </span>
+          )}
           {currentTurnPlayer && (
             <span
               className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100"
@@ -1528,11 +1681,6 @@ export const GameRoom: React.FC = () => {
         </div>
 
         <section className="table-controls-strip">
-          {currentHand && (
-            <span className="hud-chip" data-testid="round-value">
-              {t("game.round", { round: currentHand.bettingRound })}
-            </span>
-          )}
           <button
             onClick={handleCopyInviteLink}
             data-testid="copy-room-url-button"
@@ -1556,6 +1704,13 @@ export const GameRoom: React.FC = () => {
             className="rounded-full border border-cyan-400/65 bg-cyan-950/40 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-900/45"
           >
             {t("common.settings")}
+          </button>
+          <button
+            onClick={() => setShowRulesModal(true)}
+            data-testid="open-rules-button"
+            className="rounded-full border border-indigo-300/65 bg-indigo-900/35 px-3 py-1 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-800/45"
+          >
+            {rulesCopy.buttonLabel}
           </button>
           <button
             onClick={() => setShowRankingsModal(true)}
@@ -2337,6 +2492,96 @@ export const GameRoom: React.FC = () => {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {showRulesModal && (
+        <div
+          className="fixed inset-0 z-[77] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
+          data-testid="rules-modal"
+        >
+          <section className="surface-panel w-full max-w-3xl max-h-[85vh] overflow-y-auto p-4 md:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-white">{rulesCopy.modalTitle}</h3>
+                <p className="mt-1 text-sm text-emerald-100/80">{rulesCopy.modalSubtitle}</p>
+              </div>
+              <button
+                onClick={() => setShowRulesModal(false)}
+                data-testid="close-rules-button"
+                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+              >
+                {t("common.close")}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-sm text-emerald-100/90">
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.objectiveTitle}</h4>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {rulesCopy.objectiveBullets.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.flowTitle}</h4>
+                <ol className="mt-2 list-decimal space-y-1 pl-5">
+                  {rulesCopy.flowSteps.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ol>
+              </section>
+
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.actionsTitle}</h4>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {rulesCopy.actionsBullets.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.showdownTitle}</h4>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {rulesCopy.showdownBullets.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.tiebreakTitle}</h4>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {rulesCopy.tiebreakBullets.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
+                <h4 className="text-sm font-semibold text-white">{rulesCopy.rankingTitle}</h4>
+                <p className="mt-1 text-xs text-emerald-100/75">{rulesCopy.rankingHint}</p>
+                <ol className="mt-2 space-y-2">
+                  {HAND_RANK_ORDER.map((rank, idx) => (
+                    <li
+                      key={rank}
+                      className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
+                    >
+                      <p className="text-sm font-semibold text-white">
+                        #{idx + 1} {formatHandRank(rank, locale)}
+                      </p>
+                      <p className="mt-1 text-xs text-emerald-100/80">
+                        {HAND_RANK_DETAILS[locale][rank]}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            </div>
+          </section>
         </div>
       )}
 
