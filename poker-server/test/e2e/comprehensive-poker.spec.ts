@@ -3480,6 +3480,42 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
     }
   });
 
+  test('7.2b: Higher Pair Beats Lower Pair', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'diamonds', rank: 'A' }, // Alice hole 1
+        { suit: 'hearts', rank: 'Q' }, // Alice hole 2
+        { suit: 'spades', rank: '5' }, // Bob hole 1
+        { suit: 'hearts', rank: 'K' }, // Bob hole 2
+        { suit: 'spades', rank: 'Q' }, // Flop 1
+        { suit: 'clubs', rank: 'K' }, // Flop 2
+        { suit: 'diamonds', rank: '3' }, // Flop 3
+        { suit: 'spades', rank: 'J' }, // Turn
+        { suit: 'spades', rank: '6' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+
+      const result = await handCompletePromise;
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Bob');
+      expect(result.winners[0].hand.rank).toBe('ONE_PAIR');
+      expect(result.winners[0].hand.description).toContain('Pair of Ks');
+
+      const playerHandsByRank = result.playerHands
+        .map((playerHand: any) => playerHand.hand.rank)
+        .sort();
+      expect(playerHandsByRank).toEqual(['ONE_PAIR', 'ONE_PAIR']);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('7.3: Tie (Split Pot)', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 

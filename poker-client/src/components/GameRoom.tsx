@@ -1986,20 +1986,10 @@ export const GameRoom: React.FC = () => {
                 : isDisconnected
                   ? t("game.status.disconnected")
                   : null;
-              const seatBetText = seatStatusLabel
-                ? seatStatusLabel
-                : isAllIn
-                  ? `${t("game.status.allIn")} • $${seatPlayer.currentBet}`
-                  : seatPlayer.currentBet > 0
-                    ? t("game.bet", { amount: seatPlayer.currentBet })
-                    : t("game.actionBubble.check");
-              const seatBetToneClass = seatStatusLabel
-                ? isFolded
-                  ? "seat-pod__bet--folded"
-                  : "seat-pod__bet--disconnected"
-                : seatPlayer.currentBet > 0 || isAllIn
-                  ? "seat-pod__bet--active"
-                  : "";
+              const seatBetText =
+                seatPlayer.currentBet > 0
+                  ? t("game.bet", { amount: seatPlayer.currentBet })
+                  : null;
               const seatDensityClass =
                 seatSlots.length >= 9
                   ? "seat-pod--dense"
@@ -2077,9 +2067,11 @@ export const GameRoom: React.FC = () => {
                       <div className="seat-pod__stack">${seatPlayer.chips}</div>
                     </div>
 
-                    <div className="seat-pod__row seat-pod__row--bet">
-                      <div className={`seat-pod__bet ${seatBetToneClass}`}>{seatBetText}</div>
-                    </div>
+                    {seatBetText && (
+                      <div className="seat-pod__row seat-pod__row--bet">
+                        <div className="seat-pod__bet seat-pod__bet--active">{seatBetText}</div>
+                      </div>
+                    )}
                   </article>
                 </div>
               );
