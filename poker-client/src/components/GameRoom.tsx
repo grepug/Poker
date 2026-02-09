@@ -19,6 +19,15 @@ type SeatAnchor = {
   left: string;
 };
 
+type OrbitAnchorInput = {
+  slotIndex: number;
+  totalSeats: number;
+  tableWidth: number;
+  tableHeight: number;
+  seatWidth: number;
+  seatHeight: number;
+};
+
 type DropIntent = {
   action: PlayerAction;
   amount?: number;
@@ -454,7 +463,15 @@ const normalizeTrayAmountForDrop = ({
   return clampedAmount;
 };
 
-const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
+const SEAT_EDGE_PADDING_PX = 2;
+const SEAT_CORNER_DIRECTIONS: Array<[number, number]> = [
+  [-1, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+];
+
+const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
   const angleStep = (Math.PI * 2) / safeTotal;
   const startAngle = Math.PI / 2; // Self seat starts at bottom center
@@ -475,6 +492,193 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
     top: `${Math.max(7, Math.min(86, top))}%`,
     left: `${Math.max(5, Math.min(95, left))}%`,
   };
+};
+
+const canFitSeatAtDistance = ({
+  distance,
+  cosine,
+  sine,
+  halfSeatWidth,
+  halfSeatHeight,
+  radiusX,
+  radiusY,
+}: {
+  distance: number;
+  cosine: number;
+  sine: number;
+  halfSeatWidth: number;
+  halfSeatHeight: number;
+  radiusX: number;
+  radiusY: number;
+}): boolean => {
+  const centerX = distance * cosine;
+  const centerY = distance * sine;
+
+  return SEAT_CORNER_DIRECTIONS.every(([xDirection, yDirection]) => {
+    const cornerX = centerX + xDirection * halfSeatWidth;
+    const cornerY = centerY + yDirection * halfSeatHeight;
+
+    return (cornerX * cornerX) / (radiusX * radiusX) + (cornerY * cornerY) / (radiusY * radiusY) <= 1;
+  });
+};
+
+const solveSeatDistanceToEdge = ({
+  cosine,
+  sine,
+  halfSeatWidth,
+  halfSeatHeight,
+  radiusX,
+  radiusY,
+}: {
+  cosine: number;
+  sine: number;
+  halfSeatWidth: number;
+  halfSeatHeight: number;
+  radiusX: number;
+  radiusY: number;
+}): number => {
+  const denominator =
+    (cosine * cosine) / (radiusX * radiusX) + (sine * sine) / (radiusY * radiusY);
+  if (denominator <= 0) {
+    return 0;
+  }
+
+  let low = 0;
+  let high = 1 / Math.sqrt(denominator);
+
+  for (let index = 0; index < 24; index += 1) {
+    const mid = (low + high) / 2;
+    if (
+      canFitSeatAtDistance({
+        distance: mid,
+        cosine,
+        sine,
+        halfSeatWidth,
+        halfSeatHeight,
+        radiusX,
+        radiusY,
+      })
+    ) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+};
+
+const getOrbitAnchor = ({
+  slotIndex,
+  totalSeats,
+  tableWidth,
+  tableHeight,
+  seatWidth,
+  seatHeight,
+}: OrbitAnchorInput): SeatAnchor => {
+  if (tableWidth <= 0 || tableHeight <= 0 || seatWidth <= 0 || seatHeight <= 0) {
+    return getFallbackOrbitAnchor(slotIndex, totalSeats);
+  }
+
+  const safeTotal = Math.max(1, totalSeats);
+  const angleStep = (Math.PI * 2) / safeTotal;
+  const startAngle = Math.PI / 2;
+  const angle = startAngle + slotIndex * angleStep;
+
+  const centerX = tableWidth / 2;
+  const centerY = tableHeight / 2;
+  const radiusX = Math.max(SEAT_EDGE_PADDING_PX + 1, centerX - SEAT_EDGE_PADDING_PX);
+  const radiusY = Math.max(SEAT_EDGE_PADDING_PX + 1, centerY - SEAT_EDGE_PADDING_PX);
+  const halfSeatWidth = seatWidth / 2;
+  const halfSeatHeight = seatHeight / 2;
+
+  if (halfSeatWidth >= radiusX || halfSeatHeight >= radiusY) {
+    return {
+      left: `${centerX}px`,
+      top: `${centerY}px`,
+    };
+  }
+
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const seatDistance = solveSeatDistanceToEdge({
+    cosine,
+    sine,
+    halfSeatWidth,
+    halfSeatHeight,
+    radiusX,
+    radiusY,
+  });
+
+  const left = centerX + cosine * seatDistance;
+  const top = centerY + sine * seatDistance;
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
+};
+
+const parseLengthToPixels = ({
+  token,
+  rootFontSize,
+  viewportWidth,
+}: {
+  token: string;
+  rootFontSize: number;
+  viewportWidth: number;
+}): number => {
+  const normalized = token.trim().toLowerCase();
+  if (normalized.endsWith("rem")) {
+    return Number.parseFloat(normalized) * rootFontSize;
+  }
+  if (normalized.endsWith("vw")) {
+    return (Number.parseFloat(normalized) / 100) * viewportWidth;
+  }
+  if (normalized.endsWith("px")) {
+    return Number.parseFloat(normalized);
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const resolveSeatSlotWidthPixels = ({
+  seatSlotWidth,
+  rootFontSize,
+  viewportWidth,
+}: {
+  seatSlotWidth: string;
+  rootFontSize: number;
+  viewportWidth: number;
+}): number => {
+  const normalized = seatSlotWidth.replace(/\s+/g, "");
+  const clampMatch = normalized.match(/^clamp\(([^,]+),([^,]+),([^)]+)\)$/i);
+  if (!clampMatch) {
+    return parseLengthToPixels({
+      token: normalized,
+      rootFontSize,
+      viewportWidth,
+    });
+  }
+
+  const minValue = parseLengthToPixels({
+    token: clampMatch[1],
+    rootFontSize,
+    viewportWidth,
+  });
+  const preferredValue = parseLengthToPixels({
+    token: clampMatch[2],
+    rootFontSize,
+    viewportWidth,
+  });
+  const maxValue = parseLengthToPixels({
+    token: clampMatch[3],
+    rootFontSize,
+    viewportWidth,
+  });
+
+  return Math.max(minValue, Math.min(maxValue, preferredValue));
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
@@ -606,6 +810,7 @@ export const GameRoom: React.FC = () => {
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
   const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
   const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -619,6 +824,7 @@ export const GameRoom: React.FC = () => {
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
   const turnOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
+  const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
   const actionAlertHideTimeoutRef = useRef<number | null>(null);
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
@@ -799,6 +1005,65 @@ export const GameRoom: React.FC = () => {
     () => getSeatSlotWidth(room?.players.length ?? 0),
     [room?.players.length],
   );
+  const seatSlotWidthPx = useMemo(() => {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+
+    const rootFontSize =
+      Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+    const viewportWidth = Math.max(window.innerWidth, feltSize.width);
+    return resolveSeatSlotWidthPixels({
+      seatSlotWidth,
+      rootFontSize,
+      viewportWidth,
+    });
+  }, [seatSlotWidth, feltSize.width]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const feltNode = feltOvalRef.current;
+    if (!feltNode) {
+      return undefined;
+    }
+
+    const updateFeltSize = () => {
+      const nextWidth = Math.ceil(feltNode.getBoundingClientRect().width);
+      const nextHeight = Math.ceil(feltNode.getBoundingClientRect().height);
+
+      setFeltSize((previous) => {
+        if (previous.width === nextWidth && previous.height === nextHeight) {
+          return previous;
+        }
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    updateFeltSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateFeltSize);
+      return () => {
+        window.removeEventListener("resize", updateFeltSize);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(updateFeltSize);
+    resizeObserver.observe(feltNode);
+    window.addEventListener("resize", updateFeltSize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateFeltSize);
+    };
+  }, []);
+
   const playerRankings = useMemo(
     () => {
       if (!room) return [];
@@ -890,9 +1155,16 @@ export const GameRoom: React.FC = () => {
       slotIndex,
       position: seatPlayer.position,
       seatPlayer,
-      anchor: getOrbitAnchor(slotIndex, orderedPlayers.length),
+      anchor: getOrbitAnchor({
+        slotIndex,
+        totalSeats: orderedPlayers.length,
+        tableWidth: feltSize.width,
+        tableHeight: feltSize.height,
+        seatWidth: seatSlotWidthPx,
+        seatHeight: seatSlotWidthPx,
+      }),
     }));
-  }, [currentPlayer?.position, orbitCapacity, player, room]);
+  }, [currentPlayer?.position, feltSize.height, feltSize.width, orbitCapacity, player, room, seatSlotWidthPx]);
 
   const communitySlots = Array.from(
     { length: 5 },
@@ -1922,7 +2194,7 @@ export const GameRoom: React.FC = () => {
       )}
 
       <section className="table-board-wrap" data-testid="table-board-section">
-        <div className="felt-oval">
+        <div ref={feltOvalRef} className="felt-oval">
           <div className="board-center-stack">
             <div className="community-lane" data-testid="community-cards">
               {communitySlots.map((card, idx) => {
