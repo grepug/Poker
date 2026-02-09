@@ -89,6 +89,7 @@ export class HandService {
     }
 
     for (const player of activePlayers) {
+      player.handsPlayedCount = (player.handsPlayedCount ?? 0) + 1;
       const { dealt, remaining } = dealCards(deck, 2);
       player.cards = dealt;
       player.status = 'connected';
@@ -124,6 +125,7 @@ export class HandService {
       roundActions: {},
       sidePots: [],
       potContributions,
+      vpipPlayerIds: [],
       startedAt: Date.now(),
     };
 
@@ -319,6 +321,7 @@ export class HandService {
         ? evaluateHand(winner.cards!.concat(hand.communityCards))
         : null;
 
+      winner.handsWonCount = (winner.handsWonCount ?? 0) + 1;
       const result: HandResult = {
         winners: [
           {
@@ -493,6 +496,12 @@ export class HandService {
         };
       })
       .sort((a, b) => b.amountWon - a.amountWon);
+
+    for (const winnerEntry of winners) {
+      const winnerPlayer = room.players.find((p) => p.id === winnerEntry.playerId);
+      if (!winnerPlayer) continue;
+      winnerPlayer.handsWonCount = (winnerPlayer.handsWonCount ?? 0) + 1;
+    }
 
     const result: HandResult = {
       winners,
