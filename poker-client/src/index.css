@@ -1200,3 +1200,25 @@ body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+@media (min-width: 1024px) {
+  .table-shell {
+    padding-bottom: 1rem;
+  }
+
+  .table-shell--desktop-turn-dock {
+    --desktop-turn-dock-width: clamp(19rem, 23vw, 23rem);
+    padding-right: calc(var(--desktop-turn-dock-width) + 1.45rem);
+  }
+
+  .chip-composer-dock {
+    left: auto;
+    right: calc(0.85rem + env(safe-area-inset-right, 0px));
+    bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    width: var(--desktop-turn-dock-width);
+    max-width: calc(100vw - 1.7rem - env(safe-area-inset-right, 0px));
+    max-height: calc(100vh - 1.7rem - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
+}

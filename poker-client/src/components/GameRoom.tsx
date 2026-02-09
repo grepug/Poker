@@ -12,6 +12,7 @@ const ACTION_ALERT_VISIBLE_MS = 1300;
 const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
 const POT_ANIMATION_MS = 360;
+const DESKTOP_SIDE_DOCK_QUERY = "(min-width: 1024px)";
 
 type SeatAnchor = {
   top: string;
@@ -418,6 +419,12 @@ export const GameRoom: React.FC = () => {
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
   const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
   const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
+  });
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
@@ -470,6 +477,7 @@ export const GameRoom: React.FC = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
+  const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
 
   const isHandPausedForNext =
@@ -769,6 +777,22 @@ export const GameRoom: React.FC = () => {
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const updateDockMode = () => {
+      const nextIsDesktop = window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
+      setIsDesktopSideDock((prev) => (prev === nextIsDesktop ? prev : nextIsDesktop));
+    };
+
+    updateDockMode();
+    window.addEventListener("resize", updateDockMode);
+
+    return () => window.removeEventListener("resize", updateDockMode);
+  }, []);
+
   const clearActionAlertTimers = useCallback(() => {
     if (actionAlertHideTimeoutRef.current !== null) {
       window.clearTimeout(actionAlertHideTimeoutRef.current);
@@ -894,7 +918,7 @@ export const GameRoom: React.FC = () => {
   }, [isYourTurn]);
 
   useEffect(() => {
-    if (!isYourTurn) {
+    if (!shouldAnchorCardsFlyoutToTurnDock) {
       setTurnOverlayHeight(0);
       return;
     }
@@ -923,7 +947,7 @@ export const GameRoom: React.FC = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateOverlayHeight);
     };
-  }, [isYourTurn]);
+  }, [shouldAnchorCardsFlyoutToTurnDock]);
 
   useEffect(() => {
     if (!quickConfirmAction || isAutomationMode) return;
@@ -1468,7 +1492,9 @@ export const GameRoom: React.FC = () => {
   }
 
   return (
-    <main className="table-shell">
+    <main
+      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}`}
+    >
       <header className="table-micro-hud">
         <div className="min-w-0">
           <h1
@@ -1593,9 +1619,9 @@ export const GameRoom: React.FC = () => {
         <section
           className={`your-cards-flyout ${
             isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-          } ${isYourTurn ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
+          } ${shouldAnchorCardsFlyoutToTurnDock ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
           style={
-            isYourTurn
+            shouldAnchorCardsFlyoutToTurnDock
               ? {
                   bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
                 }
