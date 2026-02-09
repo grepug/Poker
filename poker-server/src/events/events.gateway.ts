@@ -128,7 +128,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const { roomId, playerId } = playerInfo;
     const room = await this.getRoom(roomId);
-    const gracePeriod = room?.config?.reconnectGracePeriod ?? 30000;
+    const gracePeriod = room?.config?.reconnectGracePeriod ?? 120000;
     const playerName =
       room?.players?.find((player) => player.id === playerId)?.name ?? '';
 

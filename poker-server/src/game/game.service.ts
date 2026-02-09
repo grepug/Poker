@@ -30,7 +30,7 @@ export class GameService {
       smallBlind: 5,
       bigBlind: 10,
       maxPlayers: 10,
-      reconnectGracePeriod: 30000,
+      reconnectGracePeriod: 120000,
     };
 
     const host: Player = {
