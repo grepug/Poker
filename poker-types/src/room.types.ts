@@ -7,7 +7,7 @@ export interface RoomConfig {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number; // 2-10
-  reconnectGracePeriod: number; // milliseconds (default 30000)
+  reconnectGracePeriod: number; // milliseconds (default 120000)
 }
 
 // Complete room state

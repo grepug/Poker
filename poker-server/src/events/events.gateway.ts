@@ -128,7 +128,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const { roomId, playerId } = playerInfo;
     const room = await this.getRoom(roomId);
-    const gracePeriod = room?.config?.reconnectGracePeriod ?? 30000;
+    const gracePeriod = room?.config?.reconnectGracePeriod ?? 120000;
     const playerName =
       room?.players?.find((player) => player.id === playerId)?.name ?? '';
 
@@ -143,6 +143,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }, gracePeriod);
 
     this.disconnectTimers.set(playerId, timer);
+    await this.gameService.markPlayerDisconnected(roomId, playerId);
 
     // Notify room of disconnect
     this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
@@ -197,7 +198,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: JoinRoomData,
   ) {
     try {
-      const { room, player } = await this.gameService.addPlayerToRoom(
+      const { room, player, rejoined } = await this.gameService.addPlayerToRoom(
         data.roomId,
         client.id,
         data.playerName,
@@ -208,17 +209,32 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       this.trackPlayerSocket(client.id, room.id, player.id);
 
-      // Notify all in room
-      this.server.to(room.id).emit('PLAYER_JOINED', {
-        player: this.sanitizePlayer(player),
-      } as PlayerJoinedData);
+      if (rejoined) {
+        const timer = this.disconnectTimers.get(player.id);
+        if (timer) {
+          clearTimeout(timer);
+          this.disconnectTimers.delete(player.id);
+        }
+
+        this.server.to(room.id).emit('PLAYER_RECONNECTED', {
+          playerId: player.id,
+          playerName: player.name,
+        });
+      } else {
+        // Notify all in room
+        this.server.to(room.id).emit('PLAYER_JOINED', {
+          player: this.sanitizePlayer(player),
+        } as PlayerJoinedData);
+      }
 
       client.emit('ROOM_JOINED', {
         player,
         room: this.sanitizeRoom(room),
       });
 
-      this.logger.log(`Player ${player.name} joined room ${room.id}`);
+      this.logger.log(
+        `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
+      );
       return { success: true };
     } catch (error) {
       this.logger.error(`Join room error: ${error.message}`);
