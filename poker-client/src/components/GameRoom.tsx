@@ -299,29 +299,24 @@ const getSeatSlotWidth = (occupiedSeats: number) => {
   return "clamp(3.2rem, 10.8vw, 4rem)";
 };
 
-const getPositionBadges = (
+const getSeatRoleIcon = (
   playerPosition: number,
   handMeta?: {
     dealerPosition: number;
     smallBlindPosition: number;
-    bigBlindPosition: number;
   },
 ) => {
   if (!handMeta) {
-    return [] as string[];
+    return null;
   }
 
-  const badges: string[] = [];
   if (handMeta.dealerPosition === playerPosition) {
-    badges.push("D");
+    return "dealer" as const;
   }
   if (handMeta.smallBlindPosition === playerPosition) {
-    badges.push("SB");
+    return "small-blind" as const;
   }
-  if (handMeta.bigBlindPosition === playerPosition) {
-    badges.push("BB");
-  }
-  return badges;
+  return null;
 };
 
 const toActionCenterAlert = (
@@ -1742,11 +1737,10 @@ export const GameRoom: React.FC = () => {
           <div className="seat-orbit" data-testid="players-section">
             {seatSlots.map((slot) => {
               const seatPlayer = slot.seatPlayer;
-              const badges = getPositionBadges(slot.position, currentHand
+              const roleIcon = getSeatRoleIcon(slot.position, currentHand
                 ? {
                     dealerPosition: currentHand.dealerPosition,
                     smallBlindPosition: currentHand.smallBlindPosition,
-                    bigBlindPosition: currentHand.bigBlindPosition,
                   }
                 : undefined);
 
@@ -1757,7 +1751,6 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
-              const isWaiting = seatPlayer?.status === "waiting";
               const seatDensityClass =
                 seatSlots.length >= 9
                   ? "seat-pod--dense"
@@ -1784,6 +1777,8 @@ export const GameRoom: React.FC = () => {
                     className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
                       seatDensityClass
                     } ${
+                      isAllIn ? "seat-pod--allin" : ""
+                    } ${
                       isDisconnected ? "seat-pod--disconnected" : ""
                     } ${
                       isFolded ? "seat-pod--folded" : ""
@@ -1798,6 +1793,15 @@ export const GameRoom: React.FC = () => {
                         🫵
                       </span>
                     )}
+                    {roleIcon && (
+                      <span
+                        className={`seat-pod__role-icon seat-pod__role-icon--${roleIcon}`}
+                        title={roleIcon === "dealer" ? "Dealer" : "Small Blind"}
+                        aria-label={roleIcon === "dealer" ? "Dealer" : "Small Blind"}
+                      >
+                        {roleIcon === "dealer" ? "D" : "SB"}
+                      </span>
+                    )}
                     <div className="seat-pod__row">
                       {seatPlayer.emoji && (
                         <span className="seat-pod__emoji" aria-hidden="true">
@@ -1807,13 +1811,6 @@ export const GameRoom: React.FC = () => {
                       <span className="seat-pod__name">
                         {seatPlayer.name}
                       </span>
-                      <div className="seat-pod__badges">
-                        {badges.map((badge) => (
-                          <span key={`${seatPlayer.id}-${badge}`} className="seat-pod__badge">
-                            {badge}
-                          </span>
-                        ))}
-                      </div>
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--chips">
@@ -1826,28 +1823,12 @@ export const GameRoom: React.FC = () => {
                           seatPlayer.currentBet > 0 ? "seat-pod__bet--active" : ""
                         }`}
                       >
-                        {t("game.bet", { amount: seatPlayer.currentBet })}
+                        {isAllIn
+                          ? `${t("game.status.allIn")} • $${seatPlayer.currentBet}`
+                          : seatPlayer.currentBet > 0
+                            ? t("game.bet", { amount: seatPlayer.currentBet })
+                            : t("game.actionBubble.check")}
                       </div>
-                      {isAllIn && (
-                        <span className="seat-pod__state seat-pod__state--allin">
-                          {t("game.status.allIn")}
-                        </span>
-                      )}
-                      {isDisconnected && (
-                        <span className="seat-pod__state seat-pod__state--disconnected">
-                          {t("game.status.disconnected")}
-                        </span>
-                      )}
-                      {isWaiting && (
-                        <span className="seat-pod__state seat-pod__state--disconnected">
-                          {t("game.status.waiting")}
-                        </span>
-                      )}
-                      {isFolded && (
-                        <span className="seat-pod__state seat-pod__state--folded">
-                          {t("game.status.folded")}
-                        </span>
-                      )}
                     </div>
                   </article>
                 </div>

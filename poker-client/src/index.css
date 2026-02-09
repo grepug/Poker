@@ -266,70 +266,68 @@ body {
 }
 
 .seat-pod {
-  --seat-emoji-size: clamp(0.52rem, 1.45vw, 0.76rem);
-  --seat-name-size: clamp(0.52rem, 1.45vw, 0.68rem);
-  --seat-stack-size: clamp(0.58rem, 1.6vw, 0.8rem);
-  --seat-bet-size: clamp(0.44rem, 1.18vw, 0.58rem);
-  --seat-state-size: clamp(0.4rem, 1.02vw, 0.52rem);
-  --seat-badge-size: clamp(0.36rem, 0.96vw, 0.46rem);
+  --seat-emoji-size: clamp(0.5rem, 1.3vw, 0.72rem);
+  --seat-name-size: clamp(0.5rem, 1.25vw, 0.66rem);
+  --seat-stack-size: clamp(0.56rem, 1.38vw, 0.78rem);
+  --seat-bet-size: clamp(0.42rem, 1.1vw, 0.58rem);
   position: relative;
-  border: 1px solid rgba(6, 95, 70, 0.85);
-  border-radius: 0.6rem;
-  background: rgba(6, 34, 24, 0.84);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
-  padding: 0.34rem 0.36rem;
+  border: 1.5px solid rgba(6, 95, 70, 0.85);
+  border-radius: 0.5rem;
+  background: rgba(4, 36, 25, 0.9);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.25);
+  padding: 0.22rem 0.24rem;
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-rows: auto auto auto;
-  align-content: center;
-  gap: 0.12rem;
+  align-content: start;
+  gap: 0.08rem;
 }
 
 .seat-pod--spacious {
-  --seat-emoji-size: clamp(0.56rem, 1.52vw, 0.82rem);
-  --seat-name-size: clamp(0.54rem, 1.52vw, 0.72rem);
-  --seat-stack-size: clamp(0.62rem, 1.7vw, 0.84rem);
-  --seat-bet-size: clamp(0.46rem, 1.25vw, 0.62rem);
-  --seat-state-size: clamp(0.42rem, 1.08vw, 0.56rem);
+  --seat-emoji-size: clamp(0.54rem, 1.42vw, 0.8rem);
+  --seat-name-size: clamp(0.54rem, 1.38vw, 0.72rem);
+  --seat-stack-size: clamp(0.62rem, 1.52vw, 0.9rem);
+  --seat-bet-size: clamp(0.46rem, 1.2vw, 0.66rem);
 }
 
 .seat-pod--compact {
-  padding: 0.3rem 0.3rem;
-  gap: 0.08rem;
-  --seat-emoji-size: clamp(0.48rem, 1.2vw, 0.68rem);
-  --seat-name-size: clamp(0.46rem, 1.12vw, 0.6rem);
-  --seat-stack-size: clamp(0.54rem, 1.28vw, 0.72rem);
-  --seat-bet-size: clamp(0.4rem, 0.96vw, 0.5rem);
-  --seat-state-size: clamp(0.36rem, 0.88vw, 0.46rem);
-  --seat-badge-size: clamp(0.32rem, 0.76vw, 0.4rem);
+  --seat-emoji-size: clamp(0.46rem, 1.06vw, 0.62rem);
+  --seat-name-size: clamp(0.44rem, 1.02vw, 0.56rem);
+  --seat-stack-size: clamp(0.5rem, 1.1vw, 0.66rem);
+  --seat-bet-size: clamp(0.38rem, 0.9vw, 0.48rem);
 }
 
 .seat-pod--dense {
-  padding: 0.25rem 0.26rem;
-  gap: 0.06rem;
-  --seat-emoji-size: clamp(0.42rem, 0.95vw, 0.58rem);
-  --seat-name-size: clamp(0.4rem, 0.9vw, 0.54rem);
-  --seat-stack-size: clamp(0.48rem, 1.05vw, 0.64rem);
-  --seat-bet-size: clamp(0.36rem, 0.8vw, 0.46rem);
-  --seat-state-size: clamp(0.34rem, 0.74vw, 0.42rem);
-  --seat-badge-size: clamp(0.3rem, 0.65vw, 0.36rem);
+  --seat-emoji-size: clamp(0.4rem, 0.82vw, 0.54rem);
+  --seat-name-size: clamp(0.38rem, 0.76vw, 0.5rem);
+  --seat-stack-size: clamp(0.44rem, 0.86vw, 0.58rem);
+  --seat-bet-size: clamp(0.34rem, 0.7vw, 0.44rem);
 }
 
 .seat-pod--turn {
-  border-color: rgba(251, 191, 36, 0.9);
+  border-color: rgba(251, 191, 36, 0.96);
   box-shadow:
-    0 0 0 1px rgba(251, 191, 36, 0.65),
-    0 0 20px rgba(251, 191, 36, 0.24);
+    0 0 0 2px rgba(251, 191, 36, 0.85),
+    0 0 26px rgba(251, 191, 36, 0.35);
+}
+
+.seat-pod--allin {
+  border-color: rgba(239, 68, 68, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(239, 68, 68, 0.5),
+    0 0 16px rgba(239, 68, 68, 0.22);
 }
 
 .seat-pod--folded {
-  opacity: 0.48;
-  filter: grayscale(0.72) saturate(0.45);
+  opacity: 0.66;
+  filter: saturate(0.52);
 }
 
 .seat-pod--disconnected {
-  border-color: rgba(248, 113, 113, 0.88);
-  background: rgba(69, 10, 10, 0.68);
+  border-color: rgba(148, 163, 184, 0.75);
+  background: rgba(30, 41, 59, 0.72);
+  opacity: 0.6;
+  filter: grayscale(1);
 }
 
 .seat-pod--empty {
@@ -344,8 +342,8 @@ body {
 .seat-pod__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.2rem;
+  justify-content: flex-start;
+  gap: 0.18rem;
   min-width: 0;
 }
 
@@ -355,11 +353,7 @@ body {
 }
 
 .seat-pod__row--bet {
-  gap: 0.14rem;
-  flex-wrap: wrap;
-  align-items: baseline;
-  align-content: flex-start;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .seat-pod__emoji {
@@ -374,29 +368,25 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--seat-name-size);
-  font-weight: 700;
+  font-weight: 650;
   color: #f8fafc;
-  flex: 1 1 auto;
+  flex: 1 1 100%;
 }
 
 .seat-pod__stack {
   font-size: var(--seat-stack-size);
   color: #6ee7b7;
-  font-weight: 700;
-  line-height: 1.05;
+  font-weight: 760;
+  line-height: 1.1;
   white-space: nowrap;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .seat-pod__bet {
   font-size: var(--seat-bet-size);
-  color: rgba(253, 230, 138, 0.7);
-  white-space: normal;
+  color: rgba(209, 250, 229, 0.88);
+  white-space: nowrap;
   line-height: 1.1;
-  font-weight: 700;
-  flex: 1 1 60%;
+  font-weight: 650;
 }
 
 .seat-pod__bet--active {
@@ -421,44 +411,36 @@ body {
   z-index: 2;
 }
 
-.seat-pod__badges {
-  display: flex;
-  align-items: center;
-  gap: 0.1rem;
-  flex-shrink: 0;
-}
-
-.seat-pod__badge {
+.seat-pod__role-icon {
+  position: absolute;
+  top: -0.22rem;
+  right: -0.22rem;
+  min-width: 1rem;
+  height: 0.9rem;
+  padding: 0 0.22rem;
   border-radius: 9999px;
-  border: 1px solid rgba(147, 197, 253, 0.55);
-  background: rgba(37, 99, 235, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.7);
+  background: rgba(2, 132, 199, 0.22);
   color: #dbeafe;
-  font-size: var(--seat-badge-size);
-  line-height: 1;
-  padding: 0.1rem 0.2rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.seat-pod__state {
-  margin-left: 0;
-  font-size: var(--seat-state-size);
+  font-size: clamp(0.34rem, 0.8vw, 0.46rem);
   font-weight: 800;
-  white-space: normal;
-  line-height: 1.1;
-  flex: 1 1 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  z-index: 2;
 }
 
-.seat-pod__state--allin {
-  color: #fdba74;
+.seat-pod__role-icon--dealer {
+  border-color: rgba(253, 224, 71, 0.9);
+  background: rgba(120, 53, 15, 0.72);
+  color: #fef3c7;
 }
 
-.seat-pod__state--folded {
-  color: #fca5a5;
-}
-
-.seat-pod__state--disconnected {
-  color: #fca5a5;
+.seat-pod__role-icon--small-blind {
+  border-color: rgba(125, 211, 252, 0.85);
+  background: rgba(3, 105, 161, 0.56);
+  color: #e0f2fe;
 }
 
 .seat-pod__empty-label {
@@ -1170,22 +1152,20 @@ body {
   }
 
   .seat-pod {
-    padding: 0.22rem 0.24rem;
-    gap: 0.04rem;
-    --seat-emoji-size: clamp(0.4rem, 1.35vw, 0.58rem);
-    --seat-name-size: clamp(0.38rem, 1.25vw, 0.52rem);
-    --seat-stack-size: clamp(0.46rem, 1.3vw, 0.62rem);
-    --seat-bet-size: clamp(0.34rem, 1.05vw, 0.44rem);
-    --seat-state-size: clamp(0.32rem, 0.95vw, 0.4rem);
-    --seat-badge-size: clamp(0.28rem, 0.76vw, 0.34rem);
+    padding: 0.18rem 0.2rem;
+    gap: 0.05rem;
+    --seat-emoji-size: clamp(0.36rem, 1.2vw, 0.52rem);
+    --seat-name-size: clamp(0.34rem, 1.08vw, 0.46rem);
+    --seat-stack-size: clamp(0.42rem, 1.15vw, 0.56rem);
+    --seat-bet-size: clamp(0.3rem, 0.9vw, 0.4rem);
   }
 
-  .seat-pod__badges {
-    gap: 0.06rem;
-  }
-
-  .seat-pod__badge {
-    padding: 0.06rem 0.14rem;
+  .seat-pod__role-icon {
+    top: -0.16rem;
+    right: -0.16rem;
+    min-width: 0.84rem;
+    height: 0.74rem;
+    font-size: 0.3rem;
   }
 }
 
@@ -1218,13 +1198,11 @@ body {
   }
 
   .seat-pod {
-    padding: 0.36rem;
-    --seat-emoji-size: clamp(0.58rem, 0.95vw, 0.86rem);
-    --seat-name-size: clamp(0.58rem, 0.98vw, 0.76rem);
-    --seat-stack-size: clamp(0.66rem, 1.02vw, 0.86rem);
-    --seat-bet-size: clamp(0.48rem, 0.88vw, 0.62rem);
-    --seat-state-size: clamp(0.42rem, 0.82vw, 0.56rem);
-    --seat-badge-size: clamp(0.34rem, 0.68vw, 0.46rem);
+    padding: 0.26rem 0.28rem;
+    --seat-emoji-size: clamp(0.54rem, 0.88vw, 0.78rem);
+    --seat-name-size: clamp(0.52rem, 0.84vw, 0.7rem);
+    --seat-stack-size: clamp(0.62rem, 0.9vw, 0.86rem);
+    --seat-bet-size: clamp(0.44rem, 0.74vw, 0.6rem);
   }
 
   .community-lane {
