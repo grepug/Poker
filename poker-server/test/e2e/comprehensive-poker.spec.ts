@@ -4456,6 +4456,63 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12e: Reconnect After Final Reveal Keeps Hand Result Actions', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="start-next-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {

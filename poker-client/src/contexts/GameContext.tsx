@@ -183,6 +183,14 @@ function deriveNextStreetRevealStateFromRoom(
   };
 }
 
+function deriveLastHandResultFromRoom(roomState: Room | null | undefined): HandResult | null {
+  return roomState?.currentHand?.lastResult ?? null;
+}
+
+function deriveRevealedHandPlayerIdsFromRoom(roomState: Room | null | undefined): string[] {
+  return roomState?.currentHand?.revealedPlayerIds ?? [];
+}
+
 declare global {
   interface Window {
     pokerDebug?: DebugApi;
@@ -241,6 +249,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
       setYourCards(null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
@@ -254,6 +264,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(roomState); // SanitizedRoom from server
       setPlayer(data.player);
       setYourCards(data.player?.cards ?? null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
@@ -267,6 +279,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom(roomState);
       setPlayer(data.player as Player);
       setYourCards(data.yourCards ?? null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
