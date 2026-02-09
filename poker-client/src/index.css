@@ -203,6 +203,36 @@ body {
   height: clamp(3.8rem, 13.2vw, 6rem) !important;
 }
 
+@media (max-width: 560px) {
+  .community-lane {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    column-gap: clamp(0.16rem, 1.2vw, 0.28rem);
+    row-gap: clamp(0.12rem, 1vw, 0.24rem);
+    width: max-content;
+    margin-inline: auto;
+    justify-items: center;
+  }
+
+  .community-lane > div {
+    grid-column: span 2;
+  }
+
+  .community-lane > div:nth-child(4) {
+    grid-column: 2 / span 2;
+  }
+
+  .community-lane > div:nth-child(5) {
+    grid-column: 4 / span 2;
+  }
+
+  .community-lane [data-testid^="community-card-"],
+  .community-lane [data-testid^="board-back-"] {
+    width: clamp(2.2rem, 11vw, 2.8rem) !important;
+    height: clamp(3.3rem, 16.3vw, 4.1rem) !important;
+  }
+}
+
 .pot-drop-zone {
   width: 7.7rem;
   min-height: 7.7rem;
