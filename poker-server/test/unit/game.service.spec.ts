@@ -183,6 +183,48 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).not.toHaveBeenCalled();
   });
 
+  it('reclaims disconnected player seat when joining with same name', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-old-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 850,
+          totalBuyIn: 1000,
+          status: 'disconnected',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const { player, rejoined } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-new-bob',
+      'Bob',
+      '🤠',
+    );
+
+    expect(rejoined).toBe(true);
+    expect(player.id).toBe('p-bob');
+    expect(player.socketId).toBe('s-new-bob');
+    expect(player.status).toBe('connected');
+    expect((player as any).emoji).toBe('🤠');
+    expect(room.players).toHaveLength(2);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
   it('rejects join when room is full', async () => {
     const room = createRoom({
       gameState: 'WAITING',

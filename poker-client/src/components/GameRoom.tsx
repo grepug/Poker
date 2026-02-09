@@ -1651,19 +1651,47 @@ export const GameRoom: React.FC = () => {
       className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}`}
     >
       <header className="table-micro-hud">
-        <div className="min-w-0">
-          <h1
-            className="truncate text-base font-black tracking-tight text-white"
-            data-testid="room-title"
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1
+                className="truncate text-base font-black tracking-tight text-white"
+                data-testid="room-title"
+              >
+                {t("game.room", { roomId: room.id })}
+              </h1>
+              <button
+                onClick={handleCopyInviteLink}
+                data-testid="copy-room-url-button"
+                className="shrink-0 rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
+              >
+                {t("game.copyInvite")}
+              </button>
+            </div>
+            <p className="text-[11px] text-emerald-100/70" data-testid="room-player-count">
+              {t("game.playersCount", {
+                count: room.players.length,
+                max: room.config.maxPlayers,
+              })}
+            </p>
+            {inviteCopyStatus && (
+              <span
+                data-testid="copy-room-url-status"
+                className={`mt-1 inline-block text-xs font-semibold ${
+                  inviteCopyStatusTone === "error" ? "text-amber-200" : "text-emerald-200"
+                }`}
+              >
+                {inviteCopyStatus}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={handleLeave}
+            data-testid="leave-room-button"
+            className="ml-auto shrink-0 rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
           >
-            {t("game.room", { roomId: room.id })}
-          </h1>
-          <p className="text-[11px] text-emerald-100/70" data-testid="room-player-count">
-            {t("game.playersCount", {
-              count: room.players.length,
-              max: room.config.maxPlayers,
-            })}
-          </p>
+            {t("common.leave")}
+          </button>
         </div>
 
         <div className="pointer-events-none absolute -left-[9999px] top-0" aria-live="polite">
@@ -1689,23 +1717,6 @@ export const GameRoom: React.FC = () => {
         </div>
 
         <section className="table-controls-strip">
-          <button
-            onClick={handleCopyInviteLink}
-            data-testid="copy-room-url-button"
-            className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-          >
-            {t("game.copyInvite")}
-          </button>
-          {inviteCopyStatus && (
-            <span
-              data-testid="copy-room-url-status"
-              className={`text-xs font-semibold ${
-                inviteCopyStatusTone === "error" ? "text-amber-200" : "text-emerald-200"
-              }`}
-            >
-              {inviteCopyStatus}
-            </span>
-          )}
           <button
             onClick={() => setShowSettingsModal(true)}
             data-testid="open-settings-button"
@@ -1747,13 +1758,6 @@ export const GameRoom: React.FC = () => {
                 {t("common.start")}
               </button>
             )}
-            <button
-              onClick={handleLeave}
-              data-testid="leave-room-button"
-              className="rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
-            >
-              {t("common.leave")}
-            </button>
           </div>
         </section>
       </header>

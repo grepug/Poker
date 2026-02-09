@@ -30,7 +30,7 @@ export class GameService {
       smallBlind: 5,
       bigBlind: 10,
       maxPlayers: 10,
-      reconnectGracePeriod: 30000,
+      reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: true,
     };
 
@@ -74,7 +74,7 @@ export class GameService {
     socketId: string,
     playerName: string,
     playerEmoji?: string,
-  ): Promise<{ room: Room; player: Player }> {
+  ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
@@ -85,9 +85,24 @@ export class GameService {
       throw new Error('Cannot join room - game has ended');
     }
 
-    // Check if name is taken
-    if (room.players.some((p) => p.name === playerName)) {
-      throw new Error('Name already taken');
+    const existingPlayer = room.players.find((p) => p.name === playerName);
+    if (existingPlayer) {
+      if (existingPlayer.status !== 'disconnected') {
+        throw new Error('Name already taken');
+      }
+
+      existingPlayer.socketId = socketId;
+      existingPlayer.status = 'connected';
+      existingPlayer.lastConnectedAt = Date.now();
+      if (playerEmoji !== undefined) {
+        existingPlayer.emoji = playerEmoji;
+      }
+      room.lastActivityAt = Date.now();
+
+      await this.storageService.saveRoom(room);
+      this.logger.log(`Player ${playerName} reclaimed seat in room ${roomId}`);
+
+      return { room, player: existingPlayer, rejoined: true };
     }
 
     // Check if room is full
@@ -122,7 +137,7 @@ export class GameService {
     await this.storageService.saveRoom(room);
     this.logger.log(`Player ${playerName} joined room ${roomId}`);
 
-    return { room, player };
+    return { room, player, rejoined: false };
   }
 
   /**
