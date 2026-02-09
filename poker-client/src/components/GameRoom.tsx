@@ -292,11 +292,11 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
-  if (occupiedSeats <= 2) return "clamp(4.8rem, 19vw, 6.2rem)";
-  if (occupiedSeats <= 4) return "clamp(4.4rem, 16vw, 5.6rem)";
-  if (occupiedSeats <= 6) return "clamp(4rem, 14vw, 5rem)";
-  if (occupiedSeats <= 8) return "clamp(3.55rem, 12vw, 4.45rem)";
-  return "clamp(3.2rem, 10.8vw, 4rem)";
+  if (occupiedSeats <= 2) return "clamp(4.1rem, 16vw, 5.3rem)";
+  if (occupiedSeats <= 4) return "clamp(3.8rem, 13.8vw, 4.8rem)";
+  if (occupiedSeats <= 6) return "clamp(3.45rem, 12.2vw, 4.3rem)";
+  if (occupiedSeats <= 8) return "clamp(3.15rem, 10.6vw, 3.85rem)";
+  return "clamp(2.85rem, 9.4vw, 3.45rem)";
 };
 
 const getSeatRoleIcon = (
