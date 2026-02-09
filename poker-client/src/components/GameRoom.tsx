@@ -410,6 +410,50 @@ const resolveDropIntent = ({
   };
 };
 
+const normalizeTrayAmountForDrop = ({
+  trayAmount,
+  callAmount,
+  minRaise,
+  stack,
+}: {
+  trayAmount: number;
+  callAmount: number;
+  minRaise: number;
+  stack: number;
+}): number => {
+  if (stack <= 0) {
+    return 0;
+  }
+
+  const clampedAmount = Math.max(0, Math.min(stack, Math.round(trayAmount)));
+  if (clampedAmount <= 0) {
+    return 0;
+  }
+
+  if (clampedAmount === stack) {
+    return stack;
+  }
+
+  if (callAmount > 0) {
+    if (clampedAmount <= callAmount) {
+      return Math.min(callAmount, stack);
+    }
+
+    const minimumRaiseTotal = callAmount + Math.max(minRaise, 0);
+    if (clampedAmount < minimumRaiseTotal) {
+      return minimumRaiseTotal <= stack ? minimumRaiseTotal : stack;
+    }
+
+    return clampedAmount;
+  }
+
+  if (clampedAmount < minRaise) {
+    return minRaise <= stack ? minRaise : stack;
+  }
+
+  return clampedAmount;
+};
+
 const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
   const angleStep = (Math.PI * 2) / safeTotal;
@@ -613,6 +657,16 @@ export const GameRoom: React.FC = () => {
   const clampTrayAmount = useCallback(
     (value: number) => Math.max(0, Math.min(maxStack, Math.round(value))),
     [maxStack],
+  );
+  const normalizeTrayAmount = useCallback(
+    (value: number) =>
+      normalizeTrayAmountForDrop({
+        trayAmount: value,
+        callAmount,
+        minRaise,
+        stack: maxStack,
+      }),
+    [callAmount, maxStack, minRaise],
   );
   const canCheck = callAmount === 0;
   const resolvedPlayerId = currentPlayer?.id ?? player?.id ?? null;
@@ -1334,8 +1388,8 @@ export const GameRoom: React.FC = () => {
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
 
-    const clamped = clampTrayAmount(nextAmount);
-    setTrayAmount(clamped);
+    const normalized = normalizeTrayAmount(nextAmount);
+    setTrayAmount(normalized);
   };
 
   const clearTray = () => {
