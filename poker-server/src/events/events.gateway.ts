@@ -15,11 +15,13 @@ import { BettingService } from '../game/betting.service';
 import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import {
+  BettingRound,
   CreateRoomData,
   JoinRoomData,
   ReconnectData,
   PlayerActionData,
   RequestRebuyData,
+  RevealNextStreetData,
   ShowMyHandData,
   UpdateRoomConfigData,
   RoomCreatedData,
@@ -32,6 +34,7 @@ import {
   CommunityCardsDealtData,
   HandCompleteData,
   GameEndedData,
+  NextStreetRevealStateData,
   PlayerHandRevealedData,
   RoomConfigUpdatedData,
   Card,
@@ -506,11 +509,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Current hand is still in progress');
       }
 
-      const allowPlayerHandReveal = room.config?.allowPlayerHandReveal ?? true;
-      if (!allowPlayerHandReveal) {
-        throw new Error('Hand reveal is disabled by host');
-      }
-
       const completedResult = room.currentHand.lastResult;
       if (!completedResult) {
         throw new Error('No completed hand result available');
@@ -549,6 +547,63 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('REVEAL_NEXT_STREET')
+  async handleRevealNextStreet(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() _data: RevealNextStreetData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const hand = room?.currentHand;
+        if (!room || !hand) throw new Error('No active hand');
+
+        const nextRound = hand.pendingStreetRevealRound;
+        if (!nextRound) {
+          throw new Error('No next street reveal is pending');
+        }
+
+        const required = new Set<string>(
+          hand.nextStreetRequiredPlayerIds ?? this.getStreetRevealRequiredPlayerIds(room),
+        );
+        if (!required.has(playerInfo.playerId)) {
+          throw new Error('You are not eligible to reveal the next street');
+        }
+
+        const ready = new Set<string>(hand.nextStreetReadyPlayerIds ?? []);
+        if (!ready.has(playerInfo.playerId)) {
+          ready.add(playerInfo.playerId);
+          hand.nextStreetReadyPlayerIds = [...ready];
+          hand.nextStreetRequiredPlayerIds = [...required];
+          room.lastActivityAt = Date.now();
+          await this.storageService.saveRoom(room);
+        }
+
+        const revealState: NextStreetRevealStateData = {
+          nextRound,
+          readyPlayerIds: [...ready],
+          requiredPlayerIds: [...required],
+        };
+        this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', revealState);
+
+        const allReady =
+          required.size === 0 || [...required].every((playerId) => ready.has(playerId));
+        if (allReady) {
+          await this.advanceRoundAndBroadcast(room);
+        }
+
+        return { success: true };
+      });
+    } catch (error) {
+      this.logger.error(`Reveal next street error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
   @SubscribeMessage('UPDATE_ROOM_CONFIG')
   async handleUpdateRoomConfig(
     @ConnectedSocket() client: Socket,
@@ -564,14 +619,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Only host can update settings');
       }
 
-      const nextAllowReveal = data?.config?.allowPlayerHandReveal;
+      const nextAllowReveal = data?.config?.allowPlayerStreetReveal;
       if (typeof nextAllowReveal !== 'boolean') {
         return { success: true };
       }
 
       room.config = {
         ...room.config,
-        allowPlayerHandReveal: nextAllowReveal,
+        allowPlayerStreetReveal: nextAllowReveal,
       };
       room.lastActivityAt = Date.now();
       await this.storageService.saveRoom(room);
@@ -869,91 +924,161 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
-    const allowPlayerHandReveal = room.config?.allowPlayerHandReveal ?? true;
+    const allowPlayerStreetReveal = room.config?.allowPlayerStreetReveal ?? true;
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
-      const result = await this.handService.determineWinner(room);
-      const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-      const revealedPlayerIds = !allowPlayerHandReveal && isShowdown
-        ? result.playerHands.map((entry) => entry.playerId)
-        : [];
-      room.currentHand.lastResult = result;
-      room.currentHand.revealedPlayerIds = revealedPlayerIds;
-      room.currentHand.currentPlayerTurn = null;
-      await this.storageService.saveRoom(room);
+      await this.completeAndBroadcastHand(room);
+      return;
+    }
 
-      const handCompleteData: HandCompleteData = {
-        result,
-        handNumber: room.currentHand.handNumber,
-        isShowdown,
-        revealedPlayerIds,
-      };
+    const nextRound = this.getNextBettingRound(hand.bettingRound);
+    const shouldWaitForPlayerReveal =
+      allowPlayerStreetReveal &&
+      !this.testDeckService.isTestMode() &&
+      nextRound !== 'SHOWDOWN' &&
+      !this.shouldAutoDealRemainingCommunityCards(room);
 
-      this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-      if (this.testDeckService.isTestMode()) {
-        // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-        setTimeout(async () => {
-          try {
-            await this.startAndBroadcastNewHand(room.id);
-          } catch (error) {
-            this.logger.error(`Error starting new hand: ${error.message}`);
-          }
-        }, 5000);
+    if (shouldWaitForPlayerReveal) {
+      const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
+      if (requiredPlayerIds.length === 0) {
+        await this.advanceRoundAndBroadcast(room);
+        return;
       }
-    } else {
-      // Advance to next round
-      const nextRound = await this.handService.advanceBettingRound(room);
-      const updatedRoom = await this.getRoom(room.id);
+
+      for (const seatPlayer of room.players) {
+        seatPlayer.currentBet = 0;
+      }
+      room.currentHand.currentBet = 0;
+      room.currentHand.currentPlayerTurn = null;
+      room.currentHand.roundActions = {};
+      room.currentHand.pendingStreetRevealRound = nextRound;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = requiredPlayerIds;
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
 
       this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
         nextRound,
+        awaitingPlayerStreetReveal: true,
+        readyPlayerIds: [],
+        requiredPlayerIds,
       } as BettingRoundCompleteData);
 
-      this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
-        cards: updatedRoom.currentHand!.communityCards,
-        round: nextRound,
-      } as CommunityCardsDealtData);
+      this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
+        nextRound,
+        readyPlayerIds: [],
+        requiredPlayerIds,
+      } as NextStreetRevealStateData);
+      return;
+    }
 
-      // If we reached showdown, determine winner immediately
-      if (nextRound === 'SHOWDOWN') {
-        const result = await this.handService.determineWinner(updatedRoom);
-        const isShowdown = true;
-        const revealedPlayerIds = !allowPlayerHandReveal
-          ? result.playerHands.map((entry) => entry.playerId)
-          : [];
-        updatedRoom.currentHand.lastResult = result;
-        updatedRoom.currentHand.revealedPlayerIds = revealedPlayerIds;
-        updatedRoom.currentHand.currentPlayerTurn = null;
-        await this.storageService.saveRoom(updatedRoom);
+    await this.advanceRoundAndBroadcast(room);
+  }
 
-        const handCompleteData: HandCompleteData = {
-          result,
-          handNumber: updatedRoom.currentHand.handNumber,
-          isShowdown,
-          revealedPlayerIds,
-        };
+  private getNextBettingRound(round: BettingRound): BettingRound {
+    switch (round) {
+      case 'PRE_FLOP':
+        return 'FLOP';
+      case 'FLOP':
+        return 'TURN';
+      case 'TURN':
+        return 'RIVER';
+      case 'RIVER':
+      default:
+        return 'SHOWDOWN';
+    }
+  }
 
-        this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-        if (this.testDeckService.isTestMode()) {
-          // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-          setTimeout(async () => {
-            try {
-              await this.startAndBroadcastNewHand(room.id);
-            } catch (error) {
-              this.logger.error(`Error starting new hand: ${error.message}`);
-            }
-          }, 5000);
+  private shouldAutoDealRemainingCommunityCards(room: any): boolean {
+    const hand = room.currentHand;
+    if (!hand) return false;
+
+    const playersWhoCanAct = room.players.filter(
+      (player: any) =>
+        hand.activePlayers.includes(player.id) &&
+        player.status !== 'folded' &&
+        player.status !== 'all-in',
+    );
+
+    return playersWhoCanAct.length <= 1;
+  }
+
+  private getStreetRevealRequiredPlayerIds(room: any): string[] {
+    return room.players
+      .filter(
+        (player: any) =>
+          Boolean(player.cards) &&
+          player.status !== 'waiting' &&
+          player.status !== 'left' &&
+          player.status !== 'disconnected',
+      )
+      .map((player: any) => player.id);
+  }
+
+  private async completeAndBroadcastHand(room: any) {
+    const result = await this.handService.determineWinner(room);
+    const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
+    const revealedPlayerIds = isShowdown
+      ? result.playerHands.map((entry) => entry.playerId)
+      : [];
+    room.currentHand.lastResult = result;
+    room.currentHand.revealedPlayerIds = revealedPlayerIds;
+    room.currentHand.currentPlayerTurn = null;
+    room.currentHand.pendingStreetRevealRound = null;
+    room.currentHand.nextStreetReadyPlayerIds = [];
+    room.currentHand.nextStreetRequiredPlayerIds = [];
+    await this.storageService.saveRoom(room);
+
+    const handCompleteData: HandCompleteData = {
+      result,
+      handNumber: room.currentHand.handNumber,
+      isShowdown,
+      revealedPlayerIds,
+    };
+
+    this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
+    if (this.testDeckService.isTestMode()) {
+      // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
+      setTimeout(async () => {
+        try {
+          await this.startAndBroadcastNewHand(room.id);
+        } catch (error) {
+          this.logger.error(`Error starting new hand: ${error.message}`);
         }
-      } else {
-        // Emit first player's turn for new round
-        const currentPlayer = updatedRoom.players.find(
-          (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
-        );
-        if (currentPlayer) {
-          this.emitPlayerTurn(updatedRoom, currentPlayer);
-        }
-      }
+      }, 5000);
+    }
+  }
+
+  private async advanceRoundAndBroadcast(room: any) {
+    if (room.currentHand) {
+      room.currentHand.pendingStreetRevealRound = null;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = [];
+    }
+
+    const nextRound = await this.handService.advanceBettingRound(room);
+    const updatedRoom = await this.getRoom(room.id);
+
+    this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
+      nextRound,
+    } as BettingRoundCompleteData);
+
+    this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
+      cards: updatedRoom.currentHand!.communityCards,
+      round: nextRound,
+    } as CommunityCardsDealtData);
+
+    if (nextRound === 'SHOWDOWN') {
+      await this.completeAndBroadcastHand(updatedRoom);
+      return;
+    }
+
+    const currentPlayer = updatedRoom.players.find(
+      (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
+    );
+    if (currentPlayer) {
+      this.emitPlayerTurn(updatedRoom, currentPlayer);
     }
   }
 

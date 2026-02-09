@@ -529,14 +529,14 @@ export const GameRoom: React.FC = () => {
     lastHandResult,
     finalGameResult,
     lastPlayerActionEvent,
-    revealedHandPlayerIds,
+    nextStreetRevealState,
     isHost,
     lastError,
     clearError,
     startGame,
     startNextHand,
     endGame,
-    showMyHand,
+    revealNextStreet,
     performAction,
     leaveRoom,
     updateRoomConfig,
@@ -582,7 +582,7 @@ export const GameRoom: React.FC = () => {
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
-  const isPlayerHandRevealEnabled = room?.config.allowPlayerHandReveal ?? true;
+  const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
@@ -626,21 +626,15 @@ export const GameRoom: React.FC = () => {
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
+  const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
   const canHostStartNextHand =
-    isHost && isGameStarted && isHandPausedForNext && (room?.players.length ?? 0) >= 2;
-  const canHostEndGame = isHost && isGameStarted && isHandPausedForNext;
+    isHost && isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
+  const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
   const isWaitingForHostToStartNextHand =
-    !isHost && isGameStarted && isHandPausedForNext && Boolean(lastHandResult);
-
-  const isShowdownRoundComplete =
-    Boolean(lastHandResult) &&
-    isHandPausedForNext &&
-    currentHand?.bettingRound === "SHOWDOWN";
+    !isHost && isGameStarted && isHandPausedForNextHand;
 
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
-  const canRevealMyCompletedHand =
-    Boolean(lastHandResult) && Boolean(myCompletedHand) && isPlayerHandRevealEnabled;
   const displayHoleCards =
     isHandPausedForNext && myCompletedHand?.cards?.length
       ? myCompletedHand.cards
@@ -649,20 +643,25 @@ export const GameRoom: React.FC = () => {
   const isWaitingForNextHand =
     Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
-  const revealedHandPlayerIdSet = useMemo(
-    () => new Set(revealedHandPlayerIds),
-    [revealedHandPlayerIds],
+  const nextStreetReadyPlayerIdSet = useMemo(
+    () => new Set(nextStreetRevealState?.readyPlayerIds ?? []),
+    [nextStreetRevealState?.readyPlayerIds],
   );
-  const isMyCompletedHandRevealed = player?.id
-    ? revealedHandPlayerIdSet.has(player.id)
+  const nextStreetRequiredPlayerIdSet = useMemo(
+    () => new Set(nextStreetRevealState?.requiredPlayerIds ?? []),
+    [nextStreetRevealState?.requiredPlayerIds],
+  );
+  const canRevealNextStreet = Boolean(
+    !lastHandResult &&
+      nextStreetRevealState &&
+      player?.id &&
+      nextStreetRequiredPlayerIdSet.has(player.id) &&
+      isPlayerStreetRevealEnabled,
+  );
+  const hasRevealedNextStreet = player?.id
+    ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
-  const isPlayerHandVisible = (playerId: string) =>
-    revealedHandPlayerIdSet.has(playerId);
-  const showRevealActionArea =
-    isHandPausedForNext &&
-    Boolean(lastHandResult) &&
-    Boolean(myCompletedHand) &&
-    isPlayerHandRevealEnabled;
+  const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -2015,11 +2014,7 @@ export const GameRoom: React.FC = () => {
                 {t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
               </h3>
               <p className="mt-1 text-xs text-emerald-100/75" data-testid="hand-results-mode">
-                {isPlayerHandRevealEnabled
-                  ? t("game.reveal.manualEnabled")
-                  : isShowdownRoundComplete
-                  ? t("game.showdownComplete")
-                  : t("game.reveal.disabled")}
+                {t("game.showdownComplete")}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2038,15 +2033,6 @@ export const GameRoom: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {isMyCompletedHandRevealed && (
-            <p
-              className="mt-3 text-xs font-semibold uppercase tracking-wide text-cyan-100/90"
-              data-testid="my-hand-revealed-indicator"
-            >
-              {t("game.yourHandRevealed")}
-            </p>
-          )}
 
           <div
             className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
@@ -2123,7 +2109,7 @@ export const GameRoom: React.FC = () => {
             <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
               {handResultRows.map((entry) => {
                 const isSelf = entry.playerId === player.id;
-                const showCards = isPlayerHandVisible(entry.playerId);
+                const showCards = true;
                 const evaluatedHand = entry.hand as HandEvaluation | null;
 
                 return (
@@ -2233,21 +2219,30 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
-      {showRevealActionArea && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-action-area">
+      {showNextStreetActionArea && (
+        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-next-street-action-area">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-emerald-100">{t("game.reveal.actionTitle")}</h3>
-              <p className="text-xs text-emerald-100/70">{t("game.reveal.actionHint")}</p>
+              <h3 className="text-sm font-semibold text-emerald-100">
+                {t("game.streetReveal.actionTitle")}
+              </h3>
+              <p className="text-xs text-emerald-100/70">
+                {t("game.streetReveal.actionHint", {
+                  ready: nextStreetRevealState?.readyPlayerIds.length ?? 0,
+                  total: nextStreetRevealState?.requiredPlayerIds.length ?? 0,
+                })}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={showMyHand}
-                disabled={!canRevealMyCompletedHand || isMyCompletedHandRevealed}
-                data-testid="show-my-hand-button"
+                onClick={revealNextStreet}
+                disabled={!canRevealNextStreet || hasRevealedNextStreet}
+                data-testid="reveal-next-street-button"
                 className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isMyCompletedHandRevealed ? t("game.reveal.revealed") : t("game.showMyHand")}
+                {hasRevealedNextStreet
+                  ? t("game.streetReveal.revealed")
+                  : t("game.streetReveal.revealNextStreet")}
               </button>
             </div>
           </div>
@@ -2459,19 +2454,19 @@ export const GameRoom: React.FC = () => {
                   {t("game.settings.hostOnly")}
                 </p>
                 <p className="mt-1 text-xs text-cyan-100/70">
-                  {t("game.settings.hostRevealHelp")}
+                  {t("game.settings.hostStreetRevealHelp")}
                 </p>
                 <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-cyan-50">
                   <input
                     type="checkbox"
-                    checked={isPlayerHandRevealEnabled}
+                    checked={isPlayerStreetRevealEnabled}
                     onChange={(event) =>
-                      updateRoomConfig({ allowPlayerHandReveal: event.target.checked })
+                      updateRoomConfig({ allowPlayerStreetReveal: event.target.checked })
                     }
-                    data-testid="allow-player-hand-reveal-toggle"
+                    data-testid="allow-player-street-reveal-toggle"
                     className="h-4 w-4 accent-cyan-400"
                   />
-                  <span>{t("game.settings.allowPlayerHandReveal")}</span>
+                  <span>{t("game.settings.allowPlayerStreetReveal")}</span>
                 </label>
               </div>
             )}

@@ -14,6 +14,7 @@ import type {
   Player,
   Card,
   PlayerAction,
+  BettingRound,
   Hand,
   HandResult,
   GameEndedData,
@@ -33,6 +34,12 @@ export interface PlayerActionFlashEvent {
   createdAt: number;
 }
 
+export interface NextStreetRevealState {
+  nextRound: BettingRound;
+  readyPlayerIds: string[];
+  requiredPlayerIds: string[];
+}
+
 type DebugApi = {
   getRoom: () => Room | null;
   getPlayer: () => Player | null;
@@ -41,6 +48,7 @@ type DebugApi = {
   getFinalGameResult: () => GameEndedData | null;
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
+  getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
   createRoom: (name: string, emoji?: string) => void;
   joinRoom: (roomId: string, name: string, emoji?: string) => void;
@@ -48,6 +56,7 @@ type DebugApi = {
   startNextHand: () => void;
   endGame: () => void;
   showMyHand: () => void;
+  revealNextStreet: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   fold: () => void;
   check: () => void;
@@ -57,7 +66,7 @@ type DebugApi = {
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
   updateRoomConfig: (
-    config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>,
+    config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
@@ -72,6 +81,7 @@ interface GameContextType {
   finalGameResult: GameEndedData | null;
   lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
+  nextStreetRevealState: NextStreetRevealState | null;
   isHost: boolean;
   isRecoveringSession: boolean;
   lastError: string | null;
@@ -81,11 +91,12 @@ interface GameContextType {
   startNextHand: () => void;
   endGame: () => void;
   showMyHand: () => void;
+  revealNextStreet: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
   updateRoomConfig: (
-    config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>,
+    config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
   clearError: () => void;
 }
@@ -173,6 +184,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [lastPlayerActionEvent, setLastPlayerActionEvent] =
     useState<PlayerActionFlashEvent | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
+  const [nextStreetRevealState, setNextStreetRevealState] =
+    useState<NextStreetRevealState | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
@@ -214,6 +227,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setYourCards(null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
+      setNextStreetRevealState(null);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
@@ -225,6 +239,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setYourCards(data.player?.cards ?? null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
+      setNextStreetRevealState(null);
       setIsRecoveringSession(false);
       setLastError(null);
     });
@@ -236,6 +251,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setYourCards(data.yourCards ?? null);
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
+      setNextStreetRevealState(null);
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;
@@ -362,6 +378,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setFinalGameResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      setNextStreetRevealState(null);
       // Reset hole cards until private YOUR_CARDS event arrives for this hand.
       setYourCards(null);
       setRoom((prev) => {
@@ -401,6 +418,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     // Community cards dealt
     socket.on("COMMUNITY_CARDS_DEALT", (data) => {
+      setNextStreetRevealState(null);
       setRoom((prev) => {
         if (!prev || !prev.currentHand) return prev;
         return {
@@ -419,6 +437,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Hand complete:", data.result);
       setLastHandResult(data.result);
       setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
+      setNextStreetRevealState(null);
       setYourCards((prevCards) => {
         const currentPlayerId = playerRef.current?.id;
         if (!currentPlayerId) return prevCards;
@@ -472,6 +491,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setLastHandResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      setNextStreetRevealState(null);
       setYourCards(null);
 
       const standingsByPlayerId = new Map(
@@ -514,6 +534,15 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // New hand starting
     socket.on("NEW_HAND_STARTING", () => {
       console.log("New hand starting, waiting for GAME_STARTED event...");
+      setNextStreetRevealState(null);
+    });
+
+    socket.on("NEXT_STREET_REVEAL_STATE", (data) => {
+      setNextStreetRevealState({
+        nextRound: data.nextRound,
+        readyPlayerIds: data.readyPlayerIds ?? [],
+        requiredPlayerIds: data.requiredPlayerIds ?? [],
+      });
     });
 
     // Player turn
@@ -601,6 +630,16 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("BETTING_ROUND_COMPLETE", (data) => {
       console.log("Betting round complete, next round:", data.nextRound);
 
+      if (data.awaitingPlayerStreetReveal) {
+        setNextStreetRevealState({
+          nextRound: data.nextRound,
+          readyPlayerIds: data.readyPlayerIds ?? [],
+          requiredPlayerIds: data.requiredPlayerIds ?? [],
+        });
+      } else {
+        setNextStreetRevealState(null);
+      }
+
       // Reset all players' currentBet to 0 for the new betting round
       setRoom((prev) => {
         if (!prev) return prev;
@@ -639,6 +678,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("PLAYER_HAND_REVEALED");
       socket.off("GAME_ENDED");
       socket.off("NEW_HAND_STARTING");
+      socket.off("NEXT_STREET_REVEAL_STATE");
       socket.off("BETTING_ROUND_COMPLETE");
       socket.off("ERROR");
     };
@@ -787,6 +827,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const revealNextStreet = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("REVEAL_NEXT_STREET", {}, (response) => {
+      console.log("Reveal next street response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to reveal next street");
+      }
+    });
+  }, [socket]);
+
   const leaveRoom = useCallback(() => {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
@@ -799,6 +850,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     setFinalGameResult(null);
     setLastPlayerActionEvent(null);
     setRevealedHandPlayerIds([]);
+    setNextStreetRevealState(null);
     setIsRecoveringSession(false);
     setLastError(null);
 
@@ -820,7 +872,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   }, [socket]);
 
   const updateRoomConfig = useCallback(
-    (config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>) => {
+    (config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>) => {
       if (!socket) return;
       setLastError(null);
       socket.emit("UPDATE_ROOM_CONFIG", { config }, (response) => {
@@ -848,6 +900,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         getFinalGameResult: () => finalGameResult,
         getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
+        getNextStreetRevealState: () => nextStreetRevealState,
         getSocket: () => socket,
         createRoom,
         joinRoom,
@@ -855,6 +908,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         startNextHand,
         endGame,
         showMyHand,
+        revealNextStreet,
         performAction,
         fold: () => performAction("fold"),
         check: () => performAction("check"),
@@ -887,6 +941,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
+    nextStreetRevealState,
     socket,
     isHost,
     createRoom,
@@ -895,6 +950,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     startNextHand,
     endGame,
     showMyHand,
+    revealNextStreet,
     performAction,
     leaveRoom,
     requestRebuy,
@@ -912,6 +968,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         finalGameResult,
         lastPlayerActionEvent,
         revealedHandPlayerIds,
+        nextStreetRevealState,
         isHost,
         isRecoveringSession,
         lastError,
@@ -921,6 +978,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         startNextHand,
         endGame,
         showMyHand,
+        revealNextStreet,
         performAction,
         leaveRoom,
         requestRebuy,

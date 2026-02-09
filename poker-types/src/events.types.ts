@@ -36,9 +36,10 @@ export interface RequestRebuyData {
 }
 
 export interface ShowMyHandData {}
+export interface RevealNextStreetData {}
 
 export interface UpdateRoomConfigData {
-  config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>;
+  config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>;
 }
 
 export interface ClientToServerEvents {
@@ -52,6 +53,10 @@ export interface ClientToServerEvents {
   START_NEXT_HAND: (callback: (response: any) => void) => void;
   SHOW_MY_HAND: (
     data: ShowMyHandData,
+    callback: (response: any) => void,
+  ) => void;
+  REVEAL_NEXT_STREET: (
+    data: RevealNextStreetData,
     callback: (response: any) => void,
   ) => void;
   UPDATE_ROOM_CONFIG: (
@@ -128,6 +133,9 @@ export interface PlayerActedData {
 
 export interface BettingRoundCompleteData {
   nextRound: BettingRound;
+  awaitingPlayerStreetReveal?: boolean;
+  readyPlayerIds?: string[];
+  requiredPlayerIds?: string[];
 }
 
 export interface CommunityCardsDealtData {
@@ -146,6 +154,12 @@ export interface PlayerHandRevealedData {
   playerId: string;
   playerName: string;
   handNumber: number;
+}
+
+export interface NextStreetRevealStateData {
+  nextRound: BettingRound;
+  readyPlayerIds: string[];
+  requiredPlayerIds: string[];
 }
 
 export interface PlayerDisconnectedData {
@@ -238,6 +252,7 @@ export interface ServerToClientEvents {
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
   PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
+  NEXT_STREET_REVEAL_STATE: (data: NextStreetRevealStateData) => void;
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;

@@ -51,7 +51,7 @@ describe('JsonStorageService', () => {
       bigBlind: 20,
       maxPlayers: 6,
       reconnectGracePeriod: 30000,
-      allowPlayerHandReveal: true,
+      allowPlayerStreetReveal: true,
     },
     players: [],
     gameState: 'WAITING' as GameStateType,

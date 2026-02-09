@@ -4410,7 +4410,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.14: Non-Showdown Result Allows Manual Show My Hand', async ({ browser }) => {
+  test('8.14: Non-Showdown Result Does Not Require Manual Hand Reveal', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -4424,23 +4424,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'without showdown',
+        'Showdown complete',
       );
-      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
-      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
-        2,
-      );
-      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
-      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
-      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
-
-      await alicePage.click('[data-testid="show-my-hand-button"]');
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
         0,
       );
       await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
-      await expect(alicePage.locator('[data-testid="my-hand-revealed-indicator"]')).toBeVisible();
-
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
     } finally {
