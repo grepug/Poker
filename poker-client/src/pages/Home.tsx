@@ -4,7 +4,6 @@ import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
 import { useLocalization } from "../contexts/LocalizationContext";
 import {
-  readLastPlayerEmoji,
   readLastPlayerName,
   writeLastPlayerEmoji,
   writeLastPlayerName,
@@ -46,7 +45,7 @@ export const Home: React.FC<HomeProps> = ({
   const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
   const [playerName, setPlayerName] = useState(() => readLastPlayerName());
-  const [playerEmoji, setPlayerEmoji] = useState(() => readLastPlayerEmoji());
+  const [playerEmoji, setPlayerEmoji] = useState(() => getRandomPlayerEmoji());
   const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
