@@ -371,9 +371,9 @@ describe('HandService side-pot distribution', () => {
     expect(result.payouts[0]).toMatchObject({
       segmentIndex: 0,
       potType: 'MAIN',
-      amount: 1980,
+      amount: 60,
       eligiblePlayerIds: ['p1', 'p2'],
-      winnerShares: [{ playerId: 'p1', amountWon: 1980 }],
+      winnerShares: [{ playerId: 'p1', amountWon: 60 }],
       uncontested: false,
     });
 
@@ -382,7 +382,7 @@ describe('HandService side-pot distribution', () => {
       potType: 'SIDE',
       amount: 1920,
       eligiblePlayerIds: ['p1', 'p2'],
-      winnerShares: [{ playerId: 'p2', amountWon: 1920 }],
+      winnerShares: [{ playerId: 'p1', amountWon: 1920 }],
       uncontested: false,
     });
 

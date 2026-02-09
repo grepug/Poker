@@ -30,6 +30,7 @@ import {
   BettingRoundCompleteData,
   CommunityCardsDealtData,
   HandCompleteData,
+  GameEndedData,
   PlayerHandRevealedData,
   Card,
 } from 'poker-types';
@@ -294,16 +295,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const hand = await this.handService.startNewHand(room);
       const updatedRoom = await this.getRoom(playerInfo.roomId);
 
-      // Send cards to each player privately
-      for (const player of updatedRoom.players) {
-        if (player.cards) {
-          const socket = this.findSocketByPlayerId(player.id);
-          if (socket) {
-            socket.emit('YOUR_CARDS', { cards: player.cards });
-          }
-        }
-      }
-
       // Broadcast game started
       const { activePlayers, ...handWithoutActivePlayers } = hand;
       const gameStartedData: GameStartedData = {
@@ -315,6 +306,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       this.server.to(playerInfo.roomId).emit('GAME_STARTED', gameStartedData);
+
+      // Send cards to each player privately after GAME_STARTED.
+      // Client state resets cards on GAME_STARTED to avoid stale hand data.
+      for (const seatPlayer of updatedRoom.players) {
+        if (seatPlayer.cards && seatPlayer.socketId) {
+          this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
+            cards: seatPlayer.cards,
+          } as YourCardsData);
+        }
+      }
 
       // Emit first player's turn
       const currentPlayer = updatedRoom.players.find(
@@ -359,6 +360,129 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { success: true };
     } catch (error) {
       this.logger.error(`Start next hand error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
+  @SubscribeMessage('END_GAME')
+  async handleEndGame(@ConnectedSocket() client: Socket) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
+
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can end game');
+      }
+
+      if (room.gameState !== 'IN_PROGRESS') {
+        throw new Error('Game is not in progress');
+      }
+
+      if (!room.currentHand) {
+        throw new Error('No hand state found');
+      }
+
+      if (room.currentHand.currentPlayerTurn) {
+        throw new Error('Can only end game between hands');
+      }
+
+      const standings = [...room.players]
+        .map((seatPlayer) => {
+          const finalChips = seatPlayer.chips + (seatPlayer.currentBet || 0);
+          const totalBuyIn = seatPlayer.totalBuyIn || 0;
+          return {
+            playerId: seatPlayer.id,
+            playerName: seatPlayer.name,
+            finalChips,
+            totalBuyIn,
+            profit: finalChips - totalBuyIn,
+          };
+        })
+        .sort((a, b) => {
+          if (b.finalChips !== a.finalChips) return b.finalChips - a.finalChips;
+          if (b.profit !== a.profit) return b.profit - a.profit;
+          return a.playerName.localeCompare(b.playerName);
+        });
+
+      const totalPlayers = standings.length;
+      const totalBuyIn = standings.reduce((sum, entry) => sum + entry.totalBuyIn, 0);
+      const totalChipsInPlay = standings.reduce(
+        (sum, entry) => sum + entry.finalChips,
+        0,
+      );
+      const profitablePlayers = standings.filter((entry) => entry.profit > 0).length;
+      const averageFinalStack =
+        totalPlayers > 0 ? Math.round(totalChipsInPlay / totalPlayers) : 0;
+      const handsPlayed = room.currentHand.handNumber ?? 0;
+      const chipLeader = standings[0]
+        ? {
+            playerId: standings[0].playerId,
+            playerName: standings[0].playerName,
+            amount: standings[0].finalChips,
+          }
+        : null;
+
+      const biggestWinner = standings
+        .filter((entry) => entry.profit > 0)
+        .sort((a, b) => b.profit - a.profit)[0];
+      const biggestLoss = standings
+        .filter((entry) => entry.profit < 0)
+        .sort((a, b) => a.profit - b.profit)[0];
+
+      room.gameState = 'ENDED';
+      room.currentHand = null;
+      room.lastActivityAt = Date.now();
+      room.players = room.players.map((seatPlayer) => {
+        const nextStatus =
+          seatPlayer.status === 'disconnected' ? 'disconnected' : 'waiting';
+        return {
+          ...seatPlayer,
+          cards: null,
+          currentBet: 0,
+          lastAction: null,
+          status: nextStatus,
+        };
+      });
+      await this.storageService.saveRoom(room);
+
+      const gameEndedData: GameEndedData = {
+        standings,
+        summary: {
+          totalPlayers,
+          handsPlayed,
+          totalBuyIn,
+          totalChipsInPlay,
+          profitablePlayers,
+          averageFinalStack,
+          chipLeader,
+          biggestWinner: biggestWinner
+            ? {
+                playerId: biggestWinner.playerId,
+                playerName: biggestWinner.playerName,
+                amount: biggestWinner.profit,
+              }
+            : null,
+          biggestLoss: biggestLoss
+            ? {
+                playerId: biggestLoss.playerId,
+                playerName: biggestLoss.playerName,
+                amount: Math.abs(biggestLoss.profit),
+              }
+            : null,
+        },
+      };
+
+      this.server.to(room.id).emit('GAME_ENDED', gameEndedData);
+      this.logger.log(
+        `Game ended in room ${room.id} by host ${playerInfo.playerId}`,
+      );
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`End game error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
