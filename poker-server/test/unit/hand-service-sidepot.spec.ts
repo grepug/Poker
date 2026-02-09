@@ -66,6 +66,7 @@ describe('HandService side-pot distribution', () => {
         bigBlind: 20,
         maxPlayers: 10,
         reconnectGracePeriod: 30000,
+        allowPlayerHandReveal: true,
       },
       players,
       gameState: 'IN_PROGRESS',
@@ -148,6 +149,7 @@ describe('HandService side-pot distribution', () => {
         bigBlind: 20,
         maxPlayers: 10,
         reconnectGracePeriod: 30000,
+        allowPlayerHandReveal: true,
       },
       players: [
         {
@@ -276,6 +278,7 @@ describe('HandService side-pot distribution', () => {
         bigBlind: 20,
         maxPlayers: 10,
         reconnectGracePeriod: 30000,
+        allowPlayerHandReveal: true,
       },
       players: [
         {

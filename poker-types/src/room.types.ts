@@ -8,6 +8,7 @@ export interface RoomConfig {
   bigBlind: number;
   maxPlayers: number; // 2-10
   reconnectGracePeriod: number; // milliseconds (default 30000)
+  allowPlayerHandReveal: boolean; // allow players to reveal their own completed hand
 }
 
 // Complete room state

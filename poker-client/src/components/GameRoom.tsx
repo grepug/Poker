@@ -539,6 +539,7 @@ export const GameRoom: React.FC = () => {
     showMyHand,
     performAction,
     leaveRoom,
+    updateRoomConfig,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
@@ -581,6 +582,7 @@ export const GameRoom: React.FC = () => {
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
+  const isPlayerHandRevealEnabled = room?.config.allowPlayerHandReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
@@ -630,7 +632,7 @@ export const GameRoom: React.FC = () => {
   const isWaitingForHostToStartNextHand =
     !isHost && isGameStarted && isHandPausedForNext && Boolean(lastHandResult);
 
-  const isShowdownComplete =
+  const isShowdownRoundComplete =
     Boolean(lastHandResult) &&
     isHandPausedForNext &&
     currentHand?.bettingRound === "SHOWDOWN";
@@ -638,7 +640,7 @@ export const GameRoom: React.FC = () => {
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
   const canRevealMyCompletedHand =
-    Boolean(lastHandResult) && Boolean(myCompletedHand) && !isShowdownComplete;
+    Boolean(lastHandResult) && Boolean(myCompletedHand) && isPlayerHandRevealEnabled;
   const displayHoleCards =
     isHandPausedForNext && myCompletedHand?.cards?.length
       ? myCompletedHand.cards
@@ -655,7 +657,12 @@ export const GameRoom: React.FC = () => {
     ? revealedHandPlayerIdSet.has(player.id)
     : false;
   const isPlayerHandVisible = (playerId: string) =>
-    isShowdownComplete || revealedHandPlayerIdSet.has(playerId);
+    revealedHandPlayerIdSet.has(playerId);
+  const showRevealActionArea =
+    isHandPausedForNext &&
+    Boolean(lastHandResult) &&
+    Boolean(myCompletedHand) &&
+    isPlayerHandRevealEnabled;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -2008,9 +2015,11 @@ export const GameRoom: React.FC = () => {
                 {t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
               </h3>
               <p className="mt-1 text-xs text-emerald-100/75" data-testid="hand-results-mode">
-                {isShowdownComplete
+                {isPlayerHandRevealEnabled
+                  ? t("game.reveal.manualEnabled")
+                  : isShowdownRoundComplete
                   ? t("game.showdownComplete")
-                  : t("game.showdownManual")}
+                  : t("game.reveal.disabled")}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2030,17 +2039,7 @@ export const GameRoom: React.FC = () => {
             </div>
           </div>
 
-          {canRevealMyCompletedHand && !isMyCompletedHandRevealed && (
-            <button
-              onClick={showMyHand}
-              data-testid="show-my-hand-button"
-              className="mt-3 rounded-lg border border-cyan-400/60 bg-cyan-900/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
-            >
-              {t("game.showMyHand")}
-            </button>
-          )}
-
-          {isMyCompletedHandRevealed && !isShowdownComplete && (
+          {isMyCompletedHandRevealed && (
             <p
               className="mt-3 text-xs font-semibold uppercase tracking-wide text-cyan-100/90"
               data-testid="my-hand-revealed-indicator"
@@ -2234,6 +2233,27 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
+      {showRevealActionArea && (
+        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-action-area">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-100">{t("game.reveal.actionTitle")}</h3>
+              <p className="text-xs text-emerald-100/70">{t("game.reveal.actionHint")}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={showMyHand}
+                disabled={!canRevealMyCompletedHand || isMyCompletedHandRevealed}
+                data-testid="show-my-hand-button"
+                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isMyCompletedHandRevealed ? t("game.reveal.revealed") : t("game.showMyHand")}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {isYourTurn && (
         <section ref={turnOverlayRef} className="chip-composer-dock" data-testid="turn-overlay">
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
@@ -2406,7 +2426,7 @@ export const GameRoom: React.FC = () => {
                 {t("common.close")}
               </button>
             </div>
-            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.onlyLanguage")}</p>
+            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.summary")}</p>
 
             <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
               <label
@@ -2429,6 +2449,32 @@ export const GameRoom: React.FC = () => {
                 <option value="zh_hans">{t("game.settings.chineseSimplified")}</option>
               </select>
             </div>
+
+            {isHost && (
+              <div
+                className="mt-4 rounded-xl border border-cyan-700/60 bg-cyan-950/35 p-4"
+                data-testid="host-settings-section"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100/80">
+                  {t("game.settings.hostOnly")}
+                </p>
+                <p className="mt-1 text-xs text-cyan-100/70">
+                  {t("game.settings.hostRevealHelp")}
+                </p>
+                <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-cyan-50">
+                  <input
+                    type="checkbox"
+                    checked={isPlayerHandRevealEnabled}
+                    onChange={(event) =>
+                      updateRoomConfig({ allowPlayerHandReveal: event.target.checked })
+                    }
+                    data-testid="allow-player-hand-reveal-toggle"
+                    className="h-4 w-4 accent-cyan-400"
+                  />
+                  <span>{t("game.settings.allowPlayerHandReveal")}</span>
+                </label>
+              </div>
+            )}
           </div>
         </div>
       )}

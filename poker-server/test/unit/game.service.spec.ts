@@ -57,6 +57,7 @@ describe('GameService addPlayerToRoom', () => {
         bigBlind: 20,
         maxPlayers: params.maxPlayers ?? 10,
         reconnectGracePeriod: 30000,
+        allowPlayerHandReveal: true,
       },
       players: params.players,
       gameState: params.gameState,

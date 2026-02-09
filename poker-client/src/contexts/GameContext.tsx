@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import type {
   Room,
+  RoomConfig,
   Player,
   Card,
   PlayerAction,
@@ -55,6 +56,9 @@ type DebugApi = {
   allIn: () => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
+  updateRoomConfig: (
+    config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>,
+  ) => void;
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
   logState: () => void;
@@ -80,6 +84,9 @@ interface GameContextType {
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
+  updateRoomConfig: (
+    config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>,
+  ) => void;
   clearError: () => void;
 }
 
@@ -336,6 +343,16 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setRoom((prev) => {
         if (!prev) return null;
         return { ...prev, hostId: data.newHostId };
+      });
+    });
+
+    socket.on("ROOM_CONFIG_UPDATED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          config: data.config,
+        };
       });
     });
 
@@ -612,6 +629,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("PLAYER_RECONNECTED");
       socket.off("PLAYER_AUTO_FOLDED");
       socket.off("HOST_CHANGED");
+      socket.off("ROOM_CONFIG_UPDATED");
       socket.off("GAME_STARTED");
       socket.off("YOUR_CARDS");
       socket.off("PLAYER_TURN");
@@ -801,6 +819,20 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const updateRoomConfig = useCallback(
+    (config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("UPDATE_ROOM_CONFIG", { config }, (response) => {
+        console.log("Update room config response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to update room settings");
+        }
+      });
+    },
+    [socket],
+  );
+
   const clearError = useCallback(() => setLastError(null), []);
 
   const isHost = player?.id === room?.hostId;
@@ -831,6 +863,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         allIn: () => performAction("all-in"),
         leaveRoom,
         requestRebuy,
+        updateRoomConfig,
         clearError,
         emitCustom: (event, data) => {
           const rawSocket = socket as unknown as {
@@ -865,6 +898,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     performAction,
     leaveRoom,
     requestRebuy,
+    updateRoomConfig,
     clearError,
   ]);
 
@@ -890,6 +924,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         performAction,
         leaveRoom,
         requestRebuy,
+        updateRoomConfig,
         clearError,
       }}
     >

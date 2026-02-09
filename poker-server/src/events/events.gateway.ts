@@ -21,6 +21,7 @@ import {
   PlayerActionData,
   RequestRebuyData,
   ShowMyHandData,
+  UpdateRoomConfigData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -32,6 +33,7 @@ import {
   HandCompleteData,
   GameEndedData,
   PlayerHandRevealedData,
+  RoomConfigUpdatedData,
   Card,
 } from 'poker-types';
 
@@ -504,9 +506,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Current hand is still in progress');
       }
 
-      if (room.currentHand.bettingRound === 'SHOWDOWN') {
-        // Showdown is already public by default.
-        return { success: true };
+      const allowPlayerHandReveal = room.config?.allowPlayerHandReveal ?? true;
+      if (!allowPlayerHandReveal) {
+        throw new Error('Hand reveal is disabled by host');
       }
 
       const completedResult = room.currentHand.lastResult;
@@ -544,6 +546,44 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Show hand error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false };
+    }
+  }
+
+  @SubscribeMessage('UPDATE_ROOM_CONFIG')
+  async handleUpdateRoomConfig(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: UpdateRoomConfigData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can update settings');
+      }
+
+      const nextAllowReveal = data?.config?.allowPlayerHandReveal;
+      if (typeof nextAllowReveal !== 'boolean') {
+        return { success: true };
+      }
+
+      room.config = {
+        ...room.config,
+        allowPlayerHandReveal: nextAllowReveal,
+      };
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+
+      this.server.to(room.id).emit('ROOM_CONFIG_UPDATED', {
+        config: room.config,
+      } as RoomConfigUpdatedData);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Update room config error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false, error: error.message };
     }
   }
 
@@ -829,12 +869,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
+    const allowPlayerHandReveal = room.config?.allowPlayerHandReveal ?? true;
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
       const result = await this.handService.determineWinner(room);
       const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-      const revealedPlayerIds = isShowdown
+      const revealedPlayerIds = !allowPlayerHandReveal && isShowdown
         ? result.playerHands.map((entry) => entry.playerId)
         : [];
       room.currentHand.lastResult = result;
@@ -878,7 +919,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (nextRound === 'SHOWDOWN') {
         const result = await this.handService.determineWinner(updatedRoom);
         const isShowdown = true;
-        const revealedPlayerIds = result.playerHands.map((entry) => entry.playerId);
+        const revealedPlayerIds = !allowPlayerHandReveal
+          ? result.playerHands.map((entry) => entry.playerId)
+          : [];
         updatedRoom.currentHand.lastResult = result;
         updatedRoom.currentHand.revealedPlayerIds = revealedPlayerIds;
         updatedRoom.currentHand.currentPlayerTurn = null;

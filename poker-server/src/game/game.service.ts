@@ -31,6 +31,7 @@ export class GameService {
       bigBlind: 10,
       maxPlayers: 10,
       reconnectGracePeriod: 30000,
+      allowPlayerHandReveal: true,
     };
 
     const host: Player = {

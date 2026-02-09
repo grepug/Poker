@@ -37,6 +37,10 @@ export interface RequestRebuyData {
 
 export interface ShowMyHandData {}
 
+export interface UpdateRoomConfigData {
+  config: Partial<Pick<RoomConfig, "allowPlayerHandReveal">>;
+}
+
 export interface ClientToServerEvents {
   CREATE_ROOM: (
     data: CreateRoomData,
@@ -48,6 +52,10 @@ export interface ClientToServerEvents {
   START_NEXT_HAND: (callback: (response: any) => void) => void;
   SHOW_MY_HAND: (
     data: ShowMyHandData,
+    callback: (response: any) => void,
+  ) => void;
+  UPDATE_ROOM_CONFIG: (
+    data: UpdateRoomConfigData,
     callback: (response: any) => void,
   ) => void;
   PLAYER_ACTION: (
@@ -161,6 +169,10 @@ export interface HostChangedData {
   newHostName: string;
 }
 
+export interface RoomConfigUpdatedData {
+  config: RoomConfig;
+}
+
 export interface PlayerReboughtData {
   playerId: string;
   playerName: string;
@@ -231,6 +243,7 @@ export interface ServerToClientEvents {
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;
+  ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;
   PLAYER_REBOUGHT: (data: PlayerReboughtData) => void;
   PLAYER_LEFT: (data: PlayerLeftData) => void;
   GAME_ENDED: (data: GameEndedData) => void;

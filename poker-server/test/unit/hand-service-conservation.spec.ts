@@ -78,6 +78,7 @@ describe('HandService chip conservation reconciliation', () => {
         bigBlind: 20,
         maxPlayers: 10,
         reconnectGracePeriod: 30000,
+        allowPlayerHandReveal: true,
       },
       players: [winner, loser],
       gameState: 'IN_PROGRESS',
