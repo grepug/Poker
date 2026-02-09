@@ -51,6 +51,8 @@ export const EN_MESSAGES = {
   "game.rankings": "Rankings",
   "game.copiedInvite": "Copied invite link",
   "game.copyFailed": "Copy failed",
+  "pwa.iosInstallTitle": "Add this app to your Home Screen",
+  "pwa.iosInstallBody": "In Safari, tap Share and choose Add to Home Screen for a full-screen app.",
 
   "game.drag.noChips": "No chips available.",
   "game.drag.addChips": "Add chips before dragging to the pot.",
@@ -258,6 +260,8 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.rankings": "排行榜",
   "game.copiedInvite": "已复制邀请链接",
   "game.copyFailed": "复制失败",
+  "pwa.iosInstallTitle": "把应用添加到主屏幕",
+  "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
 
   "game.drag.noChips": "没有可用筹码。",
   "game.drag.addChips": "拖到底池前请先添加筹码。",

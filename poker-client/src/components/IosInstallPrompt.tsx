@@ -1,0 +1,88 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { useLocalization } from "../contexts/LocalizationContext";
+
+const IOS_INSTALL_PROMPT_DISMISSED_KEY = "poker.iosInstallPromptDismissed";
+
+const isIosDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = navigator.userAgent ?? "";
+  const isIphoneFamily = /iPhone|iPad|iPod/i.test(userAgent);
+  const isIpadDesktopMode =
+    navigator.platform === "MacIntel" && typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 1;
+  return isIphoneFamily || isIpadDesktopMode;
+};
+
+const isSafariOnIos = () => {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = navigator.userAgent ?? "";
+  const isWebKit = /WebKit/i.test(userAgent);
+  const hasOtherBrowserToken = /CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser/i.test(userAgent);
+  return isWebKit && !hasOtherBrowserToken;
+};
+
+const isStandaloneMode = () => {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+  );
+};
+
+export const IosInstallPrompt: React.FC = () => {
+  const location = useLocation();
+  const { t } = useLocalization();
+  const [visible, setVisible] = useState(false);
+
+  const canShowPrompt = useMemo(() => isIosDevice() && isSafariOnIos(), []);
+
+  useEffect(() => {
+    if (!canShowPrompt || isStandaloneMode()) {
+      return;
+    }
+
+    try {
+      const dismissed = window.localStorage.getItem(IOS_INSTALL_PROMPT_DISMISSED_KEY) === "1";
+      if (!dismissed) {
+        setVisible(true);
+      }
+    } catch {
+      setVisible(true);
+    }
+  }, [canShowPrompt]);
+
+  const handleDismiss = () => {
+    try {
+      window.localStorage.setItem(IOS_INSTALL_PROMPT_DISMISSED_KEY, "1");
+    } catch {
+      // Ignore storage write errors and still dismiss UI.
+    }
+    setVisible(false);
+  };
+
+  const isLobbyRoute = !location.pathname.startsWith("/room");
+
+  if (!visible || !isLobbyRoute) {
+    return null;
+  }
+
+  return (
+    <section className="ios-install-banner" data-testid="ios-install-banner">
+      <span className="ios-install-banner__badge" aria-hidden="true">
+        ♠
+      </span>
+      <div className="ios-install-banner__copy">
+        <p className="ios-install-banner__title">{t("pwa.iosInstallTitle")}</p>
+        <p className="ios-install-banner__body">{t("pwa.iosInstallBody")}</p>
+      </div>
+      <button
+        type="button"
+        className="ios-install-banner__close"
+        onClick={handleDismiss}
+        aria-label={t("common.close")}
+      >
+        {t("common.close")}
+      </button>
+    </section>
+  );
+};

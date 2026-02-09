@@ -11,6 +11,7 @@ import { GameProvider, useGame } from "./contexts/GameContext";
 import { LocalizationProvider } from "./contexts/LocalizationContext";
 import { Home } from "./pages/Home";
 import { GameRoom } from "./components/GameRoom";
+import { IosInstallPrompt } from "./components/IosInstallPrompt";
 
 const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
 
@@ -87,6 +88,7 @@ function App() {
         <SocketProvider>
           <GameProvider>
             <UrlStateSync />
+            <IosInstallPrompt />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/room" element={<RoomRoute />} />
