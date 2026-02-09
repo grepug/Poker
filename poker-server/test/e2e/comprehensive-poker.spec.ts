@@ -4768,6 +4768,36 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
     }
   });
 
+
+  test('9.1b: Three-Player Fold Keeps Clockwise Turn Progression', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      const afterBobFold = await getRoomSnapshot(alicePage);
+      expect(afterBobFold.currentPlayerName).toBe('Charlie');
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
   test('9.2: Three-Player Blind Rotation - dealer/SB/BB rotate across hands', async ({
     browser,
   }) => {
