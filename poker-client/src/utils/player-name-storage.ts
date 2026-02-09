@@ -1,6 +1,8 @@
+import { getRandomPlayerEmoji } from "../constants/player-emojis";
+
 const LAST_PLAYER_NAME_STORAGE_KEY = "poker.lastPlayerName";
 const LAST_PLAYER_EMOJI_STORAGE_KEY = "poker.lastPlayerEmoji";
-const DEFAULT_PLAYER_EMOJI = "😀";
+const SESSION_DEFAULT_PLAYER_EMOJI = getRandomPlayerEmoji();
 
 export function readLastPlayerName(): string {
   if (typeof window === "undefined") return "";
@@ -27,13 +29,14 @@ export function writeLastPlayerName(name: string): void {
 }
 
 export function readLastPlayerEmoji(): string {
-  if (typeof window === "undefined") return DEFAULT_PLAYER_EMOJI;
+  if (typeof window === "undefined") return SESSION_DEFAULT_PLAYER_EMOJI;
 
   try {
     const savedEmoji = window.localStorage.getItem(LAST_PLAYER_EMOJI_STORAGE_KEY);
-    return savedEmoji?.trim() || DEFAULT_PLAYER_EMOJI;
+    const normalizedEmoji = savedEmoji?.trim() ?? "";
+    return normalizedEmoji || SESSION_DEFAULT_PLAYER_EMOJI;
   } catch {
-    return DEFAULT_PLAYER_EMOJI;
+    return SESSION_DEFAULT_PLAYER_EMOJI;
   }
 }
 

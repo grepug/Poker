@@ -3842,7 +3842,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.waitForSelector('[data-testid="connection-status"]');
 
       await alicePage.fill('[data-testid="name-input"]', 'Alice');
-      await alicePage.selectOption('[data-testid="emoji-select"]', '😎');
+      await alicePage.click('[data-testid="emoji-select"]');
+      await alicePage.click('[data-testid="emoji-option"][data-emoji="😎"]');
       await alicePage.click('[data-testid="create-room-button"]');
       await alicePage.waitForSelector('[data-testid="room-title"]');
 
@@ -3852,7 +3853,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await bobPage.click('[data-testid="join-toggle-button"]');
       await bobPage.fill('[data-testid="name-input"]', 'Bob');
-      await bobPage.selectOption('[data-testid="emoji-select"]', '🐯');
+      await bobPage.click('[data-testid="emoji-select"]');
+      await bobPage.click('[data-testid="emoji-option"][data-emoji="🐯"]');
       await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
       await bobPage.click('[data-testid="join-room-button"]');
       await bobPage.waitForSelector(

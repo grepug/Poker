@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import { useSocket } from "../contexts/SocketContext";
@@ -9,13 +9,15 @@ import {
   writeLastPlayerEmoji,
   writeLastPlayerName,
 } from "../utils/player-name-storage";
+import {
+  getRandomPlayerEmoji,
+  PLAYER_EMOJI_OPTIONS,
+} from "../constants/player-emojis";
 
 interface HomeProps {
   prefilledRoomId?: string;
   forceJoinMode?: boolean;
 }
-
-const EMOJI_OPTIONS = ["😀", "😎", "🤠", "🥳", "🧠", "🐯", "🐼", "🦊", "🐙", "🚀"];
 
 export const Home: React.FC<HomeProps> = ({
   prefilledRoomId,
@@ -45,9 +47,11 @@ export const Home: React.FC<HomeProps> = ({
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
   const [playerName, setPlayerName] = useState(() => readLastPlayerName());
   const [playerEmoji, setPlayerEmoji] = useState(() => readLastPlayerEmoji());
+  const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const effectiveRoomId = inferredRoomId || roomId;
   const isJoining = inferredRoomId
     ? true
@@ -60,6 +64,45 @@ export const Home: React.FC<HomeProps> = ({
     if (lastError) {
       clearError();
     }
+  };
+
+  useEffect(() => {
+    if (!isEmojiPopoverOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      if (!emojiPickerRef.current) return;
+      if (!(event.target instanceof Node)) return;
+      if (!emojiPickerRef.current.contains(event.target)) {
+        setIsEmojiPopoverOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsEmojiPopoverOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isEmojiPopoverOpen]);
+
+  const handleEmojiPick = (emoji: string) => {
+    setPlayerEmoji(emoji);
+    setIsEmojiPopoverOpen(false);
+    clearFeedback();
+  };
+
+  const handleRandomEmoji = () => {
+    setPlayerEmoji((currentEmoji) => getRandomPlayerEmoji(currentEmoji));
+    clearFeedback();
   };
 
   const handleCreateRoom = () => {
@@ -158,29 +201,74 @@ export const Home: React.FC<HomeProps> = ({
               />
             </div>
 
-            <div>
+            <div className="relative" ref={emojiPickerRef}>
               <label
                 htmlFor="player-emoji"
                 className="mb-2 block text-sm font-semibold text-emerald-100"
               >
                 {t("home.avatarEmoji")}
               </label>
-              <select
-                id="player-emoji"
-                value={playerEmoji}
-                onChange={(e) => {
-                  setPlayerEmoji(e.target.value);
-                  clearFeedback();
-                }}
-                data-testid="emoji-select"
-                className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-              >
-                {EMOJI_OPTIONS.map((emoji) => (
-                  <option key={emoji} value={emoji}>
-                    {emoji}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  id="player-emoji"
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={isEmojiPopoverOpen}
+                  onClick={() => setIsEmojiPopoverOpen((open) => !open)}
+                  data-testid="emoji-select"
+                  className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-left text-white outline-none transition hover:border-emerald-500/80 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="text-2xl leading-none" aria-hidden="true">
+                      {playerEmoji}
+                    </span>
+                    <span className="truncate text-sm text-emerald-100/90">
+                      {t("home.avatarEmoji")}
+                    </span>
+                  </span>
+                  <span className="ml-3 text-sm text-emerald-300/80" aria-hidden="true">
+                    {isEmojiPopoverOpen ? "▴" : "▾"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRandomEmoji}
+                  data-testid="emoji-randomize-button"
+                  className="rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-3 py-3 text-xl leading-none text-emerald-100 transition hover:border-emerald-500/80 hover:bg-emerald-900/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  aria-label={t("home.randomEmoji")}
+                  title={t("home.randomEmoji")}
+                >
+                  🎲
+                </button>
+              </div>
+              {isEmojiPopoverOpen && (
+                <div
+                  role="dialog"
+                  aria-label={t("home.avatarEmoji")}
+                  data-testid="emoji-popover"
+                  className="absolute z-30 mt-2 w-full rounded-xl border border-emerald-600/80 bg-emerald-950/95 p-3 shadow-2xl shadow-emerald-900/40 backdrop-blur-sm"
+                >
+                  <div className="grid max-h-64 grid-cols-8 gap-1 overflow-y-auto pr-1 sm:grid-cols-10">
+                    {PLAYER_EMOJI_OPTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => handleEmojiPick(emoji)}
+                        data-testid="emoji-option"
+                        data-emoji={emoji}
+                        aria-label={`${t("home.avatarEmoji")} ${emoji}`}
+                        className={`flex h-9 items-center justify-center rounded-lg text-xl leading-none transition ${
+                          playerEmoji === emoji
+                            ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
+                            : "hover:bg-emerald-500/15"
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {(feedback || lastError) && (
