@@ -444,16 +444,16 @@ body {
 
 .seat-pod__role-icon {
   position: absolute;
-  top: -0.16rem;
-  right: -0.16rem;
-  min-width: 0.82rem;
-  height: 0.7rem;
-  padding: 0 0.16rem;
+  top: -0.2rem;
+  right: -0.2rem;
+  min-width: 1rem;
+  height: 0.86rem;
+  padding: 0 0.22rem;
   border-radius: 9999px;
   border: 1px solid rgba(147, 197, 253, 0.7);
   background: rgba(2, 132, 199, 0.22);
   color: #dbeafe;
-  font-size: clamp(0.3rem, 0.72vw, 0.4rem);
+  font-size: clamp(0.42rem, 0.92vw, 0.56rem);
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -1192,11 +1192,11 @@ body {
   }
 
   .seat-pod__role-icon {
-    top: -0.12rem;
-    right: -0.12rem;
-    min-width: 0.7rem;
-    height: 0.62rem;
-    font-size: 0.26rem;
+    top: -0.16rem;
+    right: -0.16rem;
+    min-width: 0.86rem;
+    height: 0.74rem;
+    font-size: 0.36rem;
   }
 }
 
