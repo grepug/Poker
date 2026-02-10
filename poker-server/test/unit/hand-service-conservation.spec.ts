@@ -45,9 +45,6 @@ describe('HandService chip conservation reconciliation', () => {
       currentBet: 0,
       lastAction: null,
       lastConnectedAt: Date.now(),
-      handsPlayedCount: 0,
-      handsWonCount: 0,
-      vpipHandsCount: 0,
     };
   }
 
