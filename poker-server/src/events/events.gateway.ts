@@ -16,10 +16,12 @@ import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import {
   BettingRound,
+  BlindType,
   CreateRoomData,
   JoinRoomData,
   ReconnectData,
   PlayerActionData,
+  PlayerActionDisplayKind,
   RequestRebuyData,
   RevealNextStreetData,
   ShowMyHandData,
@@ -716,6 +718,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           playerName: player.name,
         };
 
+        const preActionChips = player.chips;
+        const preRoundCurrentBet = room.currentHand.currentBet;
+
         if (
           actionId &&
           this.hasProcessedAction(
@@ -748,15 +753,45 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
 
         const updatedRoom = await this.getRoom(playerInfo.roomId);
+        const updatedPlayer = updatedRoom.players.find((p) => p.id === player.id);
+        if (!updatedPlayer) {
+          throw new Error('Updated player not found');
+        }
+
+        const resolvedAction = updatedPlayer.lastAction ?? data.action;
+
+        const displayKind = (() => {
+          switch (resolvedAction) {
+            case 'fold':
+              return 'fold' as PlayerActionDisplayKind;
+            case 'check':
+              return 'check' as PlayerActionDisplayKind;
+            case 'call':
+              return 'call-to' as PlayerActionDisplayKind;
+            case 'all-in':
+              return 'all-in-to' as PlayerActionDisplayKind;
+            case 'raise':
+              return preRoundCurrentBet <= 0
+                ? ('bet-to' as PlayerActionDisplayKind)
+                : ('raise-to' as PlayerActionDisplayKind);
+          }
+        })();
+
+        const committedAmount = Math.max(0, preActionChips - updatedPlayer.chips);
+        const blindType: BlindType | null = null;
 
         // Broadcast action
         const actionData: PlayerActedData = {
           playerId: player.id,
           playerName: player.name,
-          action: data.action,
-          amount: data.amount,
+          action: resolvedAction,
+          amount: resolvedAction === 'all-in' ? undefined : data.amount,
+          displayKind,
+          totalBetAfterAction: updatedPlayer.currentBet,
+          committedAmount,
+          blindType,
           newPot: updatedRoom.currentHand!.pot,
-          newChips: player.chips,
+          newChips: updatedPlayer.chips,
         };
 
         this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
