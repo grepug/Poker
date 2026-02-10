@@ -27,6 +27,7 @@ import type {
   VoiceMessagePayload,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
+import { getVoicePlaybackState } from "../services/voice-playback.service";
 import { writeLastPlayerEmoji, writeLastPlayerName } from "../utils/player-name-storage";
 
 export interface PlayerActionFlashEvent {
@@ -108,6 +109,7 @@ type DebugApi = {
   ) => void;
   loadOlderChatMessages: () => void;
   setChatPanelOpen: (open: boolean) => void;
+  getVoicePlaybackState: () => { sourceUrl: string | null; isPlaying: boolean };
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
   logState: () => void;
@@ -1260,6 +1262,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         sendChatVoice,
         loadOlderChatMessages,
         setChatPanelOpen,
+        getVoicePlaybackState,
         clearError,
         emitCustom: (event, data) => {
           const rawSocket = socket as unknown as {

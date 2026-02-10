@@ -524,6 +524,31 @@ async function getChatMessagesFromDebug(page: Page) {
   return page.evaluate(() => (window as any).pokerDebug?.getChatMessages?.() ?? []);
 }
 
+async function getVoicePlaybackStateFromDebug(page: Page) {
+  await waitForPokerDebug(page);
+  return page.evaluate(
+    () =>
+      (window as any).pokerDebug?.getVoicePlaybackState?.() ?? {
+        sourceUrl: null,
+        isPlaying: false,
+      },
+  );
+}
+
+async function waitForVoicePlaybackSource(
+  page: Page,
+  expectedSourceUrl: string,
+  timeout = 10000,
+) {
+  await page.waitForFunction(
+    (expected) =>
+      (window as any).pokerDebug?.getVoicePlaybackState?.()?.sourceUrl ===
+      expected,
+    expectedSourceUrl,
+    { timeout },
+  );
+}
+
 async function sendVoiceMessageViaUpload(page: Page, prefix: string) {
   await waitForPokerDebug(page);
 
@@ -5547,6 +5572,7 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       const { alicePage, bobPage } = session;
 
       const uploaded = await sendVoiceMessageViaUpload(alicePage, 'voice');
+      const expectedVoiceUrl = `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`;
 
       await bobPage.waitForFunction(
         ({ expectedAudioUrl }) => {
@@ -5563,20 +5589,108 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
 
       await openChatPanel(bobPage);
 
-      await expect(
-        bobPage.locator('[data-testid="chat-message-list"] audio'),
-      ).toHaveCount(1);
-
-      const audioSrc = await bobPage
-        .locator('[data-testid="chat-message-list"] audio')
-        .first()
-        .getAttribute('src');
-      expect(audioSrc).toContain('/uploads/chat-audio/');
-
-      const mediaResponse = await bobPage.request.get(
-        `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`,
+      const voicePlayers = bobPage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__voice-player',
       );
+      await expect(voicePlayers).toHaveCount(1);
+      await expect(voicePlayers.first()).toContainText(/\d+'/);
+
+      await voicePlayers.first().click();
+      await waitForVoicePlaybackSource(bobPage, expectedVoiceUrl);
+
+      const mediaResponse = await bobPage.request.get(expectedVoiceUrl);
       expect(mediaResponse.ok()).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.4: Clicking latest voice preview opens chat and starts that playback source', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await sendChatMessagesViaSocket(alicePage, ['preview-text'], 'preview-text');
+      const uploaded = await sendVoiceMessageViaUpload(alicePage, 'preview-voice');
+      const expectedVoiceUrl = `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`;
+
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await bobPage.click('[data-testid="chat-preview-strip"] .chat-preview-strip__open');
+
+      await bobPage.waitForSelector('[data-testid="chat-panel"]', {
+        state: 'visible',
+        timeout: 5000,
+      });
+      await waitForVoicePlaybackSource(bobPage, expectedVoiceUrl);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.5: Incoming messages do not interrupt current voice source unless another voice is clicked', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      const uploadedOne = await sendVoiceMessageViaUpload(alicePage, 'voice-a');
+      const uploadedTwo = await sendVoiceMessageViaUpload(alicePage, 'voice-b');
+      const firstVoiceUrl = `${uploadedOne.serverBaseUrl}${uploadedOne.voice.audioUrl}`;
+      const secondVoiceUrl = `${uploadedTwo.serverBaseUrl}${uploadedTwo.voice.audioUrl}`;
+
+      await bobPage.waitForFunction(
+        ({ firstAudioUrl, secondAudioUrl }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          const voiceAudioUrls = chatMessages
+            .filter((message: any) => message.kind === 'VOICE')
+            .map((message: any) => message.voice?.audioUrl);
+
+          return (
+            voiceAudioUrls.includes(firstAudioUrl) &&
+            voiceAudioUrls.includes(secondAudioUrl)
+          );
+        },
+        {
+          firstAudioUrl: uploadedOne.voice.audioUrl,
+          secondAudioUrl: uploadedTwo.voice.audioUrl,
+        },
+        { timeout: 10000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      const voicePlayers = bobPage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__voice-player',
+      );
+      await expect(voicePlayers).toHaveCount(2);
+
+      await voicePlayers.nth(0).click();
+      await waitForVoicePlaybackSource(bobPage, firstVoiceUrl);
+
+      await sendChatMessagesViaSocket(alicePage, ['interrupting-text'], 'interrupt');
+      await bobPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getChatMessages?.() ?? []).some(
+            (message: any) =>
+              message.kind === 'TEXT' && message.text === 'interrupting-text',
+          ),
+        { timeout: 10000 },
+      );
+
+      const playbackAfterText = await getVoicePlaybackStateFromDebug(bobPage);
+      expect(playbackAfterText.sourceUrl).toBe(firstVoiceUrl);
+
+      await voicePlayers.nth(1).click();
+      await waitForVoicePlaybackSource(bobPage, secondVoiceUrl);
     } finally {
       await teardownTwoPlayerSession(session);
     }
