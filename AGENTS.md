@@ -72,3 +72,10 @@ Useful commands:
   - `runtime-config.js` is requested by browser
   - `runtime-config.js` is loaded before the main module in `dist/index.html`
   - Playwright is serving freshly built `dist`
+
+## Default Delivery Workflow
+
+- Unless the user explicitly asks otherwise, continue executing tasks end-to-end until the work is ready to be submitted as a PR; avoid pausing for intermediate check-ins/questions.
+- Default PR base branch is `codex/staging`.
+- Before creating a PR, first pull the latest target/base branch and check for conflicts. If conflicts exist, resolve them before opening the PR.
+
