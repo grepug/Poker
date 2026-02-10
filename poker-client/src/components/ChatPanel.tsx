@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "poker-types";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame } from "../contexts/GameContext";
@@ -51,6 +51,12 @@ const chooseRecorderMimeType = (): string | undefined => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
 };
 
+const formatVoiceDuration = (durationMs: number): string => {
+  const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+};
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const { locale, t } = useLocalization();
@@ -61,12 +67,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     chatHasMore,
     chatLoadingHistory,
     loadOlderChatMessages,
-    sendChatText,
     sendChatVoice,
     setChatPanelOpen,
   } = useGame();
 
-  const [draft, setDraft] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
@@ -74,7 +78,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const [chatError, setChatError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
-  const textInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -364,20 +367,36 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     };
   }, [isRecording, recordingMode, scheduleStopRecording, startRecording]);
 
-  const handleSubmitText = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const nextText = draft.trim();
-      if (!nextText) {
-        return;
-      }
+  const releaseVoicePointerCapture = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
-      sendChatText(nextText);
-      setDraft("");
-      textInputRef.current?.focus();
-    },
-    [draft, sendChatText],
-  );
+  const handleVoicePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    void startRecording("touch");
+  };
+
+  const handleVoicePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    releaseVoicePointerCapture(event);
+    scheduleStopRecording(false);
+  };
+
+  const handleVoicePointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
+    releaseVoicePointerCapture(event);
+    scheduleStopRecording(true);
+  };
+
+  const handleVoicePointerLeave = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (recordingMode !== "touch") {
+      return;
+    }
+
+    releaseVoicePointerCapture(event);
+    scheduleStopRecording(false);
+  };
 
   const handleScroll = useCallback(() => {
     const listNode = listRef.current;
@@ -389,11 +408,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
       listNode.scrollHeight - listNode.scrollTop - listNode.clientHeight < 96;
     isAtBottomRef.current = isNearBottom;
 
-    if (
-      listNode.scrollTop <= 48 &&
-      chatHasMore &&
-      !chatLoadingHistory
-    ) {
+    if (listNode.scrollTop <= 48 && chatHasMore && !chatLoadingHistory) {
       historyAnchorRef.current = {
         height: listNode.scrollHeight,
         top: listNode.scrollTop,
@@ -421,18 +436,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     }
   }, [chatLoadingHistory, chatMessages]);
 
-  const canSendText = useMemo(
-    () => draft.trim().length > 0 && !isUploadingVoice,
-    [draft, isUploadingVoice],
-  );
-
   const renderMessage = (message: ChatMessage) => {
     const isSelf = message.sender.playerId === player?.id;
 
     return (
       <article
         key={message.id}
-        className={`chat-panel__item ${isSelf ? "chat-panel__item--self" : ""}`}
+        className={`chat-panel__item ${isSelf ? "chat-panel__item--self" : ""} ${message.kind === "VOICE" ? "chat-panel__item--voice" : ""}`.trim()}
       >
         <header className="chat-panel__meta">
           <span className="chat-panel__sender">
@@ -448,8 +458,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
           <p className="chat-panel__bubble">{message.text}</p>
         ) : (
           <div className="chat-panel__bubble chat-panel__bubble--voice">
-            <span className="chat-panel__voice-label">{t("game.chat.voiceLabel")}</span>
-            <audio controls preload="none" src={resolveAudioUrl(message.voice.audioUrl)} />
+            <div className="chat-panel__voice-card-header">
+              <span className="chat-panel__voice-label">{t("game.chat.voiceLabel")}</span>
+              <span className="chat-panel__voice-duration">
+                {formatVoiceDuration(message.voice.durationMs)}
+              </span>
+            </div>
+            <audio
+              className="chat-panel__voice-audio"
+              controls
+              preload="metadata"
+              src={resolveAudioUrl(message.voice.audioUrl)}
+            />
           </div>
         )}
       </article>
@@ -490,19 +510,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
       <div className="chat-panel__composer" data-testid="chat-composer">
         {chatError && <p className="chat-panel__error">{chatError}</p>}
 
-        <p className="chat-panel__shortcut">{t("game.chat.record.shortcut")}</p>
+        <div className="chat-panel__voice-status">
+          <p className="chat-panel__shortcut">{t("game.chat.record.shortcut")}</p>
+          <p className="chat-panel__recording-hint">
+            {isRecording
+              ? t("game.chat.record.recording", { seconds: recordingSeconds })
+              : t("game.chat.record.max", { seconds: VOICE_MAX_DURATION_MS / 1000 })}
+          </p>
+        </div>
 
         <div className="chat-panel__voice-row">
           <button
             type="button"
-            onPointerDown={() => void startRecording("touch")}
-            onPointerUp={() => scheduleStopRecording(false)}
-            onPointerCancel={() => scheduleStopRecording(true)}
-            onPointerLeave={() => {
-              if (recordingMode === "touch") {
-                scheduleStopRecording(false);
-              }
-            }}
+            onPointerDown={handleVoicePointerDown}
+            onPointerUp={handleVoicePointerUp}
+            onPointerCancel={handleVoicePointerCancel}
+            onPointerLeave={handleVoicePointerLeave}
             disabled={isUploadingVoice}
             data-testid="chat-voice-hold-button"
             className={`chat-panel__voice-button ${isRecording ? "chat-panel__voice-button--recording" : ""}`}
@@ -523,33 +546,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
             </button>
           )}
         </div>
-
-        <p className="chat-panel__recording-hint">
-          {isRecording
-            ? t("game.chat.record.recording", { seconds: recordingSeconds })
-            : t("game.chat.record.max", { seconds: VOICE_MAX_DURATION_MS / 1000 })}
-        </p>
-
-        <form onSubmit={handleSubmitText} className="chat-panel__text-form">
-          <input
-            ref={textInputRef}
-            type="text"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={t("game.chat.placeholder")}
-            className="chat-panel__input"
-            maxLength={300}
-            data-testid="chat-text-input"
-          />
-          <button
-            type="submit"
-            disabled={!canSendText}
-            className="chat-panel__send"
-            data-testid="chat-send-button"
-          >
-            {t("game.chat.send")}
-          </button>
-        </form>
       </div>
     </section>
   );
