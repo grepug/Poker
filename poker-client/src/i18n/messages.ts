@@ -69,6 +69,9 @@ export const EN_MESSAGES = {
   "game.chat.error.voiceTooLarge": "Voice message exceeds {maxMb}MB",
   "game.chat.error.voiceTooLong": "Voice message exceeds {maxSeconds}s",
   "game.chat.voiceLabel": "Voice message",
+  "game.chat.preview.title": "Recent chat",
+  "game.chat.preview.voice": "[Voice]",
+  "game.chat.preview.empty": "(empty message)",
   "pwa.iosInstallTitle": "Add this app to your Home Screen",
   "pwa.iosInstallBody": "In Safari, tap Share and choose Add to Home Screen for a full-screen app.",
 
@@ -314,6 +317,9 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.chat.error.voiceTooLarge": "语音超过 {maxMb}MB",
   "game.chat.error.voiceTooLong": "语音超过 {maxSeconds} 秒",
   "game.chat.voiceLabel": "语音消息",
+  "game.chat.preview.title": "最近消息",
+  "game.chat.preview.voice": "【语音】",
+  "game.chat.preview.empty": "（空消息）",
   "pwa.iosInstallTitle": "把应用添加到主屏幕",
   "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
 

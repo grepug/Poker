@@ -3,6 +3,7 @@ import type { ChatMessage } from "poker-types";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame } from "../contexts/GameContext";
 import { resolveServerBaseUrl } from "../services/socket.service";
+import { formatRelativeTime } from "../utils/relative-time";
 
 const VOICE_MAX_BYTES = 2 * 1024 * 1024;
 const VOICE_MAX_DURATION_MS = 60 * 1000;
@@ -50,14 +51,9 @@ const chooseRecorderMimeType = (): string | undefined => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
 };
 
-const formatMessageTime = (timestamp: number): string =>
-  new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
-  const { t } = useLocalization();
+  const { locale, t } = useLocalization();
   const {
     room,
     player,
@@ -90,6 +86,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const isMountedRef = useRef(true);
   const isAtBottomRef = useRef(true);
   const historyAnchorRef = useRef<{ height: number; top: number } | null>(null);
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setRelativeNow(Date.now());
+    }, 30 * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     setChatPanelOpen(true);
@@ -433,7 +440,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
             {message.sender.playerName}
           </span>
           <time dateTime={new Date(message.createdAt).toISOString()}>
-            {formatMessageTime(message.createdAt)}
+            {formatRelativeTime(message.createdAt, locale, relativeNow)}
           </time>
         </header>
 

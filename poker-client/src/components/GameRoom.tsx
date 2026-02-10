@@ -5,8 +5,9 @@ import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
 import { ChatPanel } from "./ChatPanel";
-import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
+import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
+import { formatRelativeTime } from "../utils/relative-time";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -14,6 +15,33 @@ const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
 const POT_ANIMATION_MS = 360;
 const DESKTOP_SIDE_DOCK_QUERY = "(min-width: 1024px)";
+const CHAT_PREVIEW_ROTATE_MS = 3200;
+const CHAT_PREVIEW_MAX_MESSAGES = 5;
+const CHAT_PREVIEW_TEXT_MAX_LENGTH = 80;
+
+const truncatePreviewText = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+};
+
+const toChatPreviewText = (
+  message: ChatMessage,
+  translate: (key: MessageKey, values?: Record<string, string | number>) => string,
+): string => {
+  if (message.kind === "VOICE") {
+    return translate("game.chat.preview.voice");
+  }
+
+  const normalized = message.text.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return translate("game.chat.preview.empty");
+  }
+
+  return truncatePreviewText(normalized, CHAT_PREVIEW_TEXT_MAX_LENGTH);
+};
 
 type SeatAnchor = {
   top: string;
@@ -789,6 +817,7 @@ export const GameRoom: React.FC = () => {
     performAction,
     leaveRoom,
     updateRoomConfig,
+    chatMessages,
     chatUnreadCount,
     isChatPanelOpen,
     setChatPanelOpen,
@@ -821,6 +850,8 @@ export const GameRoom: React.FC = () => {
     }
     return window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
   });
+  const [chatPreviewIndex, setChatPreviewIndex] = useState(0);
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
@@ -887,6 +918,44 @@ export const GameRoom: React.FC = () => {
   );
   const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
+
+  const recentChatMessages = useMemo(
+    () => chatMessages.slice(-CHAT_PREVIEW_MAX_MESSAGES),
+    [chatMessages],
+  );
+  const previewMessageCount = recentChatMessages.length;
+  const activePreviewMessage =
+    previewMessageCount > 0
+      ? recentChatMessages[chatPreviewIndex % previewMessageCount]
+      : null;
+
+  useEffect(() => {
+    setChatPreviewIndex(0);
+  }, [previewMessageCount]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setRelativeNow(Date.now());
+    }, 30 * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isChatPanelOpen || previewMessageCount <= 1) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setChatPreviewIndex((previous) => previous + 1);
+    }, CHAT_PREVIEW_ROTATE_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isChatPanelOpen, previewMessageCount]);
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
@@ -2106,6 +2175,34 @@ export const GameRoom: React.FC = () => {
             )}
           </div>
         </section>
+
+        {!isChatPanelOpen && activePreviewMessage && (
+          <button
+            type="button"
+            className="chat-preview-strip"
+            data-testid="chat-preview-strip"
+            onClick={() => setChatPanelOpen(true)}
+          >
+            <span className="chat-preview-strip__title">{t("game.chat.preview.title")}</span>
+            <span className="chat-preview-strip__content" key={activePreviewMessage.id}>
+              <span className="chat-preview-strip__sender">
+                {activePreviewMessage.sender.playerEmoji
+                  ? `${activePreviewMessage.sender.playerEmoji} `
+                  : ""}
+                {activePreviewMessage.sender.playerName}
+              </span>
+              <span className="chat-preview-strip__message">
+                {toChatPreviewText(activePreviewMessage, t)}
+              </span>
+              <time
+                className="chat-preview-strip__time"
+                dateTime={new Date(activePreviewMessage.createdAt).toISOString()}
+              >
+                {formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow)}
+              </time>
+            </span>
+          </button>
+        )}
       </header>
 
       {isChatPanelOpen && (
