@@ -7,7 +7,9 @@ import { Card } from "./Card";
 import { ChatPanel } from "./ChatPanel";
 import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
+import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
+import { resolveVoiceAudioUrl } from "../utils/voice-message";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -922,6 +924,18 @@ export const GameRoom: React.FC = () => {
     latestChatMessage && latestChatMessage.id !== dismissedPreviewMessageId
       ? latestChatMessage
       : null;
+
+  const handleOpenChatFromPreview = useCallback(() => {
+    if (!activePreviewMessage) {
+      return;
+    }
+
+    if (activePreviewMessage.kind === "VOICE") {
+      void playVoicePlayback(resolveVoiceAudioUrl(activePreviewMessage.voice.audioUrl));
+    }
+
+    setChatPanelOpen(true);
+  }, [activePreviewMessage, setChatPanelOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2157,7 +2171,7 @@ export const GameRoom: React.FC = () => {
             <button
               type="button"
               className="chat-preview-strip__open"
-              onClick={() => setChatPanelOpen(true)}
+              onClick={handleOpenChatFromPreview}
             >
               <span className="chat-preview-strip__title">{t("game.chat.preview.title")}</span>
               <span className="chat-preview-strip__content">

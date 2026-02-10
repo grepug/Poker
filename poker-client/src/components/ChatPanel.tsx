@@ -3,7 +3,9 @@ import type { ChatMessage } from "poker-types";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame } from "../contexts/GameContext";
 import { resolveServerBaseUrl } from "../services/socket.service";
+import { getVoicePlaybackState, subscribeVoicePlayback, toggleVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
+import { computeVoiceBubbleWidthPx, formatVoiceDurationPrime, resolveVoiceAudioUrl } from "../utils/voice-message";
 
 const VOICE_MAX_BYTES = 2 * 1024 * 1024;
 const VOICE_MAX_DURATION_MS = 60 * 1000;
@@ -27,14 +29,6 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
   );
 };
 
-const resolveAudioUrl = (audioUrl: string): string => {
-  if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
-    return audioUrl;
-  }
-
-  return `${resolveServerBaseUrl()}${audioUrl}`;
-};
-
 const chooseRecorderMimeType = (): string | undefined => {
   if (typeof MediaRecorder === "undefined") {
     return undefined;
@@ -51,122 +45,47 @@ const chooseRecorderMimeType = (): string | undefined => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
 };
 
-const formatVoiceDuration = (durationMs: number): string => {
-  const totalSeconds = Math.max(1, Math.min(60, Math.round(durationMs / 1000)));
-  return `${totalSeconds}'`;
-};
-
 type VoicePlaybackBarProps = {
-  audioUrl: string;
+  sourceUrl: string;
   durationMs: number;
   playLabel: string;
   stopLabel: string;
 };
 
-const computeVoiceBubbleWidthPx = (durationMs: number): number => {
-  const seconds = Math.max(1, Math.min(60, Math.round(durationMs / 1000)));
-  const ratio = (seconds - 1) / 59;
-  const easedRatio = Math.pow(ratio, 0.65);
-  return Math.round(50 + easedRatio * 170);
-};
-
 const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
-  audioUrl,
+  sourceUrl,
   durationMs,
   playLabel,
   stopLabel,
 }) => {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackState, setPlaybackState] = useState(getVoicePlaybackState);
   const bubbleWidthPx = computeVoiceBubbleWidthPx(durationMs);
 
-  useEffect(() => {
-    const audioNode = audioRef.current;
-    if (!audioNode) {
-      return;
-    }
+  useEffect(() => subscribeVoicePlayback(setPlaybackState), []);
 
-    const handlePlay = () => {
-      setIsPlaying(true);
-    };
-
-    const handlePause = () => {
-      setIsPlaying(false);
-    };
-
-    const handleEnded = () => {
-      setIsPlaying(false);
-      audioNode.currentTime = 0;
-    };
-
-    audioNode.addEventListener("play", handlePlay);
-    audioNode.addEventListener("pause", handlePause);
-    audioNode.addEventListener("ended", handleEnded);
-
-    return () => {
-      audioNode.removeEventListener("play", handlePlay);
-      audioNode.removeEventListener("pause", handlePause);
-      audioNode.removeEventListener("ended", handleEnded);
-      audioNode.pause();
-    };
-  }, [audioUrl]);
-
-  const handleTogglePlayback = useCallback(async () => {
-    const audioNode = audioRef.current;
-    if (!audioNode) {
-      return;
-    }
-
-    if (audioNode.paused) {
-      const allVoiceNodes = document.querySelectorAll<HTMLAudioElement>(
-        ".chat-panel__voice-audio-element",
-      );
-      for (const node of allVoiceNodes) {
-        if (node !== audioNode) {
-          node.pause();
-        }
-      }
-
-      try {
-        await audioNode.play();
-      } catch {
-        setIsPlaying(false);
-      }
-      return;
-    }
-
-    audioNode.pause();
-  }, []);
+  const isPlaying = playbackState.isPlaying && playbackState.sourceUrl === sourceUrl;
 
   return (
-    <>
-      <button
-        type="button"
-        className={`chat-panel__voice-player ${isPlaying ? "chat-panel__voice-player--playing" : ""}`}
-        style={{ width: `${bubbleWidthPx}px`, minWidth: "50px", maxWidth: "72%" }}
-        onClick={() => {
-          void handleTogglePlayback();
-        }}
-        aria-label={isPlaying ? stopLabel : playLabel}
-        title={isPlaying ? stopLabel : playLabel}
-      >
-        <span className="chat-panel__voice-icon" aria-hidden="true">
-          {isPlaying ? "■" : "▶"}
-        </span>
-        <span className="chat-panel__voice-duration">{formatVoiceDuration(durationMs)}</span>
-      </button>
-
-      <audio
-        ref={audioRef}
-        className="chat-panel__voice-audio-element"
-        preload="metadata"
-        src={audioUrl}
-      />
-    </>
+    <button
+      type="button"
+      className={`chat-panel__voice-player ${isPlaying ? "chat-panel__voice-player--playing" : ""}`}
+      style={{ width: `${bubbleWidthPx}px`, minWidth: "50px", maxWidth: "72%", flex: "0 0 auto" }}
+      onClick={() => {
+        void toggleVoicePlayback(sourceUrl);
+      }}
+      aria-label={isPlaying ? stopLabel : playLabel}
+      title={isPlaying ? stopLabel : playLabel}
+    >
+      <span className="chat-panel__voice-icon" aria-hidden="true">
+        {isPlaying ? "■" : "▶"}
+      </span>
+      <span className="chat-panel__voice-duration">{formatVoiceDurationPrime(durationMs)}</span>
+    </button>
   );
 };
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
+
 
   const { locale, t } = useLocalization();
   const {
@@ -592,9 +511,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
         {message.kind === "TEXT" ? (
           <p className="chat-panel__bubble">{message.text}</p>
         ) : (
-          <div className="chat-panel__bubble chat-panel__bubble--voice">
+          <div className="chat-panel__bubble--voice">
             <VoicePlaybackBar
-              audioUrl={resolveAudioUrl(message.voice.audioUrl)}
+              sourceUrl={resolveVoiceAudioUrl(message.voice.audioUrl)}
               durationMs={message.voice.durationMs}
               playLabel={t("game.chat.voice.play")}
               stopLabel={t("game.chat.voice.pause")}
