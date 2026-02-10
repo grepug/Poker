@@ -40,3 +40,6 @@ lerna-debug.log*
 # Data storage
 /data
 test-results/
+
+# Playwright artifacts
+playwright-report/
