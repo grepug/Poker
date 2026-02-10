@@ -2045,7 +2045,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextHandComplete(alicePage);
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -2110,6 +2110,90 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await expect(alicePage.locator('[data-testid="payout-segment-1"]')).toContainText(
         'Side Pot #1',
       );
+
+      await verifyChipConservation(alicePage, 5000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('3.5: Side Pot With Folded Caller Shows Only Required Showdown Hands', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await setAllowPlayerStreetRevealAndWait(
+        alicePage,
+        [alicePage, bobPage, charliePage],
+        false,
+      );
+      await requestRebuy(bobPage, 2000);
+      await requestRebuy(charliePage, 2000);
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-all-in"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.fill('[data-testid="raise-input"]', '500');
+      await charliePage.click('[data-testid="action-raise"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(3500);
+      expect(result.playerHands).toHaveLength(2);
+
+      const shownNames = result.playerHands
+        .map((entry: any) => entry.playerName)
+        .sort();
+      expect(shownNames).toEqual(['Alice', 'Charlie']);
+
+      expect(result.payouts).toHaveLength(2);
+      expect(result.payouts[0].amount).toBe(3000);
+      expect(result.payouts[0].eligiblePlayerIds).toHaveLength(2);
+      expect(result.payouts[1].amount).toBe(500);
+      expect(result.payouts[1].eligiblePlayerIds).toHaveLength(1);
+      expect(result.payouts[1].uncontested).toBe(true);
+
+      const bobPlayerId = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.players?.find((player: any) => player.name === 'Bob')?.id ?? null;
+      });
+      if (!bobPlayerId) {
+        throw new Error('Missing Bob player id for side-pot folded-player assertion');
+      }
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(charliePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await expect(alicePage.locator('[data-testid^="hand-result-row-"]')).toHaveCount(2);
+      await expect(alicePage.locator(`[data-testid="hand-result-row-${bobPlayerId}"]`)).toHaveCount(
+        0,
+      );
+
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(charliePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(charliePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
 
       await verifyChipConservation(alicePage, 5000);
     } finally {
@@ -4912,7 +4996,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'Showdown complete',
+        'Hand results are visible to all players.',
       );
       await expect(alicePage.locator('[data-testid="hand-results-community"]')).toBeVisible();
       await expect(
@@ -4961,7 +5045,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.16: Non-Showdown Result Does Not Require Manual Hand Reveal', async ({ browser }) => {
+  test('8.16: Non-Showdown Result Keeps Hole Cards Hidden', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -4975,15 +5059,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'Showdown complete',
+        'Hand results are visible to all players.',
       );
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
-        0,
+        2,
       );
-      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
       await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
-      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
-      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -5221,6 +5305,76 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(totalUiMoney).toBe(3000);
 
       await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('9.4: Folded Player Is Excluded And Only Required Showdown Hands Are Visible', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const pageByName: Record<string, Page> = {
+        Alice: alicePage,
+        Bob: bobPage,
+        Charlie: charliePage,
+      };
+
+      await setAllowPlayerStreetRevealAndWait(
+        alicePage,
+        [alicePage, bobPage, charliePage],
+        false,
+      );
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await completeCurrentHandWithPassiveActions(alicePage, pageByName, 1);
+      const result = await handCompletePromise;
+
+      expect(result.playerHands).toHaveLength(2);
+      const shownNames = result.playerHands
+        .map((entry: any) => entry.playerName)
+        .sort();
+      expect(shownNames).toEqual(['Alice', 'Charlie']);
+
+      const bobPlayerId = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.players?.find((player: any) => player.name === 'Bob')?.id ?? null;
+      });
+      if (!bobPlayerId) {
+        throw new Error('Missing Bob player id for folded-player visibility assertion');
+      }
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(charliePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await expect(alicePage.locator('[data-testid^="hand-result-row-"]')).toHaveCount(2);
+      await expect(alicePage.locator(`[data-testid="hand-result-row-${bobPlayerId}"]`)).toHaveCount(
+        0,
+      );
+
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(charliePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(charliePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
     } finally {
       await teardownThreePlayerSession(session);
     }

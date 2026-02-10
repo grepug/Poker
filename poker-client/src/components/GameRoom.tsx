@@ -806,6 +806,7 @@ export const GameRoom: React.FC = () => {
     lastHandResult,
     finalGameResult,
     lastPlayerActionEvent,
+    revealedHandPlayerIds,
     nextStreetRevealState,
     isHost,
     lastError,
@@ -995,6 +996,10 @@ export const GameRoom: React.FC = () => {
         (lastHandResult?.winners ?? []).map((winner) => [winner.playerId, winner]),
       ),
     [lastHandResult],
+  );
+  const revealedHandPlayerIdSet = useMemo(
+    () => new Set(revealedHandPlayerIds),
+    [revealedHandPlayerIds],
   );
 
   const handResultRows = useMemo(() => {
@@ -2582,7 +2587,7 @@ export const GameRoom: React.FC = () => {
             <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
               {handResultRows.map((entry) => {
                 const isSelf = entry.playerId === player.id;
-                const showCards = true;
+                const showCards = revealedHandPlayerIdSet.has(entry.playerId);
                 const evaluatedHand = entry.hand as HandEvaluation | null;
 
                 return (
