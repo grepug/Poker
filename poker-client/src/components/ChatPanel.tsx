@@ -247,6 +247,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const isAtBottomRef = useRef(true);
   const historyAnchorRef = useRef<{ height: number; top: number } | null>(null);
   const [relativeNow, setRelativeNow] = useState(() => Date.now());
+  const lastRenderedMessageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -558,6 +559,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const handleSubmitText = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (isUploadingVoice) {
+      return;
+    }
+
     const nextText = draft.trim();
     if (!nextText) {
       return;
@@ -566,8 +571,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     sendChatText(nextText);
     setDraft("");
   };
-
-  const canSendText = draft.trim().length > 0 && !isUploadingVoice;
 
   const handleScroll = useCallback(() => {
     const listNode = listRef.current;
@@ -602,9 +605,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
       return;
     }
 
-    if (isAtBottomRef.current || chatMessages.length <= 1) {
+    const latestMessageId = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1].id : null;
+    const hasNewLatestMessage =
+      latestMessageId !== null && latestMessageId !== lastRenderedMessageIdRef.current;
+
+    if (hasNewLatestMessage) {
       listNode.scrollTop = listNode.scrollHeight;
+      isAtBottomRef.current = true;
     }
+
+    lastRenderedMessageIdRef.current = latestMessageId;
   }, [chatLoadingHistory, chatMessages]);
 
   const renderMessage = (message: ChatMessage) => {
@@ -677,42 +687,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
       <div className="chat-panel__composer" data-testid="chat-composer">
         {chatError && <p className="chat-panel__error">{chatError}</p>}
 
-        <div className="chat-panel__voice-status">
-          <p className="chat-panel__shortcut">{t("game.chat.record.shortcut")}</p>
-          <p className="chat-panel__recording-hint">
-            {isRecording
-              ? t("game.chat.record.recording", { seconds: recordingSeconds })
-              : t("game.chat.record.max", { seconds: VOICE_MAX_DURATION_MS / 1000 })}
-          </p>
-        </div>
-
-        <div className="chat-panel__voice-row">
-          <button
-            type="button"
-            onPointerDown={handleVoicePointerDown}
-            onPointerUp={handleVoicePointerUp}
-            onPointerCancel={handleVoicePointerCancel}
-            onPointerLeave={handleVoicePointerLeave}
-            disabled={isUploadingVoice}
-            data-testid="chat-voice-hold-button"
-            className={`chat-panel__voice-button ${isRecording ? "chat-panel__voice-button--recording" : ""}`}
-          >
-            {isRecording
-              ? t("game.chat.record.release")
-              : t("game.chat.record.hold")}
-          </button>
-
-          {isRecording && (
-            <button
-              type="button"
-              onClick={() => stopRecordingNow(true)}
-              className="chat-panel__voice-cancel"
-              data-testid="chat-voice-cancel"
-            >
-              {t("common.cancel")}
-            </button>
-          )}
-        </div>
+        <p className="chat-panel__recording-hint">
+          {isRecording
+            ? t("game.chat.record.recording", { seconds: recordingSeconds })
+            : t("game.chat.record.shortcut")}
+        </p>
 
         <form onSubmit={handleSubmitText} className="chat-panel__text-form">
           <input
@@ -725,12 +704,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
             data-testid="chat-text-input"
           />
           <button
-            type="submit"
-            disabled={!canSendText}
-            className="chat-panel__send"
-            data-testid="chat-send-button"
+            type="button"
+            onPointerDown={handleVoicePointerDown}
+            onPointerUp={handleVoicePointerUp}
+            onPointerCancel={handleVoicePointerCancel}
+            onPointerLeave={handleVoicePointerLeave}
+            disabled={isUploadingVoice}
+            data-testid="chat-voice-hold-button"
+            className={`chat-panel__voice-button chat-panel__voice-button--compact ${isRecording ? "chat-panel__voice-button--recording" : ""}`}
+            aria-label={isRecording ? t("game.chat.record.release") : t("game.chat.record.hold")}
+            title={isRecording ? t("game.chat.record.release") : t("game.chat.record.hold")}
           >
-            {t("game.chat.send")}
+            <span className="chat-panel__voice-button-icon" aria-hidden="true">🎙</span>
           </button>
         </form>
       </div>

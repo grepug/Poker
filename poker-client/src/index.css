@@ -1604,73 +1604,28 @@ body {
   color: #fecaca;
 }
 
-.chat-panel__voice-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
-}
-
-.chat-panel__shortcut,
 .chat-panel__recording-hint {
   margin: 0;
   font-size: 0.66rem;
   color: rgba(186, 230, 253, 0.84);
 }
 
-.chat-panel__voice-row {
-  display: flex;
-  gap: 0.46rem;
-  align-items: center;
-}
-
-.chat-panel__voice-button,
-.chat-panel__voice-cancel,
-.chat-panel__send {
-  border: 1px solid rgba(56, 189, 248, 0.46);
-  border-radius: 0.8rem;
-  background: rgba(8, 47, 73, 0.58);
-  color: #e0f2fe;
-  font-weight: 700;
-}
-
-.chat-panel__voice-button {
-  flex: 1;
-  min-height: 3rem;
-  font-size: 0.9rem;
-  letter-spacing: 0.01em;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.chat-panel__voice-button--recording {
-  border-color: rgba(250, 204, 21, 0.72);
-  background: rgba(180, 83, 9, 0.56);
-  color: #fffbeb;
-}
-
-.chat-panel__voice-cancel {
-  min-height: 3rem;
-  padding: 0 0.95rem;
-  font-size: 0.78rem;
-}
-
 .chat-panel__text-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.42rem;
+  align-items: center;
 }
 
 .chat-panel__input {
   min-width: 0;
   border: 1px solid rgba(56, 189, 248, 0.4);
-  border-radius: 0.72rem;
+  border-radius: 9999px;
   background: rgba(7, 89, 133, 0.34);
   color: #f0f9ff;
   font-size: 0.8rem;
   line-height: 1.2;
-  padding: 0.54rem 0.62rem;
+  padding: 0.58rem 0.75rem;
   outline: none;
 }
 
@@ -1679,16 +1634,39 @@ body {
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
 }
 
-.chat-panel__send {
-  min-width: 4.9rem;
-  min-height: 2.35rem;
-  padding: 0 0.72rem;
-  font-size: 0.76rem;
+.chat-panel__voice-button {
+  border: 1px solid rgba(56, 189, 248, 0.46);
+  border-radius: 9999px;
+  background: rgba(8, 47, 73, 0.58);
+  color: #e0f2fe;
+  font-weight: 700;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.chat-panel__voice-button:disabled,
-.chat-panel__voice-cancel:disabled,
-.chat-panel__send:disabled {
+.chat-panel__voice-button--compact {
+  width: 2.38rem;
+  min-width: 2.38rem;
+  height: 2.38rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-panel__voice-button-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.chat-panel__voice-button--recording {
+  border-color: rgba(250, 204, 21, 0.72);
+  background: rgba(180, 83, 9, 0.56);
+  color: #fffbeb;
+}
+
+.chat-panel__voice-button:disabled {
   opacity: 0.5;
 }
 
