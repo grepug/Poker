@@ -147,9 +147,24 @@ export interface PlayerActedData {
   playerName: string;
   action: PlayerAction;
   amount?: number;
+  displayKind?: PlayerActionDisplayKind;
+  totalBetAfterAction?: number;
+  committedAmount?: number;
+  blindType?: BlindType | null;
   newPot: number;
   newChips: number;
 }
+
+export type BlindType = "SB" | "BB";
+
+export type PlayerActionDisplayKind =
+  | "blind"
+  | "bet-to"
+  | "raise-to"
+  | "call-to"
+  | "all-in-to"
+  | "check"
+  | "fold";
 
 export interface BettingRoundCompleteData {
   nextRound: BettingRound;

@@ -11,9 +11,11 @@ import React, {
 import type {
   Room,
   RoomConfig,
+  BlindType,
   Player,
   Card,
   PlayerAction,
+  PlayerActionDisplayKind,
   BettingRound,
   Hand,
   HandResult,
@@ -34,9 +36,34 @@ export interface PlayerActionFlashEvent {
   action: PlayerAction;
   amount?: number;
   isOpeningBet?: boolean;
+  displayKind?: PlayerActionDisplayKind;
+  totalBetAfterAction?: number;
+  committedAmount?: number;
+  blindType?: BlindType | null;
   newPot: number;
   createdAt: number;
 }
+
+const resolveFallbackDisplayKind = ({
+  action,
+  preRoundCurrentBet,
+}: {
+  action: PlayerAction;
+  preRoundCurrentBet: number;
+}): PlayerActionDisplayKind => {
+  switch (action) {
+    case "fold":
+      return "fold";
+    case "check":
+      return "check";
+    case "call":
+      return "call-to";
+    case "all-in":
+      return "all-in-to";
+    case "raise":
+      return preRoundCurrentBet <= 0 ? "bet-to" : "raise-to";
+  }
+};
 
 export interface NextStreetRevealState {
   nextRound: BettingRound;
@@ -708,19 +735,35 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Player acted:", data);
       const roomSnapshot = roomRef.current;
       const actedPlayerBefore = roomSnapshot?.players.find((p) => p.id === data.playerId);
+      const preRoundCurrentBet = roomSnapshot?.currentHand?.currentBet ?? 0;
+      const preActionCurrentBet = actedPlayerBefore?.currentBet ?? 0;
       const chipsCommitted = actedPlayerBefore
         ? Math.max(0, actedPlayerBefore.chips - data.newChips)
-        : undefined;
-      const resolvedAmount =
-        data.amount ??
-        (data.action === "check" || data.action === "fold" ? undefined : chipsCommitted);
+        : 0;
+      const committedAmount = data.committedAmount ?? chipsCommitted;
+      const isNoChipAction = data.action === "check" || data.action === "fold";
+      const totalBetAfterAction =
+        data.totalBetAfterAction ??
+        (isNoChipAction ? preActionCurrentBet : preActionCurrentBet + committedAmount);
+      const resolvedDisplayKind =
+        data.displayKind ??
+        resolveFallbackDisplayKind({
+          action: data.action,
+          preRoundCurrentBet,
+        });
+      const resolvedAmount = isNoChipAction ? undefined : totalBetAfterAction;
+
       setLastPlayerActionEvent({
         id: `${Date.now()}-${data.playerId}-${data.action}`,
         playerId: data.playerId,
         playerName: data.playerName,
         action: data.action,
         amount: resolvedAmount,
-        isOpeningBet: (roomSnapshot?.currentHand?.currentBet ?? 0) === 0,
+        isOpeningBet: resolvedDisplayKind === "bet-to",
+        displayKind: resolvedDisplayKind,
+        totalBetAfterAction,
+        committedAmount,
+        blindType: data.blindType ?? null,
         newPot: data.newPot,
         createdAt: Date.now(),
       });
@@ -741,10 +784,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                   // We derive the committed amount from chip delta.
                   ...(() => {
                     const chipsCommitted = Math.max(0, p.chips - data.newChips);
+                    const resolvedCommittedAmount = data.committedAmount ?? chipsCommitted;
                     const nextCurrentBet =
-                      data.action === "check" || data.action === "fold"
+                      data.totalBetAfterAction ??
+                      (data.action === "check" || data.action === "fold"
                         ? p.currentBet
-                        : p.currentBet + chipsCommitted;
+                        : p.currentBet + resolvedCommittedAmount);
 
                     return {
                       ...p,
@@ -762,7 +807,18 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       // Update player state if it's the current player
       setPlayer((prev) => {
         if (!prev || prev.id !== data.playerId) return prev;
-        return { ...prev, chips: data.newChips, lastAction: data.action };
+        const committedByDiff = Math.max(0, prev.chips - data.newChips);
+        const resolvedCommittedAmount = data.committedAmount ?? committedByDiff;
+        return {
+          ...prev,
+          chips: data.newChips,
+          lastAction: data.action,
+          currentBet:
+            data.totalBetAfterAction ??
+            (data.action === "check" || data.action === "fold"
+              ? prev.currentBet
+              : prev.currentBet + resolvedCommittedAmount),
+        };
       });
     });
 

@@ -53,6 +53,8 @@ type OrbitAnchorInput = {
   totalSeats: number;
   tableWidth: number;
   tableHeight: number;
+  tableCornerRadiusX: number;
+  tableCornerRadiusY: number;
   seatWidth: number;
   seatHeight: number;
 };
@@ -113,6 +115,13 @@ type ActionPointerVector = {
   y: number;
   angle: number;
   length: number;
+};
+
+type SeatMainState = "turn" | "disconnected" | "all-in" | "folded" | "waiting" | "default";
+
+type SeatActionLabel = {
+  text: string;
+  tone: "blind" | "aggressive" | "call" | "allin" | "pending";
 };
 
 type RulesCopy = {
@@ -493,12 +502,11 @@ const normalizeTrayAmountForDrop = ({
 };
 
 const SEAT_EDGE_PADDING_PX = 2;
-const SEAT_CORNER_DIRECTIONS: Array<[number, number]> = [
-  [-1, -1],
-  [1, -1],
-  [-1, 1],
-  [1, 1],
-];
+const FELT_BORDER_WIDTH_PX = 2;
+const SEAT_OUTER_TOP_OVERHANG_PX = 24;
+const SEAT_OUTER_SIDE_OVERHANG_PX = 4;
+const SEAT_OUTER_BOTTOM_OVERHANG_PX = 3;
+const SEAT_PERIMETER_CLEARANCE_PX = 10;
 
 const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
@@ -523,57 +531,127 @@ const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnch
   };
 };
 
+const isPointInsideRoundedTable = ({
+  x,
+  y,
+  halfTableWidth,
+  halfTableHeight,
+  cornerRadiusX,
+  cornerRadiusY,
+}: {
+  x: number;
+  y: number;
+  halfTableWidth: number;
+  halfTableHeight: number;
+  cornerRadiusX: number;
+  cornerRadiusY: number;
+}): boolean => {
+  const absX = Math.abs(x);
+  const absY = Math.abs(y);
+
+  if (absX > halfTableWidth || absY > halfTableHeight) {
+    return false;
+  }
+
+  const safeCornerRadiusX = Math.max(0, Math.min(halfTableWidth, cornerRadiusX));
+  const safeCornerRadiusY = Math.max(0, Math.min(halfTableHeight, cornerRadiusY));
+  const innerHalfWidth = Math.max(0, halfTableWidth - safeCornerRadiusX);
+  const innerHalfHeight = Math.max(0, halfTableHeight - safeCornerRadiusY);
+
+  if (absX <= innerHalfWidth || absY <= innerHalfHeight) {
+    return true;
+  }
+
+  if (safeCornerRadiusX <= 0 || safeCornerRadiusY <= 0) {
+    return false;
+  }
+
+  const cornerOffsetX = absX - innerHalfWidth;
+  const cornerOffsetY = absY - innerHalfHeight;
+
+  return (
+    (cornerOffsetX * cornerOffsetX) / (safeCornerRadiusX * safeCornerRadiusX) +
+      (cornerOffsetY * cornerOffsetY) / (safeCornerRadiusY * safeCornerRadiusY) <=
+    1
+  );
+};
+
 const canFitSeatAtDistance = ({
   distance,
   cosine,
   sine,
-  halfSeatWidth,
-  halfSeatHeight,
-  radiusX,
-  radiusY,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
+  halfTableWidth,
+  halfTableHeight,
+  cornerRadiusX,
+  cornerRadiusY,
 }: {
   distance: number;
   cosine: number;
   sine: number;
-  halfSeatWidth: number;
-  halfSeatHeight: number;
-  radiusX: number;
-  radiusY: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
+  halfTableWidth: number;
+  halfTableHeight: number;
+  cornerRadiusX: number;
+  cornerRadiusY: number;
 }): boolean => {
   const centerX = distance * cosine;
   const centerY = distance * sine;
 
-  return SEAT_CORNER_DIRECTIONS.every(([xDirection, yDirection]) => {
-    const cornerX = centerX + xDirection * halfSeatWidth;
-    const cornerY = centerY + yDirection * halfSeatHeight;
+  const corners: Array<[number, number]> = [
+    [centerX - leftExtent, centerY - topExtent],
+    [centerX + rightExtent, centerY - topExtent],
+    [centerX - leftExtent, centerY + bottomExtent],
+    [centerX + rightExtent, centerY + bottomExtent],
+  ];
 
-    return (cornerX * cornerX) / (radiusX * radiusX) + (cornerY * cornerY) / (radiusY * radiusY) <= 1;
-  });
+  return corners.every(([cornerX, cornerY]) =>
+    isPointInsideRoundedTable({
+      x: cornerX,
+      y: cornerY,
+      halfTableWidth,
+      halfTableHeight,
+      cornerRadiusX,
+      cornerRadiusY,
+    }),
+  );
 };
 
 const solveSeatDistanceToEdge = ({
   cosine,
   sine,
-  halfSeatWidth,
-  halfSeatHeight,
-  radiusX,
-  radiusY,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
+  halfTableWidth,
+  halfTableHeight,
+  cornerRadiusX,
+  cornerRadiusY,
 }: {
   cosine: number;
   sine: number;
-  halfSeatWidth: number;
-  halfSeatHeight: number;
-  radiusX: number;
-  radiusY: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
+  halfTableWidth: number;
+  halfTableHeight: number;
+  cornerRadiusX: number;
+  cornerRadiusY: number;
 }): number => {
-  const denominator =
-    (cosine * cosine) / (radiusX * radiusX) + (sine * sine) / (radiusY * radiusY);
-  if (denominator <= 0) {
+  if (halfTableWidth <= 0 || halfTableHeight <= 0) {
     return 0;
   }
 
   let low = 0;
-  let high = 1 / Math.sqrt(denominator);
+  let high = Math.hypot(halfTableWidth, halfTableHeight);
 
   for (let index = 0; index < 24; index += 1) {
     const mid = (low + high) / 2;
@@ -582,10 +660,14 @@ const solveSeatDistanceToEdge = ({
         distance: mid,
         cosine,
         sine,
-        halfSeatWidth,
-        halfSeatHeight,
-        radiusX,
-        radiusY,
+        leftExtent,
+        rightExtent,
+        topExtent,
+        bottomExtent,
+        halfTableWidth,
+        halfTableHeight,
+        cornerRadiusX,
+        cornerRadiusY,
       })
     ) {
       low = mid;
@@ -602,6 +684,8 @@ const getOrbitAnchor = ({
   totalSeats,
   tableWidth,
   tableHeight,
+  tableCornerRadiusX,
+  tableCornerRadiusY,
   seatWidth,
   seatHeight,
 }: OrbitAnchorInput): SeatAnchor => {
@@ -616,12 +700,23 @@ const getOrbitAnchor = ({
 
   const centerX = tableWidth / 2;
   const centerY = tableHeight / 2;
-  const radiusX = Math.max(SEAT_EDGE_PADDING_PX + 1, centerX - SEAT_EDGE_PADDING_PX);
-  const radiusY = Math.max(SEAT_EDGE_PADDING_PX + 1, centerY - SEAT_EDGE_PADDING_PX);
-  const halfSeatWidth = seatWidth / 2;
-  const halfSeatHeight = seatHeight / 2;
+  const tableInset = SEAT_EDGE_PADDING_PX + FELT_BORDER_WIDTH_PX;
+  const halfTableWidth = Math.max(tableInset + 1, centerX - tableInset);
+  const halfTableHeight = Math.max(tableInset + 1, centerY - tableInset);
+  const cornerRadiusX = Math.max(
+    0,
+    Math.min(halfTableWidth, tableCornerRadiusX - tableInset),
+  );
+  const cornerRadiusY = Math.max(
+    0,
+    Math.min(halfTableHeight, tableCornerRadiusY - tableInset),
+  );
+  const leftExtent = seatWidth / 2 + SEAT_OUTER_SIDE_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
+  const rightExtent = seatWidth / 2 + SEAT_OUTER_SIDE_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
+  const topExtent = seatHeight / 2 + SEAT_OUTER_TOP_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
+  const bottomExtent = seatHeight / 2 + SEAT_OUTER_BOTTOM_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
 
-  if (halfSeatWidth >= radiusX || halfSeatHeight >= radiusY) {
+  if (leftExtent + rightExtent >= halfTableWidth * 2 || topExtent + bottomExtent >= halfTableHeight * 2) {
     return {
       left: `${centerX}px`,
       top: `${centerY}px`,
@@ -633,10 +728,14 @@ const getOrbitAnchor = ({
   const seatDistance = solveSeatDistanceToEdge({
     cosine,
     sine,
-    halfSeatWidth,
-    halfSeatHeight,
-    radiusX,
-    radiusY,
+    leftExtent,
+    rightExtent,
+    topExtent,
+    bottomExtent,
+    halfTableWidth,
+    halfTableHeight,
+    cornerRadiusX,
+    cornerRadiusY,
   });
 
   const left = centerX + cosine * seatDistance;
@@ -652,10 +751,12 @@ const parseLengthToPixels = ({
   token,
   rootFontSize,
   viewportWidth,
+  referenceLength,
 }: {
   token: string;
   rootFontSize: number;
   viewportWidth: number;
+  referenceLength?: number;
 }): number => {
   const normalized = token.trim().toLowerCase();
   if (normalized.endsWith("rem")) {
@@ -667,9 +768,56 @@ const parseLengthToPixels = ({
   if (normalized.endsWith("px")) {
     return Number.parseFloat(normalized);
   }
+  if (normalized.endsWith("%")) {
+    const percentage = Number.parseFloat(normalized);
+    if (!Number.isFinite(percentage)) {
+      return 0;
+    }
+    return ((referenceLength ?? 0) * percentage) / 100;
+  }
 
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const resolveCornerRadiusPixels = ({
+  borderRadiusValue,
+  tableWidth,
+  tableHeight,
+}: {
+  borderRadiusValue: string;
+  tableWidth: number;
+  tableHeight: number;
+}) => {
+  const normalized = borderRadiusValue.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return {
+      cornerRadiusX: 0,
+      cornerRadiusY: 0,
+    };
+  }
+
+  const [horizontalRaw, verticalRaw] = normalized.split("/").map((value) => value.trim());
+  const horizontalToken = horizontalRaw.split(" ")[0] ?? "0px";
+  const verticalToken = (verticalRaw ?? horizontalRaw).split(" ")[0] ?? horizontalToken;
+
+  const cornerRadiusX = parseLengthToPixels({
+    token: horizontalToken,
+    rootFontSize: 16,
+    viewportWidth: tableWidth,
+    referenceLength: tableWidth,
+  });
+  const cornerRadiusY = parseLengthToPixels({
+    token: verticalToken,
+    rootFontSize: 16,
+    viewportWidth: tableHeight,
+    referenceLength: tableHeight,
+  });
+
+  return {
+    cornerRadiusX: Math.max(0, Math.min(tableWidth / 2, cornerRadiusX)),
+    cornerRadiusY: Math.max(0, Math.min(tableHeight / 2, cornerRadiusY)),
+  };
 };
 
 const resolveSeatSlotWidthPixels = ({
@@ -711,11 +859,11 @@ const resolveSeatSlotWidthPixels = ({
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
-  if (occupiedSeats <= 2) return "clamp(4.1rem, 16vw, 5.3rem)";
-  if (occupiedSeats <= 4) return "clamp(3.8rem, 13.8vw, 4.8rem)";
-  if (occupiedSeats <= 6) return "clamp(3.45rem, 12.2vw, 4.3rem)";
-  if (occupiedSeats <= 8) return "clamp(3.15rem, 10.6vw, 3.85rem)";
-  return "clamp(2.85rem, 9.4vw, 3.45rem)";
+  if (occupiedSeats <= 2) return "clamp(3.55rem, 13.9vw, 4.65rem)";
+  if (occupiedSeats <= 4) return "clamp(3.25rem, 11.9vw, 4.1rem)";
+  if (occupiedSeats <= 6) return "clamp(3rem, 10.7vw, 3.7rem)";
+  if (occupiedSeats <= 8) return "clamp(2.75rem, 9.5vw, 3.35rem)";
+  return "clamp(2.52rem, 8.4vw, 3rem)";
 };
 
 const getSeatRoleIcon = (
@@ -736,6 +884,144 @@ const getSeatRoleIcon = (
     return "small-blind" as const;
   }
   return null;
+};
+
+const resolveSeatMainState = ({
+  isCurrentTurnSeat,
+  isDisconnected,
+  isAllIn,
+  isFolded,
+  isWaiting,
+}: {
+  isCurrentTurnSeat: boolean;
+  isDisconnected: boolean;
+  isAllIn: boolean;
+  isFolded: boolean;
+  isWaiting: boolean;
+}): SeatMainState => {
+  if (isCurrentTurnSeat) return "turn";
+  if (isDisconnected) return "disconnected";
+  if (isAllIn) return "all-in";
+  if (isFolded) return "folded";
+  if (isWaiting) return "waiting";
+  return "default";
+};
+
+const resolveSeatPrimaryActionLabel = ({
+  seatPlayer,
+  isForcedBlind,
+  latestSeatActionEvent,
+  t,
+}: {
+  seatPlayer: Player;
+  isForcedBlind: boolean;
+  latestSeatActionEvent: PlayerActionFlashEvent | null;
+  t: Translate;
+}): SeatActionLabel | null => {
+  if (seatPlayer.currentBet <= 0) {
+    return null;
+  }
+
+  if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
+    return null;
+  }
+
+  if (seatPlayer.lastAction === "check" || seatPlayer.lastAction === "fold") {
+    return null;
+  }
+
+  if (latestSeatActionEvent?.displayKind === "bet-to") {
+    return {
+      text: t("game.seatAction.betTo", { amount: latestSeatActionEvent.totalBetAfterAction ?? seatPlayer.currentBet }),
+      tone: "aggressive",
+    };
+  }
+
+  if (latestSeatActionEvent?.displayKind === "raise-to") {
+    return {
+      text: t("game.seatAction.raiseTo", { amount: latestSeatActionEvent.totalBetAfterAction ?? seatPlayer.currentBet }),
+      tone: "aggressive",
+    };
+  }
+
+  if (latestSeatActionEvent?.displayKind === "call-to") {
+    return {
+      text: t("game.seatAction.callTo", { amount: latestSeatActionEvent.totalBetAfterAction ?? seatPlayer.currentBet }),
+      tone: "call",
+    };
+  }
+
+  if (latestSeatActionEvent?.displayKind === "all-in-to") {
+    return {
+      text: t("game.seatAction.allInTo", { amount: latestSeatActionEvent.totalBetAfterAction ?? seatPlayer.currentBet }),
+      tone: "allin",
+    };
+  }
+
+  if (isForcedBlind && seatPlayer.lastAction === null) {
+    return {
+      text: t("game.seatAction.blind", { amount: seatPlayer.currentBet }),
+      tone: "blind",
+    };
+  }
+
+  if (seatPlayer.lastAction === "call") {
+    return {
+      text: t("game.seatAction.callTo", { amount: seatPlayer.currentBet }),
+      tone: "call",
+    };
+  }
+
+  if (seatPlayer.lastAction === "all-in" || seatPlayer.status === "all-in") {
+    return {
+      text: t("game.seatAction.allInTo", { amount: seatPlayer.currentBet }),
+      tone: "allin",
+    };
+  }
+
+  if (seatPlayer.lastAction === "raise") {
+    return {
+      text: t("game.seatAction.raiseTo", { amount: seatPlayer.currentBet }),
+      tone: "aggressive",
+    };
+  }
+
+  return {
+    text: t("game.seatAction.betTo", { amount: seatPlayer.currentBet }),
+    tone: "aggressive",
+  };
+};
+
+const resolveSeatPendingActionLabel = ({
+  seatPlayer,
+  isCurrentTurnSeat,
+  t,
+}: {
+  seatPlayer: Player;
+  isCurrentTurnSeat: boolean;
+  t: Translate;
+}): SeatActionLabel | null => {
+  if (!isCurrentTurnSeat) {
+    return null;
+  }
+
+  if (
+    seatPlayer.status === "folded" ||
+    seatPlayer.status === "disconnected" ||
+    seatPlayer.status === "waiting" ||
+    seatPlayer.status === "all-in"
+  ) {
+    return null;
+  }
+
+  if (seatPlayer.currentBet > 0) {
+    return null;
+  }
+
+  return {
+    text: t("game.seatAction.pending"),
+    tone: "pending",
+  };
 };
 
 const toActionCenterAlert = (
@@ -768,7 +1054,7 @@ const toActionCenterAlert = (
       return {
         id: event.id,
         playerId: event.playerId,
-        text: withAmount(t("game.actionBubble.call"), event.amount),
+        text: withAmount(t("game.actionBubble.callTo"), event.totalBetAfterAction ?? event.amount),
         playerName: event.playerName,
         tone: "neutral",
         exiting: false,
@@ -777,18 +1063,32 @@ const toActionCenterAlert = (
       return {
         id: event.id,
         playerId: event.playerId,
-        text: withAmount(t("game.actionBubble.allIn"), event.amount),
+        text: withAmount(
+          t("game.actionBubble.allInTo"),
+          event.totalBetAfterAction ?? event.amount,
+        ),
         playerName: event.playerName,
         tone: "allin",
         exiting: false,
       };
     case "raise":
+      if (event.displayKind === "bet-to") {
+        return {
+          id: event.id,
+          playerId: event.playerId,
+          text: withAmount(t("game.actionBubble.betTo"), event.totalBetAfterAction ?? event.amount),
+          playerName: event.playerName,
+          tone: "aggressive",
+          exiting: false,
+        };
+      }
+
       return {
         id: event.id,
         playerId: event.playerId,
         text: withAmount(
-          event.isOpeningBet ? t("game.actionBubble.bet") : t("game.actionBubble.raise"),
-          event.amount,
+          t("game.actionBubble.raiseTo"),
+          event.totalBetAfterAction ?? event.amount,
         ),
         playerName: event.playerName,
         tone: "aggressive",
@@ -1088,6 +1388,30 @@ export const GameRoom: React.FC = () => {
     });
   }, [seatSlotWidth, feltSize.width]);
 
+  const tableCornerRadiusPx = useMemo(() => {
+    if (typeof window === "undefined") {
+      return {
+        cornerRadiusX: 0,
+        cornerRadiusY: 0,
+      };
+    }
+
+    const feltNode = feltOvalRef.current;
+    if (!feltNode || feltSize.width <= 0 || feltSize.height <= 0) {
+      return {
+        cornerRadiusX: 0.42 * feltSize.width,
+        cornerRadiusY: 0.26 * feltSize.height,
+      };
+    }
+
+    const borderRadiusValue = window.getComputedStyle(feltNode).borderRadius;
+    return resolveCornerRadiusPixels({
+      borderRadiusValue,
+      tableWidth: feltSize.width,
+      tableHeight: feltSize.height,
+    });
+  }, [feltSize.height, feltSize.width]);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return undefined;
@@ -1228,11 +1552,23 @@ export const GameRoom: React.FC = () => {
         totalSeats: orderedPlayers.length,
         tableWidth: feltSize.width,
         tableHeight: feltSize.height,
+        tableCornerRadiusX: tableCornerRadiusPx.cornerRadiusX,
+        tableCornerRadiusY: tableCornerRadiusPx.cornerRadiusY,
         seatWidth: seatSlotWidthPx,
         seatHeight: seatSlotWidthPx,
       }),
     }));
-  }, [currentPlayer?.position, feltSize.height, feltSize.width, orbitCapacity, player, room, seatSlotWidthPx]);
+  }, [
+    currentPlayer?.position,
+    feltSize.height,
+    feltSize.width,
+    orbitCapacity,
+    player,
+    room,
+    seatSlotWidthPx,
+    tableCornerRadiusPx.cornerRadiusX,
+    tableCornerRadiusPx.cornerRadiusY,
+  ]);
 
   const communitySlots = Array.from(
     { length: 5 },
@@ -2378,22 +2714,52 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
-              const seatStatusLabel = isFolded
-                ? t("game.status.folded")
-                : isDisconnected
+              const isWaiting = seatPlayer?.status === "waiting";
+              const seatMainState = resolveSeatMainState({
+                isCurrentTurnSeat,
+                isDisconnected,
+                isAllIn,
+                isFolded,
+                isWaiting,
+              });
+              const seatStatusLabel =
+                seatMainState === "disconnected"
                   ? t("game.status.disconnected")
-                  : null;
-              const seatBetText =
-                seatPlayer.currentBet > 0
-                  ? t("game.bet", { amount: seatPlayer.currentBet })
-                  : null;
+                  : seatMainState === "all-in"
+                    ? t("game.status.allIn")
+                    : seatMainState === "folded"
+                      ? t("game.status.folded")
+                      : seatMainState === "waiting"
+                        ? t("game.status.waitingNextHand")
+                        : null;
+              const isForcedBlind = Boolean(
+                currentHand?.bettingRound === "PRE_FLOP" &&
+                  seatPlayer.currentBet > 0 &&
+                  seatPlayer.lastAction === null &&
+                  (seatPlayer.position === currentHand.smallBlindPosition ||
+                    seatPlayer.position === currentHand.bigBlindPosition),
+              );
+              const latestSeatActionEvent =
+                lastPlayerActionEvent?.playerId === seatPlayer.id ? lastPlayerActionEvent : null;
+              const seatPrimaryActionLabel = resolveSeatPrimaryActionLabel({
+                seatPlayer,
+                isForcedBlind,
+                latestSeatActionEvent,
+                t,
+              });
+              const seatPendingActionLabel = resolveSeatPendingActionLabel({
+                seatPlayer,
+                isCurrentTurnSeat,
+                t,
+              });
+              const seatActionLabel = seatPrimaryActionLabel ?? seatPendingActionLabel;
+              const seatRemainingLabel = `$${seatPlayer.chips}`;
               const seatDensityClass =
-                seatSlots.length >= 9
+                seatSlots.length >= 8
                   ? "seat-pod--dense"
-                  : seatSlots.length >= 7
+                  : seatSlots.length >= 5
                     ? "seat-pod--compact"
                     : "seat-pod--spacious";
-
               return (
                 <div
                   key={`seat-slot-${slot.slotIndex}`}
@@ -2410,14 +2776,16 @@ export const GameRoom: React.FC = () => {
                       seatNodeRefs.current[seatPlayer.id] = node;
                     }}
                     data-testid={`player-seat-${seatPlayer.id}`}
-                    className={`seat-pod ${isCurrentTurnSeat ? "seat-pod--turn" : ""} ${
+                    className={`seat-pod ${seatMainState === "turn" ? "seat-pod--turn" : ""} ${
                       seatDensityClass
                     } ${
-                      isAllIn ? "seat-pod--allin" : ""
+                      seatMainState === "all-in" ? "seat-pod--allin" : ""
                     } ${
-                      isDisconnected ? "seat-pod--disconnected" : ""
+                      seatMainState === "disconnected" ? "seat-pod--disconnected" : ""
                     } ${
-                      isFolded ? "seat-pod--folded" : ""
+                      seatMainState === "folded" ? "seat-pod--folded" : ""
+                    } ${
+                      seatMainState === "waiting" ? "seat-pod--waiting" : ""
                     }`}
                   >
                     {isSelfSeat && (
@@ -2438,6 +2806,13 @@ export const GameRoom: React.FC = () => {
                         {roleIcon === "dealer" ? "D" : "SB"}
                       </span>
                     )}
+                    {seatMainState === "turn" && (
+                      <span
+                        className="seat-pod__status-badge seat-pod__status-badge--turn seat-pod__status-badge--turn-external"
+                      >
+                        {t("game.status.acting")}
+                      </span>
+                    )}
                     <div className="seat-pod__row">
                       {seatPlayer.emoji && (
                         <span className="seat-pod__emoji" aria-hidden="true">
@@ -2450,9 +2825,15 @@ export const GameRoom: React.FC = () => {
                       {seatStatusLabel && (
                         <span
                           className={`seat-pod__status-badge ${
-                            isFolded
+                            seatMainState === "folded"
                               ? "seat-pod__status-badge--folded"
-                              : "seat-pod__status-badge--disconnected"
+                              : seatMainState === "disconnected"
+                                ? "seat-pod__status-badge--disconnected"
+                                : seatMainState === "waiting"
+                                  ? "seat-pod__status-badge--waiting"
+                                  : seatMainState === "all-in"
+                                    ? "seat-pod__status-badge--allin"
+                                    : ""
                           }`}
                         >
                           {seatStatusLabel}
@@ -2460,15 +2841,19 @@ export const GameRoom: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="seat-pod__row seat-pod__row--chips">
-                      <div className="seat-pod__stack">${seatPlayer.chips}</div>
+                    <div className="seat-pod__row seat-pod__row--action">
+                      <div
+                        className={`seat-pod__action ${
+                          seatActionLabel ? `seat-pod__action--${seatActionLabel.tone}` : ""
+                        }`}
+                      >
+                        {seatActionLabel?.text ?? " "}
+                      </div>
                     </div>
 
-                    {seatBetText && (
-                      <div className="seat-pod__row seat-pod__row--bet">
-                        <div className="seat-pod__bet seat-pod__bet--active">{seatBetText}</div>
-                      </div>
-                    )}
+                    <div className="seat-pod__row seat-pod__row--remaining">
+                      <div className="seat-pod__remaining">{seatRemainingLabel}</div>
+                    </div>
                   </article>
                 </div>
               );
