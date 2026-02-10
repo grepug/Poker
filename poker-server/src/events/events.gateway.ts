@@ -1149,7 +1149,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       'audio/wav',
       'audio/x-wav',
     ]);
-    if (!allowedMimeTypes.has(voice.mimeType)) {
+    const normalizedVoiceMimeType = voice.mimeType
+      ?.trim()
+      .toLowerCase()
+      .split(';', 1)[0]
+      ?.trim();
+    if (!normalizedVoiceMimeType || !allowedMimeTypes.has(normalizedVoiceMimeType)) {
       throw new Error('Unsupported audio mime type');
     }
 
@@ -1173,7 +1178,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     return {
       kind: 'VOICE',
-      voice,
+      voice: {
+        ...voice,
+        mimeType: normalizedVoiceMimeType,
+      },
     };
   }
 

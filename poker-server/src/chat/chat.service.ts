@@ -60,7 +60,8 @@ export class ChatService {
     }
 
     const mimeType = params.file.mimetype?.trim().toLowerCase();
-    if (!mimeType || !this.allowedVoiceMimeTypes.has(mimeType)) {
+    const normalizedMimeType = mimeType?.split(';', 1)[0]?.trim();
+    if (!normalizedMimeType || !this.allowedVoiceMimeTypes.has(normalizedMimeType)) {
       throw new BadRequestException('Unsupported audio mime type');
     }
 
@@ -84,7 +85,7 @@ export class ChatService {
       roomId,
       playerId,
       fileBuffer: params.file.buffer,
-      mimeType,
+      mimeType: normalizedMimeType,
       originalName: params.file.originalname,
     });
 

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "poker-types";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame } from "../contexts/GameContext";
-import { resolveServerBaseUrl } from "../services/socket.service";
+import { resolveServerResourceUrl } from "../services/socket.service";
 import { getVoicePlaybackState, subscribeVoicePlayback, toggleVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { computeVoiceBubbleWidthPx, formatVoiceDurationPrime, resolveVoiceAudioUrl } from "../utils/voice-message";
@@ -203,7 +203,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
         formData.append("playerId", player.id);
         formData.append("durationMs", String(durationMs));
 
-        const response = await fetch(`${resolveServerBaseUrl()}/api/chat/voice-upload`, {
+        const response = await fetch(resolveServerResourceUrl("/api/chat/voice-upload"), {
           method: "POST",
           body: formData,
           credentials: "include",

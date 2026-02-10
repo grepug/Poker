@@ -143,6 +143,54 @@ describe('EventsGateway chat events', () => {
     expect(response.nextBeforeSeq).toBe(10);
   });
 
+  it('normalizes codec-qualified voice mime type before persisting', async () => {
+    chatStorageService.appendMessage.mockResolvedValueOnce({
+      duplicate: false,
+      message: {
+        id: 'msg-voice-1',
+        roomId: 'ROOM1',
+        seq: 2,
+        kind: 'VOICE',
+        voice: {
+          audioUrl: '/uploads/chat-audio/ROOM1/voice.webm',
+          durationMs: 1200,
+          sizeBytes: 1024,
+          mimeType: 'audio/webm',
+        },
+        sender: {
+          playerId: 'player-1',
+          playerName: 'Alice',
+        },
+        clientMessageId: 'voice-1',
+        createdAt: Date.now(),
+      },
+    });
+
+    const response = await gateway.handleSendChatMessage(
+      { id: 'socket-1', emit: jest.fn() } as any,
+      {
+        kind: 'VOICE',
+        clientMessageId: 'voice-1',
+        voice: {
+          audioUrl: '/uploads/chat-audio/ROOM1/voice.webm',
+          durationMs: 1200,
+          sizeBytes: 1024,
+          mimeType: 'audio/webm;codecs=opus',
+        },
+      },
+    );
+
+    expect(response.success).toBe(true);
+    expect(chatStorageService.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'VOICE',
+        voice: expect.objectContaining({
+          mimeType: 'audio/webm',
+        }),
+      }),
+    );
+  });
+
   it('continues room action queue after a failed task', async () => {
     const runRoomActionSequentially = (gateway as any)
       .runRoomActionSequentially.bind(gateway) as <T>(

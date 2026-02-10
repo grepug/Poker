@@ -1,4 +1,4 @@
-import { resolveServerBaseUrl } from "../services/socket.service";
+import { resolveServerResourceUrl } from "../services/socket.service";
 
 export const normalizeVoiceDurationSeconds = (durationMs: number): number => {
   if (!Number.isFinite(durationMs)) {
@@ -21,10 +21,5 @@ export const computeVoiceBubbleWidthPx = (durationMs: number): number => {
   return Math.round(minWidth + (maxWidth - minWidth) * easedRatio);
 };
 
-export const resolveVoiceAudioUrl = (audioUrl: string): string => {
-  if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
-    return audioUrl;
-  }
-
-  return `${resolveServerBaseUrl()}${audioUrl}`;
-};
+export const resolveVoiceAudioUrl = (audioUrl: string): string =>
+  resolveServerResourceUrl(audioUrl);
