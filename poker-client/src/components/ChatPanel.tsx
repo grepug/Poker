@@ -51,11 +51,166 @@ const chooseRecorderMimeType = (): string | undefined => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
 };
 
-const formatVoiceDuration = (durationMs: number): string => {
-  const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+const formatVoiceDuration = (durationMs: number, minimumSeconds = 1): string => {
+  const totalSeconds = Math.max(minimumSeconds, Math.round(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+
+type VoicePlaybackBarProps = {
+  audioUrl: string;
+  fallbackDurationMs: number;
+  playLabel: string;
+  pauseLabel: string;
+  seekLabel: string;
+};
+
+const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
+  audioUrl,
+  fallbackDurationMs,
+  playLabel,
+  pauseLabel,
+  seekLabel,
+}) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(() =>
+    Math.max(1, Math.round(fallbackDurationMs / 1000)),
+  );
+  const [currentTimeSeconds, setCurrentTimeSeconds] = useState(0);
+
+  useEffect(() => {
+    const fallbackSeconds = Math.max(1, Math.round(fallbackDurationMs / 1000));
+    setDurationSeconds((previous) =>
+      previous > 1 && Number.isFinite(previous) ? previous : fallbackSeconds,
+    );
+  }, [fallbackDurationMs]);
+
+  useEffect(() => {
+    const audioNode = audioRef.current;
+    if (!audioNode) {
+      return;
+    }
+
+    const handleLoadedMetadata = () => {
+      if (Number.isFinite(audioNode.duration) && audioNode.duration > 0) {
+        setDurationSeconds(audioNode.duration);
+      }
+    };
+
+    const handleTimeUpdate = () => {
+      setCurrentTimeSeconds(audioNode.currentTime || 0);
+    };
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTimeSeconds(0);
+    };
+
+    audioNode.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audioNode.addEventListener("timeupdate", handleTimeUpdate);
+    audioNode.addEventListener("play", handlePlay);
+    audioNode.addEventListener("pause", handlePause);
+    audioNode.addEventListener("ended", handleEnded);
+
+    return () => {
+      audioNode.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audioNode.removeEventListener("timeupdate", handleTimeUpdate);
+      audioNode.removeEventListener("play", handlePlay);
+      audioNode.removeEventListener("pause", handlePause);
+      audioNode.removeEventListener("ended", handleEnded);
+      audioNode.pause();
+    };
+  }, [audioUrl]);
+
+  const handleTogglePlayback = useCallback(async () => {
+    const audioNode = audioRef.current;
+    if (!audioNode) {
+      return;
+    }
+
+    if (audioNode.paused) {
+      const allVoiceNodes = document.querySelectorAll<HTMLAudioElement>(
+        ".chat-panel__voice-audio-element",
+      );
+      for (const node of allVoiceNodes) {
+        if (node !== audioNode) {
+          node.pause();
+        }
+      }
+
+      try {
+        await audioNode.play();
+      } catch {
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    audioNode.pause();
+  }, []);
+
+  const handleSeek = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextTime = Number(event.target.value);
+    if (!Number.isFinite(nextTime)) {
+      return;
+    }
+
+    setCurrentTimeSeconds(nextTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = nextTime;
+    }
+  };
+
+  const safeDuration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 1;
+  const displayedDuration = Math.max(safeDuration, currentTimeSeconds);
+
+  return (
+    <div className="chat-panel__voice-player">
+      <button
+        type="button"
+        className="chat-panel__voice-play-toggle"
+        onClick={() => {
+          void handleTogglePlayback();
+        }}
+        aria-label={isPlaying ? pauseLabel : playLabel}
+        title={isPlaying ? pauseLabel : playLabel}
+      >
+        {isPlaying ? "⏸" : "▶"}
+      </button>
+
+      <input
+        type="range"
+        min={0}
+        max={displayedDuration}
+        step={0.1}
+        value={Math.min(currentTimeSeconds, displayedDuration)}
+        onChange={handleSeek}
+        className="chat-panel__voice-progress"
+        aria-label={seekLabel}
+      />
+
+      <span className="chat-panel__voice-time" aria-live="off">
+        {formatVoiceDuration(currentTimeSeconds * 1000, 0)} / {formatVoiceDuration(displayedDuration * 1000)}
+      </span>
+
+      <audio
+        ref={audioRef}
+        className="chat-panel__voice-audio-element"
+        preload="metadata"
+        src={audioUrl}
+      />
+    </div>
+  );
 };
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
@@ -458,17 +613,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
           <p className="chat-panel__bubble">{message.text}</p>
         ) : (
           <div className="chat-panel__bubble chat-panel__bubble--voice">
-            <div className="chat-panel__voice-card-header">
-              <span className="chat-panel__voice-label">{t("game.chat.voiceLabel")}</span>
-              <span className="chat-panel__voice-duration">
-                {formatVoiceDuration(message.voice.durationMs)}
-              </span>
-            </div>
-            <audio
-              className="chat-panel__voice-audio"
-              controls
-              preload="metadata"
-              src={resolveAudioUrl(message.voice.audioUrl)}
+            <span className="chat-panel__voice-label">{t("game.chat.voiceLabel")}</span>
+            <VoicePlaybackBar
+              audioUrl={resolveAudioUrl(message.voice.audioUrl)}
+              fallbackDurationMs={message.voice.durationMs}
+              playLabel={t("game.chat.voice.play")}
+              pauseLabel={t("game.chat.voice.pause")}
+              seekLabel={t("game.chat.voice.seek")}
             />
           </div>
         )}
