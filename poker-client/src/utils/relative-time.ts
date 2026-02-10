@@ -26,7 +26,8 @@ export const formatRelativeTime = (
   locale: Locale,
   now: number = Date.now(),
 ): string => {
-  const deltaSeconds = Math.round((timestamp - now) / 1000);
+  const rawDeltaSeconds = Math.round((timestamp - now) / 1000);
+  const deltaSeconds = rawDeltaSeconds > 0 ? 0 : rawDeltaSeconds;
   const absoluteDelta = Math.abs(deltaSeconds);
 
   let value = deltaSeconds;
