@@ -21,8 +21,13 @@ import type {
   HandResult,
   GameEndedData,
   ClientToServerEvents,
+  ChatHistorySyncData,
+  ChatMessage,
+  SendChatMessageData,
+  VoiceMessagePayload,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
+import { getVoicePlaybackState } from "../services/voice-playback.service";
 import { writeLastPlayerEmoji, writeLastPlayerName } from "../utils/player-name-storage";
 
 export interface PlayerActionFlashEvent {
@@ -95,6 +100,16 @@ type DebugApi = {
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
+  getChatMessages: () => ChatMessage[];
+  getChatUnreadCount: () => number;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (
+    voice: VoiceMessagePayload,
+    clientMessageId?: string,
+  ) => void;
+  loadOlderChatMessages: () => void;
+  setChatPanelOpen: (open: boolean) => void;
+  getVoicePlaybackState: () => { sourceUrl: string | null; isPlaying: boolean };
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
   logState: () => void;
@@ -112,6 +127,11 @@ interface GameContextType {
   isHost: boolean;
   isRecoveringSession: boolean;
   lastError: string | null;
+  chatMessages: ChatMessage[];
+  chatHasMore: boolean;
+  chatLoadingHistory: boolean;
+  chatUnreadCount: number;
+  isChatPanelOpen: boolean;
   createRoom: (playerName: string, playerEmoji?: string) => void;
   joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
@@ -125,6 +145,10 @@ interface GameContextType {
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
+  loadOlderChatMessages: () => void;
+  setChatPanelOpen: (open: boolean) => void;
   clearError: () => void;
 }
 
@@ -240,6 +264,21 @@ function deriveRevealedHandPlayerIdsFromRoom(roomState: Room | null | undefined)
   return roomState?.currentHand?.revealedPlayerIds ?? [];
 }
 
+const CHAT_HISTORY_PAGE_LIMIT = 50;
+
+function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  const bySeq = new Map<number, ChatMessage>();
+  for (const message of messages) {
+    bySeq.set(message.seq, message);
+  }
+
+  return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
+}
+
+function mergeChatMessageLists(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  return normalizeChatMessages([...existing, ...incoming]);
+}
+
 declare global {
   interface Window {
     pokerDebug?: DebugApi;
@@ -260,14 +299,25 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     useState<NextStreetRevealState | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(false);
+  const [chatNextBeforeSeq, setChatNextBeforeSeq] = useState<number | null>(null);
+  const [chatLoadingHistory, setChatLoadingHistory] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [isChatPanelOpen, setIsChatPanelOpenState] = useState(false);
   const roomRef = useRef<Room | null>(null);
   const playerRef = useRef<Player | null>(null);
   const reconnectInFlightRef = useRef(false);
+  const chatPanelOpenRef = useRef(false);
 
   useEffect(() => {
     roomRef.current = room;
     playerRef.current = player;
   }, [room, player]);
+
+  useEffect(() => {
+    chatPanelOpenRef.current = isChatPanelOpen;
+  }, [isChatPanelOpen]);
 
   useEffect(() => {
     if (!room?.id || !player?.id || !player.name) return;
@@ -304,6 +354,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
       clearStoredFinalResult(data.room.id);
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
@@ -323,6 +378,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           : null;
       setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setIsRecoveringSession(false);
       setLastError(null);
     });
@@ -342,6 +402,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           : null;
       setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;
@@ -796,6 +861,31 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       });
     });
 
+    socket.on("CHAT_HISTORY_SYNC", (data: ChatHistorySyncData) => {
+      const normalizedMessages = normalizeChatMessages(data.messages ?? []);
+      setChatMessages((prev) => mergeChatMessageLists(prev, normalizedMessages));
+      setChatHasMore(Boolean(data.hasMore));
+      setChatNextBeforeSeq(data.nextBeforeSeq ?? null);
+      setChatLoadingHistory(false);
+      if (chatPanelOpenRef.current) {
+        setChatUnreadCount(0);
+      }
+    });
+
+    socket.on("CHAT_MESSAGE_ADDED", (data) => {
+      if (!data?.message) {
+        return;
+      }
+
+      setChatMessages((prev) => mergeChatMessageLists(prev, [data.message]));
+      if (
+        !chatPanelOpenRef.current &&
+        data.message.sender.playerId !== playerRef.current?.id
+      ) {
+        setChatUnreadCount((prev) => prev + 1);
+      }
+    });
+
     // Error
     socket.on("ERROR", (data) => {
       console.error("Socket error:", data.message);
@@ -825,6 +915,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("NEW_HAND_STARTING");
       socket.off("NEXT_STREET_REVEAL_STATE");
       socket.off("BETTING_ROUND_COMPLETE");
+      socket.off("CHAT_HISTORY_SYNC");
+      socket.off("CHAT_MESSAGE_ADDED");
       socket.off("ERROR");
     };
   }, [socket]);
@@ -1002,6 +1094,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     setNextStreetRevealState(null);
     setIsRecoveringSession(false);
     setLastError(null);
+    setChatMessages([]);
+    setChatHasMore(false);
+    setChatNextBeforeSeq(null);
+    setChatLoadingHistory(false);
+    setChatUnreadCount(0);
+    setIsChatPanelOpenState(false);
 
     if (!socket) return;
     socket.emit("LEAVE_ROOM", () => {
@@ -1033,6 +1131,97 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     },
     [socket],
   );
+
+  const setChatPanelOpen = useCallback((open: boolean) => {
+    setIsChatPanelOpenState(open);
+    if (open) {
+      setChatUnreadCount(0);
+    }
+  }, []);
+
+  const sendChatPayload = useCallback(
+    (payload: SendChatMessageData) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("SEND_CHAT_MESSAGE", payload, (response: {
+        success?: boolean;
+        error?: string;
+        message?: ChatMessage;
+      }) => {
+        if (!response?.success) {
+          setLastError(response?.error || "Failed to send message");
+          return;
+        }
+
+        const message = response.message;
+        if (message) {
+          setChatMessages((prev) => mergeChatMessageLists(prev, [message]));
+        }
+      });
+    },
+    [socket],
+  );
+
+  const sendChatText = useCallback(
+    (text: string, clientMessageId?: string) => {
+      const normalizedText = text.trim();
+      if (!normalizedText) {
+        return;
+      }
+
+      sendChatPayload({
+        kind: "TEXT",
+        text: normalizedText,
+        clientMessageId: clientMessageId || createActionId(),
+      });
+    },
+    [sendChatPayload],
+  );
+
+  const sendChatVoice = useCallback(
+    (voice: VoiceMessagePayload, clientMessageId?: string) => {
+      sendChatPayload({
+        kind: "VOICE",
+        voice,
+        clientMessageId: clientMessageId || createActionId(),
+      });
+    },
+    [sendChatPayload],
+  );
+
+  const loadOlderChatMessages = useCallback(() => {
+    if (!socket || chatLoadingHistory || !chatHasMore || chatNextBeforeSeq === null) {
+      return;
+    }
+
+    setChatLoadingHistory(true);
+    socket.emit(
+      "GET_CHAT_HISTORY",
+      {
+        beforeSeq: chatNextBeforeSeq,
+        limit: CHAT_HISTORY_PAGE_LIMIT,
+      },
+      (response: {
+        success?: boolean;
+        error?: string;
+        messages?: ChatMessage[];
+        hasMore?: boolean;
+        nextBeforeSeq?: number | null;
+      }) => {
+        setChatLoadingHistory(false);
+        if (!response?.success) {
+          setLastError(response?.error || "Failed to load chat history");
+          return;
+        }
+
+        setChatMessages((prev) =>
+          mergeChatMessageLists(response.messages ?? [], prev),
+        );
+        setChatHasMore(Boolean(response.hasMore));
+        setChatNextBeforeSeq(response.nextBeforeSeq ?? null);
+      },
+    );
+  }, [socket, chatLoadingHistory, chatHasMore, chatNextBeforeSeq]);
 
   const clearError = useCallback(() => setLastError(null), []);
 
@@ -1067,6 +1256,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         leaveRoom,
         requestRebuy,
         updateRoomConfig,
+        getChatMessages: () => chatMessages,
+        getChatUnreadCount: () => chatUnreadCount,
+        sendChatText,
+        sendChatVoice,
+        loadOlderChatMessages,
+        setChatPanelOpen,
+        getVoicePlaybackState,
         clearError,
         emitCustom: (event, data) => {
           const rawSocket = socket as unknown as {
@@ -1104,6 +1300,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     leaveRoom,
     requestRebuy,
     updateRoomConfig,
+    chatMessages,
+    chatUnreadCount,
+    sendChatText,
+    sendChatVoice,
+    loadOlderChatMessages,
+    setChatPanelOpen,
     clearError,
   ]);
 
@@ -1121,6 +1323,11 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         isHost,
         isRecoveringSession,
         lastError,
+        chatMessages,
+        chatHasMore,
+        chatLoadingHistory,
+        chatUnreadCount,
+        isChatPanelOpen,
         createRoom,
         joinRoom,
         startGame,
@@ -1132,6 +1339,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         leaveRoom,
         requestRebuy,
         updateRoomConfig,
+        sendChatText,
+        sendChatVoice,
+        loadOlderChatMessages,
+        setChatPanelOpen,
         clearError,
       }}
     >

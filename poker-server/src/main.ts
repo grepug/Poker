@@ -34,6 +34,10 @@ async function bootstrap() {
     credentials: true,
   });
 
+  const dataDir = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
+  const chatAudioPath = path.join(dataDir, 'chat-audio');
+  app.use('/uploads/chat-audio', express.static(chatAudioPath, { index: false }));
+
   const frontendPathCandidates = [
     process.env.FRONTEND_DIST_PATH?.trim(),
     path.resolve(process.cwd(), '../poker-client/dist'),

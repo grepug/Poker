@@ -74,7 +74,7 @@ export default defineConfig({
     },
     {
       // Avoid watch mode restarts during long e2e runs.
-      command: `PORT=${BACKEND_PORT} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true npm run start`,
+      command: `PORT=${BACKEND_PORT} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true CHAT_RATE_LIMIT_COUNT=500 CHAT_RATE_LIMIT_WINDOW_MS=10000 CHAT_PAGE_SIZE=20 npm run start`,
       url: BACKEND_URL,
       reuseExistingServer: false,
       timeout: 60000,
@@ -83,6 +83,9 @@ export default defineConfig({
         CORS_ORIGIN: FRONTEND_URL,
         CLIENT_URL: FRONTEND_URL,
         TEST_MODE: 'true',
+        CHAT_RATE_LIMIT_COUNT: '500',
+        CHAT_RATE_LIMIT_WINDOW_MS: '10000',
+        CHAT_PAGE_SIZE: '20',
       },
     },
   ],

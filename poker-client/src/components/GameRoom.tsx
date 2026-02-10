@@ -4,8 +4,12 @@ import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
-import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
+import { ChatPanel } from "./ChatPanel";
+import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
+import { playVoicePlayback } from "../services/voice-playback.service";
+import { formatRelativeTime } from "../utils/relative-time";
+import { resolveVoiceAudioUrl } from "../utils/voice-message";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -13,6 +17,31 @@ const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
 const POT_ANIMATION_MS = 360;
 const DESKTOP_SIDE_DOCK_QUERY = "(min-width: 1024px)";
+const CHAT_PREVIEW_TEXT_MAX_LENGTH = 80;
+
+const truncatePreviewText = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+};
+
+const toChatPreviewText = (
+  message: ChatMessage,
+  translate: (key: MessageKey, values?: Record<string, string | number>) => string,
+): string => {
+  if (message.kind === "VOICE") {
+    return translate("game.chat.preview.voice");
+  }
+
+  const normalized = message.text.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return translate("game.chat.preview.empty");
+  }
+
+  return truncatePreviewText(normalized, CHAT_PREVIEW_TEXT_MAX_LENGTH);
+};
 
 type SeatAnchor = {
   top: string;
@@ -1089,6 +1118,10 @@ export const GameRoom: React.FC = () => {
     performAction,
     leaveRoom,
     updateRoomConfig,
+    chatMessages,
+    chatUnreadCount,
+    isChatPanelOpen,
+    setChatPanelOpen,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
@@ -1118,6 +1151,8 @@ export const GameRoom: React.FC = () => {
     }
     return window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
   });
+  const [dismissedPreviewMessageId, setDismissedPreviewMessageId] = useState<string | null>(null);
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
 
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
@@ -1184,6 +1219,34 @@ export const GameRoom: React.FC = () => {
   );
   const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
+
+  const latestChatMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
+  const activePreviewMessage =
+    latestChatMessage && latestChatMessage.id !== dismissedPreviewMessageId
+      ? latestChatMessage
+      : null;
+
+  const handleOpenChatFromPreview = useCallback(() => {
+    if (!activePreviewMessage) {
+      return;
+    }
+
+    if (activePreviewMessage.kind === "VOICE") {
+      void playVoicePlayback(resolveVoiceAudioUrl(activePreviewMessage.voice.audioUrl));
+    }
+
+    setChatPanelOpen(true);
+  }, [activePreviewMessage, setChatPanelOpen]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setRelativeNow(Date.now());
+    }, 30 * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
@@ -2322,7 +2385,7 @@ export const GameRoom: React.FC = () => {
 
   return (
     <main
-      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}`}
+      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}${isChatPanelOpen ? " table-shell--chat-open" : ""}`}
     >
       <header className="table-micro-hud">
         <div className="flex items-center gap-3">
@@ -2415,6 +2478,15 @@ export const GameRoom: React.FC = () => {
           >
             {t("game.rankings")}
           </button>
+          <button
+            onClick={() => setChatPanelOpen(!isChatPanelOpen)}
+            data-testid="open-chat-button"
+            className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+          >
+            {chatUnreadCount > 0
+              ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
+              : t("game.chat.button")}
+          </button>
           {isGameEnded && finalGameResult && (
             <button
               onClick={() => setShowFinalSummaryModal(true)}
@@ -2437,7 +2509,52 @@ export const GameRoom: React.FC = () => {
             )}
           </div>
         </section>
+
+        {!isChatPanelOpen && activePreviewMessage && (
+          <div className="chat-preview-strip" data-testid="chat-preview-strip">
+            <button
+              type="button"
+              className="chat-preview-strip__open"
+              onClick={handleOpenChatFromPreview}
+            >
+              <span className="chat-preview-strip__title">{t("game.chat.preview.title")}</span>
+              <span className="chat-preview-strip__content">
+                <span className="chat-preview-strip__sender">
+                  {activePreviewMessage.sender.playerEmoji
+                    ? `${activePreviewMessage.sender.playerEmoji} `
+                    : ""}
+                  {activePreviewMessage.sender.playerName}
+                </span>
+                <span className="chat-preview-strip__message">
+                  {toChatPreviewText(activePreviewMessage, t)}
+                </span>
+                <time
+                  className="chat-preview-strip__time"
+                  dateTime={new Date(activePreviewMessage.createdAt).toISOString()}
+                >
+                  {formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow)}
+                </time>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="chat-preview-strip__dismiss"
+              data-testid="chat-preview-dismiss"
+              aria-label={t("game.chat.preview.dismiss")}
+              title={t("game.chat.preview.dismiss")}
+              onClick={() => setDismissedPreviewMessageId(activePreviewMessage.id)}
+            >
+              ×
+            </button>
+          </div>
+        )}
       </header>
+
+      {isChatPanelOpen && (
+        <div className="chat-panel-shell">
+          <ChatPanel onClose={() => setChatPanelOpen(false)} />
+        </div>
+      )}
 
       {isWaitingForNextHand && (
         <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">

@@ -84,6 +84,40 @@ const resolveSocketUrl = (explicitUrl?: string) => {
   return `${protocol}://${host}:${port}`;
 };
 
+export const resolveServerBaseUrl = (explicitUrl?: string) =>
+  resolveSocketUrl(explicitUrl);
+
+export const resolveServerResourceUrl = (
+  resourcePath: string,
+  explicitUrl?: string,
+): string => {
+  if (resourcePath.startsWith("http://") || resourcePath.startsWith("https://")) {
+    return resourcePath;
+  }
+
+  const normalizedPath = resourcePath.startsWith("/")
+    ? resourcePath
+    : `/${resourcePath}`;
+
+  const baseUrl = resolveServerBaseUrl(explicitUrl).trim();
+  if (!baseUrl || baseUrl === "/") {
+    return normalizedPath;
+  }
+
+  if (baseUrl.startsWith("/")) {
+    const normalizedBase = baseUrl.replace(/\/+$/, "");
+    return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
+  }
+
+  try {
+    const parsedBase = new URL(baseUrl);
+    return `${parsedBase.origin}${normalizedPath}`;
+  } catch {
+    const normalizedBase = baseUrl.replace(/\/+$/, "");
+    return `${normalizedBase}${normalizedPath}`;
+  }
+};
+
 class SocketService {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
     null;

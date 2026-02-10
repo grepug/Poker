@@ -2,6 +2,13 @@ import { Card } from "./card.types";
 import { Player, PlayerAction } from "./player.types";
 import { Room, RoomConfig, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
+import {
+  ChatHistorySyncData,
+  ChatMessage,
+  GetChatHistoryData,
+  SendChatMessageData,
+  SendChatMessageAck,
+} from "./chat.types";
 
 // ============================================
 // Client -> Server Events
@@ -42,6 +49,11 @@ export interface UpdateRoomConfigData {
   config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>;
 }
 
+export interface GetChatHistoryAck extends ChatHistorySyncData {
+  success: boolean;
+  error?: string;
+}
+
 export interface ClientToServerEvents {
   CREATE_ROOM: (
     data: CreateRoomData,
@@ -70,6 +82,14 @@ export interface ClientToServerEvents {
   REQUEST_REBUY: (
     data: RequestRebuyData,
     callback: (response: any) => void,
+  ) => void;
+  SEND_CHAT_MESSAGE: (
+    data: SendChatMessageData,
+    callback: (response: SendChatMessageAck) => void,
+  ) => void;
+  GET_CHAT_HISTORY: (
+    data: GetChatHistoryData,
+    callback: (response: GetChatHistoryAck) => void,
   ) => void;
   LEAVE_ROOM: (callback: (response: any) => void) => void;
   END_GAME: (callback: (response: any) => void) => void;
@@ -256,6 +276,10 @@ export interface ErrorData {
   code?: string;
 }
 
+export interface ChatMessageAddedData {
+  message: ChatMessage;
+}
+
 export interface ServerToClientEvents {
   ROOM_CREATED: (data: RoomCreatedData) => void;
   ROOM_JOINED: (data: RoomJoinedData) => void;
@@ -280,5 +304,7 @@ export interface ServerToClientEvents {
   PLAYER_REBOUGHT: (data: PlayerReboughtData) => void;
   PLAYER_LEFT: (data: PlayerLeftData) => void;
   GAME_ENDED: (data: GameEndedData) => void;
+  CHAT_HISTORY_SYNC: (data: ChatHistorySyncData) => void;
+  CHAT_MESSAGE_ADDED: (data: ChatMessageAddedData) => void;
   ERROR: (data: ErrorData) => void;
 }

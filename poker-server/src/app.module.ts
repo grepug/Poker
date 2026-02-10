@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { StorageModule } from './storage/storage.module';
 import { GameModule } from './game/game.module';
 import { EventsModule } from './events/events.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { EventsModule } from './events/events.module';
     StorageModule,
     GameModule,
     EventsModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
