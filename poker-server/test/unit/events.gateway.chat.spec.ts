@@ -181,7 +181,8 @@ describe('EventsGateway chat events', () => {
     );
 
     expect(response.success).toBe(true);
-    expect(chatStorageService.appendMessage).toHaveBeenCalledWith(
+    expect(chatStorageService.appendMessage).toHaveBeenCalled();
+    expect(chatStorageService.appendMessage.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         kind: 'VOICE',
         voice: expect.objectContaining({
