@@ -9,6 +9,8 @@ describe('EventsGateway membership mutation serialization', () => {
   let roomState: any;
   let gameService: any;
   let storageService: any;
+  let chatStorageService: any;
+  let chatMediaStorageService: any;
 
   const createPlayer = (params: {
     id: string;
@@ -150,12 +152,33 @@ describe('EventsGateway membership mutation serialization', () => {
       roomExists: jest.fn(),
     };
 
+    chatStorageService = {
+      getMessagePage: jest.fn().mockResolvedValue({
+        messages: [],
+        hasMore: false,
+        nextBeforeSeq: null,
+      }),
+      appendMessage: jest.fn(),
+      hasChatData: jest.fn(),
+      deleteRoomChat: jest.fn(),
+      listRoomsWithChatData: jest.fn().mockResolvedValue([]),
+      pruneRoomMessages: jest.fn().mockResolvedValue({ deleted: 0, remaining: 0 }),
+    };
+
+    chatMediaStorageService = {
+      saveVoiceClip: jest.fn(),
+      deleteRoomMedia: jest.fn(),
+      pruneOrphanMedia: jest.fn().mockResolvedValue({ deleted: 0 }),
+    };
+
     gateway = new EventsGateway(
       gameService,
       {} as any,
       {} as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
       storageService,
+      chatStorageService,
+      chatMediaStorageService,
     );
 
     const roomEmitter = { emit: jest.fn() };

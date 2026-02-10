@@ -463,6 +463,154 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
+
+async function openChatPanel(page: Page) {
+  await page.click('[data-testid="open-chat-button"]');
+  await page.waitForSelector('[data-testid="chat-panel"]', {
+    state: 'visible',
+    timeout: 5000,
+  });
+}
+
+async function sendChatMessagesViaSocket(
+  page: Page,
+  messages: string[],
+  prefix: string,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    async ({ outgoingMessages, idPrefix }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error('Unable to send chat messages: socket unavailable');
+      }
+
+      const now = Date.now();
+      await Promise.all(
+        outgoingMessages.map(
+          (text: string, index: number) =>
+            new Promise<void>((resolve, reject) => {
+              socket.emit(
+                'SEND_CHAT_MESSAGE',
+                {
+                  kind: 'TEXT',
+                  text,
+                  clientMessageId: `${idPrefix}-${now}-${index}-${Math.random()
+                    .toString(36)
+                    .slice(2, 10)}`,
+                },
+                (response: { success?: boolean; error?: string }) => {
+                  if (response?.success) {
+                    resolve();
+                    return;
+                  }
+                  reject(
+                    new Error(
+                      response?.error || 'Unknown SEND_CHAT_MESSAGE failure',
+                    ),
+                  );
+                },
+              );
+            }),
+        ),
+      );
+    },
+    { outgoingMessages: messages, idPrefix: prefix },
+  );
+}
+
+async function getChatMessagesFromDebug(page: Page) {
+  await waitForPokerDebug(page);
+  return page.evaluate(() => (window as any).pokerDebug?.getChatMessages?.() ?? []);
+}
+
+async function sendVoiceMessageViaUpload(page: Page, prefix: string) {
+  await waitForPokerDebug(page);
+
+  return page.evaluate(async ({ idPrefix }) => {
+    const pokerDebug = (window as any).pokerDebug;
+    const room = pokerDebug?.getRoom?.();
+    const player = pokerDebug?.getPlayer?.();
+    const socket = pokerDebug?.getSocket?.();
+
+    if (!room?.id || !player?.id || !socket) {
+      throw new Error('Unable to send voice message: room/player/socket unavailable');
+    }
+
+    const rawServerUrl =
+      socket?.io?.uri ||
+      (window as any).__POKER_SERVER_URL__ ||
+      (window as any).__POKER_RUNTIME_CONFIG__?.serverUrl;
+    if (!rawServerUrl) {
+      throw new Error('Unable to resolve backend url for voice upload');
+    }
+
+    const serverBaseUrl = String(rawServerUrl).replace(/\/$/, '');
+    const blob = new Blob([
+      new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00,
+        0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20,
+        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+        0x40, 0x1f, 0x00, 0x00, 0x80, 0x3e, 0x00, 0x00,
+        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61,
+        0x00, 0x00, 0x00, 0x00,
+      ]),
+    ], {
+      type: 'audio/wav',
+    });
+
+    const formData = new FormData();
+    formData.append('audio', blob, 'test-audio.wav');
+    formData.append('roomId', room.id);
+    formData.append('playerId', player.id);
+    formData.append('durationMs', '1200');
+
+    const uploadResponse = await fetch(
+      `${serverBaseUrl}/api/chat/voice-upload`,
+      {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      },
+    );
+
+    const uploadPayload = await uploadResponse.json();
+    if (!uploadResponse.ok || !uploadPayload?.success || !uploadPayload?.voice) {
+      throw new Error(uploadPayload?.error || 'Voice upload failed');
+    }
+
+    const clientMessageId = `${idPrefix}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+
+    await new Promise<void>((resolve, reject) => {
+      socket.emit(
+        'SEND_CHAT_MESSAGE',
+        {
+          kind: 'VOICE',
+          voice: uploadPayload.voice,
+          clientMessageId,
+        },
+        (response: { success?: boolean; error?: string }) => {
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(
+            new Error(response?.error || 'Failed to emit uploaded voice message'),
+          );
+        },
+      );
+    });
+
+    return {
+      voice: uploadPayload.voice,
+      serverBaseUrl,
+    };
+  }, { idPrefix: prefix });
+}
+
 async function emitPlayerActionWithId(
   page: Page,
   payload: { action: string; amount?: number; actionId?: string },
@@ -5078,6 +5226,209 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
     }
   });
 });
+
+test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
+  test('10.1: Concurrent chat sends keep seq monotonic and deduplicated', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const perPlayerMessages = 10;
+
+      const buildMessages = (sender: string) =>
+        Array.from(
+          { length: perPlayerMessages },
+          (_, index) => `${sender}-chat-${index}`,
+        );
+
+      await Promise.all([
+        sendChatMessagesViaSocket(alicePage, buildMessages('alice'), 'alice'),
+        sendChatMessagesViaSocket(bobPage, buildMessages('bob'), 'bob'),
+        sendChatMessagesViaSocket(charliePage, buildMessages('charlie'), 'charlie'),
+      ]);
+
+      const totalMessages = perPlayerMessages * 3;
+      await alicePage.waitForFunction(
+        (expectedTotal) => {
+          const messages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          if (messages.length !== expectedTotal) {
+            return false;
+          }
+
+          for (let index = 0; index < messages.length; index += 1) {
+            if (messages[index].seq !== index + 1) {
+              return false;
+            }
+          }
+
+          return true;
+        },
+        totalMessages,
+        { timeout: 15000 },
+      );
+
+      const messages = await getChatMessagesFromDebug(alicePage);
+      expect(messages).toHaveLength(totalMessages);
+
+      const seqSet = new Set(messages.map((message: any) => message.seq));
+      const idSet = new Set(messages.map((message: any) => message.id));
+      const clientMessageIdSet = new Set(
+        messages.map((message: any) => message.clientMessageId),
+      );
+
+      expect(seqSet.size).toBe(totalMessages);
+      expect(idSet.size).toBe(totalMessages);
+      expect(clientMessageIdSet.size).toBe(totalMessages);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('10.2: Refresh restores chat and pagination can load full history', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const totalMessages = 65;
+      const messages = Array.from(
+        { length: totalMessages },
+        (_, index) => `history-msg-${index}`,
+      );
+
+      await sendChatMessagesViaSocket(alicePage, messages, 'history');
+
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.reload({ waitUntil: 'domcontentloaded' });
+      await bobPage.unroute(roomRoutePattern);
+
+      await waitForPokerDebug(bobPage);
+      await bobPage.waitForFunction(
+        () => {
+          const pd = (window as any).pokerDebug;
+          return !!pd?.getRoom?.()?.id && !!pd?.getPlayer?.()?.id;
+        },
+        { timeout: 15000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      await bobPage.waitForFunction(
+        ({ latestText }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          return chatMessages.some(
+            (message: any) => message.kind === 'TEXT' && message.text === latestText,
+          );
+        },
+        { latestText: messages[messages.length - 1] },
+        { timeout: 10000 },
+      );
+
+      const initialCount = (await getChatMessagesFromDebug(bobPage)).length;
+      expect(initialCount).toBeLessThan(totalMessages);
+
+      const loadedCount = await bobPage.evaluate(async (expectedCount) => {
+        const sleep = (ms: number) =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+          });
+
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const currentCount =
+            (window as any).pokerDebug?.getChatMessages?.()?.length ?? 0;
+          if (currentCount >= expectedCount) {
+            return currentCount;
+          }
+          (window as any).pokerDebug?.loadOlderChatMessages?.();
+          await sleep(150);
+        }
+
+        return (window as any).pokerDebug?.getChatMessages?.()?.length ?? 0;
+      }, totalMessages);
+
+      expect(loadedCount).toBe(totalMessages);
+
+      const hasEndpoints = await bobPage.evaluate(
+        ({ firstText, lastText }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          const textMessages = chatMessages
+            .filter((message: any) => message.kind === 'TEXT')
+            .map((message: any) => message.text);
+          return {
+            hasFirst: textMessages.includes(firstText),
+            hasLast: textMessages.includes(lastText),
+          };
+        },
+        {
+          firstText: messages[0],
+          lastText: messages[messages.length - 1],
+        },
+      );
+
+      expect(hasEndpoints.hasFirst).toBe(true);
+      expect(hasEndpoints.hasLast).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.3: Voice upload message persists and is playable after sync', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      const uploaded = await sendVoiceMessageViaUpload(alicePage, 'voice');
+
+      await bobPage.waitForFunction(
+        ({ expectedAudioUrl }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          return chatMessages.some(
+            (message: any) =>
+              message.kind === 'VOICE' &&
+              message.voice?.audioUrl === expectedAudioUrl,
+          );
+        },
+        { expectedAudioUrl: uploaded.voice.audioUrl },
+        { timeout: 10000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      await expect(
+        bobPage.locator('[data-testid="chat-message-list"] audio'),
+      ).toHaveCount(1);
+
+      const audioSrc = await bobPage
+        .locator('[data-testid="chat-message-list"] audio')
+        .first()
+        .getAttribute('src');
+      expect(audioSrc).toContain('/uploads/chat-audio/');
+
+      const mediaResponse = await bobPage.request.get(
+        `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`,
+      );
+      expect(mediaResponse.ok()).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+});
+
 
 // Type augmentation for window.pokerDebug
 declare global {

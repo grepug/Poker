@@ -84,6 +84,9 @@ const resolveSocketUrl = (explicitUrl?: string) => {
   return `${protocol}://${host}:${port}`;
 };
 
+export const resolveServerBaseUrl = (explicitUrl?: string) =>
+  resolveSocketUrl(explicitUrl);
+
 class SocketService {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
     null;

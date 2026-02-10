@@ -4,6 +4,7 @@ import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
+import { ChatPanel } from "./ChatPanel";
 import type { HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
 
@@ -788,6 +789,9 @@ export const GameRoom: React.FC = () => {
     performAction,
     leaveRoom,
     updateRoomConfig,
+    chatUnreadCount,
+    isChatPanelOpen,
+    setChatPanelOpen,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
@@ -1981,7 +1985,7 @@ export const GameRoom: React.FC = () => {
 
   return (
     <main
-      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}`}
+      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}${isChatPanelOpen ? " table-shell--chat-open" : ""}`}
     >
       <header className="table-micro-hud">
         <div className="flex items-start gap-3">
@@ -2071,6 +2075,15 @@ export const GameRoom: React.FC = () => {
           >
             {t("game.rankings")}
           </button>
+          <button
+            onClick={() => setChatPanelOpen(!isChatPanelOpen)}
+            data-testid="open-chat-button"
+            className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+          >
+            {chatUnreadCount > 0
+              ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
+              : t("game.chat.button")}
+          </button>
           {isGameEnded && finalGameResult && (
             <button
               onClick={() => setShowFinalSummaryModal(true)}
@@ -2094,6 +2107,12 @@ export const GameRoom: React.FC = () => {
           </div>
         </section>
       </header>
+
+      {isChatPanelOpen && (
+        <div className="chat-panel-shell">
+          <ChatPanel onClose={() => setChatPanelOpen(false)} />
+        </div>
+      )}
 
       {isWaitingForNextHand && (
         <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">

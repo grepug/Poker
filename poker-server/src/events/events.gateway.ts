@@ -14,6 +14,8 @@ import { HandService } from '../game/hand.service';
 import { BettingService } from '../game/betting.service';
 import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
+import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
 import {
   BettingRound,
   CreateRoomData,
@@ -37,6 +39,11 @@ import {
   NextStreetRevealStateData,
   PlayerHandRevealedData,
   RoomConfigUpdatedData,
+  ChatHistorySyncData,
+  ChatMessage,
+  GetChatHistoryData,
+  SendChatMessageData,
+  SendChatMessageAck,
   Card,
 } from 'poker-types';
 
@@ -89,6 +96,38 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
   private readonly maxProcessedActionFingerprints = 10000;
 
+  private processedChatMessageFingerprints: Map<
+    string,
+    { timestamp: number; message: ChatMessage }
+  > = new Map();
+  private readonly processedChatMessageTtlMs = Number(
+    process.env.CHAT_DEDUPE_WINDOW_MS || "600000"
+  );
+  private readonly maxProcessedChatMessageFingerprints = Number(
+    process.env.CHAT_MAX_DEDUPE_CACHE_SIZE || "50000"
+  );
+  private readonly chatRateLimitCount = Number(
+    process.env.CHAT_RATE_LIMIT_COUNT || "5"
+  );
+  private readonly chatRateLimitWindowMs = Number(
+    process.env.CHAT_RATE_LIMIT_WINDOW_MS || "10000"
+  );
+  private readonly chatMessageMaxLength = Number(
+    process.env.CHAT_TEXT_MAX_LENGTH || "300"
+  );
+  private readonly chatVoiceMaxDurationMs = Number(
+    process.env.CHAT_VOICE_MAX_DURATION_MS || "60000"
+  );
+  private readonly chatVoiceMaxBytes = Number(
+    process.env.CHAT_VOICE_MAX_BYTES || "2097152"
+  );
+  private readonly chatPageSize = Number(process.env.CHAT_PAGE_SIZE || "50");
+  private readonly chatPageMaxSize = Number(
+    process.env.CHAT_PAGE_MAX_SIZE || "200"
+  );
+  private readonly chatRateWindows = new Map<string, number[]>();
+
+
   private getRoomShareUrl(client: Socket, roomId: string) {
     const configuredClientUrl = process.env.CLIENT_URL?.trim();
     if (configuredClientUrl) {
@@ -118,6 +157,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly testDeckService: TestDeckService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
+    @Inject('IChatStorageService')
+    private readonly chatStorageService: IChatStorageService,
+    @Inject('IChatMediaStorageService')
+    private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {}
 
   handleConnection(client: Socket) {
@@ -194,6 +237,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       client.emit('ROOM_CREATED', response);
+      await this.emitInitialChatHistory(client, room.id);
       this.logger.log(`Room ${room.id} created`);
 
       return { success: true };
@@ -245,6 +289,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           player,
           room: this.sanitizeRoom(room),
         });
+        await this.emitInitialChatHistory(client, room.id);
 
         this.logger.log(
           `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
@@ -295,6 +340,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           room: this.sanitizeRoom(room),
           yourCards: player.cards,
         });
+        await this.emitInitialChatHistory(client, data.roomId);
 
         this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
           playerId: player.id,
@@ -310,6 +356,131 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Reconnect error: ${error.message}`);
       client.emit('RECONNECT_ERROR', { reason: error.message });
       return { success: false };
+    }
+  }
+
+  @SubscribeMessage('SEND_CHAT_MESSAGE')
+  async handleSendChatMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: SendChatMessageData,
+  ): Promise<SendChatMessageAck> {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) {
+        throw new Error('Not in a room');
+      }
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        if (!room) {
+          throw new Error('Room not found');
+        }
+
+        const sender = room.players.find((player) => player.id === playerInfo.playerId);
+        if (!sender) {
+          throw new Error('Player not found in room');
+        }
+
+        const clientMessageId = data.clientMessageId?.trim();
+        if (!clientMessageId) {
+          throw new Error('clientMessageId is required');
+        }
+
+        const existing = this.getProcessedChatMessage(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          clientMessageId,
+        );
+        if (existing) {
+          return {
+            success: true,
+            duplicate: true,
+            message: existing,
+          };
+        }
+
+        this.assertChatRateLimit(playerInfo.roomId, playerInfo.playerId);
+        const normalized = this.normalizeChatMessageData(data, playerInfo.roomId);
+
+        const appendResult = await this.chatStorageService.appendMessage(
+          {
+            roomId: playerInfo.roomId,
+            kind: normalized.kind,
+            text: normalized.kind === 'TEXT' ? normalized.text : undefined,
+            voice: normalized.kind === 'VOICE' ? normalized.voice : undefined,
+            clientMessageId,
+            sender: {
+              playerId: sender.id,
+              playerName: sender.name,
+              playerEmoji: sender.emoji,
+            },
+          },
+          {
+            dedupeWindowMs: this.processedChatMessageTtlMs,
+          },
+        );
+
+        this.markProcessedChatMessage(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          clientMessageId,
+          appendResult.message,
+        );
+
+        if (!appendResult.duplicate) {
+          this.server.to(playerInfo.roomId).emit('CHAT_MESSAGE_ADDED', {
+            message: appendResult.message,
+          });
+        }
+
+        return {
+          success: true,
+          duplicate: appendResult.duplicate,
+          message: appendResult.message,
+        };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send chat message';
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
+    }
+  }
+
+  @SubscribeMessage('GET_CHAT_HISTORY')
+  async handleGetChatHistory(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: GetChatHistoryData,
+  ): Promise<
+    ChatHistorySyncData & {
+      success: boolean;
+      error?: string;
+    }
+  > {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) {
+        throw new Error('Not in a room');
+      }
+
+      const limit = this.normalizeHistoryPageLimit(data?.limit);
+      const page = await this.chatStorageService.getMessagePage(playerInfo.roomId, {
+        beforeSeq: data?.beforeSeq,
+        limit,
+      });
+
+      return {
+        success: true,
+        ...page,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load chat history';
+      return {
+        success: false,
+        error: message,
+        messages: [],
+        hasMore: false,
+        nextBeforeSeq: null,
+      };
     }
   }
 
@@ -867,6 +1038,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 newHostName: newHost.name,
               });
             }
+          } else {
+            await this.chatStorageService.deleteRoomChat(playerInfo.roomId);
+            await this.chatMediaStorageService.deleteRoomMedia(playerInfo.roomId);
           }
 
           return { success: true };
@@ -875,6 +1049,180 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Leave room error: ${error.message}`);
       return { success: false };
+    }
+  }
+
+  private normalizeHistoryPageLimit(limit?: number): number {
+    if (limit === undefined || !Number.isFinite(limit)) {
+      return Math.min(this.chatPageSize, this.chatPageMaxSize);
+    }
+
+    return Math.min(this.chatPageMaxSize, Math.max(1, Math.floor(limit)));
+  }
+
+  private async emitInitialChatHistory(client: Socket, roomId: string) {
+    try {
+      const page = await this.chatStorageService.getMessagePage(roomId, {
+        limit: this.normalizeHistoryPageLimit(this.chatPageSize),
+      });
+
+      client.emit('CHAT_HISTORY_SYNC', page);
+    } catch (error) {
+      this.logger.warn(
+        'Failed to emit initial chat history for room ' +
+          roomId +
+          ': ' +
+          (error as Error).message,
+      );
+    }
+  }
+
+  private normalizeChatMessageData(
+    data: SendChatMessageData,
+    roomId: string,
+  ):
+    | { kind: 'TEXT'; text: string }
+    | { kind: 'VOICE'; voice: SendChatMessageData['voice'] } {
+    if (!data || (data.kind !== 'TEXT' && data.kind !== 'VOICE')) {
+      throw new Error('Invalid chat message kind');
+    }
+
+    if (data.kind === 'TEXT') {
+      const text = data.text?.trim() || '';
+      if (!text) {
+        throw new Error('Message cannot be empty');
+      }
+      if (text.length > this.chatMessageMaxLength) {
+        throw new Error(`Message exceeds ${this.chatMessageMaxLength} characters`);
+      }
+      return {
+        kind: 'TEXT',
+        text,
+      };
+    }
+
+    const voice = data.voice;
+    if (!voice) {
+      throw new Error('Voice payload is required');
+    }
+
+    const allowedMimeTypes = new Set([
+      'audio/webm',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/x-wav',
+    ]);
+    if (!allowedMimeTypes.has(voice.mimeType)) {
+      throw new Error('Unsupported audio mime type');
+    }
+
+    if (!voice.audioUrl.startsWith(`/uploads/chat-audio/${encodeURIComponent(roomId)}/`)) {
+      throw new Error('Invalid voice audio URL for room');
+    }
+
+    if (!Number.isFinite(voice.durationMs) || voice.durationMs <= 0) {
+      throw new Error('Invalid voice duration');
+    }
+    if (voice.durationMs > this.chatVoiceMaxDurationMs) {
+      throw new Error(`Voice message exceeds ${this.chatVoiceMaxDurationMs}ms`);
+    }
+
+    if (!Number.isFinite(voice.sizeBytes) || voice.sizeBytes <= 0) {
+      throw new Error('Invalid voice size');
+    }
+    if (voice.sizeBytes > this.chatVoiceMaxBytes) {
+      throw new Error(`Voice message exceeds ${this.chatVoiceMaxBytes} bytes`);
+    }
+
+    return {
+      kind: 'VOICE',
+      voice,
+    };
+  }
+
+  private assertChatRateLimit(roomId: string, playerId: string) {
+    const key = `${roomId}:${playerId}`;
+    const now = Date.now();
+    const windowStart = now - this.chatRateLimitWindowMs;
+    const history = (this.chatRateWindows.get(key) || []).filter(
+      (timestamp) => timestamp >= windowStart,
+    );
+
+    if (history.length >= this.chatRateLimitCount) {
+      throw new Error('You are sending messages too quickly');
+    }
+
+    history.push(now);
+    this.chatRateWindows.set(key, history);
+
+    if (this.chatRateWindows.size > 10000) {
+      this.pruneChatRateWindows(now);
+    }
+  }
+
+  private pruneChatRateWindows(now: number) {
+    const windowStart = now - this.chatRateLimitWindowMs;
+    for (const [key, history] of this.chatRateWindows.entries()) {
+      const active = history.filter((timestamp) => timestamp >= windowStart);
+      if (active.length === 0) {
+        this.chatRateWindows.delete(key);
+      } else {
+        this.chatRateWindows.set(key, active);
+      }
+    }
+  }
+
+  private buildChatMessageFingerprint(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+  ): string {
+    return `${roomId}:${playerId}:${clientMessageId}`;
+  }
+
+  private getProcessedChatMessage(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+  ): ChatMessage | null {
+    this.pruneProcessedChatMessages();
+    const key = this.buildChatMessageFingerprint(roomId, playerId, clientMessageId);
+    return this.processedChatMessageFingerprints.get(key)?.message || null;
+  }
+
+  private markProcessedChatMessage(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+    message: ChatMessage,
+  ) {
+    this.pruneProcessedChatMessages();
+
+    const key = this.buildChatMessageFingerprint(roomId, playerId, clientMessageId);
+    this.processedChatMessageFingerprints.set(key, {
+      timestamp: Date.now(),
+      message,
+    });
+
+    if (
+      this.processedChatMessageFingerprints.size >
+      this.maxProcessedChatMessageFingerprints
+    ) {
+      const oldestKey = this.processedChatMessageFingerprints.keys().next().value;
+      if (oldestKey) {
+        this.processedChatMessageFingerprints.delete(oldestKey);
+      }
+    }
+  }
+
+  private pruneProcessedChatMessages() {
+    const cutoff = Date.now() - this.processedChatMessageTtlMs;
+    for (const [key, value] of this.processedChatMessageFingerprints.entries()) {
+      if (value.timestamp < cutoff) {
+        this.processedChatMessageFingerprints.delete(key);
+      }
     }
   }
 
@@ -896,7 +1244,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const queuePromise = previous.finally(() => gate);
     this.roomActionQueues.set(roomId, queuePromise);
 
-    await previous;
+    await previous.catch(() => undefined);
 
     try {
       return await task();
