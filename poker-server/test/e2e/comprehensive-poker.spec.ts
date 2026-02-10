@@ -854,6 +854,76 @@ async function getPlayersMoneyFromUi(
   });
 }
 
+async function assertSeatCardsWithinTableBounds(
+  page: Page,
+  label: string,
+  tolerancePx = 1.5,
+  minSeatCount = 2,
+) {
+  const result = await page.evaluate(({ tolerance }) => {
+    const feltNode = document.querySelector('.felt-oval');
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+    );
+
+    if (!feltNode) {
+      return {
+        hasFelt: false,
+        seatCount: seatNodes.length,
+        failures: [] as Array<{ id: string; reasons: string[] }>,
+      };
+    }
+
+    const feltRect = feltNode.getBoundingClientRect();
+    const failures = seatNodes
+      .map((seatNode) => {
+        const seatRect = seatNode.getBoundingClientRect();
+        const reasons: string[] = [];
+
+        if (seatRect.left < feltRect.left - tolerance) {
+          reasons.push(
+            `left ${seatRect.left.toFixed(1)} < table ${feltRect.left.toFixed(1)}`,
+          );
+        }
+        if (seatRect.right > feltRect.right + tolerance) {
+          reasons.push(
+            `right ${seatRect.right.toFixed(1)} > table ${feltRect.right.toFixed(1)}`,
+          );
+        }
+        if (seatRect.top < feltRect.top - tolerance) {
+          reasons.push(
+            `top ${seatRect.top.toFixed(1)} < table ${feltRect.top.toFixed(1)}`,
+          );
+        }
+        if (seatRect.bottom > feltRect.bottom + tolerance) {
+          reasons.push(
+            `bottom ${seatRect.bottom.toFixed(1)} > table ${feltRect.bottom.toFixed(1)}`,
+          );
+        }
+
+        return {
+          id: seatNode.getAttribute('data-testid') || 'unknown-seat',
+          reasons,
+        };
+      })
+      .filter((entry) => entry.reasons.length > 0);
+
+    return {
+      hasFelt: true,
+      seatCount: seatNodes.length,
+      failures,
+    };
+  }, { tolerance: tolerancePx });
+
+  expect(result.hasFelt, `[${label}] .felt-oval should exist`).toBe(true);
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+
+  expect(
+    result.failures,
+    `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
+}
+
 test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
   test('1.1: Check/Check Scenario - both players check through all rounds', async ({
     browser,
@@ -4141,6 +4211,38 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         return isInsideViewport(foldRect) && isInsideViewport(checkRect);
       });
       expect(controlsAreInViewport).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8a: Seat Cards Stay Inside Table Bounds Across Viewports', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1280, height: 620 }),
+        bobPage.setViewportSize({ width: 1280, height: 620 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'desktop-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'desktop-bob');
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
+
+      await alicePage.waitForTimeout(120);
+      await bobPage.waitForTimeout(120);
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'mobile-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'mobile-bob');
     } finally {
       await teardownTwoPlayerSession(session);
     }

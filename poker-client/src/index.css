@@ -373,6 +373,8 @@ body {
   --seat-stack-size: clamp(0.66rem, 1.48vw, 0.92rem);
   --seat-bet-size: clamp(0.5rem, 1.22vw, 0.68rem);
   position: relative;
+  width: 100%;
+  box-sizing: border-box;
   border: 1.5px solid rgba(6, 95, 70, 0.85);
   border-radius: 0.5rem;
   background: rgba(4, 36, 25, 0.9);
