@@ -1418,12 +1418,15 @@ body {
   left: 0.55rem;
   right: 0.55rem;
   bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  height: min(60vh, 34rem);
   max-height: min(60vh, 34rem);
+  overscroll-behavior: contain;
   z-index: 65;
 }
 
 .chat-panel {
   height: 100%;
+  min-height: 0;
   border: 1px solid rgba(34, 211, 238, 0.4);
   border-radius: 1rem;
   background:
@@ -1463,7 +1466,11 @@ body {
 }
 
 .chat-panel__messages {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: 0.55rem 0.58rem;
   display: flex;
   flex-direction: column;
@@ -1730,6 +1737,7 @@ body {
     right: calc(0.85rem + env(safe-area-inset-right, 0px));
     top: 4.8rem;
     bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    height: auto;
     max-height: none;
     width: clamp(19rem, 25vw, 25rem);
   }
