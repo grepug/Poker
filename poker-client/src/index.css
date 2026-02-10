@@ -182,6 +182,20 @@ body {
   }
 }
 
+.table-shell,
+.table-shell * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.table-shell input,
+.table-shell textarea,
+.table-shell [contenteditable="true"],
+.table-shell .allow-text-select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .table-shell {
   min-height: 100vh;
   padding-top: 0.6rem;

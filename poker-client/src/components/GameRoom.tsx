@@ -1986,13 +1986,22 @@ export const GameRoom: React.FC = () => {
       <header className="table-micro-hud">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <h1
-                className="truncate text-base font-black tracking-tight text-white"
+                className="min-w-0 flex-1 truncate text-base font-black tracking-tight text-white"
                 data-testid="room-title"
               >
                 {t("game.room", { roomId: room.id })}
               </h1>
+              <p
+                className="shrink-0 whitespace-nowrap text-[11px] text-emerald-100/70"
+                data-testid="room-player-count"
+              >
+                {t("game.playersCount", {
+                  count: room.players.length,
+                  max: room.config.maxPlayers,
+                })}
+              </p>
               <button
                 onClick={handleCopyInviteLink}
                 data-testid="copy-room-url-button"
@@ -2001,12 +2010,6 @@ export const GameRoom: React.FC = () => {
                 {t("game.copyInvite")}
               </button>
             </div>
-            <p className="text-[11px] text-emerald-100/70" data-testid="room-player-count">
-              {t("game.playersCount", {
-                count: room.players.length,
-                max: room.config.maxPlayers,
-              })}
-            </p>
             {inviteCopyStatus && (
               <span
                 data-testid="copy-room-url-status"
