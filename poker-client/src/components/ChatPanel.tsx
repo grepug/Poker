@@ -222,10 +222,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     chatHasMore,
     chatLoadingHistory,
     loadOlderChatMessages,
+    sendChatText,
     sendChatVoice,
     setChatPanelOpen,
   } = useGame();
 
+  const [draft, setDraft] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
@@ -553,6 +555,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     scheduleStopRecording(false);
   };
 
+  const handleSubmitText = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const nextText = draft.trim();
+    if (!nextText) {
+      return;
+    }
+
+    sendChatText(nextText);
+    setDraft("");
+  };
+
+  const canSendText = draft.trim().length > 0 && !isUploadingVoice;
+
   const handleScroll = useCallback(() => {
     const listNode = listRef.current;
     if (!listNode) {
@@ -697,6 +713,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
             </button>
           )}
         </div>
+
+        <form onSubmit={handleSubmitText} className="chat-panel__text-form">
+          <input
+            type="text"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={t("game.chat.placeholder")}
+            className="chat-panel__input"
+            maxLength={300}
+            data-testid="chat-text-input"
+          />
+          <button
+            type="submit"
+            disabled={!canSendText}
+            className="chat-panel__send"
+            data-testid="chat-send-button"
+          >
+            {t("game.chat.send")}
+          </button>
+        </form>
       </div>
     </section>
   );

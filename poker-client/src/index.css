@@ -1625,7 +1625,8 @@ body {
 }
 
 .chat-panel__voice-button,
-.chat-panel__voice-cancel {
+.chat-panel__voice-cancel,
+.chat-panel__send {
   border: 1px solid rgba(56, 189, 248, 0.46);
   border-radius: 0.8rem;
   background: rgba(8, 47, 73, 0.58);
@@ -1655,8 +1656,39 @@ body {
   font-size: 0.78rem;
 }
 
+.chat-panel__text-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.42rem;
+}
+
+.chat-panel__input {
+  min-width: 0;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 0.72rem;
+  background: rgba(7, 89, 133, 0.34);
+  color: #f0f9ff;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  padding: 0.54rem 0.62rem;
+  outline: none;
+}
+
+.chat-panel__input:focus {
+  border-color: rgba(125, 211, 252, 0.9);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
+}
+
+.chat-panel__send {
+  min-width: 4.9rem;
+  min-height: 2.35rem;
+  padding: 0 0.72rem;
+  font-size: 0.76rem;
+}
+
 .chat-panel__voice-button:disabled,
-.chat-panel__voice-cancel:disabled {
+.chat-panel__voice-cancel:disabled,
+.chat-panel__send:disabled {
   opacity: 0.5;
 }
 
