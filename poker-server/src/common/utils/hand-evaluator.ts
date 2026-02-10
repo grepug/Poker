@@ -384,7 +384,7 @@ function calculateKickers(ranks: Rank[]): number {
   const sorted = [...ranks].sort((a, b) => getRankValue(b) - getRankValue(a));
   let value = 0;
   for (let i = 0; i < sorted.length; i++) {
-    value += getRankValue(sorted[i]) * Math.pow(100, sorted.length - 1 - i);
+    value += getRankValue(sorted[i]) * Math.pow(15, sorted.length - 1 - i);
   }
   return value;
 }

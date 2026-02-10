@@ -232,13 +232,77 @@ async function teardownThreePlayerSession(session: ThreePlayerSession) {
   ]);
 }
 
-async function startGameFromLobby(alicePage: Page, bobPage: Page) {
+async function startGameFromLobby(
+  alicePage: Page,
+  bobPage: Page,
+  options?: { enableStreetReveal?: boolean },
+) {
+  const desiredStreetReveal = options?.enableStreetReveal ?? false;
+  await setAllowPlayerStreetRevealAndWait(
+    alicePage,
+    [alicePage, bobPage],
+    desiredStreetReveal,
+  );
   await alicePage.click('[data-testid="start-game-button"]');
   await Promise.all([
     alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
     bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
   ]);
   await Promise.all([waitForHoleCards(alicePage), waitForHoleCards(bobPage)]);
+}
+
+async function updateAllowPlayerStreetReveal(page: Page, enabled: boolean) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    (nextValue) =>
+      new Promise<void>((resolve, reject) => {
+        const socket = (window as any).pokerDebug?.getSocket?.();
+        if (!socket) {
+          reject(new Error('socket unavailable'));
+          return;
+        }
+
+        socket.emit(
+          'UPDATE_ROOM_CONFIG',
+          { config: { allowPlayerStreetReveal: nextValue } },
+          (response: { success?: boolean; error?: string }) => {
+            if (response?.success) {
+              resolve();
+            } else {
+              reject(new Error(response?.error || 'UPDATE_ROOM_CONFIG failed'));
+            }
+          },
+        );
+      }),
+    enabled,
+  );
+}
+
+async function waitForAllowPlayerStreetReveal(
+  page: Page,
+  enabled: boolean,
+  timeout = 5000,
+) {
+  await page.waitForFunction(
+    (expected) =>
+      (window as any).pokerDebug?.getRoom?.()?.config?.allowPlayerStreetReveal ===
+      expected,
+    enabled,
+    { timeout },
+  );
+}
+
+async function setAllowPlayerStreetRevealAndWait(
+  hostPage: Page,
+  participantPages: Page[],
+  enabled: boolean,
+) {
+  await updateAllowPlayerStreetReveal(hostPage, enabled);
+  await Promise.all(
+    participantPages.map((page) =>
+      waitForAllowPlayerStreetReveal(page, enabled),
+    ),
+  );
 }
 
 async function waitForHoleCards(page: Page, expectedCount = 2) {
@@ -788,6 +852,76 @@ async function getPlayersMoneyFromUi(
 
     return result;
   });
+}
+
+async function assertSeatCardsWithinTableBounds(
+  page: Page,
+  label: string,
+  tolerancePx = 1.5,
+  minSeatCount = 2,
+) {
+  const result = await page.evaluate(({ tolerance }) => {
+    const feltNode = document.querySelector('.felt-oval');
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+    );
+
+    if (!feltNode) {
+      return {
+        hasFelt: false,
+        seatCount: seatNodes.length,
+        failures: [] as Array<{ id: string; reasons: string[] }>,
+      };
+    }
+
+    const feltRect = feltNode.getBoundingClientRect();
+    const failures = seatNodes
+      .map((seatNode) => {
+        const seatRect = seatNode.getBoundingClientRect();
+        const reasons: string[] = [];
+
+        if (seatRect.left < feltRect.left - tolerance) {
+          reasons.push(
+            `left ${seatRect.left.toFixed(1)} < table ${feltRect.left.toFixed(1)}`,
+          );
+        }
+        if (seatRect.right > feltRect.right + tolerance) {
+          reasons.push(
+            `right ${seatRect.right.toFixed(1)} > table ${feltRect.right.toFixed(1)}`,
+          );
+        }
+        if (seatRect.top < feltRect.top - tolerance) {
+          reasons.push(
+            `top ${seatRect.top.toFixed(1)} < table ${feltRect.top.toFixed(1)}`,
+          );
+        }
+        if (seatRect.bottom > feltRect.bottom + tolerance) {
+          reasons.push(
+            `bottom ${seatRect.bottom.toFixed(1)} > table ${feltRect.bottom.toFixed(1)}`,
+          );
+        }
+
+        return {
+          id: seatNode.getAttribute('data-testid') || 'unknown-seat',
+          reasons,
+        };
+      })
+      .filter((entry) => entry.reasons.length > 0);
+
+    return {
+      hasFelt: true,
+      seatCount: seatNodes.length,
+      failures,
+    };
+  }, { tolerance: tolerancePx });
+
+  expect(result.hasFelt, `[${label}] .felt-oval should exist`).toBe(true);
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+
+  expect(
+    result.failures,
+    `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
 }
 
 test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
@@ -2481,6 +2615,8 @@ test.describe('Poker E2E - Chip Conservation', () => {
     // Play 1 hand to verify chip conservation throughout
     console.log(`\n=== Starting Hand ===`);
 
+    await setAllowPlayerStreetRevealAndWait(alicePage, [alicePage, bobPage], false);
+
     // Start game via UI
     await alicePage.click('[data-testid="start-game-button"]');
     await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
@@ -3414,6 +3550,42 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
     }
   });
 
+  test('7.2b: Higher Pair Beats Lower Pair', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'diamonds', rank: 'A' }, // Alice hole 1
+        { suit: 'hearts', rank: 'Q' }, // Alice hole 2
+        { suit: 'spades', rank: '5' }, // Bob hole 1
+        { suit: 'hearts', rank: 'K' }, // Bob hole 2
+        { suit: 'spades', rank: 'Q' }, // Flop 1
+        { suit: 'clubs', rank: 'K' }, // Flop 2
+        { suit: 'diamonds', rank: '3' }, // Flop 3
+        { suit: 'spades', rank: 'J' }, // Turn
+        { suit: 'spades', rank: '6' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+
+      const result = await handCompletePromise;
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Bob');
+      expect(result.winners[0].hand.rank).toBe('ONE_PAIR');
+      expect(result.winners[0].hand.description).toContain('Pair of Ks');
+
+      const playerHandsByRank = result.playerHands
+        .map((playerHand: any) => playerHand.hand.rank)
+        .sort();
+      expect(playerHandsByRank).toEqual(['ONE_PAIR', 'ONE_PAIR']);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('7.3: Tie (Split Pot)', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
@@ -4044,6 +4216,38 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8a: Seat Cards Stay Inside Table Bounds Across Viewports', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1280, height: 620 }),
+        bobPage.setViewportSize({ width: 1280, height: 620 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'desktop-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'desktop-bob');
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
+
+      await alicePage.waitForTimeout(120);
+      await bobPage.waitForTimeout(120);
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'mobile-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'mobile-bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {
@@ -4337,7 +4541,206 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.13: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
+  test('8.12d: Reconnect During Pending Street Reveal Keeps Reveal Controls', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await alicePage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toBeEnabled();
+
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12e: Reconnect After Final Reveal Keeps Hand Result Actions', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="start-next-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toContainText('Reveal Next Street');
+
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+
+      // Only one player click should be enough to proceed.
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.14: Final Reveal Step Uses Result Copy Before Hand Complete', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toContainText('Reveal Result');
+
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.15: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -4410,7 +4813,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.14: Non-Showdown Result Allows Manual Show My Hand', async ({ browser }) => {
+  test('8.16: Non-Showdown Result Does Not Require Manual Hand Reveal', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -4424,23 +4827,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'without showdown',
+        'Showdown complete',
       );
-      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
-      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
-        2,
-      );
-      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
-      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
-      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
-
-      await alicePage.click('[data-testid="show-my-hand-button"]');
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
         0,
       );
       await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
-      await expect(alicePage.locator('[data-testid="my-hand-revealed-indicator"]')).toBeVisible();
-
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
     } finally {
@@ -4508,6 +4901,36 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(await getYourChipsFromUi(bobPage)).toBe(980);
       expect(await getYourChipsFromUi(charliePage)).toBe(980);
       await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+
+  test('9.1b: Three-Player Fold Keeps Clockwise Turn Progression', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      const afterBobFold = await getRoomSnapshot(alicePage);
+      expect(afterBobFold.currentPlayerName).toBe('Charlie');
     } finally {
       await teardownThreePlayerSession(session);
     }

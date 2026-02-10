@@ -8,6 +8,7 @@ export interface RoomConfig {
   bigBlind: number;
   maxPlayers: number; // 2-10
   reconnectGracePeriod: number; // milliseconds (default 120000)
+  allowPlayerStreetReveal: boolean; // require each player to confirm before revealing the next street
 }
 
 // Complete room state

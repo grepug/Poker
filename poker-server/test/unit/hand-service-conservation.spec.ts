@@ -33,6 +33,9 @@ describe('HandService chip conservation reconciliation', () => {
       name: params.name,
       chips: params.chips,
       totalBuyIn: params.totalBuyIn,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
       position: params.position,
       status: params.status,
       cards: [
@@ -42,6 +45,9 @@ describe('HandService chip conservation reconciliation', () => {
       currentBet: 0,
       lastAction: null,
       lastConnectedAt: Date.now(),
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
     };
   }
 
@@ -78,6 +84,7 @@ describe('HandService chip conservation reconciliation', () => {
         bigBlind: 20,
         maxPlayers: 10,
         reconnectGracePeriod: 30000,
+        allowPlayerStreetReveal: true,
       },
       players: [winner, loser],
       gameState: 'IN_PROGRESS',

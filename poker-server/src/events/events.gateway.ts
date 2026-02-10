@@ -15,12 +15,15 @@ import { BettingService } from '../game/betting.service';
 import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import {
+  BettingRound,
   CreateRoomData,
   JoinRoomData,
   ReconnectData,
   PlayerActionData,
   RequestRebuyData,
+  RevealNextStreetData,
   ShowMyHandData,
+  UpdateRoomConfigData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -31,7 +34,9 @@ import {
   CommunityCardsDealtData,
   HandCompleteData,
   GameEndedData,
+  NextStreetRevealStateData,
   PlayerHandRevealedData,
+  RoomConfigUpdatedData,
   Card,
 } from 'poker-types';
 
@@ -127,30 +132,37 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.socketToPlayer.delete(client.id);
 
     const { roomId, playerId } = playerInfo;
-    const room = await this.getRoom(roomId);
-    const gracePeriod = room?.config?.reconnectGracePeriod ?? 120000;
-    const playerName =
-      room?.players?.find((player) => player.id === playerId)?.name ?? '';
 
-    const existingTimer = this.disconnectTimers.get(playerId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
+    try {
+      await this.runRoomActionSequentially(roomId, async () => {
+        const room = await this.getRoom(roomId);
+        const gracePeriod = room?.config?.reconnectGracePeriod ?? 120000;
+        const playerName =
+          room?.players?.find((player) => player.id === playerId)?.name ?? '';
+
+        const existingTimer = this.disconnectTimers.get(playerId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+
+        // Start grace period timer
+        const timer = setTimeout(async () => {
+          await this.handleDisconnectTimeout(roomId, playerId);
+        }, gracePeriod);
+
+        this.disconnectTimers.set(playerId, timer);
+        await this.gameService.markPlayerDisconnected(roomId, playerId);
+
+        // Notify room of disconnect
+        this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
+          playerId,
+          playerName,
+          gracePeriod,
+        });
+      });
+    } catch (error) {
+      this.logger.error(`Disconnect handling error: ${error.message}`);
     }
-
-    // Start grace period timer
-    const timer = setTimeout(async () => {
-      await this.handleDisconnectTimeout(roomId, playerId);
-    }, gracePeriod);
-
-    this.disconnectTimers.set(playerId, timer);
-    await this.gameService.markPlayerDisconnected(roomId, playerId);
-
-    // Notify room of disconnect
-    this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
-      playerId,
-      playerName,
-      gracePeriod,
-    });
   }
 
   @SubscribeMessage('CREATE_ROOM')
@@ -198,44 +210,47 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: JoinRoomData,
   ) {
     try {
-      const { room, player, rejoined } = await this.gameService.addPlayerToRoom(
-        data.roomId,
-        client.id,
-        data.playerName,
-        data.playerEmoji,
-      );
+      return await this.runRoomActionSequentially(data.roomId, async () => {
+        const { room, player, rejoined } =
+          await this.gameService.addPlayerToRoom(
+            data.roomId,
+            client.id,
+            data.playerName,
+            data.playerEmoji,
+          );
 
-      client.join(room.id);
+        client.join(room.id);
 
-      this.trackPlayerSocket(client.id, room.id, player.id);
+        this.trackPlayerSocket(client.id, room.id, player.id);
 
-      if (rejoined) {
-        const timer = this.disconnectTimers.get(player.id);
-        if (timer) {
-          clearTimeout(timer);
-          this.disconnectTimers.delete(player.id);
+        if (rejoined) {
+          const timer = this.disconnectTimers.get(player.id);
+          if (timer) {
+            clearTimeout(timer);
+            this.disconnectTimers.delete(player.id);
+          }
+
+          this.server.to(room.id).emit('PLAYER_RECONNECTED', {
+            playerId: player.id,
+            playerName: player.name,
+          });
+        } else {
+          // Notify all in room
+          this.server.to(room.id).emit('PLAYER_JOINED', {
+            player: this.sanitizePlayer(player),
+          } as PlayerJoinedData);
         }
 
-        this.server.to(room.id).emit('PLAYER_RECONNECTED', {
-          playerId: player.id,
-          playerName: player.name,
+        client.emit('ROOM_JOINED', {
+          player,
+          room: this.sanitizeRoom(room),
         });
-      } else {
-        // Notify all in room
-        this.server.to(room.id).emit('PLAYER_JOINED', {
-          player: this.sanitizePlayer(player),
-        } as PlayerJoinedData);
-      }
 
-      client.emit('ROOM_JOINED', {
-        player,
-        room: this.sanitizeRoom(room),
+        this.logger.log(
+          `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
+        );
+        return { success: true };
       });
-
-      this.logger.log(
-        `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
-      );
-      return { success: true };
     } catch (error) {
       this.logger.error(`Join room error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
@@ -249,45 +264,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: ReconnectData,
   ) {
     try {
-      const player = await this.gameService.updatePlayerSocket(
-        data.roomId,
-        data.playerName,
-        client.id,
-        data.playerId,
-      );
+      return await this.runRoomActionSequentially(data.roomId, async () => {
+        const player = await this.gameService.updatePlayerSocket(
+          data.roomId,
+          data.playerName,
+          client.id,
+          data.playerId,
+        );
 
-      if (!player) {
-        client.emit('RECONNECT_ERROR', { reason: 'Player not found in room' });
-        return { success: false };
-      }
+        if (!player) {
+          client.emit('RECONNECT_ERROR', { reason: 'Player not found in room' });
+          return { success: false };
+        }
 
-      // Cancel disconnect timer
-      const timer = this.disconnectTimers.get(player.id);
-      if (timer) {
-        clearTimeout(timer);
-        this.disconnectTimers.delete(player.id);
-      }
+        // Cancel disconnect timer
+        const timer = this.disconnectTimers.get(player.id);
+        if (timer) {
+          clearTimeout(timer);
+          this.disconnectTimers.delete(player.id);
+        }
 
-      client.join(data.roomId);
+        client.join(data.roomId);
 
-      this.trackPlayerSocket(client.id, data.roomId, player.id);
+        this.trackPlayerSocket(client.id, data.roomId, player.id);
 
-      // Get full room state - simplified, would need full sync
-      client.emit('RECONNECT_SUCCESS', {
-        player,
-        room: this.sanitizeRoom(await this.getRoom(data.roomId)),
-        yourCards: player.cards,
+        // Get full room state - simplified, would need full sync
+        const room = await this.getRoom(data.roomId);
+        client.emit('RECONNECT_SUCCESS', {
+          player,
+          room: this.sanitizeRoom(room),
+          yourCards: player.cards,
+        });
+
+        this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
+          playerId: player.id,
+          playerName: player.name,
+        });
+
+        this.logger.log(
+          `Player ${player.name} reconnected to room ${data.roomId}`,
+        );
+        return { success: true };
       });
-
-      this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
-        playerId: player.id,
-        playerName: player.name,
-      });
-
-      this.logger.log(
-        `Player ${player.name} reconnected to room ${data.roomId}`,
-      );
-      return { success: true };
     } catch (error) {
       this.logger.error(`Reconnect error: ${error.message}`);
       client.emit('RECONNECT_ERROR', { reason: error.message });
@@ -532,11 +550,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Current hand is still in progress');
       }
 
-      if (room.currentHand.bettingRound === 'SHOWDOWN') {
-        // Showdown is already public by default.
-        return { success: true };
-      }
-
       const completedResult = room.currentHand.lastResult;
       if (!completedResult) {
         throw new Error('No completed hand result available');
@@ -572,6 +585,100 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Show hand error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false };
+    }
+  }
+
+  @SubscribeMessage('REVEAL_NEXT_STREET')
+  async handleRevealNextStreet(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() _data: RevealNextStreetData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const hand = room?.currentHand;
+        if (!room || !hand) throw new Error('No active hand');
+
+        const nextRound = hand.pendingStreetRevealRound;
+        if (!nextRound) {
+          throw new Error('No next street reveal is pending');
+        }
+
+        const required = new Set<string>(
+          hand.nextStreetRequiredPlayerIds ?? this.getStreetRevealRequiredPlayerIds(room),
+        );
+        if (!required.has(playerInfo.playerId)) {
+          throw new Error('You are not eligible to reveal the next street');
+        }
+
+        const ready = new Set<string>(hand.nextStreetReadyPlayerIds ?? []);
+        if (!ready.has(playerInfo.playerId)) {
+          ready.add(playerInfo.playerId);
+          hand.nextStreetReadyPlayerIds = [...ready];
+          hand.nextStreetRequiredPlayerIds = [...required];
+          room.lastActivityAt = Date.now();
+          await this.storageService.saveRoom(room);
+        }
+
+        const revealState: NextStreetRevealStateData = {
+          nextRound,
+          readyPlayerIds: [...ready],
+          requiredPlayerIds: [...required],
+        };
+        this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', revealState);
+
+        const allReady = ready.size > 0;
+        if (allReady) {
+          await this.advanceRoundAndBroadcast(room);
+        }
+
+        return { success: true };
+      });
+    } catch (error) {
+      this.logger.error(`Reveal next street error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
+  @SubscribeMessage('UPDATE_ROOM_CONFIG')
+  async handleUpdateRoomConfig(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: UpdateRoomConfigData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can update settings');
+      }
+
+      const nextAllowReveal = data?.config?.allowPlayerStreetReveal;
+      if (typeof nextAllowReveal !== 'boolean') {
+        return { success: true };
+      }
+
+      room.config = {
+        ...room.config,
+        allowPlayerStreetReveal: nextAllowReveal,
+      };
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+
+      this.server.to(room.id).emit('ROOM_CONFIG_UPDATED', {
+        config: room.config,
+      } as RoomConfigUpdatedData);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Update room config error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false, error: error.message };
     }
   }
 
@@ -734,32 +841,37 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) return { success: true };
 
-      const room = await this.gameService.removePlayerFromRoom(
+      return await this.runRoomActionSequentially(
         playerInfo.roomId,
-        playerInfo.playerId,
+        async () => {
+          const room = await this.gameService.removePlayerFromRoom(
+            playerInfo.roomId,
+            playerInfo.playerId,
+          );
+
+          client.leave(playerInfo.roomId);
+          this.socketToPlayer.delete(client.id);
+
+          if (room) {
+            this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
+              playerId: playerInfo.playerId,
+              playerName: '', // Would need to cache
+            });
+
+            // If host changed
+            const oldHostId = playerInfo.playerId;
+            if (room.hostId !== oldHostId) {
+              const newHost = room.players.find((p) => p.id === room.hostId)!;
+              this.server.to(playerInfo.roomId).emit('HOST_CHANGED', {
+                newHostId: newHost.id,
+                newHostName: newHost.name,
+              });
+            }
+          }
+
+          return { success: true };
+        },
       );
-
-      client.leave(playerInfo.roomId);
-      this.socketToPlayer.delete(client.id);
-
-      if (room) {
-        this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
-          playerId: playerInfo.playerId,
-          playerName: '', // Would need to cache
-        });
-
-        // If host changed
-        const oldHostId = playerInfo.playerId;
-        if (room.hostId !== oldHostId) {
-          const newHost = room.players.find((p) => p.id === room.hostId)!;
-          this.server.to(playerInfo.roomId).emit('HOST_CHANGED', {
-            newHostId: newHost.id,
-            newHostName: newHost.name,
-          });
-        }
-      }
-
-      return { success: true };
     } catch (error) {
       this.logger.error(`Leave room error: ${error.message}`);
       return { success: false };
@@ -857,88 +969,159 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
+    const allowPlayerStreetReveal = room.config?.allowPlayerStreetReveal ?? true;
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
-      const result = await this.handService.determineWinner(room);
-      const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-      const revealedPlayerIds = isShowdown
-        ? result.playerHands.map((entry) => entry.playerId)
-        : [];
-      room.currentHand.lastResult = result;
-      room.currentHand.revealedPlayerIds = revealedPlayerIds;
-      room.currentHand.currentPlayerTurn = null;
-      await this.storageService.saveRoom(room);
+      await this.completeAndBroadcastHand(room);
+      return;
+    }
 
-      const handCompleteData: HandCompleteData = {
-        result,
-        handNumber: room.currentHand.handNumber,
-        isShowdown,
-        revealedPlayerIds,
-      };
+    const nextRound = this.getNextBettingRound(hand.bettingRound);
+    const shouldWaitForPlayerReveal =
+      allowPlayerStreetReveal &&
+      !this.shouldAutoDealRemainingCommunityCards(room);
 
-      this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-      if (this.testDeckService.isTestMode()) {
-        // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-        setTimeout(async () => {
-          try {
-            await this.startAndBroadcastNewHand(room.id);
-          } catch (error) {
-            this.logger.error(`Error starting new hand: ${error.message}`);
-          }
-        }, 5000);
+    if (shouldWaitForPlayerReveal) {
+      const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
+      if (requiredPlayerIds.length === 0) {
+        await this.advanceRoundAndBroadcast(room);
+        return;
       }
-    } else {
-      // Advance to next round
-      const nextRound = await this.handService.advanceBettingRound(room);
-      const updatedRoom = await this.getRoom(room.id);
+
+      for (const seatPlayer of room.players) {
+        seatPlayer.currentBet = 0;
+      }
+      room.currentHand.currentBet = 0;
+      room.currentHand.currentPlayerTurn = null;
+      room.currentHand.roundActions = {};
+      room.currentHand.pendingStreetRevealRound = nextRound;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = requiredPlayerIds;
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
 
       this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
         nextRound,
+        awaitingPlayerStreetReveal: true,
+        readyPlayerIds: [],
+        requiredPlayerIds,
       } as BettingRoundCompleteData);
 
-      this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
-        cards: updatedRoom.currentHand!.communityCards,
-        round: nextRound,
-      } as CommunityCardsDealtData);
+      this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
+        nextRound,
+        readyPlayerIds: [],
+        requiredPlayerIds,
+      } as NextStreetRevealStateData);
+      return;
+    }
 
-      // If we reached showdown, determine winner immediately
-      if (nextRound === 'SHOWDOWN') {
-        const result = await this.handService.determineWinner(updatedRoom);
-        const isShowdown = true;
-        const revealedPlayerIds = result.playerHands.map((entry) => entry.playerId);
-        updatedRoom.currentHand.lastResult = result;
-        updatedRoom.currentHand.revealedPlayerIds = revealedPlayerIds;
-        updatedRoom.currentHand.currentPlayerTurn = null;
-        await this.storageService.saveRoom(updatedRoom);
+    await this.advanceRoundAndBroadcast(room);
+  }
 
-        const handCompleteData: HandCompleteData = {
-          result,
-          handNumber: updatedRoom.currentHand.handNumber,
-          isShowdown,
-          revealedPlayerIds,
-        };
+  private getNextBettingRound(round: BettingRound): BettingRound {
+    switch (round) {
+      case 'PRE_FLOP':
+        return 'FLOP';
+      case 'FLOP':
+        return 'TURN';
+      case 'TURN':
+        return 'RIVER';
+      case 'RIVER':
+      default:
+        return 'SHOWDOWN';
+    }
+  }
 
-        this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-        if (this.testDeckService.isTestMode()) {
-          // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-          setTimeout(async () => {
-            try {
-              await this.startAndBroadcastNewHand(room.id);
-            } catch (error) {
-              this.logger.error(`Error starting new hand: ${error.message}`);
-            }
-          }, 5000);
+  private shouldAutoDealRemainingCommunityCards(room: any): boolean {
+    const hand = room.currentHand;
+    if (!hand) return false;
+
+    const playersWhoCanAct = room.players.filter(
+      (player: any) =>
+        hand.activePlayers.includes(player.id) &&
+        player.status !== 'folded' &&
+        player.status !== 'all-in',
+    );
+
+    return playersWhoCanAct.length <= 1;
+  }
+
+  private getStreetRevealRequiredPlayerIds(room: any): string[] {
+    return room.players
+      .filter(
+        (player: any) =>
+          Boolean(player.cards) &&
+          player.status !== 'waiting' &&
+          player.status !== 'left' &&
+          player.status !== 'disconnected',
+      )
+      .map((player: any) => player.id);
+  }
+
+  private async completeAndBroadcastHand(room: any) {
+    const result = await this.handService.determineWinner(room);
+    const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
+    const revealedPlayerIds = isShowdown
+      ? result.playerHands.map((entry) => entry.playerId)
+      : [];
+    room.currentHand.lastResult = result;
+    room.currentHand.revealedPlayerIds = revealedPlayerIds;
+    room.currentHand.currentPlayerTurn = null;
+    room.currentHand.pendingStreetRevealRound = null;
+    room.currentHand.nextStreetReadyPlayerIds = [];
+    room.currentHand.nextStreetRequiredPlayerIds = [];
+    await this.storageService.saveRoom(room);
+
+    const handCompleteData: HandCompleteData = {
+      result,
+      handNumber: room.currentHand.handNumber,
+      isShowdown,
+      revealedPlayerIds,
+    };
+
+    this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
+    if (this.testDeckService.isTestMode()) {
+      // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
+      setTimeout(async () => {
+        try {
+          await this.startAndBroadcastNewHand(room.id);
+        } catch (error) {
+          this.logger.error(`Error starting new hand: ${error.message}`);
         }
-      } else {
-        // Emit first player's turn for new round
-        const currentPlayer = updatedRoom.players.find(
-          (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
-        );
-        if (currentPlayer) {
-          this.emitPlayerTurn(updatedRoom, currentPlayer);
-        }
-      }
+      }, 5000);
+    }
+  }
+
+  private async advanceRoundAndBroadcast(room: any) {
+    if (room.currentHand) {
+      room.currentHand.pendingStreetRevealRound = null;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = [];
+    }
+
+    const nextRound = await this.handService.advanceBettingRound(room);
+    const updatedRoom = await this.getRoom(room.id);
+
+    this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
+      nextRound,
+    } as BettingRoundCompleteData);
+
+    this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
+      cards: updatedRoom.currentHand!.communityCards,
+      round: nextRound,
+    } as CommunityCardsDealtData);
+
+    if (nextRound === 'SHOWDOWN') {
+      await this.completeAndBroadcastHand(updatedRoom);
+      return;
+    }
+
+    const currentPlayer = updatedRoom.players.find(
+      (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
+    );
+    if (currentPlayer) {
+      this.emitPlayerTurn(updatedRoom, currentPlayer);
     }
   }
 
@@ -999,25 +1182,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleDisconnectTimeout(roomId: string, playerId: string) {
     try {
-      const room = await this.getRoom(roomId);
-
-      // Auto-fold if it's their turn
-      if (room.currentHand?.currentPlayerTurn === playerId) {
-        await this.bettingService.processAction(room, playerId, 'fold');
-
-        this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
-          playerId,
-          playerName: room.players.find((p) => p.id === playerId)?.name || '',
-        });
-
-        // Continue game
-        const updatedRoom = await this.getRoom(roomId);
-        if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
-          await this.handleBettingRoundComplete(updatedRoom);
+      await this.runRoomActionSequentially(roomId, async () => {
+        const room = await this.getRoom(roomId);
+        if (!room) {
+          return;
         }
-      }
 
-      await this.gameService.markPlayerDisconnected(roomId, playerId);
+        const player = room.players.find((p) => p.id === playerId);
+        if (!player || player.status !== 'disconnected') {
+          // Player already reconnected (or left); stale timeout should do nothing.
+          return;
+        }
+
+        // Auto-fold if it's their turn
+        if (room.currentHand?.currentPlayerTurn === playerId) {
+          await this.bettingService.processAction(room, playerId, 'fold');
+
+          this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
+            playerId,
+            playerName: room.players.find((p) => p.id === playerId)?.name || '',
+          });
+
+          // Continue game
+          const updatedRoom = await this.getRoom(roomId);
+          if (!updatedRoom?.currentHand) {
+            await this.gameService.markPlayerDisconnected(roomId, playerId);
+            return;
+          }
+
+          if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
+            await this.handleBettingRoundComplete(updatedRoom);
+          } else {
+            const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+            if (nextPlayer) {
+              updatedRoom.currentHand.currentPlayerTurn = nextPlayer.id;
+              await this.storageService.saveRoom(updatedRoom);
+              this.emitPlayerTurn(updatedRoom, nextPlayer);
+            }
+          }
+        }
+
+        await this.gameService.markPlayerDisconnected(roomId, playerId);
+      });
     } catch (error) {
       this.logger.error(`Disconnect timeout error: ${error.message}`);
     }

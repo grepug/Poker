@@ -19,6 +19,15 @@ type SeatAnchor = {
   left: string;
 };
 
+type OrbitAnchorInput = {
+  slotIndex: number;
+  totalSeats: number;
+  tableWidth: number;
+  tableHeight: number;
+  seatWidth: number;
+  seatHeight: number;
+};
+
 type DropIntent = {
   action: PlayerAction;
   amount?: number;
@@ -410,7 +419,59 @@ const resolveDropIntent = ({
   };
 };
 
-const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
+const normalizeTrayAmountForDrop = ({
+  trayAmount,
+  callAmount,
+  minRaise,
+  stack,
+}: {
+  trayAmount: number;
+  callAmount: number;
+  minRaise: number;
+  stack: number;
+}): number => {
+  if (stack <= 0) {
+    return 0;
+  }
+
+  const clampedAmount = Math.max(0, Math.min(stack, Math.round(trayAmount)));
+  if (clampedAmount <= 0) {
+    return 0;
+  }
+
+  if (clampedAmount === stack) {
+    return stack;
+  }
+
+  if (callAmount > 0) {
+    if (clampedAmount <= callAmount) {
+      return Math.min(callAmount, stack);
+    }
+
+    const minimumRaiseTotal = callAmount + Math.max(minRaise, 0);
+    if (clampedAmount < minimumRaiseTotal) {
+      return minimumRaiseTotal <= stack ? minimumRaiseTotal : stack;
+    }
+
+    return clampedAmount;
+  }
+
+  if (clampedAmount < minRaise) {
+    return minRaise <= stack ? minRaise : stack;
+  }
+
+  return clampedAmount;
+};
+
+const SEAT_EDGE_PADDING_PX = 2;
+const SEAT_CORNER_DIRECTIONS: Array<[number, number]> = [
+  [-1, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+];
+
+const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
   const angleStep = (Math.PI * 2) / safeTotal;
   const startAngle = Math.PI / 2; // Self seat starts at bottom center
@@ -431,6 +492,193 @@ const getOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
     top: `${Math.max(7, Math.min(86, top))}%`,
     left: `${Math.max(5, Math.min(95, left))}%`,
   };
+};
+
+const canFitSeatAtDistance = ({
+  distance,
+  cosine,
+  sine,
+  halfSeatWidth,
+  halfSeatHeight,
+  radiusX,
+  radiusY,
+}: {
+  distance: number;
+  cosine: number;
+  sine: number;
+  halfSeatWidth: number;
+  halfSeatHeight: number;
+  radiusX: number;
+  radiusY: number;
+}): boolean => {
+  const centerX = distance * cosine;
+  const centerY = distance * sine;
+
+  return SEAT_CORNER_DIRECTIONS.every(([xDirection, yDirection]) => {
+    const cornerX = centerX + xDirection * halfSeatWidth;
+    const cornerY = centerY + yDirection * halfSeatHeight;
+
+    return (cornerX * cornerX) / (radiusX * radiusX) + (cornerY * cornerY) / (radiusY * radiusY) <= 1;
+  });
+};
+
+const solveSeatDistanceToEdge = ({
+  cosine,
+  sine,
+  halfSeatWidth,
+  halfSeatHeight,
+  radiusX,
+  radiusY,
+}: {
+  cosine: number;
+  sine: number;
+  halfSeatWidth: number;
+  halfSeatHeight: number;
+  radiusX: number;
+  radiusY: number;
+}): number => {
+  const denominator =
+    (cosine * cosine) / (radiusX * radiusX) + (sine * sine) / (radiusY * radiusY);
+  if (denominator <= 0) {
+    return 0;
+  }
+
+  let low = 0;
+  let high = 1 / Math.sqrt(denominator);
+
+  for (let index = 0; index < 24; index += 1) {
+    const mid = (low + high) / 2;
+    if (
+      canFitSeatAtDistance({
+        distance: mid,
+        cosine,
+        sine,
+        halfSeatWidth,
+        halfSeatHeight,
+        radiusX,
+        radiusY,
+      })
+    ) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+};
+
+const getOrbitAnchor = ({
+  slotIndex,
+  totalSeats,
+  tableWidth,
+  tableHeight,
+  seatWidth,
+  seatHeight,
+}: OrbitAnchorInput): SeatAnchor => {
+  if (tableWidth <= 0 || tableHeight <= 0 || seatWidth <= 0 || seatHeight <= 0) {
+    return getFallbackOrbitAnchor(slotIndex, totalSeats);
+  }
+
+  const safeTotal = Math.max(1, totalSeats);
+  const angleStep = (Math.PI * 2) / safeTotal;
+  const startAngle = Math.PI / 2;
+  const angle = startAngle + slotIndex * angleStep;
+
+  const centerX = tableWidth / 2;
+  const centerY = tableHeight / 2;
+  const radiusX = Math.max(SEAT_EDGE_PADDING_PX + 1, centerX - SEAT_EDGE_PADDING_PX);
+  const radiusY = Math.max(SEAT_EDGE_PADDING_PX + 1, centerY - SEAT_EDGE_PADDING_PX);
+  const halfSeatWidth = seatWidth / 2;
+  const halfSeatHeight = seatHeight / 2;
+
+  if (halfSeatWidth >= radiusX || halfSeatHeight >= radiusY) {
+    return {
+      left: `${centerX}px`,
+      top: `${centerY}px`,
+    };
+  }
+
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const seatDistance = solveSeatDistanceToEdge({
+    cosine,
+    sine,
+    halfSeatWidth,
+    halfSeatHeight,
+    radiusX,
+    radiusY,
+  });
+
+  const left = centerX + cosine * seatDistance;
+  const top = centerY + sine * seatDistance;
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
+};
+
+const parseLengthToPixels = ({
+  token,
+  rootFontSize,
+  viewportWidth,
+}: {
+  token: string;
+  rootFontSize: number;
+  viewportWidth: number;
+}): number => {
+  const normalized = token.trim().toLowerCase();
+  if (normalized.endsWith("rem")) {
+    return Number.parseFloat(normalized) * rootFontSize;
+  }
+  if (normalized.endsWith("vw")) {
+    return (Number.parseFloat(normalized) / 100) * viewportWidth;
+  }
+  if (normalized.endsWith("px")) {
+    return Number.parseFloat(normalized);
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const resolveSeatSlotWidthPixels = ({
+  seatSlotWidth,
+  rootFontSize,
+  viewportWidth,
+}: {
+  seatSlotWidth: string;
+  rootFontSize: number;
+  viewportWidth: number;
+}): number => {
+  const normalized = seatSlotWidth.replace(/\s+/g, "");
+  const clampMatch = normalized.match(/^clamp\(([^,]+),([^,]+),([^)]+)\)$/i);
+  if (!clampMatch) {
+    return parseLengthToPixels({
+      token: normalized,
+      rootFontSize,
+      viewportWidth,
+    });
+  }
+
+  const minValue = parseLengthToPixels({
+    token: clampMatch[1],
+    rootFontSize,
+    viewportWidth,
+  });
+  const preferredValue = parseLengthToPixels({
+    token: clampMatch[2],
+    rootFontSize,
+    viewportWidth,
+  });
+  const maxValue = parseLengthToPixels({
+    token: clampMatch[3],
+    rootFontSize,
+    viewportWidth,
+  });
+
+  return Math.max(minValue, Math.min(maxValue, preferredValue));
 };
 
 const getSeatSlotWidth = (occupiedSeats: number) => {
@@ -529,16 +777,17 @@ export const GameRoom: React.FC = () => {
     lastHandResult,
     finalGameResult,
     lastPlayerActionEvent,
-    revealedHandPlayerIds,
+    nextStreetRevealState,
     isHost,
     lastError,
     clearError,
     startGame,
     startNextHand,
     endGame,
-    showMyHand,
+    revealNextStreet,
     performAction,
     leaveRoom,
+    updateRoomConfig,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
@@ -561,6 +810,7 @@ export const GameRoom: React.FC = () => {
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
   const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
   const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -574,6 +824,7 @@ export const GameRoom: React.FC = () => {
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
   const turnOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
+  const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
   const actionAlertHideTimeoutRef = useRef<number | null>(null);
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
@@ -581,6 +832,7 @@ export const GameRoom: React.FC = () => {
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
+  const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
@@ -612,6 +864,16 @@ export const GameRoom: React.FC = () => {
     (value: number) => Math.max(0, Math.min(maxStack, Math.round(value))),
     [maxStack],
   );
+  const normalizeTrayAmount = useCallback(
+    (value: number) =>
+      normalizeTrayAmountForDrop({
+        trayAmount: value,
+        callAmount,
+        minRaise,
+        stack: maxStack,
+      }),
+    [callAmount, maxStack, minRaise],
+  );
   const canCheck = callAmount === 0;
   const resolvedPlayerId = currentPlayer?.id ?? player?.id ?? null;
   const isYourTurn = Boolean(
@@ -624,39 +886,45 @@ export const GameRoom: React.FC = () => {
 
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
+  const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
   const canHostStartNextHand =
-    isHost && isGameStarted && isHandPausedForNext && (room?.players.length ?? 0) >= 2;
-  const canHostEndGame = isHost && isGameStarted && isHandPausedForNext;
+    isHost && isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
+  const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
   const isWaitingForHostToStartNextHand =
-    !isHost && isGameStarted && isHandPausedForNext && Boolean(lastHandResult);
-
-  const isShowdownComplete =
-    Boolean(lastHandResult) &&
-    isHandPausedForNext &&
-    currentHand?.bettingRound === "SHOWDOWN";
+    !isHost && isGameStarted && isHandPausedForNextHand;
 
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
-  const canRevealMyCompletedHand =
-    Boolean(lastHandResult) && Boolean(myCompletedHand) && !isShowdownComplete;
   const displayHoleCards =
     isHandPausedForNext && myCompletedHand?.cards?.length
       ? myCompletedHand.cards
       : yourCards;
   const hasHoleCards = Boolean(displayHoleCards && displayHoleCards.length > 0);
-  const shouldRenderCardsFlyout = Boolean(isGameStarted || hasHoleCards || canRevealMyCompletedHand);
+  const shouldRenderCardsFlyout = Boolean(isGameStarted || hasHoleCards);
   const isWaitingForNextHand =
     Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
-  const revealedHandPlayerIdSet = useMemo(
-    () => new Set(revealedHandPlayerIds),
-    [revealedHandPlayerIds],
+  const nextStreetReadyPlayerIdSet = useMemo(
+    () => new Set(nextStreetRevealState?.readyPlayerIds ?? []),
+    [nextStreetRevealState?.readyPlayerIds],
   );
-  const isMyCompletedHandRevealed = player?.id
-    ? revealedHandPlayerIdSet.has(player.id)
+  const nextStreetRequiredPlayerIdSet = useMemo(
+    () => new Set(nextStreetRevealState?.requiredPlayerIds ?? []),
+    [nextStreetRevealState?.requiredPlayerIds],
+  );
+  const canRevealNextStreet = Boolean(
+    !lastHandResult &&
+      nextStreetRevealState &&
+      player?.id &&
+      nextStreetRequiredPlayerIdSet.has(player.id) &&
+      isPlayerStreetRevealEnabled,
+  );
+  const hasRevealedNextStreet = player?.id
+    ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
-  const isPlayerHandVisible = (playerId: string) =>
-    isShowdownComplete || revealedHandPlayerIdSet.has(playerId);
+  const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
+  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
+  const isAwaitingStreetReveal = showNextStreetActionArea;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -737,6 +1005,65 @@ export const GameRoom: React.FC = () => {
     () => getSeatSlotWidth(room?.players.length ?? 0),
     [room?.players.length],
   );
+  const seatSlotWidthPx = useMemo(() => {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+
+    const rootFontSize =
+      Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+    const viewportWidth = Math.max(window.innerWidth, feltSize.width);
+    return resolveSeatSlotWidthPixels({
+      seatSlotWidth,
+      rootFontSize,
+      viewportWidth,
+    });
+  }, [seatSlotWidth, feltSize.width]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const feltNode = feltOvalRef.current;
+    if (!feltNode) {
+      return undefined;
+    }
+
+    const updateFeltSize = () => {
+      const nextWidth = Math.ceil(feltNode.getBoundingClientRect().width);
+      const nextHeight = Math.ceil(feltNode.getBoundingClientRect().height);
+
+      setFeltSize((previous) => {
+        if (previous.width === nextWidth && previous.height === nextHeight) {
+          return previous;
+        }
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    updateFeltSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateFeltSize);
+      return () => {
+        window.removeEventListener("resize", updateFeltSize);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(updateFeltSize);
+    resizeObserver.observe(feltNode);
+    window.addEventListener("resize", updateFeltSize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateFeltSize);
+    };
+  }, []);
+
   const playerRankings = useMemo(
     () => {
       if (!room) return [];
@@ -828,9 +1155,16 @@ export const GameRoom: React.FC = () => {
       slotIndex,
       position: seatPlayer.position,
       seatPlayer,
-      anchor: getOrbitAnchor(slotIndex, orderedPlayers.length),
+      anchor: getOrbitAnchor({
+        slotIndex,
+        totalSeats: orderedPlayers.length,
+        tableWidth: feltSize.width,
+        tableHeight: feltSize.height,
+        seatWidth: seatSlotWidthPx,
+        seatHeight: seatSlotWidthPx,
+      }),
     }));
-  }, [currentPlayer?.position, orbitCapacity, player, room]);
+  }, [currentPlayer?.position, feltSize.height, feltSize.width, orbitCapacity, player, room, seatSlotWidthPx]);
 
   const communitySlots = Array.from(
     { length: 5 },
@@ -1326,8 +1660,8 @@ export const GameRoom: React.FC = () => {
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
 
-    const clamped = clampTrayAmount(nextAmount);
-    setTrayAmount(clamped);
+    const normalized = normalizeTrayAmount(nextAmount);
+    setTrayAmount(normalized);
   };
 
   const clearTray = () => {
@@ -1860,7 +2194,7 @@ export const GameRoom: React.FC = () => {
       )}
 
       <section className="table-board-wrap" data-testid="table-board-section">
-        <div className="felt-oval">
+        <div ref={feltOvalRef} className="felt-oval">
           <div className="board-center-stack">
             <div className="community-lane" data-testid="community-cards">
               {communitySlots.map((card, idx) => {
@@ -1919,6 +2253,15 @@ export const GameRoom: React.FC = () => {
               const isFolded = seatPlayer?.status === "folded";
               const isAllIn = seatPlayer?.status === "all-in";
               const isDisconnected = seatPlayer?.status === "disconnected";
+              const seatStatusLabel = isFolded
+                ? t("game.status.folded")
+                : isDisconnected
+                  ? t("game.status.disconnected")
+                  : null;
+              const seatBetText =
+                seatPlayer.currentBet > 0
+                  ? t("game.bet", { amount: seatPlayer.currentBet })
+                  : null;
               const seatDensityClass =
                 seatSlots.length >= 9
                   ? "seat-pod--dense"
@@ -1979,25 +2322,28 @@ export const GameRoom: React.FC = () => {
                       <span className="seat-pod__name">
                         {seatPlayer.name}
                       </span>
+                      {seatStatusLabel && (
+                        <span
+                          className={`seat-pod__status-badge ${
+                            isFolded
+                              ? "seat-pod__status-badge--folded"
+                              : "seat-pod__status-badge--disconnected"
+                          }`}
+                        >
+                          {seatStatusLabel}
+                        </span>
+                      )}
                     </div>
 
                     <div className="seat-pod__row seat-pod__row--chips">
                       <div className="seat-pod__stack">${seatPlayer.chips}</div>
                     </div>
 
-                    <div className="seat-pod__row seat-pod__row--bet">
-                      <div
-                        className={`seat-pod__bet ${
-                          seatPlayer.currentBet > 0 ? "seat-pod__bet--active" : ""
-                        }`}
-                      >
-                        {isAllIn
-                          ? `${t("game.status.allIn")} • $${seatPlayer.currentBet}`
-                          : seatPlayer.currentBet > 0
-                            ? t("game.bet", { amount: seatPlayer.currentBet })
-                            : t("game.actionBubble.check")}
+                    {seatBetText && (
+                      <div className="seat-pod__row seat-pod__row--bet">
+                        <div className="seat-pod__bet seat-pod__bet--active">{seatBetText}</div>
                       </div>
-                    </div>
+                    )}
                   </article>
                 </div>
               );
@@ -2021,9 +2367,7 @@ export const GameRoom: React.FC = () => {
                 {t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
               </h3>
               <p className="mt-1 text-xs text-emerald-100/75" data-testid="hand-results-mode">
-                {isShowdownComplete
-                  ? t("game.showdownComplete")
-                  : t("game.showdownManual")}
+                {t("game.showdownComplete")}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2042,25 +2386,6 @@ export const GameRoom: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {canRevealMyCompletedHand && !isMyCompletedHandRevealed && (
-            <button
-              onClick={showMyHand}
-              data-testid="show-my-hand-button"
-              className="mt-3 rounded-lg border border-cyan-400/60 bg-cyan-900/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
-            >
-              {t("game.showMyHand")}
-            </button>
-          )}
-
-          {isMyCompletedHandRevealed && !isShowdownComplete && (
-            <p
-              className="mt-3 text-xs font-semibold uppercase tracking-wide text-cyan-100/90"
-              data-testid="my-hand-revealed-indicator"
-            >
-              {t("game.yourHandRevealed")}
-            </p>
-          )}
 
           <div
             className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
@@ -2137,7 +2462,7 @@ export const GameRoom: React.FC = () => {
             <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
               {handResultRows.map((entry) => {
                 const isSelf = entry.playerId === player.id;
-                const showCards = isPlayerHandVisible(entry.playerId);
+                const showCards = true;
                 const evaluatedHand = entry.hand as HandEvaluation | null;
 
                 return (
@@ -2247,7 +2572,40 @@ export const GameRoom: React.FC = () => {
         </section>
       )}
 
-      {isYourTurn && (
+      {showNextStreetActionArea && (
+        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-next-street-action-area">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-100">
+                {isResultRevealStep
+                  ? t("game.streetReveal.resultActionTitle")
+                  : t("game.streetReveal.actionTitle")}
+              </h3>
+              <p className="text-xs text-emerald-100/70">
+                {isResultRevealStep
+                  ? t("game.streetReveal.resultActionHint")
+                  : t("game.streetReveal.actionHint")}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={revealNextStreet}
+                disabled={!canRevealNextStreet || hasRevealedNextStreet}
+                data-testid="reveal-next-street-button"
+                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {hasRevealedNextStreet
+                  ? t("game.streetReveal.revealed")
+                  : isResultRevealStep
+                  ? t("game.streetReveal.revealResult")
+                  : t("game.streetReveal.revealNextStreet")}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isYourTurn && !isAwaitingStreetReveal && (
         <section ref={turnOverlayRef} className="chip-composer-dock" data-testid="turn-overlay">
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">
@@ -2419,7 +2777,7 @@ export const GameRoom: React.FC = () => {
                 {t("common.close")}
               </button>
             </div>
-            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.onlyLanguage")}</p>
+            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.summary")}</p>
 
             <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
               <label
@@ -2442,6 +2800,32 @@ export const GameRoom: React.FC = () => {
                 <option value="zh_hans">{t("game.settings.chineseSimplified")}</option>
               </select>
             </div>
+
+            {isHost && (
+              <div
+                className="mt-4 rounded-xl border border-cyan-700/60 bg-cyan-950/35 p-4"
+                data-testid="host-settings-section"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100/80">
+                  {t("game.settings.hostOnly")}
+                </p>
+                <p className="mt-1 text-xs text-cyan-100/70">
+                  {t("game.settings.hostStreetRevealHelp")}
+                </p>
+                <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-cyan-50">
+                  <input
+                    type="checkbox"
+                    checked={isPlayerStreetRevealEnabled}
+                    onChange={(event) =>
+                      updateRoomConfig({ allowPlayerStreetReveal: event.target.checked })
+                    }
+                    data-testid="allow-player-street-reveal-toggle"
+                    className="h-4 w-4 accent-cyan-400"
+                  />
+                  <span>{t("game.settings.allowPlayerStreetReveal")}</span>
+                </label>
+              </div>
+            )}
           </div>
         </div>
       )}

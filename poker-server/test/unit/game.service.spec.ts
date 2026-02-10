@@ -33,12 +33,18 @@ describe('GameService addPlayerToRoom', () => {
       name: params.name,
       chips: params.chips,
       totalBuyIn: params.totalBuyIn,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
       position: params.position,
       status: params.status,
       cards: null,
       currentBet: 0,
       lastAction: null,
       lastConnectedAt: Date.now(),
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
     };
   }
 
@@ -57,6 +63,7 @@ describe('GameService addPlayerToRoom', () => {
         bigBlind: 20,
         maxPlayers: params.maxPlayers ?? 10,
         reconnectGracePeriod: 30000,
+        allowPlayerStreetReveal: true,
       },
       players: params.players,
       gameState: params.gameState,

@@ -43,10 +43,10 @@ export class HandService {
     const handNumber = room.currentHand ? room.currentHand.handNumber + 1 : 1;
 
     // Determine positions
-    const dealerPosition = this.getNextDealerPosition(room);
-    const activePlayers = room.players.filter(
-      (p) => p.chips > 0 && p.status !== 'left',
+    const activePlayers = this.getPlayersInSeatOrder(
+      room.players.filter((p) => p.chips > 0 && p.status !== 'left'),
     );
+    const dealerPosition = this.getNextDealerPosition(room, activePlayers);
     const activePlayerIds = activePlayers.map((p) => p.id);
     const playerCount = activePlayers.length;
 
@@ -54,12 +54,15 @@ export class HandService {
       throw new Error('Need at least 2 players with chips');
     }
 
-    const smallBlindPosition = (dealerPosition + 1) % playerCount;
-    const bigBlindPosition = (dealerPosition + 2) % playerCount;
-
-    // Collect blinds
-    const smallBlindPlayer = activePlayers[smallBlindPosition];
-    const bigBlindPlayer = activePlayers[bigBlindPosition];
+    const smallBlindPlayer = this.getNextPlayerByPosition(activePlayers, dealerPosition);
+    const bigBlindPlayer = smallBlindPlayer
+      ? this.getNextPlayerByPosition(activePlayers, smallBlindPlayer.position)
+      : null;
+    if (!smallBlindPlayer || !bigBlindPlayer) {
+      throw new Error('Unable to resolve blind players');
+    }
+    const smallBlindPosition = smallBlindPlayer.position;
+    const bigBlindPosition = bigBlindPlayer.position;
 
     const sbAmount = Math.min(room.config.smallBlind, smallBlindPlayer.chips);
     const bbAmount = Math.min(room.config.bigBlind, bigBlindPlayer.chips);
@@ -104,11 +107,14 @@ export class HandService {
     // First to act pre-flop:
     // - Heads-up: small blind (who is the button/dealer) acts first
     // - 3+ players: player left of big blind acts first
-    const firstToAct =
+    const firstToActPlayer =
       playerCount === 2
-        ? smallBlindPosition
-        : (bigBlindPosition + 1) % playerCount;
-    const currentPlayerTurn = activePlayers[firstToAct].id;
+        ? smallBlindPlayer
+        : this.getNextPlayerByPosition(activePlayers, bigBlindPosition);
+    if (!firstToActPlayer) {
+      throw new Error('Unable to resolve first player to act');
+    }
+    const currentPlayerTurn = firstToActPlayer.id;
 
     const hand: Hand = {
       handNumber,
@@ -268,14 +274,9 @@ export class HandService {
 
     // Set first to act (first active player after dealer)
     const activePlayers = this.getActivePlayers(room);
-    if (activePlayers.length > 0) {
-      const dealerIdx = activePlayers.findIndex(
-        (p) =>
-          room.players.findIndex((rp) => rp.id === p.id) ===
-          hand.dealerPosition,
-      );
-      const nextIdx = (dealerIdx + 1) % activePlayers.length;
-      hand.currentPlayerTurn = activePlayers[nextIdx].id;
+    const nextPlayer = this.getNextPlayerByPosition(activePlayers, hand.dealerPosition);
+    if (nextPlayer) {
+      hand.currentPlayerTurn = nextPlayer.id;
     }
 
     room.lastActivityAt = Date.now();
@@ -612,13 +613,14 @@ export class HandService {
     const activePlayers = this.getActivePlayers(room);
     if (activePlayers.length === 0) return null;
 
-    const currentIdx = activePlayers.findIndex(
-      (p) => p.id === hand.currentPlayerTurn,
+    const currentTurnPlayer = room.players.find(
+      (player) => player.id === hand.currentPlayerTurn,
     );
-    if (currentIdx === -1) return activePlayers[0];
+    if (!currentTurnPlayer) {
+      return activePlayers[0];
+    }
 
-    const nextIdx = (currentIdx + 1) % activePlayers.length;
-    return activePlayers[nextIdx];
+    return this.getNextPlayerByPosition(activePlayers, currentTurnPlayer.position);
   }
 
   /**
@@ -648,29 +650,51 @@ export class HandService {
     const hand = room.currentHand;
     if (!hand) return [];
 
-    return room.players.filter(
-      (p) =>
-        hand.activePlayers.includes(p.id) &&
-        p.status !== 'folded' &&
-        p.status !== 'all-in' &&
-        p.chips > 0,
+    return this.getPlayersInSeatOrder(
+      room.players.filter(
+        (p) =>
+          hand.activePlayers.includes(p.id) &&
+          p.status !== 'folded' &&
+          p.status !== 'all-in' &&
+          p.chips > 0,
+      ),
     );
   }
 
   /**
    * Get next dealer position
    */
-  private getNextDealerPosition(room: Room): number {
-    if (!room.currentHand) {
-      return 0; // First hand, start at position 0
+  private getNextDealerPosition(room: Room, activePlayers: Player[]): number {
+    if (activePlayers.length === 0) {
+      return 0;
     }
 
-    const activePlayers = room.players.filter(
-      (p) => p.chips > 0 && p.status !== 'left',
-    );
-    const currentDealer = room.currentHand.dealerPosition;
+    if (!room.currentHand) {
+      return activePlayers[0].position;
+    }
 
-    return (currentDealer + 1) % activePlayers.length;
+    const currentDealer = room.currentHand.dealerPosition;
+    const nextDealer = this.getNextPlayerByPosition(activePlayers, currentDealer);
+    return nextDealer?.position ?? activePlayers[0].position;
+  }
+
+  private getPlayersInSeatOrder(players: Player[]): Player[] {
+    return [...players].sort((left, right) => left.position - right.position);
+  }
+
+  private getNextPlayerByPosition(
+    players: Player[],
+    currentPosition: number,
+  ): Player | null {
+    if (players.length === 0) {
+      return null;
+    }
+
+    const sortedPlayers = this.getPlayersInSeatOrder(players);
+    return (
+      sortedPlayers.find((player) => player.position > currentPosition) ??
+      sortedPlayers[0]
+    );
   }
 
   /**
