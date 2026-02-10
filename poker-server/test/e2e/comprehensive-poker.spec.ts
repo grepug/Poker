@@ -17,6 +17,19 @@ async function waitForPokerDebug(page: Page) {
   });
 }
 
+async function assertWaitingBadgeExternalForSeat(page: Page, playerId: string) {
+  const seat = page.locator(`[data-testid="player-seat-${playerId}"]`);
+  await expect(
+    seat.locator(
+      '.seat-pod__status-badge--external.seat-pod__status-badge--waiting',
+    ),
+  ).toHaveCount(1);
+  await expect(
+    seat.locator('.seat-pod__row .seat-pod__status-badge--waiting'),
+  ).toHaveCount(0);
+  await expect(seat).not.toContainText(/NEXT HAND|下手入局/);
+}
+
 // Helper to verify chip conservation (chips only, not including current bets)
 async function verifyChipConservation(page: Page, expected: number = 2000) {
   const state = await page.evaluate(() => {
@@ -4181,6 +4194,61 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4c1: Mid-Hand Waiting Badge Stays Outside Seat', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+    let charlieContext: BrowserContext | null = null;
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      charlieContext = await browser.newContext();
+      const charliePage = await charlieContext.newPage();
+      await charliePage.goto(FRONTEND_URL);
+      await charliePage.waitForSelector('[data-testid="connection-status"]');
+      await expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await charliePage.click('[data-testid="join-toggle-button"]');
+      await charliePage.fill('[data-testid="name-input"]', 'Charlie');
+      await charliePage.fill('[data-testid="room-id-input"]', roomCode);
+      await charliePage.click('[data-testid="join-room-button"]');
+      await charliePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 3/")',
+      );
+
+      const waitingState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        const activePlayers = room?.currentHand?.activePlayers ?? [];
+
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+          inActiveHand: Boolean(player?.id && activePlayers.includes(player.id)),
+        };
+      });
+      expect(waitingState.status).toBe('waiting');
+      expect(waitingState.cardsCount).toBe(0);
+      expect(waitingState.inActiveHand).toBe(false);
+      expect(waitingState.playerId).not.toBeNull();
+
+      await assertWaitingBadgeExternalForSeat(
+        charliePage,
+        waitingState.playerId as string,
+      );
+    } finally {
+      await Promise.allSettled([
+        charlieContext?.close(),
+        teardownTwoPlayerSession(session),
+      ]);
+    }
+  });
+
   test('8.4c: Player Can Join Mid-Hand And Wait For Next Hand', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
     let charlieContext: BrowserContext | null = null;
@@ -4213,6 +4281,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const activePlayers = room?.currentHand?.activePlayers ?? [];
 
         return {
+          playerId: player?.id ?? null,
           status: player?.status ?? null,
           chips: player?.chips ?? 0,
           totalBuyIn: player?.totalBuyIn ?? 0,
@@ -4225,6 +4294,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(waitingState.inActiveHand).toBe(false);
       expect(waitingState.chips).toBe(1000);
       expect(waitingState.totalBuyIn).toBe(1000);
+      expect(waitingState.playerId).not.toBeNull();
+
+      await assertWaitingBadgeExternalForSeat(
+        charliePage,
+        waitingState.playerId as string,
+      );
 
       await waitForPlayerTurn(bobPage, 'Bob');
       await bobPage.click('[data-testid="action-fold"]');
