@@ -1984,15 +1984,22 @@ export const GameRoom: React.FC = () => {
       className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}`}
     >
       <header className="table-micro-hud">
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
               <h1
-                className="min-w-0 flex-1 truncate text-base font-black tracking-tight text-white"
+                className="max-w-[55vw] truncate text-base font-black tracking-tight text-white sm:max-w-[24rem]"
                 data-testid="room-title"
               >
                 {t("game.room", { roomId: room.id })}
               </h1>
+              <button
+                onClick={handleCopyInviteLink}
+                data-testid="copy-room-url-button"
+                className="shrink-0 rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
+              >
+                {t("game.copyInvite")}
+              </button>
               <p
                 className="shrink-0 whitespace-nowrap text-[11px] text-emerald-100/70"
                 data-testid="room-player-count"
@@ -2002,13 +2009,6 @@ export const GameRoom: React.FC = () => {
                   max: room.config.maxPlayers,
                 })}
               </p>
-              <button
-                onClick={handleCopyInviteLink}
-                data-testid="copy-room-url-button"
-                className="shrink-0 rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-              >
-                {t("game.copyInvite")}
-              </button>
             </div>
             {inviteCopyStatus && (
               <span
