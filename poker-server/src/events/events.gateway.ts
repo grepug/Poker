@@ -758,8 +758,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           throw new Error('Updated player not found');
         }
 
+        const resolvedAction = updatedPlayer.lastAction ?? data.action;
+
         const displayKind = (() => {
-          switch (data.action) {
+          switch (resolvedAction) {
             case 'fold':
               return 'fold' as PlayerActionDisplayKind;
             case 'check':
@@ -782,8 +784,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const actionData: PlayerActedData = {
           playerId: player.id,
           playerName: player.name,
-          action: data.action,
-          amount: data.amount,
+          action: resolvedAction,
+          amount: resolvedAction === 'all-in' ? undefined : data.amount,
           displayKind,
           totalBetAfterAction: updatedPlayer.currentBet,
           committedAmount,
