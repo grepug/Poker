@@ -1,5 +1,5 @@
 export { ActionCenterAlert } from "./action-center-alert";
-export { ChatPanel } from "./chat-panel";
+export { ChatPanel, ChatPanelView } from "./chat-panel";
 export { ChipComposerDock } from "./chip-composer-dock";
 export { CommunityCardsLane } from "./community-cards-lane";
 export { EndGameConfirmModal } from "./end-game-confirm-modal";
