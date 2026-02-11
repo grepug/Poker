@@ -99,6 +99,48 @@
       "type": "registry:component",
       "title": "Table Shell",
       "description": "Main responsive table shell composition for poker gameplay."
+    },
+    {
+      "name": "@poker/table-top-bar",
+      "type": "registry:component",
+      "title": "Table Top Bar",
+      "description": "Room HUD header with controls, invite flow, and chat preview strip."
+    },
+    {
+      "name": "@poker/your-cards-flyout",
+      "type": "registry:component",
+      "title": "Your Cards Flyout",
+      "description": "Collapsible personal card flyout with anchored turn-dock positioning."
+    },
+    {
+      "name": "@poker/action-center-alert-overlay",
+      "type": "registry:component",
+      "title": "Action Center Alert Overlay",
+      "description": "Overlay wrapper with directional pointer for table action callouts."
+    },
+    {
+      "name": "@poker/table-board",
+      "type": "registry:component",
+      "title": "Table Board",
+      "description": "Board composition with community cards, pot center, and seat orbit."
+    },
+    {
+      "name": "@poker/hand-results-content",
+      "type": "registry:component",
+      "title": "Hand Results Content",
+      "description": "Detailed showdown breakdown content for winner rows and payouts."
+    },
+    {
+      "name": "@poker/next-hand-action-area",
+      "type": "registry:component",
+      "title": "Next Hand Action Area",
+      "description": "Post-hand host/waiting/reveal control strip for next game actions."
+    },
+    {
+      "name": "@poker/turn-action-dock",
+      "type": "registry:component",
+      "title": "Turn Action Dock",
+      "description": "Turn controls for drag tray, presets, and quick/legacy actions."
     }
   ]
 }

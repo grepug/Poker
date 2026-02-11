@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/table-board",
+  "type": "registry:component",
+  "title": "Table Board",
+  "description": "Board composition with community cards, pot center, and seat orbit.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/table-board.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/table-board.tsx"
+    }
+  ]
+}

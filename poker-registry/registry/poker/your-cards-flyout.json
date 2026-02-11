@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/your-cards-flyout",
+  "type": "registry:component",
+  "title": "Your Cards Flyout",
+  "description": "Collapsible personal card flyout with anchored turn-dock positioning.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "button",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/your-cards-flyout.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/your-cards-flyout.tsx"
+    }
+  ]
+}

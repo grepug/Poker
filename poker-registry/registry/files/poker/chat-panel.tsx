@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "poker-types";
+import type { ChatMessage, Player, Room, VoiceMessagePayload } from "poker-types";
 import { useLocalization } from "@/contexts/LocalizationContext";
 import { useGame } from "@/contexts/GameContext";
+import type { Locale, MessageKey } from "@/i18n/messages";
 import { resolveServerResourceUrl } from "@/services/socket.service";
 import {
   getVoicePlaybackState,
@@ -22,6 +23,22 @@ const VOICE_RELEASE_TAIL_MS = 300;
 type ChatPanelProps = {
   onClose: () => void;
 };
+
+type ChatPanelBindings = {
+  locale: Locale;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+  room: Room | null;
+  player: Player | null;
+  chatMessages: ChatMessage[];
+  chatHasMore: boolean;
+  chatLoadingHistory: boolean;
+  loadOlderChatMessages: () => void;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
+  setChatPanelOpen: (open: boolean) => void;
+};
+
+export type ChatPanelViewProps = ChatPanelBindings & ChatPanelProps;
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -95,20 +112,20 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
   );
 };
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
-  const { locale, t } = useLocalization();
-  const {
-    room,
-    player,
-    chatMessages,
-    chatHasMore,
-    chatLoadingHistory,
-    loadOlderChatMessages,
-    sendChatText,
-    sendChatVoice,
-    setChatPanelOpen,
-  } = useGame();
-
+export const ChatPanelView: React.FC<ChatPanelViewProps> = ({
+  onClose,
+  locale,
+  t,
+  room,
+  player,
+  chatMessages,
+  chatHasMore,
+  chatLoadingHistory,
+  loadOlderChatMessages,
+  sendChatText,
+  sendChatVoice,
+  setChatPanelOpen,
+}) => {
   const [draft, setDraft] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -612,5 +629,37 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
         </form>
       </div>
     </section>
+  );
+};
+
+export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
+  const { locale, t } = useLocalization();
+  const {
+    room,
+    player,
+    chatMessages,
+    chatHasMore,
+    chatLoadingHistory,
+    loadOlderChatMessages,
+    sendChatText,
+    sendChatVoice,
+    setChatPanelOpen,
+  } = useGame();
+
+  return (
+    <ChatPanelView
+      onClose={onClose}
+      locale={locale}
+      t={t}
+      room={room}
+      player={player}
+      chatMessages={chatMessages}
+      chatHasMore={chatHasMore}
+      chatLoadingHistory={chatLoadingHistory}
+      loadOlderChatMessages={loadOlderChatMessages}
+      sendChatText={sendChatText}
+      sendChatVoice={sendChatVoice}
+      setChatPanelOpen={setChatPanelOpen}
+    />
   );
 };

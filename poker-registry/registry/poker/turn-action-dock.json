@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/turn-action-dock",
+  "type": "registry:component",
+  "title": "Turn Action Dock",
+  "description": "Turn controls for drag tray, presets, and quick/legacy actions.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "button",
+    "input",
+    "badge",
+    "tooltip"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/turn-action-dock.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/turn-action-dock.tsx"
+    }
+  ]
+}

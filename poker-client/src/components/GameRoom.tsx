@@ -3,27 +3,29 @@ import { useNavigate } from "react-router-dom";
 import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
-import { Card } from "./Card";
 import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
 import {
-  ActionCenterAlert as PokerActionCenterAlert,
+  ActionCenterAlertOverlay,
   ChatPanel,
   ChipComposerDock,
-  CommunityCardsLane,
   EndGameConfirmModal,
   FinalSummaryModal,
+  HandResultsContent,
   HandResultsPanel,
-  PotDropZone,
+  NextHandActionArea,
   RankingsModal,
   RulesModal,
-  SeatPod,
   SettingsModal,
+  TableBoard,
   TableShell,
+  TableTopBar,
+  TurnActionDock,
   TurnCenterAlert,
+  YourCardsFlyout,
 } from "@/components/poker";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -1614,6 +1616,113 @@ export const GameRoom: React.FC = () => {
     { length: 5 },
     (_, idx) => currentHand?.communityCards[idx] ?? null,
   );
+  const seatOrbitItems = useMemo(
+    () =>
+      seatSlots.map((slot) => {
+        const seatPlayer = slot.seatPlayer;
+        const roleIcon = getSeatRoleIcon(
+          slot.position,
+          currentHand
+            ? {
+                dealerPosition: currentHand.dealerPosition,
+                smallBlindPosition: currentHand.smallBlindPosition,
+              }
+            : undefined,
+        );
+
+        const seatPlayerId = seatPlayer.id;
+        const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
+        const isSelfSeat = seatPlayer.id === resolvedPlayerId;
+        const isFolded = seatPlayer.status === "folded";
+        const isAllIn = seatPlayer.status === "all-in";
+        const isDisconnected = seatPlayer.status === "disconnected";
+        const isWaiting = seatPlayer.status === "waiting";
+        const seatMainState = resolveSeatMainState({
+          isCurrentTurnSeat,
+          isDisconnected,
+          isAllIn,
+          isFolded,
+          isWaiting,
+        });
+        const seatInlineStatusLabel =
+          seatMainState === "disconnected"
+            ? t("game.status.disconnected")
+            : seatMainState === "all-in"
+              ? t("game.status.allIn")
+              : seatMainState === "folded"
+                ? t("game.status.folded")
+                : null;
+        const seatExternalStatusLabel =
+          seatMainState === "turn"
+            ? t("game.status.acting")
+            : seatMainState === "waiting"
+              ? t("game.status.waiting")
+              : null;
+        const seatExternalStatusToneClass =
+          seatMainState === "turn"
+            ? "seat-pod__status-badge--turn"
+            : seatMainState === "waiting"
+              ? "seat-pod__status-badge--waiting"
+              : "";
+        const seatInlineStatusToneClass =
+          seatMainState === "folded"
+            ? "seat-pod__status-badge--folded"
+            : seatMainState === "disconnected"
+              ? "seat-pod__status-badge--disconnected"
+              : seatMainState === "all-in"
+                ? "seat-pod__status-badge--allin"
+                : "";
+        const isForcedBlind = Boolean(
+          currentHand?.bettingRound === "PRE_FLOP" &&
+            seatPlayer.currentBet > 0 &&
+            seatPlayer.lastAction === null &&
+            (seatPlayer.position === currentHand.smallBlindPosition ||
+              seatPlayer.position === currentHand.bigBlindPosition),
+        );
+        const latestSeatActionEvent =
+          lastPlayerActionEvent?.playerId === seatPlayer.id ? lastPlayerActionEvent : null;
+        const seatPrimaryActionLabel = resolveSeatPrimaryActionLabel({
+          seatPlayer,
+          isForcedBlind,
+          latestSeatActionEvent,
+          t,
+        });
+        const seatPendingActionLabel = resolveSeatPendingActionLabel({
+          seatPlayer,
+          isCurrentTurnSeat,
+          t,
+        });
+        const seatActionLabel = seatPrimaryActionLabel ?? seatPendingActionLabel;
+        const seatDensityClass =
+          seatSlots.length >= 8
+            ? "seat-pod--dense"
+            : seatSlots.length >= 5
+              ? "seat-pod--compact"
+              : "seat-pod--spacious";
+
+        return {
+          slotIndex: slot.slotIndex,
+          top: slot.anchor.top,
+          left: slot.anchor.left,
+          width: seatSlotWidth,
+          playerId: seatPlayer.id,
+          playerEmoji: seatPlayer.emoji || "🎲",
+          playerName: seatPlayer.name,
+          isYou: isSelfSeat,
+          roleIcon,
+          roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
+          externalStatusLabel: seatExternalStatusLabel,
+          externalStatusToneClass: seatExternalStatusToneClass,
+          internalStatusLabel: seatInlineStatusLabel,
+          internalStatusToneClass: seatInlineStatusToneClass,
+          actionLabel: seatActionLabel,
+          remainingLabel: `$${seatPlayer.chips}`,
+          seatState: seatMainState,
+          densityClass: seatDensityClass,
+        };
+      }),
+    [currentHand, lastPlayerActionEvent, resolvedPlayerId, seatSlotWidth, seatSlots, t],
+  );
 
   const dropResolution = useMemo(
     () =>
@@ -2440,169 +2549,63 @@ export const GameRoom: React.FC = () => {
       isDesktopSideDock={isDesktopSideDock}
       isChatPanelOpen={isChatPanelOpen}
     >
-      <header className="table-micro-hud">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <h1
-                className="max-w-[55vw] truncate text-base font-black tracking-tight text-white sm:max-w-[24rem]"
-                data-testid="room-title"
-              >
-                {t("game.room", { roomId: room.id })}
-              </h1>
-              <button
-                onClick={handleCopyInviteLink}
-                data-testid="copy-room-url-button"
-                className="shrink-0 rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-              >
-                {t("game.copyInvite")}
-              </button>
-              <p
-                className="shrink-0 whitespace-nowrap text-[11px] text-emerald-100/70"
-                data-testid="room-player-count"
-              >
-                {t("game.playersCount", {
-                  count: room.players.length,
-                  max: room.config.maxPlayers,
-                })}
-              </p>
-            </div>
-            {inviteCopyStatus && (
-              <span
-                data-testid="copy-room-url-status"
-                className={`mt-1 inline-block text-xs font-semibold ${
-                  inviteCopyStatusTone === "error" ? "text-amber-200" : "text-emerald-200"
-                }`}
-              >
-                {inviteCopyStatus}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={handleLeave}
-            data-testid="leave-room-button"
-            className="ml-auto shrink-0 rounded-full border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
-          >
-            {t("common.leave")}
-          </button>
-        </div>
-
-        <div className="pointer-events-none absolute -left-[9999px] top-0" aria-live="polite">
-          <span className="hud-chip" data-testid="pot-value">
-            {t("game.pot", { amount: displayPot })}
-          </span>
-          <span className="hud-chip" data-testid="your-chips">
-            {t("game.yourChips", { amount: currentPlayer?.chips ?? 0 })}
-          </span>
-          {currentHand && (
-            <span className="hud-chip" data-testid="round-value">
-              {t("game.round", { round: currentHand.bettingRound })}
-            </span>
-          )}
-          {currentTurnPlayer && (
-            <span
-              className="hud-chip border-amber-400/70 bg-amber-500/20 text-amber-100"
-              data-testid="turn-player"
-            >
-              {t("game.turn", { name: currentTurnPlayer.name })}
-            </span>
-          )}
-        </div>
-
-        <section className="table-controls-strip">
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            data-testid="open-settings-button"
-            className="rounded-full border border-cyan-400/65 bg-cyan-950/40 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-900/45"
-          >
-            {t("common.settings")}
-          </button>
-          <button
-            onClick={() => setShowRulesModal(true)}
-            data-testid="open-rules-button"
-            className="rounded-full border border-indigo-300/65 bg-indigo-900/35 px-3 py-1 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-800/45"
-          >
-            {rulesCopy.buttonLabel}
-          </button>
-          <button
-            onClick={() => setShowRankingsModal(true)}
-            data-testid="open-rankings-button"
-            className="rounded-full border border-emerald-400/65 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-          >
-            {t("game.rankings")}
-          </button>
-          <button
-            onClick={() => setChatPanelOpen(!isChatPanelOpen)}
-            data-testid="open-chat-button"
-            className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
-          >
-            {chatUnreadCount > 0
-              ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
-              : t("game.chat.button")}
-          </button>
-          {isGameEnded && finalGameResult && (
-            <button
-              onClick={() => setShowFinalSummaryModal(true)}
-              data-testid="open-final-results-button"
-              className="rounded-full border border-amber-300/70 bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/30"
-            >
-              {t("game.final.title")}
-            </button>
-          )}
-
-          <div className="ml-auto flex items-center gap-2">
-            {isHost && !isGameStarted && !isGameEnded && room.players.length >= 2 && (
-              <button
-                onClick={startGame}
-                data-testid="start-game-button"
-                className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400"
-              >
-                {t("common.start")}
-              </button>
-            )}
-          </div>
-        </section>
-
-        {!isChatPanelOpen && activePreviewMessage && (
-          <div className="chat-preview-strip" data-testid="chat-preview-strip">
-            <button
-              type="button"
-              className="chat-preview-strip__open"
-              onClick={handleOpenChatFromPreview}
-              data-testid="chat-preview-open"
-            >
-              <span className="chat-preview-strip__title">{t("game.chat.preview.title")}</span>
-              <span className="chat-preview-strip__content">
-                <span className="chat-preview-strip__sender">
-                  {activePreviewMessage.sender.playerEmoji
-                    ? `${activePreviewMessage.sender.playerEmoji} `
-                    : ""}
-                  {activePreviewMessage.sender.playerName}
-                </span>
-                <span className="chat-preview-strip__message">
-                  {toChatPreviewText(activePreviewMessage, t)}
-                </span>
-                <time
-                  className="chat-preview-strip__time"
-                  dateTime={new Date(activePreviewMessage.createdAt).toISOString()}
-                >
-                  {formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow)}
-                </time>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="chat-preview-strip__dismiss"
-              data-testid="chat-preview-dismiss"
-              aria-label={t("game.chat.preview.dismiss")}
-              title={t("game.chat.preview.dismiss")}
-              onClick={handleDismissPreview}
-            >
-              ×
-            </button>
-          </div>
-        )}
-      </header>
+      <TableTopBar
+        roomTitle={t("game.room", { roomId: room.id })}
+        playerCountLabel={t("game.playersCount", {
+          count: room.players.length,
+          max: room.config.maxPlayers,
+        })}
+        inviteCopyLabel={t("game.copyInvite")}
+        inviteCopyStatus={inviteCopyStatus}
+        inviteCopyStatusTone={inviteCopyStatusTone}
+        leaveLabel={t("common.leave")}
+        settingsLabel={t("common.settings")}
+        rulesLabel={rulesCopy.buttonLabel}
+        rankingsLabel={t("game.rankings")}
+        chatLabel={
+          chatUnreadCount > 0
+            ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
+            : t("game.chat.button")
+        }
+        finalResultsLabel={t("game.final.title")}
+        startLabel={t("common.start")}
+        hiddenHudCopy={{
+          potLabel: t("game.pot", { amount: displayPot }),
+          chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
+          roundLabel: currentHand
+            ? t("game.round", { round: currentHand.bettingRound })
+            : null,
+          turnLabel: currentTurnPlayer
+            ? t("game.turn", { name: currentTurnPlayer.name })
+            : null,
+        }}
+        isChatPanelOpen={isChatPanelOpen}
+        chatPreview={
+          !activePreviewMessage
+            ? null
+            : {
+                title: t("game.chat.preview.title"),
+                senderName: activePreviewMessage.sender.playerName,
+                senderEmoji: activePreviewMessage.sender.playerEmoji,
+                message: toChatPreviewText(activePreviewMessage, t),
+                timeIso: new Date(activePreviewMessage.createdAt).toISOString(),
+                timeLabel: formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow),
+                dismissLabel: t("game.chat.preview.dismiss"),
+              }
+        }
+        showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
+        showStartGameButton={isHost && !isGameStarted && !isGameEnded && room.players.length >= 2}
+        onCopyInvite={handleCopyInviteLink}
+        onLeave={handleLeave}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenRules={() => setShowRulesModal(true)}
+        onOpenRankings={() => setShowRankingsModal(true)}
+        onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
+        onOpenFinalResults={() => setShowFinalSummaryModal(true)}
+        onStartGame={startGame}
+        onOpenChatFromPreview={handleOpenChatFromPreview}
+        onDismissPreview={handleDismissPreview}
+      />
 
       {isChatPanelOpen && (
         <div className="chat-panel-shell">
@@ -2626,633 +2629,115 @@ export const GameRoom: React.FC = () => {
       )}
 
       {shouldRenderCardsFlyout && (
-        <section
-          className={`your-cards-flyout ${
-            isCardsFlyoutOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-          } ${shouldAnchorCardsFlyoutToTurnDock ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
-          style={
-            shouldAnchorCardsFlyoutToTurnDock
-              ? {
-                  bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
-                }
-              : undefined
-          }
-          data-testid="your-cards-flyout"
-        >
-          <div className="your-cards-flyout__panel" data-testid="your-cards-section">
-            <div className="your-cards-flyout__header">
-              <h3 className="your-cards-flyout__title">{t("game.yourCards")}</h3>
-            </div>
-
-            {isCardsFlyoutOpen && hasHoleCards ? (
-              <div className="your-cards-flyout__cards">
-                {(displayHoleCards ?? []).map((card, idx) => (
-                  <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
-                ))}
-              </div>
-            ) : (
-              <div className="your-cards-flyout__empty-state" data-testid="hole-cards-hidden-state">
-                {isCardsFlyoutOpen
-                  ? t("game.cardsAppearWhenHandStarts")
-                  : `${t("game.hide")} ${t("game.yourCards")}`}
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsCardsFlyoutOpen((prev) => !prev)}
-            className="your-cards-flyout__toggle"
-            data-testid="toggle-hole-cards"
-            aria-label={`${isCardsFlyoutOpen ? t("game.hide") : t("game.show")} ${t("game.yourCards")}`}
-          >
-            {isCardsFlyoutOpen ? "<" : ">"}
-          </button>
-        </section>
+        <YourCardsFlyout
+          isOpen={isCardsFlyoutOpen}
+          hasHoleCards={hasHoleCards}
+          cards={displayHoleCards ?? []}
+          shouldAnchorToTurnDock={shouldAnchorCardsFlyoutToTurnDock}
+          turnOverlayHeight={turnOverlayHeight}
+          title={t("game.yourCards")}
+          emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+          emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+          hideLabel={t("game.hide")}
+          showLabel={t("game.show")}
+          onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+        />
       )}
 
       {actionCenterAlert !== null && (
-        <div
-          className="action-center-alert-layer"
-          aria-live="polite"
-          data-testid="action-center-alert"
-        >
-          {actionPointerVector && (
-            <div
-              className="action-center-alert__arrow"
-              style={{
-                left: `${actionPointerVector.x}px`,
-                top: `${actionPointerVector.y}px`,
-                width: `${actionPointerVector.length}px`,
-                transform: `translateY(-50%) rotate(${actionPointerVector.angle}deg)`,
-              }}
-            >
-              <span className="action-center-alert__arrow-head" />
-            </div>
-          )}
-          <div ref={actionCenterAlertRef}>
-            <PokerActionCenterAlert
-              key={`action-alert-${actionCenterAlert.id}`}
-              eyebrow="User Action"
-              actor={actionCenterAlert.playerName}
-              title={actionCenterAlert.text}
-              tone={actionCenterAlert.tone}
-              exiting={actionCenterAlert.exiting}
-              testId="action-center-alert-card"
-            />
-          </div>
-        </div>
+        <ActionCenterAlertOverlay
+          key={`action-alert-${actionCenterAlert.id}`}
+          pointerVector={actionPointerVector}
+          actor={actionCenterAlert.playerName}
+          title={actionCenterAlert.text}
+          tone={actionCenterAlert.tone}
+          exiting={actionCenterAlert.exiting}
+          cardRef={actionCenterAlertRef}
+        />
       )}
 
-      <section className="table-board-wrap" data-testid="table-board-section">
-        <div ref={feltOvalRef} className="felt-oval">
-          <div className="board-center-stack">
-            <CommunityCardsLane>
-              {communitySlots.map((card, idx) => {
-                const isRevealed = Boolean(card);
-                return (
-                  <div
-                    key={`community-slot-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
-                    className={isRevealed ? "community-reveal" : ""}
-                    style={isRevealed ? { animationDelay: `${idx * 70}ms` } : undefined}
-                  >
-                    <Card
-                      card={card}
-                      size="medium"
-                      faceDown={!isRevealed}
-                      dataTestId={isRevealed ? `community-card-${idx}` : `board-back-${idx}`}
-                    />
-                  </div>
-                );
-              })}
-            </CommunityCardsLane>
-
-            <div
-              ref={potDropZoneRef}
-            >
-              <PotDropZone
-                active={isYourTurn}
-                hover={dragState.overDropZone}
-                label={t("game.potCenter")}
-                value={`$${animatedPotValue}`}
-                hint={isYourTurn ? t("game.dragHint") : null}
-                pulse={potAnimationTick >= 0}
-              />
-            </div>
-          </div>
-
-          <div className="seat-orbit" data-testid="players-section">
-            {seatSlots.map((slot) => {
-              const seatPlayer = slot.seatPlayer;
-              const roleIcon = getSeatRoleIcon(slot.position, currentHand
-                ? {
-                    dealerPosition: currentHand.dealerPosition,
-                    smallBlindPosition: currentHand.smallBlindPosition,
-                  }
-                : undefined);
-
-              const seatPlayerId = seatPlayer?.id ?? null;
-              const isCurrentTurnSeat =
-                seatPlayerId !== null && currentHand?.currentPlayerTurn === seatPlayerId;
-              const isSelfSeat = seatPlayer?.id === resolvedPlayerId;
-              const isFolded = seatPlayer?.status === "folded";
-              const isAllIn = seatPlayer?.status === "all-in";
-              const isDisconnected = seatPlayer?.status === "disconnected";
-              const isWaiting = seatPlayer?.status === "waiting";
-              const seatMainState = resolveSeatMainState({
-                isCurrentTurnSeat,
-                isDisconnected,
-                isAllIn,
-                isFolded,
-                isWaiting,
-              });
-              const seatInlineStatusLabel =
-                seatMainState === "disconnected"
-                  ? t("game.status.disconnected")
-                  : seatMainState === "all-in"
-                    ? t("game.status.allIn")
-                    : seatMainState === "folded"
-                      ? t("game.status.folded")
-                      : null;
-              const seatExternalStatusLabel =
-                seatMainState === "turn"
-                  ? t("game.status.acting")
-                  : seatMainState === "waiting"
-                    ? t("game.status.waiting")
-                    : null;
-              const seatExternalStatusToneClass =
-                seatMainState === "turn"
-                  ? "seat-pod__status-badge--turn"
-                  : seatMainState === "waiting"
-                    ? "seat-pod__status-badge--waiting"
-                    : "";
-              const seatInlineStatusToneClass =
-                seatMainState === "folded"
-                  ? "seat-pod__status-badge--folded"
-                  : seatMainState === "disconnected"
-                    ? "seat-pod__status-badge--disconnected"
-                    : seatMainState === "all-in"
-                      ? "seat-pod__status-badge--allin"
-                      : "";
-              const isForcedBlind = Boolean(
-                currentHand?.bettingRound === "PRE_FLOP" &&
-                  seatPlayer.currentBet > 0 &&
-                  seatPlayer.lastAction === null &&
-                  (seatPlayer.position === currentHand.smallBlindPosition ||
-                    seatPlayer.position === currentHand.bigBlindPosition),
-              );
-              const latestSeatActionEvent =
-                lastPlayerActionEvent?.playerId === seatPlayer.id ? lastPlayerActionEvent : null;
-              const seatPrimaryActionLabel = resolveSeatPrimaryActionLabel({
-                seatPlayer,
-                isForcedBlind,
-                latestSeatActionEvent,
-                t,
-              });
-              const seatPendingActionLabel = resolveSeatPendingActionLabel({
-                seatPlayer,
-                isCurrentTurnSeat,
-                t,
-              });
-              const seatActionLabel = seatPrimaryActionLabel ?? seatPendingActionLabel;
-              const seatRemainingLabel = `$${seatPlayer.chips}`;
-              const seatDensityClass =
-                seatSlots.length >= 8
-                  ? "seat-pod--dense"
-                  : seatSlots.length >= 5
-                    ? "seat-pod--compact"
-                    : "seat-pod--spacious";
-              return (
-                <div
-                  key={`seat-slot-${slot.slotIndex}`}
-                  className="seat-orbit__slot"
-                  style={{
-                    top: slot.anchor.top,
-                    left: slot.anchor.left,
-                    width: seatSlotWidth,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  <div
-                    ref={(node) => {
-                      seatNodeRefs.current[seatPlayer.id] = node;
-                    }}
-                  >
-                    <SeatPod
-                      testId={`player-seat-${seatPlayer.id}`}
-                      playerEmoji={seatPlayer.emoji || "🎲"}
-                      playerName={seatPlayer.name}
-                      isYou={isSelfSeat}
-                      roleIcon={roleIcon}
-                      roleLabel={roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null}
-                      externalStatusLabel={seatExternalStatusLabel}
-                      externalStatusToneClass={seatExternalStatusToneClass}
-                      internalStatusLabel={seatInlineStatusLabel}
-                      internalStatusToneClass={seatInlineStatusToneClass}
-                      actionLabel={seatActionLabel}
-                      remainingLabel={seatRemainingLabel}
-                      seatState={seatMainState}
-                      densityClass={seatDensityClass}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      <TableBoard
+        feltOvalRef={feltOvalRef}
+        potDropZoneRef={potDropZoneRef}
+        setSeatNodeRef={(playerId, node) => {
+          seatNodeRefs.current[playerId] = node;
+        }}
+        communitySlots={communitySlots}
+        isYourTurn={isYourTurn}
+        isDragOverDropZone={dragState.overDropZone}
+        potLabel={t("game.potCenter")}
+        potValue={`$${animatedPotValue}`}
+        potHint={isYourTurn ? t("game.dragHint") : null}
+        potPulse={potAnimationTick >= 0}
+        seatOrbitItems={seatOrbitItems}
+      />
 
       {lastHandResult && (
         <HandResultsPanel ref={handResultsPanelRef}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3
-                className="text-sm font-semibold text-emerald-100"
-                data-testid="hand-results-title"
-              >
-                {t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
-              </h3>
-              <p className="mt-1 text-xs text-emerald-100/75" data-testid="hand-results-mode">
-                {t("game.showdownComplete")}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="hud-chip" data-testid="hand-results-pot">
-                {t("game.pot", { amount: lastHandResult.totalPot })}
-              </span>
-              <span className="hud-chip" data-testid="hand-results-winner-count">
-                {t("game.winnersCount", { count: lastHandResult.winners.length })}
-              </span>
-              <button
-                onClick={handleSaveResultScreenshot}
-                data-testid="save-result-screenshot-button"
-                className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-              >
-                {t("game.saveResultScreenshot")}
-              </button>
-            </div>
-          </div>
-
-          <div
-            className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
-            data-testid="hand-results-community"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-              {t("game.communityCards")}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-sm text-emerald-50">
-              {Array.from({ length: 5 }, (_, idx) => currentHand?.communityCards[idx] ?? null).map(
-                (card, idx) => (
-                  <Card
-                    key={`hand-results-community-card-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
-                    card={card}
-                    size="small"
-                    faceDown={!card}
-                    dataTestId={card ? `hand-results-community-card-${idx}` : `hand-results-community-back-${idx}`}
-                  />
-                ),
-              )}
-            </div>
-          </div>
-
-          {payoutBreakdownRows.length > 0 && (
-            <div
-              className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
-              data-testid="hand-results-payouts"
-            >
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                {t("game.payoutBreakdown")}
-              </p>
-              <div className="mt-2 space-y-2">
-                {payoutBreakdownRows.map((segment) => (
-                  <div
-                    key={`payout-segment-${segment.segmentIndex}`}
-                    className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
-                    data-testid={`payout-segment-${segment.segmentIndex}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-emerald-50">
-                          {segment.label}
-                        </span>
-                        {segment.uncontested && (
-                          <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
-                            {t("game.payout.uncontested")}
-                          </span>
-                        )}
-                      </div>
-                      <span className="rounded-full border border-emerald-500/60 bg-emerald-700/30 px-2 py-1 text-xs font-semibold text-emerald-50">
-                        ${segment.amount}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {segment.winnerShares.map((share) => (
-                        <span
-                          key={`payout-share-${segment.segmentIndex}-${share.playerId}`}
-                          className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 text-xs font-semibold text-cyan-100"
-                          data-testid={`payout-share-${segment.segmentIndex}-${share.playerId}`}
-                        >
-                          {share.playerName}
-                          {share.playerId === player.id ? ` (${t("common.you")})` : ""} +$
-                          {share.amountWon}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {handResultRows.length > 0 && (
-            <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
-              {handResultRows.map((entry) => {
-                const isSelf = entry.playerId === player.id;
-                const showCards = revealedHandPlayerIdSet.has(entry.playerId);
-                const evaluatedHand = entry.hand as HandEvaluation | null;
-
-                return (
-                  <article
-                    key={`hand-result-${entry.playerId}`}
-                    className={`rounded-xl border p-3 ${
-                      entry.isWinner
-                        ? "border-amber-400/70 bg-amber-500/10"
-                        : "border-emerald-700/60 bg-emerald-950/45"
-                    }`}
-                    data-testid={`hand-result-row-${entry.playerId}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">
-                          #{entry.rankOrder} {entry.playerName}
-                          {isSelf ? ` (${t("common.you")})` : ""}
-                        </p>
-                        <p className="text-xs text-emerald-100/70">
-                          {entry.isWinner
-                            ? t("game.wonAmount", { amount: entry.amountWon })
-                            : t("game.noPayout")}
-                        </p>
-                      </div>
-                      {entry.isWinner && (
-                        <span className="rounded-full border border-amber-300/70 bg-amber-300/20 px-2 py-1 text-xs font-semibold text-amber-100">
-                          {t("game.winner")}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {showCards
-                        ? entry.cards.map((card, idx) => (
-                            <Card
-                              key={`${entry.playerId}-shown-${idx}`}
-                              card={card}
-                              size="small"
-                              dataTestId={`hand-result-card-${entry.playerId}-${idx}`}
-                            />
-                          ))
-                        : [0, 1].map((idx) => (
-                            <Card
-                              key={`${entry.playerId}-hidden-${idx}`}
-                              card={null}
-                              size="small"
-                              faceDown
-                              dataTestId={`hand-result-hidden-card-${entry.playerId}-${idx}`}
-                            />
-                          ))}
-                    </div>
-
-                    <p
-                      className="mt-2 text-xs text-emerald-100/75"
-                      data-testid={`hand-result-rank-${entry.playerId}`}
-                    >
-                      {showCards
-                        ? evaluatedHand
-                          ? `${formatHandRank(evaluatedHand.rank, locale)} - ${formatHandDescription(evaluatedHand, locale)}`
-                          : t("game.cardsShownNoEvaluated")
-                        : t("game.handHidden")}
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+          <HandResultsContent
+            currentHandNumber={currentHandNumber}
+            totalPot={lastHandResult.totalPot}
+            winnerCount={lastHandResult.winners.length}
+            currentPlayerId={player.id}
+            communityCards={Array.from(
+              { length: 5 },
+              (_, idx) => currentHand?.communityCards[idx] ?? null,
+            )}
+            payoutBreakdownRows={payoutBreakdownRows}
+            handResultRows={handResultRows.map((entry) => ({
+              ...entry,
+              hand: (entry.hand as HandEvaluation | null) ?? null,
+            }))}
+            revealedHandPlayerIdSet={revealedHandPlayerIdSet}
+            onSaveResultScreenshot={handleSaveResultScreenshot}
+            describeEvaluatedHand={(evaluatedHand) =>
+              `${formatHandRank(evaluatedHand.rank, locale)} - ${formatHandDescription(evaluatedHand, locale)}`
+            }
+            t={t}
+          />
         </HandResultsPanel>
       )}
 
-      {canHostStartNextHand && (
-        <section className="surface-panel mx-3 mt-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
-              <p className="text-xs text-emerald-100/70">
-                {t("game.handCompleteHint")}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={startNextHand}
-                data-testid="start-next-hand-button"
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
-              >
-                {t("game.startNextHand")}
-              </button>
-              <button
-                onClick={() => setShowEndGameConfirmModal(true)}
-                data-testid="end-game-button"
-                className="rounded-xl border border-rose-300/70 bg-rose-500/25 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35"
-              >
-                {t("game.endGame")}
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-      {isWaitingForHostToStartNextHand && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="waiting-host-start-next-hand">
-          <div>
-            <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
-            <p className="text-xs text-emerald-100/70">
-              {t("game.waitingHostStartNextHand")}
-            </p>
-          </div>
-        </section>
-      )}
-
-      {showNextStreetActionArea && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-next-street-action-area">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-100">
-                {isResultRevealStep
-                  ? t("game.streetReveal.resultActionTitle")
-                  : t("game.streetReveal.actionTitle")}
-              </h3>
-              <p className="text-xs text-emerald-100/70">
-                {isResultRevealStep
-                  ? t("game.streetReveal.resultActionHint")
-                  : t("game.streetReveal.actionHint")}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={revealNextStreet}
-                disabled={!canRevealNextStreet || hasRevealedNextStreet}
-                data-testid="reveal-next-street-button"
-                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {hasRevealedNextStreet
-                  ? t("game.streetReveal.revealed")
-                  : isResultRevealStep
-                  ? t("game.streetReveal.revealResult")
-                  : t("game.streetReveal.revealNextStreet")}
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
+      <NextHandActionArea
+        canHostStartNextHand={canHostStartNextHand}
+        isWaitingForHostToStartNextHand={isWaitingForHostToStartNextHand}
+        showNextStreetActionArea={showNextStreetActionArea}
+        isResultRevealStep={isResultRevealStep}
+        canRevealNextStreet={canRevealNextStreet}
+        hasRevealedNextStreet={hasRevealedNextStreet}
+        onStartNextHand={startNextHand}
+        onOpenEndGameConfirm={() => setShowEndGameConfirmModal(true)}
+        onRevealNextStreet={revealNextStreet}
+        t={t}
+      />
 
       {isYourTurn && !isAwaitingStreetReveal && (
         <ChipComposerDock ref={turnOverlayRef}>
-          <div data-testid="action-dock" className="chip-composer-dock__action-area">
-            <div className="chip-composer-dock__header">
-              <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
-              <span className="chip-composer-dock__meta">{t("game.toCall", { amount: callAmount })}</span>
-              <span className="chip-composer-dock__meta">{t("game.minRaise", { amount: minRaise })}</span>
-            </div>
-
-            <div className="chip-composer-dock__tray-row">
-              <div className="chip-composer-dock__tray-panel">
-                <button
-                  type="button"
-                  onPointerDown={handleDragStart}
-                  onPointerMove={handleDragMove}
-                  onPointerUp={handleDragEnd}
-                  onPointerCancel={handleDragEnd}
-                  data-testid="chip-stack-draggable"
-                  disabled={!canStartDrag}
-                  className={`chip-stack chip-stack--hero ${dragState.active ? "chip-stack--dragging" : ""}`}
-                >
-                  <span className="chip-stack__label">{t("game.tray")}</span>
-                  <span
-                    key={trayAmount}
-                    className="chip-stack__value chip-stack__value--animated"
-                    data-testid="tray-amount-value"
-                  >
-                    ${trayAmount}
-                  </span>
-                </button>
-              </div>
-
-              <div className="chip-composer-dock__control-panel">
-                <div className="chip-composer-dock__presets">
-                  {trayPresetButtons.map((preset) => (
-                    <button
-                      key={preset.key}
-                      onClick={() => setTrayDirectly(preset.amount)}
-                      className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
-                      disabled={!preset.enabled}
-                      data-testid={preset.testId}
-                      data-tray-preset={preset.key}
-                    >
-                      <span>{preset.label}</span>
-                      <span>${preset.amount}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="chip-composer-dock__manual">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={trayInputValue}
-                    onChange={handleCustomTrayInputChange}
-                    onBlur={handleCustomTrayInputBlur}
-                    data-testid="chip-custom-input"
-                    aria-label={t("game.trayAmountAria")}
-                    className="chip-input"
-                  />
-                  <button
-                    onClick={clearTray}
-                    className="chip-clear"
-                    disabled={!isYourTurn || trayAmount <= 0}
-                    data-testid="chip-clear"
-                  >
-                    {t("common.clear")}
-                  </button>
-                </div>
-
-                <div className="chip-composer-dock__footer">
-                  <button
-                    onClick={() => handleQuickDecisionAction("check")}
-                    disabled={!canCheck}
-                    data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                    className="chip-action chip-action--check"
-                  >
-                    {t("common.check")}
-                  </button>
-                  <button
-                    onClick={() => handleQuickDecisionAction("fold")}
-                    data-testid="action-fold"
-                    className="chip-action chip-action--fold"
-                  >
-                    {t("common.fold")}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {isAutomationMode && (
-              <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">
-                <div className="mt-1 grid grid-cols-2 gap-2">
-                  {canCheck ? (
-                    <button
-                      onClick={() => handleLegacyAction("check")}
-                      data-testid="action-check-legacy"
-                      className="chip-action chip-action--check"
-                    >
-                      {t("common.check")}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleLegacyAction("call")}
-                      data-testid="action-call"
-                      className="chip-action chip-action--call"
-                    >
-                      {t("game.callWithAmount", { amount: callAmount })}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleLegacyAction("all-in")}
-                    data-testid="action-all-in"
-                    className="chip-action chip-action--allin"
-                  >
-                    {t("game.allInWithAmount", { amount: maxStack })}
-                  </button>
-                </div>
-
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="number"
-                    min={minRaise}
-                    max={maxStack}
-                    value={legacyRaiseAmount}
-                    onChange={(event) => setLegacyRaiseAmount(Number(event.target.value))}
-                    data-testid="raise-input"
-                    className="flex-1 rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-2 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-                  />
-                  <button
-                    onClick={() => handleLegacyAction("raise")}
-                    disabled={legacyRaiseAmount < minRaise || legacyRaiseAmount > maxStack}
-                    data-testid="action-raise"
-                    className="chip-action chip-action--raise"
-                  >
-                    {t("game.raise")}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <TurnActionDock
+            callAmount={callAmount}
+            minRaise={minRaise}
+            maxStack={maxStack}
+            trayAmount={trayAmount}
+            trayInputValue={trayInputValue}
+            canStartDrag={canStartDrag}
+            isDragActive={dragState.active}
+            isYourTurn={isYourTurn}
+            canCheck={canCheck}
+            isAutomationMode={isAutomationMode}
+            legacyRaiseAmount={legacyRaiseAmount}
+            trayPresetButtons={trayPresetButtons}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+            onSetTrayDirectly={setTrayDirectly}
+            onTrayInputChange={handleCustomTrayInputChange}
+            onTrayInputBlur={handleCustomTrayInputBlur}
+            onClearTray={clearTray}
+            onQuickDecisionAction={handleQuickDecisionAction}
+            onLegacyAction={handleLegacyAction}
+            onLegacyRaiseAmountChange={setLegacyRaiseAmount}
+            t={t}
+          />
         </ChipComposerDock>
       )}
 
