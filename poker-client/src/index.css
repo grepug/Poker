@@ -1574,6 +1574,11 @@ body {
   width: min(100%, 30rem);
 }
 
+.chat-panel__item--self.chat-panel__item--voice {
+  width: fit-content;
+  max-width: min(94%, 30rem);
+}
+
 .chat-panel__meta {
   display: flex;
   align-items: baseline;
@@ -1582,6 +1587,10 @@ body {
   font-size: 0.62rem;
   color: rgba(186, 230, 253, 0.75);
   margin-bottom: 0.14rem;
+}
+
+.chat-panel__item--self.chat-panel__item--voice .chat-panel__meta {
+  justify-content: flex-end;
 }
 
 .chat-panel__sender {
