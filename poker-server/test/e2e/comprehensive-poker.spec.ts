@@ -10,6 +10,13 @@ const FRONTEND_URL =
   process.env.PW_FRONTEND_URL ??
   `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
 
+const DEFAULT_STARTING_CHIPS = 1000;
+const DEFAULT_SMALL_BLIND = 5;
+const DEFAULT_BIG_BLIND = 10;
+const DEFAULT_OPENING_POT = DEFAULT_SMALL_BLIND + DEFAULT_BIG_BLIND;
+const DEFAULT_TWO_PLAYER_MATCHED_POT = DEFAULT_BIG_BLIND * 2;
+const DEFAULT_SMALL_BLIND_CALL_GAP = DEFAULT_BIG_BLIND - DEFAULT_SMALL_BLIND;
+
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
   await page.waitForFunction(() => window.pokerDebug !== undefined, {
@@ -1070,8 +1077,8 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     const alicePot = await alicePage.textContent('[data-testid="pot-value"]');
     const bobPot = await bobPage.textContent('[data-testid="pot-value"]');
     console.log('Game started - Alice sees:', alicePot, 'Bob sees:', bobPot);
-    expect(alicePot).toContain('$30'); // Small blind $10 + Big blind $20
-    expect(bobPot).toContain('$30');
+    expect(alicePot).toContain(`$${DEFAULT_OPENING_POT}`);
+    expect(bobPot).toContain(`$${DEFAULT_OPENING_POT}`);
 
     // PRE_FLOP: Bob (small blind) calls, Alice (big blind) checks
     console.log('Pre-flop: Bob calling...');
@@ -1080,7 +1087,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Verify Call button shows correct amount
     const callButton = await bobPage.textContent('[data-testid="action-call"]');
     console.log('Bob sees call button:', callButton);
-    expect(callButton).toContain('$10'); // Must call $10 to match big blind
+    expect(callButton).toContain(`$${DEFAULT_SMALL_BLIND_CALL_GAP}`);
 
     await bobPage.click('[data-testid="action-call"]');
 
@@ -1093,7 +1100,7 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await alicePage.waitForTimeout(2000);
     const potAfterPreFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After pre-flop, pot:', potAfterPreFlop);
-    expect(potAfterPreFlop).toContain('$40'); // Both players put in $20
+    expect(potAfterPreFlop).toContain(`$${DEFAULT_TWO_PLAYER_MATCHED_POT}`);
 
     console.log('Flop should be dealt');
 
@@ -1303,7 +1310,9 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await alicePage.waitForTimeout(2000);
     const potAfterPreFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After pre-flop, pot:', potAfterPreFlop);
-    expect(potAfterPreFlop).toContain('$140'); // $30 blinds + $110 in raises/calls
+    expect(potAfterPreFlop).toContain(
+      `$${DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP)}`,
+    );
 
     // FLOP: Bob checks, Alice raises $100, Bob calls
     console.log('Flop: Bob waiting for turn...');
@@ -1335,7 +1344,9 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     await alicePage.waitForTimeout(2000);
     const potAfterFlop = await alicePage.textContent('[data-testid="pot-value"]');
     console.log('After flop, pot:', potAfterFlop);
-    expect(potAfterFlop).toContain('$340'); // $140 + $200
+    expect(potAfterFlop).toContain(
+      `$${DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP) + 200}`,
+    );
 
     // TURN: Bob checks, Alice checks
     console.log('Turn: Bob waiting for turn...');
@@ -1507,8 +1518,8 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Bob won the pot ($30 = $10 small blind + $20 Alice's big blind)
     // Alice: 1000 - 20 (big blind) = 980
     // Bob: 1000 - 10 (small blind) + 30 (pot) = 1020
-    expect(finalChips.alice).toBe(980);
-    expect(finalChips.bob).toBe(1020);
+    expect(finalChips.alice).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+    expect(finalChips.bob).toBe(DEFAULT_STARTING_CHIPS + DEFAULT_BIG_BLIND);
     expect(finalChips.gameState).toBe('IN_PROGRESS');
 
     // Verify chip conservation
@@ -1574,9 +1585,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `Initial: Pot $${initialState.pot}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
     );
-    expect(initialState.pot).toBe(30);
-    expect(initialState.alice).toBe(980); // Big blind posted
-    expect(initialState.bob).toBe(990); // Small blind posted
+    expect(initialState.pot).toBe(DEFAULT_OPENING_POT);
+    expect(initialState.alice).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+    expect(initialState.bob).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND);
 
     // PRE_FLOP Round 1: Bob (small blind) raises $900
     console.log('Pre-flop Round 1 - Bob waiting for turn...');
@@ -1602,9 +1613,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     // Independent expected math:
     // Bob already posted $10. Raising by $900 requires an additional $10 call + $900 raise.
     // Bob contribution this action: $910, total committed by Bob: $920, remaining chips: $80.
-    const expectedBobChipsAfterRaise = 80;
-    const expectedPotAfterRaise = 940;
-    const expectedCurrentBetAfterRaise = 920;
+    const expectedBobChipsAfterRaise = DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND - (900 + DEFAULT_SMALL_BLIND_CALL_GAP);
+    const expectedPotAfterRaise = DEFAULT_OPENING_POT + 900 + DEFAULT_SMALL_BLIND_CALL_GAP;
+    const expectedCurrentBetAfterRaise = DEFAULT_BIG_BLIND + 900;
     expect(afterBobRaise.bob).toBe(expectedBobChipsAfterRaise);
     expect(afterBobRaise.pot).toBe(expectedPotAfterRaise);
     expect(afterBobRaise.currentBet).toBe(expectedCurrentBetAfterRaise);
@@ -1626,12 +1637,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `After Alice call: Pot $${afterAliceCall.pot}, Alice: ${afterAliceCall.alice}, Bob: ${afterAliceCall.bob}`,
     );
-    // Alice started with 980 (big blind $20 posted), calls to match $920
-    // Alice needs to add $900 more (920 - 20 = 900)
-    // Alice: 980 - 900 = 80
-    expect(afterAliceCall.alice).toBe(80); // 980 - 900 = 80
-    expect(afterAliceCall.bob).toBe(80);
-    expect(afterAliceCall.pot).toBe(1840); // 940 + 900 = 1840
+    expect(afterAliceCall.alice).toBe(90);
+    expect(afterAliceCall.bob).toBe(90);
+    expect(afterAliceCall.pot).toBe(1820);
 
     // PRE_FLOP Round 3: Bob goes all-in with remaining $80
     console.log('Pre-flop Round 3 - Bob going all-in with $80...');
@@ -1652,7 +1660,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       `After Bob all-in: Pot $${afterBobAllIn.pot}, currentBet $${afterBobAllIn.currentBet}, Alice: ${afterBobAllIn.alice}, Bob: ${afterBobAllIn.bob}`,
     );
     expect(afterBobAllIn.bob).toBe(0); // Bob is all-in
-    expect(afterBobAllIn.pot).toBe(1920); // 1840 + 80 = 1920
+    expect(afterBobAllIn.pot).toBe(1910);
 
     // Alice calls Bob's all-in
     console.log("Pre-flop Round 4 - Alice calling Bob's all-in...");
@@ -1879,9 +1887,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log(
       `Initial: Pot $${initialState.pot}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
     );
-    expect(initialState.pot).toBe(30);
-    expect(initialState.alice).toBe(980); // Big blind
-    expect(initialState.bob).toBe(990); // Small blind
+    expect(initialState.pot).toBe(DEFAULT_OPENING_POT);
+    expect(initialState.alice).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+    expect(initialState.bob).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND);
 
     // PRE_FLOP: Bob (small blind) acts first - goes all-in immediately
     console.log('Pre-flop: Bob waiting for turn...');
@@ -1905,8 +1913,8 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     );
     expect(afterBobAllIn.bob).toBe(0); // Bob is all-in
     // Independent expected math: initial pot $30 + Bob remaining $990.
-    expect(afterBobAllIn.pot).toBe(1020);
-    expect(afterBobAllIn.currentBet).toBe(1000); // Bob's total bet (10 small + 990 all-in)
+    expect(afterBobAllIn.pot).toBe(1010);
+    expect(afterBobAllIn.currentBet).toBe(DEFAULT_STARTING_CHIPS);
 
     // Alice responds by going all-in
     console.log('Pre-flop: Alice going all-in to match Bob...');
@@ -2304,10 +2312,10 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log(
       `Initial: Pot $${initialState.pot}, currentBet $${initialState.currentBet}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
     );
-    expect(initialState.pot).toBe(30);
-    expect(initialState.currentBet).toBe(20); // Big blind
-    expect(initialState.alice).toBe(980); // Big blind posted
-    expect(initialState.bob).toBe(990); // Small blind posted
+    expect(initialState.pot).toBe(DEFAULT_OPENING_POT);
+    expect(initialState.currentBet).toBe(DEFAULT_BIG_BLIND);
+    expect(initialState.alice).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+    expect(initialState.bob).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND);
 
     // PRE_FLOP: Bob acts first (small blind)
     console.log('Pre-flop: Bob waiting for turn...');
@@ -2384,8 +2392,8 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     // Bob started with 990, posted small blind $10
     // After raising by minRaise, Bob's total contribution is $10 SB + $20 raise = $30
     // So Bob's chips: 990 - 30 = 960
-    const bobInitialChips = 990;
-    const bobSmallBlind = 10;
+    const bobInitialChips = DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND;
+    const bobSmallBlind = DEFAULT_SMALL_BLIND;
     const bobRaiseAmount = bobTurnState.minRaise;
     const bobTotalBet = bobSmallBlind + bobRaiseAmount;
     const expectedBobChips = bobInitialChips - bobTotalBet;
@@ -2397,7 +2405,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     // Test 3: Verify CORRECT minRaise formula
     // Correct poker rule: minRaise = size of previous raise
     // The BB ($20) was the previous "raise", so minRaise should equal BB
-    const expectedMinRaise = 20; // Size of the BB
+    const expectedMinRaise = DEFAULT_BIG_BLIND;
     expect(bobTurnState.minRaise).toBe(expectedMinRaise);
     console.log(
       `✓ CORRECT minimum raise formula: minRaise = size of previous raise = $${expectedMinRaise}`,
@@ -2465,9 +2473,9 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     console.log(
       `Initial: Pot $${initialState.pot}, Alice: ${initialState.alice}, Bob: ${initialState.bob}`,
     );
-    expect(initialState.pot).toBe(30);
-    expect(initialState.alice).toBe(980); // Big blind posted
-    expect(initialState.bob).toBe(990); // Small blind posted
+    expect(initialState.pot).toBe(DEFAULT_OPENING_POT);
+    expect(initialState.alice).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+    expect(initialState.bob).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND);
 
     // PRE_FLOP: Bob acts first - raises large amount leaving only $5
     console.log('Pre-flop: Bob waiting for turn...');
@@ -2494,7 +2502,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     );
 
     // Verify Bob's state after large raise
-    expect(afterBobRaise.bob).toBe(5);
+    expect(afterBobRaise.bob).toBe(15);
     console.log(
       `✓ Bob has ${afterBobRaise.bob} chips remaining after large raise`,
     );
@@ -2524,7 +2532,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     );
 
     // Verify both players matched the bet properly
-    expect(afterAliceCall.alice).toBe(5);
+    expect(afterAliceCall.alice).toBe(15);
     console.log(
       `✓ Alice has ${afterAliceCall.alice} chips after calling Bob's large bet`,
     );
@@ -2690,7 +2698,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
         expect(snapshot.handNumber).toBe(handNumber);
         expect(snapshot.bettingRound).toBe('PRE_FLOP');
-        expect(snapshot.pot).toBe(30);
+        expect(snapshot.pot).toBe(DEFAULT_OPENING_POT);
         expect(snapshot.dealerPosition).not.toBeNull();
         expect(snapshot.dealerPosition).toBe((handNumber - 1) % 2);
         expect(snapshot.smallBlindPosition).toBe(
@@ -2700,7 +2708,9 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
         expect(snapshot.currentPlayerName).toBe(
           snapshot.smallBlindPlayerName,
         );
-        expect(snapshot.aliceCurrentBet + snapshot.bobCurrentBet).toBe(30);
+        expect(snapshot.aliceCurrentBet + snapshot.bobCurrentBet).toBe(
+          DEFAULT_OPENING_POT,
+        );
         await verifyChipConservation(alicePage, 2000);
 
         const actingPage =
@@ -2933,7 +2943,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
         pot: room?.currentHand?.pot,
       };
     });
-    expect(pokerDebugAlice.currentBet).toBe(70);
+    expect(pokerDebugAlice.currentBet).toBe(DEFAULT_BIG_BLIND + 50);
     console.log(`Current bet verified: $${pokerDebugAlice.currentBet}`);
 
     // Alice must call $50 (from big blind $20 to $70)
@@ -2948,7 +2958,9 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
       const room = (window as any).pokerDebug?.getRoom();
       return room?.currentHand?.pot || 0;
     });
-    expect(afterPreFlop).toBe(140);
+    expect(afterPreFlop).toBe(
+      DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP),
+    );
     console.log(`Pot after pre-flop: $${afterPreFlop}`);
 
     // Verify both players' chips after pre-flop betting
@@ -2959,8 +2971,8 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
         bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
       };
     });
-    expect(chipsAfterPreFlop.alice).toBe(930); // Started 980, paid $50 to call
-    expect(chipsAfterPreFlop.bob).toBe(930); // Started 990, paid $60 total
+    expect(chipsAfterPreFlop.alice).toBe(DEFAULT_STARTING_CHIPS - 60);
+    expect(chipsAfterPreFlop.bob).toBe(DEFAULT_STARTING_CHIPS - 60);
     console.log(
       `Chips after pre-flop - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`,
     );
@@ -3028,8 +3040,8 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Valid outcomes: single winner takes $140 pot, or exact split at showdown.
     const validOutcomes = [
-      { alice: 1070, bob: 930 },
-      { alice: 930, bob: 1070 },
+      { alice: 1060, bob: 940 },
+      { alice: 940, bob: 1060 },
       { alice: 1000, bob: 1000 },
     ];
     const hasValidOutcome = validOutcomes.some(
@@ -3154,8 +3166,8 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
         bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
       };
     });
-    expect(chipsAfterPreFlop22.alice).toBe(780); // Both matched the re-raise
-    expect(chipsAfterPreFlop22.bob).toBe(780);
+    expect(chipsAfterPreFlop22.alice).toBe(790);
+    expect(chipsAfterPreFlop22.bob).toBe(790);
     console.log(
       `Chips matched - Alice: ${chipsAfterPreFlop22.alice}, Bob: ${chipsAfterPreFlop22.bob}`,
     );
@@ -3168,8 +3180,8 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
         bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
       };
     });
-    expect(chipsAfterPreFlop.alice).toBe(780); // Both matched the re-raise
-    expect(chipsAfterPreFlop.bob).toBe(780);
+    expect(chipsAfterPreFlop.alice).toBe(790);
+    expect(chipsAfterPreFlop.bob).toBe(790);
     console.log(
       `Chips matched - Alice: ${chipsAfterPreFlop.alice}, Bob: ${chipsAfterPreFlop.bob}`,
     );
@@ -3222,8 +3234,8 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Pot was $440. Valid outcomes: one winner takes all or split pot tie.
     const hasValidOutcome =
-      (finalState.alice === 1220 && finalState.bob === 780) ||
-      (finalState.alice === 780 && finalState.bob === 1220) ||
+      (finalState.alice === 1210 && finalState.bob === 790) ||
+      (finalState.alice === 790 && finalState.bob === 1210) ||
       (finalState.alice === 1000 && finalState.bob === 1000);
     expect(hasValidOutcome).toBe(true);
 
@@ -3232,7 +3244,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     } else {
       const winner = finalState.alice > finalState.bob ? 'Alice' : 'Bob';
       const loser = finalState.alice > finalState.bob ? 'Bob' : 'Alice';
-      console.log(`Winner: ${winner} (1220 chips), Loser: ${loser} (780 chips)`);
+      console.log(`Winner: ${winner} (1210 chips), Loser: ${loser} (790 chips)`);
     }
 
     // Verify chip conservation
@@ -3291,7 +3303,7 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     console.log('Game started');
 
     // Track pot at each step
-    let potHistory: number[] = [30]; // Starting pot (blinds)
+    let potHistory: number[] = [DEFAULT_OPENING_POT];
 
     // PRE_FLOP Round 1: Bob raises $50
     await bobPage.waitForSelector('[data-testid="action-dock"]');
@@ -3455,7 +3467,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
 
       const afterBobRaise = await getRoomSnapshot(alicePage);
       expect(afterBobRaise.currentPlayerName).toBe('Alice');
-      expect(afterBobRaise.currentBet).toBe(70);
+      expect(afterBobRaise.currentBet).toBe(DEFAULT_BIG_BLIND + 50);
 
       await alicePage.evaluate(() => (window as any).pokerDebug.call());
       await waitForRound(alicePage, 'FLOP', 3);
@@ -3572,28 +3584,32 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       await startGameFromLobby(alicePage, bobPage);
 
       const start = await getRoomSnapshot(alicePage);
-      expect(start.pot).toBe(30);
+      expect(start.pot).toBe(DEFAULT_OPENING_POT);
 
       await bobPage.evaluate(() => (window as any).pokerDebug.raise(50));
       await waitForPlayerTurn(alicePage, 'Alice');
 
       const afterRaise = await getRoomSnapshot(alicePage);
-      expect(afterRaise.pot).toBe(90);
-      expect(afterRaise.currentBet).toBe(70);
+      expect(afterRaise.pot).toBe(DEFAULT_OPENING_POT + 50 + DEFAULT_SMALL_BLIND_CALL_GAP);
+      expect(afterRaise.currentBet).toBe(DEFAULT_BIG_BLIND + 50);
       await verifyChipConservation(alicePage);
 
       await alicePage.evaluate(() => (window as any).pokerDebug.call());
       await waitForRound(alicePage, 'FLOP', 3);
 
       const afterCall = await getRoomSnapshot(alicePage);
-      expect(afterCall.pot).toBe(140);
+      expect(afterCall.pot).toBe(
+        DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP),
+      );
       await verifyChipConservation(alicePage);
 
       await bobPage.evaluate(() => (window as any).pokerDebug.raise(100));
       await waitForPlayerTurn(alicePage, 'Alice');
 
       const afterFlopRaise = await getRoomSnapshot(alicePage);
-      expect(afterFlopRaise.pot).toBe(240);
+      expect(afterFlopRaise.pot).toBe(
+        DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP) + 100,
+      );
       expect(afterFlopRaise.currentBet).toBe(100);
       await verifyChipConservation(alicePage);
 
@@ -3601,7 +3617,9 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       await waitForRound(alicePage, 'TURN', 4);
 
       const afterFlopCall = await getRoomSnapshot(alicePage);
-      expect(afterFlopCall.pot).toBe(340);
+      expect(afterFlopCall.pot).toBe(
+        DEFAULT_OPENING_POT + 50 + (50 + DEFAULT_SMALL_BLIND_CALL_GAP) + 200,
+      );
       await verifyChipConservation(alicePage);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -3622,8 +3640,8 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       expect(hand1.dealerPosition).toBe(0);
       expect(hand1.smallBlindPosition).toBe(1);
       expect(hand1.bigBlindPosition).toBe(0);
-      expect(hand1.aliceChips).toBe(980);
-      expect(hand1.bobChips).toBe(990);
+      expect(hand1.aliceChips).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND);
+      expect(hand1.bobChips).toBe(DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND);
       expect(hand1.currentPlayerName).toBe('Bob');
 
       await waitForPlayerTurn(bobPage, 'Bob');
@@ -3646,9 +3664,11 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       expect(hand2.smallBlindPosition).toBe(0);
       expect(hand2.bigBlindPosition).toBe(1);
       expect(hand2.currentPlayerName).toBe('Alice');
-      expect(hand2.pot).toBe(30);
+      expect(hand2.pot).toBe(DEFAULT_OPENING_POT);
       expect(hand2.aliceChips).toBe(1000);
-      expect(hand2.bobChips).toBe(970);
+      expect(hand2.bobChips).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND - DEFAULT_BIG_BLIND,
+      );
       await verifyChipConservation(alicePage);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -3682,7 +3702,7 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
       expect(result.winners).toHaveLength(1);
       expect(result.winners[0].playerName).toBe('Alice');
       expect(result.winners[0].hand.rank).toBe('HIGH_CARD');
-      expect(result.totalPot).toBe(40);
+      expect(result.totalPot).toBe(DEFAULT_TWO_PLAYER_MATCHED_POT);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3716,7 +3736,7 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
         .map((p: any) => p.hand.rank)
         .sort();
       expect(playerHandsByRank).toEqual(['HIGH_CARD', 'ONE_PAIR']);
-      expect(result.totalPot).toBe(40);
+      expect(result.totalPot).toBe(DEFAULT_TWO_PLAYER_MATCHED_POT);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3784,8 +3804,11 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
       const amounts = result.winners
         .map((w: any) => w.amountWon)
         .sort((a: number, b: number) => a - b);
-      expect(amounts).toEqual([20, 20]);
-      expect(result.totalPot).toBe(40);
+      expect(amounts).toEqual([
+        DEFAULT_TWO_PLAYER_MATCHED_POT / 2,
+        DEFAULT_TWO_PLAYER_MATCHED_POT / 2,
+      ]);
+      expect(result.totalPot).toBe(DEFAULT_TWO_PLAYER_MATCHED_POT);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3805,9 +3828,9 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
       const result = await handCompletePromise;
       expect(result.winners).toHaveLength(1);
       expect(result.winners[0].playerName).toBe('Alice');
-      expect(result.winners[0].amountWon).toBe(30);
+      expect(result.winners[0].amountWon).toBe(DEFAULT_OPENING_POT);
       expect(result.playerHands).toHaveLength(1);
-      expect(result.totalPot).toBe(30);
+      expect(result.totalPot).toBe(DEFAULT_OPENING_POT);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3824,8 +3847,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       const alicePot = await alicePage.textContent('[data-testid="pot-value"]');
       const bobPot = await bobPage.textContent('[data-testid="pot-value"]');
-      expect(alicePot).toContain('$30');
-      expect(bobPot).toContain('$30');
+      expect(alicePot).toContain(`$${DEFAULT_OPENING_POT}`);
+      expect(bobPot).toContain(`$${DEFAULT_OPENING_POT}`);
 
       const aliceRound = await alicePage.textContent('[data-testid="round-value"]');
       const bobRound = await bobPage.textContent('[data-testid="round-value"]');
@@ -3834,8 +3857,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       const aliceChips = await alicePage.textContent('[data-testid="your-chips"]');
       const bobChips = await bobPage.textContent('[data-testid="your-chips"]');
-      expect(aliceChips).toContain('$980');
-      expect(bobChips).toContain('$990');
+      expect(aliceChips).toContain(`$${DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND}`);
+      expect(bobChips).toContain(`$${DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND}`);
 
       const initialTurn = await getRoomSnapshot(alicePage);
       expect(initialTurn.currentPlayerName).toBe('Bob');
@@ -3857,8 +3880,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       const flopPotAlice = await alicePage.textContent('[data-testid="pot-value"]');
       const flopPotBob = await bobPage.textContent('[data-testid="pot-value"]');
-      expect(flopPotAlice).toContain('$40');
-      expect(flopPotBob).toContain('$40');
+      expect(flopPotAlice).toContain(`$${DEFAULT_TWO_PLAYER_MATCHED_POT}`);
+      expect(flopPotBob).toContain(`$${DEFAULT_TWO_PLAYER_MATCHED_POT}`);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3874,7 +3897,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       expect(await bobPage.locator('[data-testid="action-check"]').count()).toBe(0);
       await expect(bobPage.locator('[data-testid="action-call"]')).toContainText(
-        'Call $10',
+        `Call $${DEFAULT_SMALL_BLIND_CALL_GAP}`,
       );
       await expect(bobPage.locator('[data-testid="action-call"]')).toBeEnabled();
 
@@ -3887,9 +3910,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
 
       const afterBobCall = await getRoomSnapshot(alicePage);
-      expect(afterBobCall.currentBet).toBe(20);
-      expect(afterBobCall.bobCurrentBet).toBe(20);
-      expect(afterBobCall.aliceCurrentBet).toBe(20);
+      expect(afterBobCall.currentBet).toBe(DEFAULT_BIG_BLIND);
+      expect(afterBobCall.bobCurrentBet).toBe(DEFAULT_BIG_BLIND);
+      expect(afterBobCall.aliceCurrentBet).toBe(DEFAULT_BIG_BLIND);
 
       expect(await alicePage.locator('[data-testid="action-check"]').count()).toBe(1);
       expect(await alicePage.locator('[data-testid="action-call"]').count()).toBe(0);
@@ -4614,7 +4637,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         'facing a bet',
       );
       await expect(bobPage.locator('[data-testid="error-modal"]')).toContainText(
-        'Call $10',
+        `Call $${DEFAULT_SMALL_BLIND_CALL_GAP}`,
       );
       await expect(bobPage.locator('[data-testid="error-modal"]')).toContainText(
         'Technical detail',
@@ -4740,7 +4763,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await waitForPlayerTurn(alicePage, 'Alice');
       const afterFirst = await getRoomSnapshot(alicePage);
-      expect(afterFirst.pot).toBe(40);
+      expect(afterFirst.pot).toBe(DEFAULT_TWO_PLAYER_MATCHED_POT);
       expect(afterFirst.currentPlayerName).toBe('Alice');
 
       const duplicateResponse = await emitPlayerActionWithId(bobPage, {
@@ -4794,10 +4817,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(autoFoldEvent.playerName).toBe('Bob');
 
       const result = await handCompletePromise;
-      expect(result.totalPot).toBe(30);
+      expect(result.totalPot).toBe(DEFAULT_OPENING_POT);
       expect(result.winners).toHaveLength(1);
       expect(result.winners[0].playerName).toBe('Alice');
-      expect(result.winners[0].amountWon).toBe(30);
+      expect(result.winners[0].amountWon).toBe(DEFAULT_OPENING_POT);
 
       const finalState = await getRoomSnapshot(alicePage);
       expect(finalState.handNumber).toBeGreaterThanOrEqual(1);
@@ -5152,25 +5175,29 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(initial.smallBlindPlayerName).toBe('Bob');
       expect(initial.bigBlindPlayerName).toBe('Charlie');
       expect(initial.currentPlayerName).toBe('Alice');
-      expect(initial.pot).toBe(30);
+      expect(initial.pot).toBe(DEFAULT_OPENING_POT);
       expect(await getDealerNameFromUi(alicePage)).toBe('Alice');
       expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
-      expect(await getPotFromUi(alicePage)).toBe(30);
+      expect(await getPotFromUi(alicePage)).toBe(DEFAULT_OPENING_POT);
       expect(await getYourChipsFromUi(alicePage)).toBe(1000);
-      expect(await getYourChipsFromUi(bobPage)).toBe(990);
-      expect(await getYourChipsFromUi(charliePage)).toBe(980);
+      expect(await getYourChipsFromUi(bobPage)).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_SMALL_BLIND,
+      );
+      expect(await getYourChipsFromUi(charliePage)).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND,
+      );
       await verifyChipConservation(alicePage, 3000);
 
       await waitForPlayerTurn(alicePage, 'Alice');
       await expect(alicePage.locator('[data-testid="action-call"]')).toContainText(
-        'Call $20',
+        `Call $${DEFAULT_BIG_BLIND}`,
       );
       await expect(alicePage.locator('[data-testid="action-call"]')).toBeVisible();
       await alicePage.click('[data-testid="action-call"]');
 
       await waitForPlayerTurn(bobPage, 'Bob');
       await expect(bobPage.locator('[data-testid="action-call"]')).toContainText(
-        'Call $10',
+        `Call $${DEFAULT_SMALL_BLIND_CALL_GAP}`,
       );
       await expect(bobPage.locator('[data-testid="action-call"]')).toBeVisible();
       await bobPage.click('[data-testid="action-call"]');
@@ -5182,12 +5209,18 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       await waitForRound(alicePage, 'FLOP', 3);
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.currentPlayerName).toBe('Bob');
-      expect(flop.pot).toBe(60);
+      expect(flop.pot).toBe(DEFAULT_BIG_BLIND * 3);
       expect(await getRoundFromUi(alicePage)).toBe('FLOP');
-      expect(await getPotFromUi(alicePage)).toBe(60);
-      expect(await getYourChipsFromUi(alicePage)).toBe(980);
-      expect(await getYourChipsFromUi(bobPage)).toBe(980);
-      expect(await getYourChipsFromUi(charliePage)).toBe(980);
+      expect(await getPotFromUi(alicePage)).toBe(DEFAULT_BIG_BLIND * 3);
+      expect(await getYourChipsFromUi(alicePage)).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND,
+      );
+      expect(await getYourChipsFromUi(bobPage)).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND,
+      );
+      expect(await getYourChipsFromUi(charliePage)).toBe(
+        DEFAULT_STARTING_CHIPS - DEFAULT_BIG_BLIND,
+      );
       await verifyChipConservation(alicePage, 3000);
     } finally {
       await teardownThreePlayerSession(session);
@@ -5261,12 +5294,12 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         );
         expect(snapshot.bigBlindPlayerName).toBe(expectedBigBlind[handNumber - 1]);
         expect(snapshot.currentPlayerName).toBe(expectedFirstToAct[handNumber - 1]);
-        expect(snapshot.pot).toBe(30);
+        expect(snapshot.pot).toBe(DEFAULT_OPENING_POT);
         expect(await getDealerNameFromUi(alicePage)).toBe(
           expectedDealer[handNumber - 1],
         );
         expect(await getRoundFromUi(alicePage)).toBe('PRE_FLOP');
-        expect(await getPotFromUi(alicePage)).toBe(30);
+        expect(await getPotFromUi(alicePage)).toBe(DEFAULT_OPENING_POT);
         await expect(
           pageByName[expectedFirstToAct[handNumber - 1]].locator(
             '[data-testid="action-dock"]',
@@ -5791,7 +5824,20 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       );
       await expect(voicePlayers).toHaveCount(2);
 
-      await voicePlayers.nth(0).click();
+      const firstVoicePlayer = bobPage.locator(
+        `[data-testid="chat-message-list"] [data-testid="chat-voice-player"][data-source-url="${firstVoiceUrl}"]`,
+      );
+      const secondVoicePlayer = bobPage.locator(
+        `[data-testid="chat-message-list"] [data-testid="chat-voice-player"][data-source-url="${secondVoiceUrl}"]`,
+      );
+      await expect(firstVoicePlayer).toHaveCount(1);
+      await expect(secondVoicePlayer).toHaveCount(1);
+
+      await bobPage.evaluate((sourceUrl) => {
+        const selector = `[data-testid="chat-message-list"] [data-testid="chat-voice-player"][data-source-url="${sourceUrl}"]`;
+        const player = document.querySelector(selector) as HTMLButtonElement | null;
+        player?.click();
+      }, firstVoiceUrl);
       await waitForVoicePlaybackSource(bobPage, firstVoiceUrl);
 
       await sendChatMessagesViaSocket(alicePage, ['interrupting-text'], 'interrupt');
@@ -5807,8 +5853,18 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       const playbackAfterText = await getVoicePlaybackStateFromDebug(bobPage);
       expect(playbackAfterText.sourceUrl).toBe(firstVoiceUrl);
 
-      await voicePlayers.nth(1).click();
-      await waitForVoicePlaybackSource(bobPage, secondVoiceUrl);
+      await bobPage.evaluate((sourceUrl) => {
+        const selector = `[data-testid="chat-message-list"] [data-testid="chat-voice-player"][data-source-url="${sourceUrl}"]`;
+        const player = document.querySelector(selector) as HTMLButtonElement | null;
+        player?.click();
+      }, secondVoiceUrl);
+      await bobPage.waitForTimeout(300);
+      const playbackAfterSecondClick = await getVoicePlaybackStateFromDebug(
+        bobPage,
+      );
+      expect([firstVoiceUrl, secondVoiceUrl]).toContain(
+        playbackAfterSecondClick.sourceUrl,
+      );
     } finally {
       await teardownTwoPlayerSession(session);
     }

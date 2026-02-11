@@ -96,6 +96,7 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
     <button
       type="button"
       data-testid={testId}
+      data-source-url={sourceUrl}
       className={`chat-panel__voice-player ${isPlaying ? "chat-panel__voice-player--playing" : ""}`}
       style={{ width: `${bubbleWidthPx}px`, minWidth: "50px", maxWidth: "72%", flex: "0 0 auto" }}
       onClick={() => {
