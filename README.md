@@ -215,6 +215,14 @@ Quick mode (skip Playwright smoke):
 ./scripts/pregame-readiness.sh --fast
 ```
 
+Run comprehensive Playwright in parallel (worker count configurable):
+
+```bash
+cd poker-server
+PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 PW_WORKERS=4 \
+  npm run test:e2e:playwright:comprehensive:parallel
+```
+
 Current test coverage:
 
 - ✅ Deck utilities (17/17 tests passing)
