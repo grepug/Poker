@@ -27,11 +27,11 @@ export class GameService {
 
     const defaultConfig: RoomConfig = {
       startingChips: 1000,
-      smallBlind: 5,
-      bigBlind: 10,
+      smallBlind: 10,
+      bigBlind: 20,
       maxPlayers: 10,
       reconnectGracePeriod: 120000,
-      allowPlayerStreetReveal: true,
+      allowPlayerStreetReveal: false,
     };
 
     const host: Player = {
