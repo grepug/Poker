@@ -2722,16 +2722,26 @@ export const GameRoom: React.FC = () => {
                 isFolded,
                 isWaiting,
               });
-              const seatStatusLabel =
+              const seatInlineStatusLabel =
                 seatMainState === "disconnected"
                   ? t("game.status.disconnected")
                   : seatMainState === "all-in"
                     ? t("game.status.allIn")
                     : seatMainState === "folded"
                       ? t("game.status.folded")
-                      : seatMainState === "waiting"
-                        ? t("game.status.waitingNextHand")
-                        : null;
+                      : null;
+              const seatExternalStatusLabel =
+                seatMainState === "turn"
+                  ? t("game.status.acting")
+                  : seatMainState === "waiting"
+                    ? t("game.status.waiting")
+                    : null;
+              const seatExternalStatusToneClass =
+                seatMainState === "turn"
+                  ? "seat-pod__status-badge--turn"
+                  : seatMainState === "waiting"
+                    ? "seat-pod__status-badge--waiting"
+                    : "";
               const isForcedBlind = Boolean(
                 currentHand?.bettingRound === "PRE_FLOP" &&
                   seatPlayer.currentBet > 0 &&
@@ -2806,11 +2816,11 @@ export const GameRoom: React.FC = () => {
                         {roleIcon === "dealer" ? "D" : "SB"}
                       </span>
                     )}
-                    {seatMainState === "turn" && (
+                    {seatExternalStatusLabel && (
                       <span
-                        className="seat-pod__status-badge seat-pod__status-badge--turn seat-pod__status-badge--turn-external"
+                        className={`seat-pod__status-badge seat-pod__status-badge--external ${seatExternalStatusToneClass}`}
                       >
-                        {t("game.status.acting")}
+                        {seatExternalStatusLabel}
                       </span>
                     )}
                     <div className="seat-pod__row">
@@ -2822,21 +2832,19 @@ export const GameRoom: React.FC = () => {
                       <span className="seat-pod__name">
                         {seatPlayer.name}
                       </span>
-                      {seatStatusLabel && (
+                      {seatInlineStatusLabel && (
                         <span
                           className={`seat-pod__status-badge ${
                             seatMainState === "folded"
                               ? "seat-pod__status-badge--folded"
                               : seatMainState === "disconnected"
                                 ? "seat-pod__status-badge--disconnected"
-                                : seatMainState === "waiting"
-                                  ? "seat-pod__status-badge--waiting"
-                                  : seatMainState === "all-in"
+                                : seatMainState === "all-in"
                                     ? "seat-pod__status-badge--allin"
                                     : ""
                           }`}
                         >
-                          {seatStatusLabel}
+                          {seatInlineStatusLabel}
                         </span>
                       )}
                     </div>

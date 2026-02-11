@@ -622,7 +622,7 @@ body {
   background: rgba(120, 53, 15, 0.48);
 }
 
-.seat-pod__status-badge--turn-external {
+.seat-pod__status-badge--external {
   position: absolute;
   left: 0;
   top: 0;

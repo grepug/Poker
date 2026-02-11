@@ -111,7 +111,7 @@ export const EN_MESSAGES = {
   "game.status.disconnected": "DISCONNECTED",
   "game.status.folded": "FOLDED",
   "game.status.waiting": "WAITING",
-  "game.status.waitingNextHand": "WAITING (NEXT HAND)",
+  "game.status.waitingNextHand": "WAITING",
   "game.status.acting": "ACTING",
 
   "game.handResults": "Hand #{handNumber} Results",
@@ -375,7 +375,7 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.status.disconnected": "已断线",
   "game.status.folded": "已弃牌",
   "game.status.waiting": "等待中",
-  "game.status.waitingNextHand": "等待中（下手入局）",
+  "game.status.waitingNextHand": "等待中",
   "game.status.acting": "行动中",
 
   "game.handResults": "第 #{handNumber} 局结果",
