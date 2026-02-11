@@ -2648,6 +2648,7 @@ export const GameRoom: React.FC = () => {
         <ActionCenterAlertOverlay
           key={`action-alert-${actionCenterAlert.id}`}
           pointerVector={actionPointerVector}
+          eyebrow={t("game.actionAlert.eyebrow")}
           actor={actionCenterAlert.playerName}
           title={actionCenterAlert.text}
           tone={actionCenterAlert.tone}

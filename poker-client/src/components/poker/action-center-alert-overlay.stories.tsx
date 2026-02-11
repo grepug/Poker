@@ -16,6 +16,7 @@ const meta = {
       angle: -10,
       length: 90,
     },
+    eyebrow: "User Action",
     actor: "Kai",
     title: "Raises to $120",
     tone: "aggressive",

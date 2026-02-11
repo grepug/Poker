@@ -12,6 +12,7 @@ const registryRoot = path.join(rootDir, "registry");
 const app = Fastify({
   logger: true,
 });
+const POKER_ITEM_NAME_PATTERN = /^[a-z0-9-]+$/;
 
 const readJsonFile = async (relativePath) =>
   JSON.parse(
@@ -38,6 +39,13 @@ app.get("/registry/styles/poker-dark.json", async () =>
 
 app.get("/registry/poker/:item.json", async (request, reply) => {
   const { item } = request.params;
+  if (!POKER_ITEM_NAME_PATTERN.test(item)) {
+    return reply.code(400).send({
+      error: "invalid_item",
+      message: "Registry item name must match /^[a-z0-9-]+$/",
+    });
+  }
+
   try {
     return await readJsonFile(`poker/${item}.json`);
   } catch {

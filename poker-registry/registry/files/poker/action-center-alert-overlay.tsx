@@ -10,6 +10,7 @@ type ActionPointerVector = {
 
 type ActionCenterAlertOverlayProps = {
   pointerVector: ActionPointerVector | null;
+  eyebrow: string;
   actor: string;
   title: string;
   tone: "neutral" | "aggressive" | "fold" | "allin";
@@ -19,6 +20,7 @@ type ActionCenterAlertOverlayProps = {
 
 export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> = ({
   pointerVector,
+  eyebrow,
   actor,
   title,
   tone,
@@ -42,7 +44,7 @@ export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> =
       )}
       <div ref={cardRef}>
         <ActionCenterAlert
-          eyebrow="User Action"
+          eyebrow={eyebrow}
           actor={actor}
           title={title}
           tone={tone}
