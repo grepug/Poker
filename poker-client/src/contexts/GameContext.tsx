@@ -109,6 +109,7 @@ type DebugApi = {
   ) => void;
   loadOlderChatMessages: () => void;
   setChatPanelOpen: (open: boolean) => void;
+  clearChatUnread: () => void;
   getVoicePlaybackState: () => { sourceUrl: string | null; isPlaying: boolean };
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
@@ -149,6 +150,7 @@ interface GameContextType {
   sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
   loadOlderChatMessages: () => void;
   setChatPanelOpen: (open: boolean) => void;
+  clearChatUnread: () => void;
   clearError: () => void;
 }
 
@@ -1139,6 +1141,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     }
   }, []);
 
+  const clearChatUnread = useCallback(() => {
+    setChatUnreadCount(0);
+  }, []);
+
   const sendChatPayload = useCallback(
     (payload: SendChatMessageData) => {
       if (!socket) return;
@@ -1262,6 +1268,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         sendChatVoice,
         loadOlderChatMessages,
         setChatPanelOpen,
+        clearChatUnread,
         getVoicePlaybackState,
         clearError,
         emitCustom: (event, data) => {
@@ -1306,6 +1313,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     sendChatVoice,
     loadOlderChatMessages,
     setChatPanelOpen,
+    clearChatUnread,
     clearError,
   ]);
 
@@ -1343,6 +1351,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         sendChatVoice,
         loadOlderChatMessages,
         setChatPanelOpen,
+        clearChatUnread,
         clearError,
       }}
     >

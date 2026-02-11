@@ -1122,6 +1122,7 @@ export const GameRoom: React.FC = () => {
     chatUnreadCount,
     isChatPanelOpen,
     setChatPanelOpen,
+    clearChatUnread,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
 
@@ -1220,10 +1221,25 @@ export const GameRoom: React.FC = () => {
   const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
 
-  const latestChatMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
+  const latestUnreadIncomingChatMessage = useMemo(() => {
+    if (chatUnreadCount <= 0) {
+      return null;
+    }
+
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      const message = chatMessages[index];
+      if (message.sender.playerId !== resolvedPlayerId) {
+        return message;
+      }
+    }
+
+    return null;
+  }, [chatMessages, chatUnreadCount, resolvedPlayerId]);
+
   const activePreviewMessage =
-    latestChatMessage && latestChatMessage.id !== dismissedPreviewMessageId
-      ? latestChatMessage
+    latestUnreadIncomingChatMessage &&
+    latestUnreadIncomingChatMessage.id !== dismissedPreviewMessageId
+      ? latestUnreadIncomingChatMessage
       : null;
 
   const handleOpenChatFromPreview = useCallback(() => {
@@ -1237,6 +1253,15 @@ export const GameRoom: React.FC = () => {
 
     setChatPanelOpen(true);
   }, [activePreviewMessage, setChatPanelOpen]);
+
+  const handleDismissPreview = useCallback(() => {
+    if (!activePreviewMessage) {
+      return;
+    }
+
+    setDismissedPreviewMessageId(activePreviewMessage.id);
+    clearChatUnread();
+  }, [activePreviewMessage, clearChatUnread]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2542,7 +2567,7 @@ export const GameRoom: React.FC = () => {
               data-testid="chat-preview-dismiss"
               aria-label={t("game.chat.preview.dismiss")}
               title={t("game.chat.preview.dismiss")}
-              onClick={() => setDismissedPreviewMessageId(activePreviewMessage.id)}
+              onClick={handleDismissPreview}
             >
               ×
             </button>
