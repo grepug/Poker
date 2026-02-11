@@ -74,11 +74,11 @@
 ## 4. 实现落点（代码）
 
 - 未读状态管理：
-  - `/Users/kai/.codex/worktrees/16e7/Poker/poker-client/src/contexts/GameContext.tsx`
+  - `poker-client/src/contexts/GameContext.tsx`
 - 最近消息预览选择与关闭行为：
-  - `/Users/kai/.codex/worktrees/16e7/Poker/poker-client/src/components/GameRoom.tsx`
+  - `poker-client/src/components/GameRoom.tsx`
 - 回归测试：
-  - `/Users/kai/.codex/worktrees/16e7/Poker/poker-server/test/e2e/comprehensive-poker.spec.ts`
+  - `poker-server/test/e2e/comprehensive-poker.spec.ts`
 
 ---
 

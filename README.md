@@ -172,7 +172,7 @@ docker compose down -v
 ## 📚 Product Rules
 
 - Chat unread & latest-preview rules:
-  - `/Users/kai/.codex/worktrees/16e7/Poker/docs/plans/2026-02-11-chat-unread-preview-rules.md`
+  - [2026-02-11 chat unread & preview rules](docs/plans/2026-02-11-chat-unread-preview-rules.md)
 
 ## 🧪 Testing
 
