@@ -6,14 +6,28 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
  * Uses window.pokerDebug API for deterministic testing with predetermined cards
  */
 
-const FRONTEND_URL = 'http://localhost:5174';
-const BACKEND_URL = 'http://localhost:3001';
+const FRONTEND_URL =
+  process.env.PW_FRONTEND_URL ??
+  `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
 
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
   await page.waitForFunction(() => window.pokerDebug !== undefined, {
     timeout: 5000,
   });
+}
+
+async function assertWaitingBadgeExternalForSeat(page: Page, playerId: string) {
+  const seat = page.locator(`[data-testid="player-seat-${playerId}"]`);
+  await expect(
+    seat.locator(
+      '.seat-pod__status-badge--external.seat-pod__status-badge--waiting',
+    ),
+  ).toHaveCount(1);
+  await expect(
+    seat.locator('.seat-pod__row .seat-pod__status-badge--waiting'),
+  ).toHaveCount(0);
+  await expect(seat).not.toContainText(/NEXT HAND|下手入局/);
 }
 
 // Helper to verify chip conservation (chips only, not including current bets)
@@ -62,7 +76,56 @@ type ThreePlayerSession = {
   roomCode: string;
 };
 
-async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
+type SetupTwoPlayerOptions = {
+  roomConfig?: Record<string, unknown>;
+};
+
+async function createRoomViaSocket(
+  page: Page,
+  playerName: string,
+  config?: Record<string, unknown>,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    async ({ requestedName, requestedConfig }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error('Unable to create room: socket unavailable');
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        socket.emit(
+          'CREATE_ROOM',
+          { playerName: requestedName, config: requestedConfig },
+          (response: { success?: boolean; error?: string }) => {
+            if (response?.success) {
+              resolve();
+            } else {
+              reject(
+                new Error(response?.error || 'Unknown CREATE_ROOM failure'),
+              );
+            }
+          },
+        );
+      });
+    },
+    { requestedName: playerName, requestedConfig: config },
+  );
+
+  await page.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await page.textContent('[data-testid="room-title"]');
+  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+  if (!roomCode) {
+    throw new Error('Failed to create room code');
+  }
+
+  return roomCode;
+}
+
+async function setupTwoPlayerSession(
+  browser: any,
+  options?: SetupTwoPlayerOptions,
+): Promise<TwoPlayerSession> {
   const aliceContext = await browser.newContext();
   const bobContext = await browser.newContext();
   const alicePage = await aliceContext.newPage();
@@ -79,15 +142,9 @@ async function setupTwoPlayerSession(browser: any): Promise<TwoPlayerSession> {
     'Connected',
   );
 
-  await alicePage.fill('[data-testid="name-input"]', 'Alice');
-  await alicePage.click('[data-testid="create-room-button"]');
-  await alicePage.waitForSelector('[data-testid="room-title"]');
-  const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
-  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
-
-  if (!roomCode) {
-    throw new Error('Failed to create room code for two-player setup');
-  }
+  const roomCode = options?.roomConfig
+    ? await createRoomViaSocket(alicePage, 'Alice', options.roomConfig)
+    : await createRoomViaSocket(alicePage, 'Alice');
 
   await bobPage.click('[data-testid="join-toggle-button"]');
   await bobPage.fill('[data-testid="name-input"]', 'Bob');
@@ -188,13 +245,77 @@ async function teardownThreePlayerSession(session: ThreePlayerSession) {
   ]);
 }
 
-async function startGameFromLobby(alicePage: Page, bobPage: Page) {
+async function startGameFromLobby(
+  alicePage: Page,
+  bobPage: Page,
+  options?: { enableStreetReveal?: boolean },
+) {
+  const desiredStreetReveal = options?.enableStreetReveal ?? false;
+  await setAllowPlayerStreetRevealAndWait(
+    alicePage,
+    [alicePage, bobPage],
+    desiredStreetReveal,
+  );
   await alicePage.click('[data-testid="start-game-button"]');
   await Promise.all([
     alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
     bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
   ]);
   await Promise.all([waitForHoleCards(alicePage), waitForHoleCards(bobPage)]);
+}
+
+async function updateAllowPlayerStreetReveal(page: Page, enabled: boolean) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    (nextValue) =>
+      new Promise<void>((resolve, reject) => {
+        const socket = (window as any).pokerDebug?.getSocket?.();
+        if (!socket) {
+          reject(new Error('socket unavailable'));
+          return;
+        }
+
+        socket.emit(
+          'UPDATE_ROOM_CONFIG',
+          { config: { allowPlayerStreetReveal: nextValue } },
+          (response: { success?: boolean; error?: string }) => {
+            if (response?.success) {
+              resolve();
+            } else {
+              reject(new Error(response?.error || 'UPDATE_ROOM_CONFIG failed'));
+            }
+          },
+        );
+      }),
+    enabled,
+  );
+}
+
+async function waitForAllowPlayerStreetReveal(
+  page: Page,
+  enabled: boolean,
+  timeout = 5000,
+) {
+  await page.waitForFunction(
+    (expected) =>
+      (window as any).pokerDebug?.getRoom?.()?.config?.allowPlayerStreetReveal ===
+      expected,
+    enabled,
+    { timeout },
+  );
+}
+
+async function setAllowPlayerStreetRevealAndWait(
+  hostPage: Page,
+  participantPages: Page[],
+  enabled: boolean,
+) {
+  await updateAllowPlayerStreetReveal(hostPage, enabled);
+  await Promise.all(
+    participantPages.map((page) =>
+      waitForAllowPlayerStreetReveal(page, enabled),
+    ),
+  );
 }
 
 async function waitForHoleCards(page: Page, expectedCount = 2) {
@@ -355,6 +476,205 @@ async function requestRebuy(page: Page, amount: number) {
   }, amount);
 }
 
+
+async function openChatPanel(page: Page) {
+  await page.click('[data-testid="open-chat-button"]');
+  await page.waitForSelector('[data-testid="chat-panel"]', {
+    state: 'visible',
+    timeout: 5000,
+  });
+}
+
+async function sendChatMessagesViaSocket(
+  page: Page,
+  messages: string[],
+  prefix: string,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(
+    async ({ outgoingMessages, idPrefix }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error('Unable to send chat messages: socket unavailable');
+      }
+
+      const now = Date.now();
+      await Promise.all(
+        outgoingMessages.map(
+          (text: string, index: number) =>
+            new Promise<void>((resolve, reject) => {
+              socket.emit(
+                'SEND_CHAT_MESSAGE',
+                {
+                  kind: 'TEXT',
+                  text,
+                  clientMessageId: `${idPrefix}-${now}-${index}-${Math.random()
+                    .toString(36)
+                    .slice(2, 10)}`,
+                },
+                (response: { success?: boolean; error?: string }) => {
+                  if (response?.success) {
+                    resolve();
+                    return;
+                  }
+                  reject(
+                    new Error(
+                      response?.error || 'Unknown SEND_CHAT_MESSAGE failure',
+                    ),
+                  );
+                },
+              );
+            }),
+        ),
+      );
+    },
+    { outgoingMessages: messages, idPrefix: prefix },
+  );
+}
+
+async function getChatMessagesFromDebug(page: Page) {
+  await waitForPokerDebug(page);
+  return page.evaluate(() => (window as any).pokerDebug?.getChatMessages?.() ?? []);
+}
+
+async function getVoicePlaybackStateFromDebug(page: Page) {
+  await waitForPokerDebug(page);
+  return page.evaluate(
+    () =>
+      (window as any).pokerDebug?.getVoicePlaybackState?.() ?? {
+        sourceUrl: null,
+        isPlaying: false,
+      },
+  );
+}
+
+async function waitForVoicePlaybackSource(
+  page: Page,
+  expectedSourceUrl: string,
+  timeout = 10000,
+) {
+  await page.waitForFunction(
+    (expected) =>
+      (window as any).pokerDebug?.getVoicePlaybackState?.()?.sourceUrl ===
+      expected,
+    expectedSourceUrl,
+    { timeout },
+  );
+}
+
+async function sendVoiceMessageViaUpload(page: Page, prefix: string) {
+  await waitForPokerDebug(page);
+
+  return page.evaluate(async ({ idPrefix }) => {
+    const pokerDebug = (window as any).pokerDebug;
+    const room = pokerDebug?.getRoom?.();
+    const player = pokerDebug?.getPlayer?.();
+    const socket = pokerDebug?.getSocket?.();
+
+    if (!room?.id || !player?.id || !socket) {
+      throw new Error('Unable to send voice message: room/player/socket unavailable');
+    }
+
+    const rawServerUrl =
+      socket?.io?.uri ||
+      (window as any).__POKER_SERVER_URL__ ||
+      (window as any).__POKER_RUNTIME_CONFIG__?.serverUrl;
+    if (!rawServerUrl) {
+      throw new Error('Unable to resolve backend url for voice upload');
+    }
+
+    const serverBaseUrl = String(rawServerUrl).replace(/\/$/, '');
+    const blob = new Blob([
+      new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00,
+        0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20,
+        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+        0x40, 0x1f, 0x00, 0x00, 0x80, 0x3e, 0x00, 0x00,
+        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61,
+        0x00, 0x00, 0x00, 0x00,
+      ]),
+    ], {
+      type: 'audio/wav',
+    });
+
+    const formData = new FormData();
+    formData.append('audio', blob, 'test-audio.wav');
+    formData.append('roomId', room.id);
+    formData.append('playerId', player.id);
+    formData.append('durationMs', '1200');
+
+    const uploadResponse = await fetch(
+      `${serverBaseUrl}/api/chat/voice-upload`,
+      {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      },
+    );
+
+    const uploadPayload = await uploadResponse.json();
+    if (!uploadResponse.ok || !uploadPayload?.success || !uploadPayload?.voice) {
+      throw new Error(uploadPayload?.error || 'Voice upload failed');
+    }
+
+    const clientMessageId = `${idPrefix}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+
+    await new Promise<void>((resolve, reject) => {
+      socket.emit(
+        'SEND_CHAT_MESSAGE',
+        {
+          kind: 'VOICE',
+          voice: uploadPayload.voice,
+          clientMessageId,
+        },
+        (response: { success?: boolean; error?: string }) => {
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(
+            new Error(response?.error || 'Failed to emit uploaded voice message'),
+          );
+        },
+      );
+    });
+
+    return {
+      voice: uploadPayload.voice,
+      serverBaseUrl,
+    };
+  }, { idPrefix: prefix });
+}
+
+async function emitPlayerActionWithId(
+  page: Page,
+  payload: { action: string; amount?: number; actionId?: string },
+) {
+  await waitForPokerDebug(page);
+  return page.evaluate(
+    ({ action, amount, actionId }) =>
+      new Promise<{ success?: boolean; error?: string; duplicate?: boolean }>(
+        (resolve) => {
+          const socket = (window as any).pokerDebug?.getSocket?.();
+          if (!socket) {
+            resolve({ success: false, error: 'socket unavailable' });
+            return;
+          }
+          socket.emit(
+            'PLAYER_ACTION',
+            { action, amount, actionId },
+            (response: { success?: boolean; error?: string; duplicate?: boolean }) =>
+              resolve(response ?? { success: false, error: 'empty response' }),
+          );
+        },
+      ),
+    payload,
+  );
+}
+
 function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
   return page.evaluate((timeoutLimit) => {
     const pokerDebug = (window as any).pokerDebug;
@@ -373,6 +693,89 @@ function captureNextHandComplete(page: Page, timeoutMs = 15000): Promise<any> {
       });
     });
   }, timeoutMs);
+}
+
+function captureNextSocketEvent(
+  page: Page,
+  eventName: string,
+  timeoutMs = 10000,
+): Promise<any> {
+  return page.evaluate(
+    ({ event, timeoutLimit }) => {
+      const socket = (window as any).pokerDebug?.getSocket?.();
+      if (!socket) {
+        throw new Error(`Unable to capture ${event}: socket unavailable`);
+      }
+
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`Timed out waiting for ${event}`));
+        }, timeoutLimit);
+        socket.once(event, (data: any) => {
+          clearTimeout(timer);
+          resolve(data);
+        });
+      });
+    },
+    { event: eventName, timeoutLimit: timeoutMs },
+  );
+}
+
+async function forceSocketReconnect(page: Page) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async () => {
+    const pokerDebug = (window as any).pokerDebug;
+    const socket = pokerDebug?.getSocket?.();
+    const room = pokerDebug?.getRoom?.();
+    const player = pokerDebug?.getPlayer?.();
+
+    if (!socket || !room?.id || !player?.id || !player?.name) {
+      throw new Error('Unable to force reconnect: session context unavailable');
+    }
+
+    if (socket.connected) {
+      await new Promise<void>((resolve) => {
+        socket.once('disconnect', () => resolve());
+        socket.disconnect();
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for socket connect'));
+      }, 10000);
+
+      socket.once('connect', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.connect();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for RECONNECT ack'));
+      }, 10000);
+
+      socket.emit(
+        'RECONNECT',
+        {
+          roomId: room.id,
+          playerName: player.name,
+          playerId: player.id,
+        },
+        (response: { success?: boolean; error?: string }) => {
+          clearTimeout(timer);
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(response?.error || 'Unknown RECONNECT failure'));
+        },
+      );
+    });
+  });
 }
 
 async function completeCurrentHandWithPassiveActions(
@@ -494,7 +897,7 @@ async function getPotFromUi(page: Page): Promise<number> {
 
 async function getRoundFromUi(page: Page): Promise<string> {
   const roundText = await page.textContent('[data-testid="round-value"]');
-  const match = roundText?.match(/Current Round:\s*([A-Z_]+)/);
+  const match = roundText?.match(/(?:Current\s+)?Round:\s*([A-Z_]+)/);
   if (!match) {
     throw new Error(`Unable to parse round from text: ${roundText ?? '<null>'}`);
   }
@@ -556,6 +959,17 @@ async function getPlayersMoneyFromUi(
       string,
       { chips: number; currentBet: number; totalBuyIn: number }
     > = {};
+    const roomPlayersByName: Record<string, { totalBuyIn: number }> = {};
+    const room = (window as any).pokerDebug?.getRoom?.();
+    if (room?.players && Array.isArray(room.players)) {
+      for (const p of room.players) {
+        if (p?.name) {
+          roomPlayersByName[p.name] = {
+            totalBuyIn: Number(p.totalBuyIn ?? 0),
+          };
+        }
+      }
+    }
     const playersSection = document.querySelector('[data-testid="players-section"]');
     const seatRows = playersSection?.querySelectorAll('[data-testid^="player-seat-"]');
     if (seatRows && seatRows.length > 0) {
@@ -578,7 +992,9 @@ async function getPlayersMoneyFromUi(
           .map((el) => el.textContent || '')
           .find((text) => text.includes('Buy-in: $'));
         const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
-        const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
+        const totalBuyIn = buyInMatch
+          ? Number(buyInMatch[1])
+          : roomPlayersByName[name]?.totalBuyIn ?? 0;
 
         result[name] = { chips, currentBet, totalBuyIn };
       }
@@ -613,13 +1029,85 @@ async function getPlayersMoneyFromUi(
         .map((el) => el.textContent || '')
         .find((text) => text.includes('Buy-in: $'));
       const buyInMatch = buyInText?.match(/Buy-in:\s*\$([0-9]+)/);
-      const totalBuyIn = buyInMatch ? Number(buyInMatch[1]) : 0;
+      const totalBuyIn = buyInMatch
+        ? Number(buyInMatch[1])
+        : roomPlayersByName[name]?.totalBuyIn ?? 0;
 
       result[name] = { chips, currentBet, totalBuyIn };
     }
 
     return result;
   });
+}
+
+async function assertSeatCardsWithinTableBounds(
+  page: Page,
+  label: string,
+  tolerancePx = 1.5,
+  minSeatCount = 2,
+) {
+  const result = await page.evaluate(({ tolerance }) => {
+    const feltNode = document.querySelector('.felt-oval');
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+    );
+
+    if (!feltNode) {
+      return {
+        hasFelt: false,
+        seatCount: seatNodes.length,
+        failures: [] as Array<{ id: string; reasons: string[] }>,
+      };
+    }
+
+    const feltRect = feltNode.getBoundingClientRect();
+    const failures = seatNodes
+      .map((seatNode) => {
+        const seatRect = seatNode.getBoundingClientRect();
+        const reasons: string[] = [];
+
+        if (seatRect.left < feltRect.left - tolerance) {
+          reasons.push(
+            `left ${seatRect.left.toFixed(1)} < table ${feltRect.left.toFixed(1)}`,
+          );
+        }
+        if (seatRect.right > feltRect.right + tolerance) {
+          reasons.push(
+            `right ${seatRect.right.toFixed(1)} > table ${feltRect.right.toFixed(1)}`,
+          );
+        }
+        if (seatRect.top < feltRect.top - tolerance) {
+          reasons.push(
+            `top ${seatRect.top.toFixed(1)} < table ${feltRect.top.toFixed(1)}`,
+          );
+        }
+        if (seatRect.bottom > feltRect.bottom + tolerance) {
+          reasons.push(
+            `bottom ${seatRect.bottom.toFixed(1)} > table ${feltRect.bottom.toFixed(1)}`,
+          );
+        }
+
+        return {
+          id: seatNode.getAttribute('data-testid') || 'unknown-seat',
+          reasons,
+        };
+      })
+      .filter((entry) => entry.reasons.length > 0);
+
+    return {
+      hasFelt: true,
+      seatCount: seatNodes.length,
+      failures,
+    };
+  }, { tolerance: tolerancePx });
+
+  expect(result.hasFelt, `[${label}] .felt-oval should exist`).toBe(true);
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+
+  expect(
+    result.failures,
+    `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
 }
 
 test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
@@ -1595,7 +2083,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextHandComplete(alicePage);
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -1653,6 +2141,97 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
         0,
       );
       expect(totalAwarded).toBe(4000);
+      await expect(alicePage.locator('[data-testid="hand-results-payouts"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="payout-segment-0"]')).toContainText(
+        'Main Pot',
+      );
+      await expect(alicePage.locator('[data-testid="payout-segment-1"]')).toContainText(
+        'Side Pot #1',
+      );
+
+      await verifyChipConservation(alicePage, 5000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('3.5: Side Pot With Folded Caller Shows Only Required Showdown Hands', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await setAllowPlayerStreetRevealAndWait(
+        alicePage,
+        [alicePage, bobPage, charliePage],
+        false,
+      );
+      await requestRebuy(bobPage, 2000);
+      await requestRebuy(charliePage, 2000);
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-all-in"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.fill('[data-testid="raise-input"]', '500');
+      await charliePage.click('[data-testid="action-raise"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(3500);
+      expect(result.playerHands).toHaveLength(2);
+
+      const shownNames = result.playerHands
+        .map((entry: any) => entry.playerName)
+        .sort();
+      expect(shownNames).toEqual(['Alice', 'Charlie']);
+
+      expect(result.payouts).toHaveLength(2);
+      expect(result.payouts[0].amount).toBe(3000);
+      expect(result.payouts[0].eligiblePlayerIds).toHaveLength(2);
+      expect(result.payouts[1].amount).toBe(500);
+      expect(result.payouts[1].eligiblePlayerIds).toHaveLength(1);
+      expect(result.payouts[1].uncontested).toBe(true);
+
+      const bobPlayerId = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.players?.find((player: any) => player.name === 'Bob')?.id ?? null;
+      });
+      if (!bobPlayerId) {
+        throw new Error('Missing Bob player id for side-pot folded-player assertion');
+      }
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(charliePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await expect(alicePage.locator('[data-testid^="hand-result-row-"]')).toHaveCount(2);
+      await expect(alicePage.locator(`[data-testid="hand-result-row-${bobPlayerId}"]`)).toHaveCount(
+        0,
+      );
+
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(charliePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(charliePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
 
       await verifyChipConservation(alicePage, 5000);
     } finally {
@@ -2072,7 +2651,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
     await bobContext.close();
   });
 
-  test('4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
+  test('@critical 4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
     browser,
   }) => {
     const aliceContext = await browser.newContext();
@@ -2260,7 +2839,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 });
 
 test.describe('Poker E2E - Chip Conservation', () => {
-  test('6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
+  test('@critical 6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
     browser,
   }) => {
     // Create two browser contexts (Alice and Bob)
@@ -2305,6 +2884,8 @@ test.describe('Poker E2E - Chip Conservation', () => {
 
     // Play 1 hand to verify chip conservation throughout
     console.log(`\n=== Starting Hand ===`);
+
+    await setAllowPlayerStreetRevealAndWait(alicePage, [alicePage, bobPage], false);
 
     // Start game via UI
     await alicePage.click('[data-testid="start-game-button"]');
@@ -3001,7 +3582,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
     }
   });
 
-  test('5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
+  test('@critical 5.2: Round Progression - PRE_FLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3019,6 +3600,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       const flop = await getRoomSnapshot(alicePage);
       expect(flop.bettingRound).toBe('FLOP');
       expect(flop.communityCards).toBe(3);
+      const expectedFinalPot = flop.pot;
 
       await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -3043,7 +3625,7 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await alicePage.click('[data-testid="action-check"]');
 
       const result = await handCompletePromise;
-      expect(result.totalPot).toBe(40);
+      expect(result.totalPot).toBe(expectedFinalPot);
       await waitForRound(alicePage, 'SHOWDOWN', 5);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -3238,6 +3820,42 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
     }
   });
 
+  test('7.2b: Higher Pair Beats Lower Pair', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'diamonds', rank: 'A' }, // Alice hole 1
+        { suit: 'hearts', rank: 'Q' }, // Alice hole 2
+        { suit: 'spades', rank: '5' }, // Bob hole 1
+        { suit: 'hearts', rank: 'K' }, // Bob hole 2
+        { suit: 'spades', rank: 'Q' }, // Flop 1
+        { suit: 'clubs', rank: 'K' }, // Flop 2
+        { suit: 'diamonds', rank: '3' }, // Flop 3
+        { suit: 'spades', rank: 'J' }, // Turn
+        { suit: 'spades', rank: '6' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+
+      const result = await handCompletePromise;
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Bob');
+      expect(result.winners[0].hand.rank).toBe('ONE_PAIR');
+      expect(result.winners[0].hand.description).toContain('Pair of Ks');
+
+      const playerHandsByRank = result.playerHands
+        .map((playerHand: any) => playerHand.hand.rank)
+        .sort();
+      expect(playerHandsByRank).toEqual(['ONE_PAIR', 'ONE_PAIR']);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('7.3: Tie (Split Pot)', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
@@ -3380,6 +3998,79 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.2b: Top Overlay Drops Redundant Stat Chips', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await expect(alicePage.locator('[data-testid="pot-value"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="your-chips"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-player"]')).not.toBeVisible();
+      await expect(alicePage.locator('[data-testid="round-value"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.2c: Tray Composer Uses Min-Raise First And Clamped Custom Input', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      // Remove pre-flop call pressure so min raise becomes the opening amount.
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const firstPreset = bobPage.locator('.chip-composer-dock__presets button').first();
+      await expect(firstPreset).toHaveAttribute('data-testid', 'chip-load-continue');
+      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toContainText(
+        '$20',
+      );
+      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toBeEnabled();
+
+      await bobPage.click('[data-testid="chip-load-continue"]');
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$20');
+
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toBeVisible();
+      const stackSnapshot = await getRoomSnapshot(bobPage);
+      const bobStack = stackSnapshot.bobChips;
+      await bobPage.fill('[data-testid="chip-custom-input"]', '999999');
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toHaveValue(
+        String(bobStack),
+      );
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText(
+        `$${bobStack}`,
+      );
+
+      // Removed controls should no longer exist in the tray composer.
+      expect(await bobPage.locator('[data-testid="chip-load-4bet"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-load-full-pot"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-5"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-10"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-25"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-100"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-500"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-add-max"]').count()).toBe(0);
+      expect(await bobPage.locator('[data-testid="chip-undo"]').count()).toBe(0);
+
+      await bobPage.click('[data-testid="chip-clear"]');
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$0');
+      await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toHaveValue('0');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.3: Card Display', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
@@ -3443,7 +4134,256 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
+  test('8.4a: Entrance Screen Keeps URL At Root', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="connection-status"]');
+      await expect(page.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await page.click('[data-testid="join-toggle-button"]');
+      await page.fill('[data-testid="name-input"]', 'RouteCheck');
+      await page.fill('[data-testid="room-id-input"]', 'ZZZZZZ');
+      await page.click('[data-testid="join-room-button"]');
+
+      await page.waitForSelector('[data-testid="name-input"]');
+      const pathnameAfterJoinAttempt = await page.evaluate(
+        () => window.location.pathname,
+      );
+      expect(pathnameAfterJoinAttempt).toBe('/');
+
+      await expect(page).toHaveURL(/\/(\?roomId=ZZZZZZ)?$/);
+      await page.click('[data-testid="back-button"]');
+
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('[data-testid="name-input"]')).toBeVisible();
+      await expect(page.locator('[data-testid="create-room-button"]')).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('8.4b: Home Prefills Last Used Player Name', async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="connection-status"]');
+      await expect(page.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await page.fill('[data-testid="name-input"]', 'RememberMe');
+      await page.click('[data-testid="create-room-button"]');
+      await page.waitForSelector('[data-testid="room-title"]');
+
+      await page.click('[data-testid="leave-room-button"]');
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('[data-testid="name-input"]')).toHaveValue(
+        'RememberMe',
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('8.4c1: Mid-Hand Waiting Badge Stays Outside Seat', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+    let charlieContext: BrowserContext | null = null;
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      charlieContext = await browser.newContext();
+      const charliePage = await charlieContext.newPage();
+      await charliePage.goto(FRONTEND_URL);
+      await charliePage.waitForSelector('[data-testid="connection-status"]');
+      await expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await charliePage.click('[data-testid="join-toggle-button"]');
+      await charliePage.fill('[data-testid="name-input"]', 'Charlie');
+      await charliePage.fill('[data-testid="room-id-input"]', roomCode);
+      await charliePage.click('[data-testid="join-room-button"]');
+      await charliePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 3/")',
+      );
+
+      const waitingState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        const activePlayers = room?.currentHand?.activePlayers ?? [];
+
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+          inActiveHand: Boolean(player?.id && activePlayers.includes(player.id)),
+        };
+      });
+      expect(waitingState.status).toBe('waiting');
+      expect(waitingState.cardsCount).toBe(0);
+      expect(waitingState.inActiveHand).toBe(false);
+      expect(waitingState.playerId).not.toBeNull();
+
+      await assertWaitingBadgeExternalForSeat(
+        charliePage,
+        waitingState.playerId as string,
+      );
+    } finally {
+      await Promise.allSettled([
+        charlieContext?.close(),
+        teardownTwoPlayerSession(session),
+      ]);
+    }
+  });
+
+  test('8.4c: Player Can Join Mid-Hand And Wait For Next Hand', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+    let charlieContext: BrowserContext | null = null;
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      charlieContext = await browser.newContext();
+      const charliePage = await charlieContext.newPage();
+      await charliePage.goto(FRONTEND_URL);
+      await charliePage.waitForSelector('[data-testid="connection-status"]');
+      await expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
+        'Connected',
+      );
+
+      await charliePage.click('[data-testid="join-toggle-button"]');
+      await charliePage.fill('[data-testid="name-input"]', 'Charlie');
+      await charliePage.fill('[data-testid="room-id-input"]', roomCode);
+      await charliePage.click('[data-testid="join-room-button"]');
+      await charliePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 3/")',
+      );
+
+      const waitingState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        const activePlayers = room?.currentHand?.activePlayers ?? [];
+
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+          chips: player?.chips ?? 0,
+          totalBuyIn: player?.totalBuyIn ?? 0,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+          inActiveHand: Boolean(player?.id && activePlayers.includes(player.id)),
+        };
+      });
+      expect(waitingState.status).toBe('waiting');
+      expect(waitingState.cardsCount).toBe(0);
+      expect(waitingState.inActiveHand).toBe(false);
+      expect(waitingState.chips).toBe(1000);
+      expect(waitingState.totalBuyIn).toBe(1000);
+      expect(waitingState.playerId).not.toBeNull();
+
+      await assertWaitingBadgeExternalForSeat(
+        charliePage,
+        waitingState.playerId as string,
+      );
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="start-next-hand-button"]');
+
+      await waitForHoleCards(charliePage);
+      const nextHandState = await charliePage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+
+        return {
+          status: player?.status ?? null,
+          totalBuyIn: player?.totalBuyIn ?? 0,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+        };
+      });
+      expect(nextHandState.status).toBe('connected');
+      expect(nextHandState.cardsCount).toBe(2);
+      expect(nextHandState.totalBuyIn).toBe(1000);
+    } finally {
+      await Promise.allSettled([
+        charlieContext?.close(),
+        teardownTwoPlayerSession(session),
+      ]);
+    }
+  });
+
+  test('8.4d: Player Emoji Selection Shows On Seats', async ({ browser }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await alicePage.goto(FRONTEND_URL);
+      await bobPage.goto(FRONTEND_URL);
+
+      await alicePage.waitForSelector('[data-testid="connection-status"]');
+      await bobPage.waitForSelector('[data-testid="connection-status"]');
+
+      await alicePage.fill('[data-testid="name-input"]', 'Alice');
+      await alicePage.click('[data-testid="emoji-select"]');
+      await alicePage.click('[data-testid="emoji-option"][data-emoji="😎"]');
+      await alicePage.click('[data-testid="create-room-button"]');
+      await alicePage.waitForSelector('[data-testid="room-title"]');
+
+      const roomTitle = await alicePage.textContent('[data-testid="room-title"]');
+      const roomCode = roomTitle?.match(/Room: (.+)/)?.[1];
+      expect(roomCode).toBeTruthy();
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="name-input"]', 'Bob');
+      await bobPage.click('[data-testid="emoji-select"]');
+      await bobPage.click('[data-testid="emoji-option"][data-emoji="🐯"]');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
+      await bobPage.click('[data-testid="join-room-button"]');
+      await bobPage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 2/")',
+      );
+
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(alicePage.locator('[data-testid="players-section"]')).toContainText('🐯');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('😎');
+      await expect(bobPage.locator('[data-testid="players-section"]')).toContainText('🐯');
+
+      const emojiMap = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return Object.fromEntries(
+          (room?.players ?? []).map((player: any) => [player.name, player.emoji ?? null]),
+        );
+      });
+      expect(emojiMap.Alice).toBe('😎');
+      expect(emojiMap.Bob).toBe('🐯');
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+    }
+  });
+
+  test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -3463,6 +4403,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(
         alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="waiting-host-start-next-hand"]'),
       ).toBeVisible();
 
       await alicePage.click('[data-testid="start-next-hand-button"]');
@@ -3544,36 +4487,94 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.8: Action Confirmation Modal Helps Decision Before Commit', async ({
+  test('8.8: Fold Is Always Available On Turn And Actions Apply Immediately', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await alicePage.setViewportSize({ width: 1280, height: 620 });
+      await bobPage.setViewportSize({ width: 1280, height: 620 });
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      await bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]').check();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeEnabled();
+      await expect(
+        bobPage.locator('[data-testid="action-dock"] input[type="checkbox"]'),
+      ).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
+
       await bobPage.click('[data-testid="action-call"]');
-
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toBeVisible();
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Confirm Action',
-      );
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Pot',
-      );
-      await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toContainText(
-        'Your Stack',
-      );
-
-      await bobPage.click('[data-testid="confirm-action-button"]');
       await expect(bobPage.locator('[data-testid="action-confirm-modal"]')).toHaveCount(0);
 
       await waitForPlayerTurn(alicePage, 'Alice');
-      const stateAfterConfirm = await getRoomSnapshot(alicePage);
-      expect(stateAfterConfirm.currentPlayerName).toBe('Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(bobPage.locator('[data-testid="action-check"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      const dockScrollBehavior = await bobPage.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>('[data-testid="turn-overlay"]');
+        if (!dock) return null;
+        const styles = window.getComputedStyle(dock);
+        return {
+          overflowY: styles.overflowY,
+          overflow: styles.overflow,
+        };
+      });
+      expect(dockScrollBehavior).not.toBeNull();
+      expect(dockScrollBehavior?.overflowY).not.toBe("auto");
+      expect(dockScrollBehavior?.overflowY).not.toBe("scroll");
+      const controlsAreInViewport = await bobPage.evaluate(() => {
+        const fold = document.querySelector<HTMLElement>('[data-testid="action-fold"]');
+        const check = document.querySelector<HTMLElement>('[data-testid="action-check"]');
+        if (!fold || !check) return false;
+
+        const foldRect = fold.getBoundingClientRect();
+        const checkRect = check.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+
+        const isInsideViewport = (rect: DOMRect) =>
+          rect.top >= 0 && rect.bottom <= viewportHeight;
+
+        return isInsideViewport(foldRect) && isInsideViewport(checkRect);
+      });
+      expect(controlsAreInViewport).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8a: Seat Cards Stay Inside Table Bounds Across Viewports', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1280, height: 620 }),
+        bobPage.setViewportSize({ width: 1280, height: 620 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'desktop-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'desktop-bob');
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
+
+      await alicePage.waitForTimeout(120);
+      await bobPage.waitForTimeout(120);
+
+      await assertSeatCardsWithinTableBounds(alicePage, 'mobile-alice');
+      await assertSeatCardsWithinTableBounds(bobPage, 'mobile-bob');
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3668,7 +4669,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
+  test('@critical 8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -3763,7 +4764,315 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.13: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
+  test('8.12a: Duplicate PLAYER_ACTION actionId Is Idempotent', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const actionId = `dup-call-${Date.now()}`;
+      const firstResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(firstResponse.success).toBe(true);
+      expect(firstResponse.duplicate).not.toBe(true);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const afterFirst = await getRoomSnapshot(alicePage);
+      expect(afterFirst.pot).toBe(40);
+      expect(afterFirst.currentPlayerName).toBe('Alice');
+
+      const duplicateResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'call',
+        actionId,
+      });
+      expect(duplicateResponse.success).toBe(true);
+      expect(duplicateResponse.duplicate).toBe(true);
+
+      const afterDuplicate = await getRoomSnapshot(alicePage);
+      expect(afterDuplicate.pot).toBe(afterFirst.pot);
+      expect(afterDuplicate.currentPlayerName).toBe('Alice');
+      expect(afterDuplicate.aliceCurrentBet).toBe(afterFirst.aliceCurrentBet);
+      expect(afterDuplicate.bobCurrentBet).toBe(afterFirst.bobCurrentBet);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12b: Disconnect Timeout Auto-Folds Current Player', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+
+    try {
+      const { alicePage, bobPage, bobContext } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const disconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const autoFoldPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_AUTO_FOLDED',
+        8000,
+      );
+      const handCompletePromise = captureNextHandComplete(alicePage, 12000);
+
+      await bobContext.close();
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerName).toBe('Bob');
+      expect(disconnectedEvent.gracePeriod).toBe(1200);
+
+      const autoFoldEvent = await autoFoldPromise;
+      expect(autoFoldEvent.playerName).toBe('Bob');
+
+      const result = await handCompletePromise;
+      expect(result.totalPot).toBe(30);
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Alice');
+      expect(result.winners[0].amountWon).toBe(30);
+
+      const finalState = await getRoomSnapshot(alicePage);
+      expect(finalState.currentPlayerTurn).toBeNull();
+      expect(finalState.aliceChips).toBe(1010);
+      expect(finalState.bobChips).toBe(990);
+      await verifyChipConservation(alicePage, 2000);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12c: Lobby Reconnect Still Receives Hole Cards After Start', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await forceSocketReconnect(bobPage);
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForHoleCards(bobPage);
+      const bobCardCount = await bobPage.evaluate(() => {
+        const cards = (window as any).pokerDebug?.getCards?.();
+        return Array.isArray(cards) ? cards.length : 0;
+      });
+      expect(bobCardCount).toBe(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12d: Reconnect During Pending Street Reveal Keeps Reveal Controls', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await alicePage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getRoom?.()?.currentHand?.pendingStreetRevealRound === 'FLOP',
+        { timeout: 5000 },
+      );
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toBeEnabled();
+
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12e: Reconnect After Final Reveal Keeps Hand Result Actions', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await forceSocketReconnect(alicePage);
+      await forceSocketReconnect(bobPage);
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="start-next-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toContainText('Reveal Next Street');
+
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+
+      // Only one player click should be enough to proceed.
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.14: Final Reveal Step Uses Result Copy Before Hand Complete', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toContainText('Reveal Result');
+
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.15: Showdown Auto-Reveals Result Hands And Ranks', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -3787,10 +5096,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'Showdown complete',
+        'Hand results are visible to all players.',
       );
+      await expect(alicePage.locator('[data-testid="hand-results-community"]')).toBeVisible();
       await expect(
-        alicePage.locator('[data-testid^="winner-rank-"]').first(),
+        alicePage.locator('[data-testid^="hand-results-community-card-"]'),
+      ).toHaveCount(5);
+      await expect(
+        alicePage.locator('[data-testid="save-result-screenshot-button"]'),
       ).toBeVisible();
       await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
@@ -3799,12 +5112,40 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(
         0,
       );
+
+      const alicePlayerId = await alicePage.evaluate(
+        () => (window as any).pokerDebug?.getPlayer?.()?.id,
+      );
+      if (!alicePlayerId) {
+        throw new Error('Missing player id for showdown card consistency assertion');
+      }
+
+      const resultCardLocator = alicePage.locator(
+        `[data-testid^="hand-result-card-${alicePlayerId}-"]`,
+      );
+      const flyoutCardLocator = alicePage.locator('[data-testid^="your-card-"]');
+      await expect(resultCardLocator).toHaveCount(2);
+      await expect(flyoutCardLocator).toHaveCount(2);
+
+      const resultCards = await resultCardLocator.evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          rank: node.getAttribute('data-rank'),
+          suit: node.getAttribute('data-suit'),
+        })),
+      );
+      const flyoutCards = await flyoutCardLocator.evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          rank: node.getAttribute('data-rank'),
+          suit: node.getAttribute('data-suit'),
+        })),
+      );
+      expect(flyoutCards).toEqual(resultCards);
     } finally {
       await teardownTwoPlayerSession(session);
     }
   });
 
-  test('8.14: Non-Showdown Result Allows Manual Show My Hand', async ({ browser }) => {
+  test('8.16: Non-Showdown Result Keeps Hole Cards Hidden', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -3818,25 +5159,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
-        'without showdown',
+        'Hand results are visible to all players.',
       );
-      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
         2,
       );
       await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(2);
       await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
-
-      await alicePage.click('[data-testid="show-my-hand-button"]');
-      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
-        0,
-      );
-      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
-      await expect(alicePage.locator('[data-testid="my-hand-revealed-indicator"]')).toBeVisible();
-
-      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
-      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(2);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -3902,6 +5233,36 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       expect(await getYourChipsFromUi(bobPage)).toBe(980);
       expect(await getYourChipsFromUi(charliePage)).toBe(980);
       await verifyChipConservation(alicePage, 3000);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+
+  test('9.1b: Three-Player Fold Keeps Clockwise Turn Progression', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      const afterBobFold = await getRoomSnapshot(alicePage);
+      expect(afterBobFold.currentPlayerName).toBe('Charlie');
     } finally {
       await teardownThreePlayerSession(session);
     }
@@ -4048,7 +5409,521 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       await teardownThreePlayerSession(session);
     }
   });
+
+  test('9.4: Folded Player Is Excluded And Only Required Showdown Hands Are Visible', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const pageByName: Record<string, Page> = {
+        Alice: alicePage,
+        Bob: bobPage,
+        Charlie: charliePage,
+      };
+
+      await setAllowPlayerStreetRevealAndWait(
+        alicePage,
+        [alicePage, bobPage, charliePage],
+        false,
+      );
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000);
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+        charliePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await completeCurrentHandWithPassiveActions(alicePage, pageByName, 1);
+      const result = await handCompletePromise;
+
+      expect(result.playerHands).toHaveLength(2);
+      const shownNames = result.playerHands
+        .map((entry: any) => entry.playerName)
+        .sort();
+      expect(shownNames).toEqual(['Alice', 'Charlie']);
+
+      const bobPlayerId = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.players?.find((player: any) => player.name === 'Bob')?.id ?? null;
+      });
+      if (!bobPlayerId) {
+        throw new Error('Missing Bob player id for folded-player visibility assertion');
+      }
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(charliePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+
+      await expect(alicePage.locator('[data-testid^="hand-result-row-"]')).toHaveCount(2);
+      await expect(alicePage.locator(`[data-testid="hand-result-row-${bobPlayerId}"]`)).toHaveCount(
+        0,
+      );
+
+      await expect(alicePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+      await expect(charliePage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(4);
+      await expect(charliePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(0);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
 });
+
+test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
+  test('10.1: Concurrent chat sends keep seq monotonic and deduplicated', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      const perPlayerMessages = 10;
+
+      const buildMessages = (sender: string) =>
+        Array.from(
+          { length: perPlayerMessages },
+          (_, index) => `${sender}-chat-${index}`,
+        );
+
+      await Promise.all([
+        sendChatMessagesViaSocket(alicePage, buildMessages('alice'), 'alice'),
+        sendChatMessagesViaSocket(bobPage, buildMessages('bob'), 'bob'),
+        sendChatMessagesViaSocket(charliePage, buildMessages('charlie'), 'charlie'),
+      ]);
+
+      const totalMessages = perPlayerMessages * 3;
+      await alicePage.waitForFunction(
+        (expectedTotal) => {
+          const messages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          if (messages.length !== expectedTotal) {
+            return false;
+          }
+
+          for (let index = 0; index < messages.length; index += 1) {
+            if (messages[index].seq !== index + 1) {
+              return false;
+            }
+          }
+
+          return true;
+        },
+        totalMessages,
+        { timeout: 15000 },
+      );
+
+      const messages = await getChatMessagesFromDebug(alicePage);
+      expect(messages).toHaveLength(totalMessages);
+
+      const seqSet = new Set(messages.map((message: any) => message.seq));
+      const idSet = new Set(messages.map((message: any) => message.id));
+      const clientMessageIdSet = new Set(
+        messages.map((message: any) => message.clientMessageId),
+      );
+
+      expect(seqSet.size).toBe(totalMessages);
+      expect(idSet.size).toBe(totalMessages);
+      expect(clientMessageIdSet.size).toBe(totalMessages);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('10.2: Refresh restores chat and pagination can load full history', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const totalMessages = 65;
+      const messages = Array.from(
+        { length: totalMessages },
+        (_, index) => `history-msg-${index}`,
+      );
+
+      await sendChatMessagesViaSocket(alicePage, messages, 'history');
+
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.reload({ waitUntil: 'domcontentloaded' });
+      await bobPage.unroute(roomRoutePattern);
+
+      await waitForPokerDebug(bobPage);
+      await bobPage.waitForFunction(
+        () => {
+          const pd = (window as any).pokerDebug;
+          return !!pd?.getRoom?.()?.id && !!pd?.getPlayer?.()?.id;
+        },
+        { timeout: 15000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      await bobPage.waitForFunction(
+        ({ latestText }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          return chatMessages.some(
+            (message: any) => message.kind === 'TEXT' && message.text === latestText,
+          );
+        },
+        { latestText: messages[messages.length - 1] },
+        { timeout: 10000 },
+      );
+
+      const initialCount = (await getChatMessagesFromDebug(bobPage)).length;
+      expect(initialCount).toBeLessThan(totalMessages);
+
+      const loadedCount = await bobPage.evaluate(async (expectedCount) => {
+        const sleep = (ms: number) =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+          });
+
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const currentCount =
+            (window as any).pokerDebug?.getChatMessages?.()?.length ?? 0;
+          if (currentCount >= expectedCount) {
+            return currentCount;
+          }
+          (window as any).pokerDebug?.loadOlderChatMessages?.();
+          await sleep(150);
+        }
+
+        return (window as any).pokerDebug?.getChatMessages?.()?.length ?? 0;
+      }, totalMessages);
+
+      expect(loadedCount).toBe(totalMessages);
+
+      const hasEndpoints = await bobPage.evaluate(
+        ({ firstText, lastText }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          const textMessages = chatMessages
+            .filter((message: any) => message.kind === 'TEXT')
+            .map((message: any) => message.text);
+          return {
+            hasFirst: textMessages.includes(firstText),
+            hasLast: textMessages.includes(lastText),
+          };
+        },
+        {
+          firstText: messages[0],
+          lastText: messages[messages.length - 1],
+        },
+      );
+
+      expect(hasEndpoints.hasFirst).toBe(true);
+      expect(hasEndpoints.hasLast).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.3: Voice upload message persists and is playable after sync', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      const uploaded = await sendVoiceMessageViaUpload(alicePage, 'voice');
+      const expectedVoiceUrl = `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`;
+
+      await bobPage.waitForFunction(
+        ({ expectedAudioUrl }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          return chatMessages.some(
+            (message: any) =>
+              message.kind === 'VOICE' &&
+              message.voice?.audioUrl === expectedAudioUrl,
+          );
+        },
+        { expectedAudioUrl: uploaded.voice.audioUrl },
+        { timeout: 10000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      const voicePlayers = bobPage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__voice-player',
+      );
+      await expect(voicePlayers).toHaveCount(1);
+      await expect(voicePlayers.first()).toContainText(/\d+'/);
+
+      await voicePlayers.first().click();
+      await waitForVoicePlaybackSource(bobPage, expectedVoiceUrl);
+
+      const mediaResponse = await bobPage.request.get(expectedVoiceUrl);
+      expect(mediaResponse.ok()).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.4: Clicking latest voice preview opens chat and starts that playback source', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await sendChatMessagesViaSocket(alicePage, ['preview-text'], 'preview-text');
+      const uploaded = await sendVoiceMessageViaUpload(alicePage, 'preview-voice');
+      const expectedVoiceUrl = `${uploaded.serverBaseUrl}${uploaded.voice.audioUrl}`;
+
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await bobPage.click('[data-testid="chat-preview-strip"] .chat-preview-strip__open');
+
+      await bobPage.waitForSelector('[data-testid="chat-panel"]', {
+        state: 'visible',
+        timeout: 5000,
+      });
+      await waitForVoicePlaybackSource(bobPage, expectedVoiceUrl);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.5: Self messages do not create preview, dismiss/open both clear unread preview', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await sendChatMessagesViaSocket(
+        bobPage,
+        ['bob-self-message'],
+        'bob-self-message',
+      );
+
+      await bobPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getChatMessages?.() ?? []).some(
+            (message: any) =>
+              message.kind === 'TEXT' && message.text === 'bob-self-message',
+          ),
+        { timeout: 10000 },
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      await sendChatMessagesViaSocket(
+        alicePage,
+        ['alice-unread-message'],
+        'alice-unread-message',
+      );
+
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 1,
+        { timeout: 10000 },
+      );
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await bobPage.click('[data-testid="chat-preview-dismiss"]');
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      await sendChatMessagesViaSocket(
+        alicePage,
+        ['alice-unread-message-2'],
+        'alice-unread-message-2',
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 1,
+        { timeout: 10000 },
+      );
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await openChatPanel(bobPage);
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+
+      await bobPage.click('[data-testid="close-chat-button"]');
+      await bobPage.waitForSelector('[data-testid="chat-panel"]', {
+        state: 'hidden',
+        timeout: 5000,
+      });
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.6: Incoming messages do not interrupt current voice source unless another voice is clicked', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      const uploadedOne = await sendVoiceMessageViaUpload(alicePage, 'voice-a');
+      const uploadedTwo = await sendVoiceMessageViaUpload(alicePage, 'voice-b');
+      const firstVoiceUrl = `${uploadedOne.serverBaseUrl}${uploadedOne.voice.audioUrl}`;
+      const secondVoiceUrl = `${uploadedTwo.serverBaseUrl}${uploadedTwo.voice.audioUrl}`;
+
+      await bobPage.waitForFunction(
+        ({ firstAudioUrl, secondAudioUrl }) => {
+          const chatMessages = (window as any).pokerDebug?.getChatMessages?.() ?? [];
+          const voiceAudioUrls = chatMessages
+            .filter((message: any) => message.kind === 'VOICE')
+            .map((message: any) => message.voice?.audioUrl);
+
+          return (
+            voiceAudioUrls.includes(firstAudioUrl) &&
+            voiceAudioUrls.includes(secondAudioUrl)
+          );
+        },
+        {
+          firstAudioUrl: uploadedOne.voice.audioUrl,
+          secondAudioUrl: uploadedTwo.voice.audioUrl,
+        },
+        { timeout: 10000 },
+      );
+
+      await openChatPanel(bobPage);
+
+      const voicePlayers = bobPage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__voice-player',
+      );
+      await expect(voicePlayers).toHaveCount(2);
+
+      await voicePlayers.nth(0).click();
+      await waitForVoicePlaybackSource(bobPage, firstVoiceUrl);
+
+      await sendChatMessagesViaSocket(alicePage, ['interrupting-text'], 'interrupt');
+      await bobPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getChatMessages?.() ?? []).some(
+            (message: any) =>
+              message.kind === 'TEXT' && message.text === 'interrupting-text',
+          ),
+        { timeout: 10000 },
+      );
+
+      const playbackAfterText = await getVoicePlaybackStateFromDebug(bobPage);
+      expect(playbackAfterText.sourceUrl).toBe(firstVoiceUrl);
+
+      await voicePlayers.nth(1).click();
+      await waitForVoicePlaybackSource(bobPage, secondVoiceUrl);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.6: Outgoing voice message stays right-aligned without full-width stretch', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage } = session;
+
+      await sendVoiceMessageViaUpload(alicePage, 'voice-self-align');
+      await openChatPanel(alicePage);
+
+      const selfVoiceItems = alicePage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+      );
+      await expect(selfVoiceItems).toHaveCount(1);
+
+      const layoutMetrics = await alicePage.evaluate(() => {
+        const list = document.querySelector('[data-testid="chat-message-list"]') as HTMLElement | null;
+        const selfVoiceItem = document.querySelector(
+          '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+        ) as HTMLElement | null;
+        const voiceBubble = selfVoiceItem?.querySelector('.chat-panel__bubble--voice') as
+          | HTMLElement
+          | null;
+        const voicePlayer = selfVoiceItem?.querySelector('.chat-panel__voice-player') as
+          | HTMLElement
+          | null;
+
+        if (!list || !selfVoiceItem || !voiceBubble || !voicePlayer) {
+          return null;
+        }
+
+        const listRect = list.getBoundingClientRect();
+        const itemRect = selfVoiceItem.getBoundingClientRect();
+        const bubbleRect = voiceBubble.getBoundingClientRect();
+        const playerRect = voicePlayer.getBoundingClientRect();
+
+        const computedStyle = window.getComputedStyle(list);
+        const paddingLeft = Number.parseFloat(computedStyle.paddingLeft || '0');
+        const paddingRight = Number.parseFloat(computedStyle.paddingRight || '0');
+        const contentWidth = listRect.width - paddingLeft - paddingRight;
+        const contentRight = listRect.right - paddingRight;
+
+        return {
+          contentWidth,
+          contentRight,
+          itemWidth: itemRect.width,
+          itemRight: itemRect.right,
+          playerRight: playerRect.right,
+        };
+      });
+
+      expect(layoutMetrics).not.toBeNull();
+      if (!layoutMetrics) {
+        throw new Error('Failed to resolve chat layout metrics');
+      }
+
+      expect(layoutMetrics.itemWidth).toBeLessThan(layoutMetrics.contentWidth - 16);
+      expect(Math.abs(layoutMetrics.contentRight - layoutMetrics.itemRight)).toBeLessThanOrEqual(2);
+      expect(layoutMetrics.playerRight).toBeGreaterThanOrEqual(layoutMetrics.contentRight - 20);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+});
+
 
 // Type augmentation for window.pokerDebug
 declare global {

@@ -10,28 +10,86 @@ import React, {
 } from "react";
 import type {
   Room,
+  RoomConfig,
+  BlindType,
   Player,
   Card,
   PlayerAction,
+  PlayerActionDisplayKind,
+  BettingRound,
   Hand,
   HandResult,
+  GameEndedData,
   ClientToServerEvents,
+  ChatHistorySyncData,
+  ChatMessage,
+  SendChatMessageData,
+  VoiceMessagePayload,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
+import { getVoicePlaybackState } from "../services/voice-playback.service";
+import { writeLastPlayerEmoji, writeLastPlayerName } from "../utils/player-name-storage";
+
+export interface PlayerActionFlashEvent {
+  id: string;
+  playerId: string;
+  playerName: string;
+  action: PlayerAction;
+  amount?: number;
+  isOpeningBet?: boolean;
+  displayKind?: PlayerActionDisplayKind;
+  totalBetAfterAction?: number;
+  committedAmount?: number;
+  blindType?: BlindType | null;
+  newPot: number;
+  createdAt: number;
+}
+
+const resolveFallbackDisplayKind = ({
+  action,
+  preRoundCurrentBet,
+}: {
+  action: PlayerAction;
+  preRoundCurrentBet: number;
+}): PlayerActionDisplayKind => {
+  switch (action) {
+    case "fold":
+      return "fold";
+    case "check":
+      return "check";
+    case "call":
+      return "call-to";
+    case "all-in":
+      return "all-in-to";
+    case "raise":
+      return preRoundCurrentBet <= 0 ? "bet-to" : "raise-to";
+  }
+};
+
+export interface NextStreetRevealState {
+  nextRound: BettingRound;
+  readyPlayerIds: string[];
+  requiredPlayerIds: string[];
+}
 
 type DebugApi = {
   getRoom: () => Room | null;
   getPlayer: () => Player | null;
   getCards: () => Card[] | null;
   getLastHandResult: () => HandResult | null;
+  getFinalGameResult: () => GameEndedData | null;
+  getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
+  getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
-  createRoom: (name: string) => void;
-  joinRoom: (roomId: string, name: string) => void;
+  createRoom: (name: string, emoji?: string) => void;
+  joinRoom: (roomId: string, name: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  endGame: () => void;
   showMyHand: () => void;
-  performAction: (action: PlayerAction, amount?: number) => void;
+  revealNextStreet: () => void;
+  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   fold: () => void;
   check: () => void;
   call: () => void;
@@ -39,6 +97,20 @@ type DebugApi = {
   allIn: () => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
+  updateRoomConfig: (
+    config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
+  ) => void;
+  getChatMessages: () => ChatMessage[];
+  getChatUnreadCount: () => number;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (
+    voice: VoiceMessagePayload,
+    clientMessageId?: string,
+  ) => void;
+  loadOlderChatMessages: () => void;
+  setChatPanelOpen: (open: boolean) => void;
+  clearChatUnread: () => void;
+  getVoicePlaybackState: () => { sourceUrl: string | null; isPlaying: boolean };
   clearError: () => void;
   emitCustom: (event: keyof ClientToServerEvents, data: unknown) => void;
   logState: () => void;
@@ -49,18 +121,36 @@ interface GameContextType {
   player: Player | null;
   yourCards: Card[] | null;
   lastHandResult: HandResult | null;
+  finalGameResult: GameEndedData | null;
+  lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
+  nextStreetRevealState: NextStreetRevealState | null;
   isHost: boolean;
   isRecoveringSession: boolean;
   lastError: string | null;
-  createRoom: (playerName: string) => void;
-  joinRoom: (roomId: string, playerName: string) => void;
+  chatMessages: ChatMessage[];
+  chatHasMore: boolean;
+  chatLoadingHistory: boolean;
+  chatUnreadCount: number;
+  isChatPanelOpen: boolean;
+  createRoom: (playerName: string, playerEmoji?: string) => void;
+  joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  endGame: () => void;
   showMyHand: () => void;
-  performAction: (action: PlayerAction, amount?: number) => void;
+  revealNextStreet: () => void;
+  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
+  updateRoomConfig: (
+    config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
+  ) => void;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
+  loadOlderChatMessages: () => void;
+  setChatPanelOpen: (open: boolean) => void;
+  clearChatUnread: () => void;
   clearError: () => void;
 }
 
@@ -85,11 +175,17 @@ type StoredSession = {
 };
 
 const SESSION_STORAGE_KEY = "poker.activeSession";
+const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
+const FINAL_RESULT_STORAGE_PREFIX = "poker.finalResult.";
+const createActionId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function readStoredSession(): StoredSession | null {
   if (typeof window === "undefined") return null;
 
-  const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) return null;
 
   try {
@@ -112,17 +208,77 @@ function readStoredSession(): StoredSession | null {
 
 function writeStoredSession(session: StoredSession) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 function clearStoredSession() {
   if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function readStoredFinalResult(roomId: string): GameEndedData | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as GameEndedData;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredFinalResult(roomId: string, result: GameEndedData) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`, JSON.stringify(result));
+}
+
+function clearStoredFinalResult(roomId: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`);
 }
 
 function isInvalidReconnectReason(reason: string): boolean {
   const normalized = reason.toLowerCase();
   return normalized.includes("not found");
+}
+
+function deriveNextStreetRevealStateFromRoom(
+  roomState: Room | null | undefined,
+): NextStreetRevealState | null {
+  const currentHand = roomState?.currentHand;
+  if (!currentHand?.pendingStreetRevealRound) {
+    return null;
+  }
+
+  return {
+    nextRound: currentHand.pendingStreetRevealRound,
+    readyPlayerIds: currentHand.nextStreetReadyPlayerIds ?? [],
+    requiredPlayerIds: currentHand.nextStreetRequiredPlayerIds ?? [],
+  };
+}
+
+function deriveLastHandResultFromRoom(roomState: Room | null | undefined): HandResult | null {
+  return roomState?.currentHand?.lastResult ?? null;
+}
+
+function deriveRevealedHandPlayerIdsFromRoom(roomState: Room | null | undefined): string[] {
+  return roomState?.currentHand?.revealedPlayerIds ?? [];
+}
+
+const CHAT_HISTORY_PAGE_LIMIT = 50;
+
+function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  const bySeq = new Map<number, ChatMessage>();
+  for (const message of messages) {
+    bySeq.set(message.seq, message);
+  }
+
+  return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
+}
+
+function mergeChatMessageLists(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  return normalizeChatMessages([...existing, ...incoming]);
 }
 
 declare global {
@@ -137,17 +293,33 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [player, setPlayer] = useState<Player | null>(null);
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
   const [lastHandResult, setLastHandResult] = useState<HandResult | null>(null);
+  const [finalGameResult, setFinalGameResult] = useState<GameEndedData | null>(null);
+  const [lastPlayerActionEvent, setLastPlayerActionEvent] =
+    useState<PlayerActionFlashEvent | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
+  const [nextStreetRevealState, setNextStreetRevealState] =
+    useState<NextStreetRevealState | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(false);
+  const [chatNextBeforeSeq, setChatNextBeforeSeq] = useState<number | null>(null);
+  const [chatLoadingHistory, setChatLoadingHistory] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [isChatPanelOpen, setIsChatPanelOpenState] = useState(false);
   const roomRef = useRef<Room | null>(null);
   const playerRef = useRef<Player | null>(null);
   const reconnectInFlightRef = useRef(false);
+  const chatPanelOpenRef = useRef(false);
 
   useEffect(() => {
     roomRef.current = room;
     playerRef.current = player;
   }, [room, player]);
+
+  useEffect(() => {
+    chatPanelOpenRef.current = isChatPanelOpen;
+  }, [isChatPanelOpen]);
 
   useEffect(() => {
     if (!room?.id || !player?.id || !player.name) return;
@@ -159,30 +331,84 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   }, [player?.id, player?.name, room?.id]);
 
   useEffect(() => {
+    if (!player?.name) return;
+    writeLastPlayerName(player.name);
+  }, [player?.name]);
+
+  useEffect(() => {
+    if (!player?.emoji) return;
+    writeLastPlayerEmoji(player.emoji);
+  }, [player?.emoji]);
+
+  useEffect(() => {
     if (!socket) return;
 
     // Room created
     socket.on("ROOM_CREATED", (data) => {
-      setRoom(data.room as unknown as Room); // SanitizedRoom from server
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState); // SanitizedRoom from server
       const host = data.room.players[0];
       setPlayer({ ...host, cards: null } as Player);
+      setYourCards(null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setLastPlayerActionEvent(null);
+      setFinalGameResult(null);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      clearStoredFinalResult(data.room.id);
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setIsRecoveringSession(false);
       console.log("Room created:", data.roomId);
     });
 
     // Room joined
     socket.on("ROOM_JOINED", (data) => {
-      setRoom(data.room as unknown as Room); // SanitizedRoom from server
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState); // SanitizedRoom from server
       setPlayer(data.player);
+      setYourCards(data.player?.cards ?? null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setLastPlayerActionEvent(null);
+      const restoredFinalResult =
+        roomState.gameState === "ENDED" && roomState.id
+          ? readStoredFinalResult(roomState.id)
+          : null;
+      setFinalGameResult(restoredFinalResult);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setIsRecoveringSession(false);
       setLastError(null);
     });
 
     // Explicit reconnect success
     socket.on("RECONNECT_SUCCESS", (data) => {
-      setRoom(data.room as unknown as Room);
+      const roomState = data.room as unknown as Room;
+      setRoom(roomState);
       setPlayer(data.player as Player);
       setYourCards(data.yourCards ?? null);
+      setLastHandResult(deriveLastHandResultFromRoom(roomState));
+      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setLastPlayerActionEvent(null);
+      const restoredFinalResult =
+        roomState.gameState === "ENDED" && roomState.id
+          ? readStoredFinalResult(roomState.id)
+          : null;
+      setFinalGameResult(restoredFinalResult);
+      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatUnreadCount(0);
+      setChatLoadingHistory(false);
       setLastError(null);
       setIsRecoveringSession(false);
       reconnectInFlightRef.current = false;
@@ -259,6 +485,14 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
 
     socket.on("PLAYER_AUTO_FOLDED", (data) => {
+      setLastPlayerActionEvent({
+        id: `${Date.now()}-${data.playerId}-auto-fold`,
+        playerId: data.playerId,
+        playerName: data.playerName,
+        action: "fold",
+        newPot: roomRef.current?.currentHand?.pot ?? 0,
+        createdAt: Date.now(),
+      });
       setRoom((prev) => {
         if (!prev) return prev;
         return {
@@ -285,10 +519,35 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       });
     });
 
+    socket.on("ROOM_CONFIG_UPDATED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          config: data.config,
+        };
+      });
+    });
+
     // Game started
     socket.on("GAME_STARTED", (data) => {
       setLastHandResult(null);
+      setFinalGameResult(null);
+      const currentRoomId = roomRef.current?.id;
+      if (currentRoomId) {
+        clearStoredFinalResult(currentRoomId);
+      }
+      setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      setNextStreetRevealState(null);
+      // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
+      // If this player is not dealt in, clear cards immediately.
+      setYourCards((prevCards) => {
+        const currentPlayerId = playerRef.current?.id;
+        if (!currentPlayerId) return null;
+        const seatForCurrentPlayer = data.players?.find((p) => p.id === currentPlayerId);
+        return seatForCurrentPlayer?.hasCards ? prevCards : null;
+      });
       setRoom((prev) => {
         if (!prev) return null;
         // Map players with cards field added
@@ -326,6 +585,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     // Community cards dealt
     socket.on("COMMUNITY_CARDS_DEALT", (data) => {
+      setNextStreetRevealState(null);
       setRoom((prev) => {
         if (!prev || !prev.currentHand) return prev;
         return {
@@ -344,6 +604,15 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Hand complete:", data.result);
       setLastHandResult(data.result);
       setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
+      setNextStreetRevealState(null);
+      setYourCards((prevCards) => {
+        const currentPlayerId = playerRef.current?.id;
+        if (!currentPlayerId) return prevCards;
+        const myHand = data.result.playerHands.find(
+          (entry) => entry.playerId === currentPlayerId,
+        );
+        return myHand?.cards ?? prevCards;
+      });
       // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
       setRoom((prev) => {
         if (!prev || !prev.currentHand) return prev;
@@ -384,9 +653,67 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       );
     });
 
+    socket.on("GAME_ENDED", (data) => {
+      setFinalGameResult(data);
+      const currentRoomId = roomRef.current?.id;
+      if (currentRoomId) {
+        writeStoredFinalResult(currentRoomId, data);
+      }
+      setLastHandResult(null);
+      setLastPlayerActionEvent(null);
+      setRevealedHandPlayerIds([]);
+      setNextStreetRevealState(null);
+      setYourCards(null);
+
+      const standingsByPlayerId = new Map(
+        data.standings.map((entry) => [entry.playerId, entry]),
+      );
+
+      setRoom((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          gameState: "ENDED",
+          currentHand: null,
+          players: prev.players.map((seatPlayer) => {
+            const standing = standingsByPlayerId.get(seatPlayer.id);
+            return {
+              ...seatPlayer,
+              chips: standing ? standing.finalChips : seatPlayer.chips,
+              currentBet: 0,
+              lastAction: null,
+              cards: null,
+            };
+          }),
+        };
+      });
+
+      setPlayer((prev) => {
+        if (!prev) return prev;
+        const standing = standingsByPlayerId.get(prev.id);
+        return {
+          ...prev,
+          chips: standing ? standing.finalChips : prev.chips,
+          currentBet: 0,
+          lastAction: null,
+          cards: null,
+        };
+      });
+    });
+
     // New hand starting
     socket.on("NEW_HAND_STARTING", () => {
       console.log("New hand starting, waiting for GAME_STARTED event...");
+      setNextStreetRevealState(null);
+    });
+
+    socket.on("NEXT_STREET_REVEAL_STATE", (data) => {
+      setNextStreetRevealState({
+        nextRound: data.nextRound,
+        readyPlayerIds: data.readyPlayerIds ?? [],
+        requiredPlayerIds: data.requiredPlayerIds ?? [],
+      });
     });
 
     // Player turn
@@ -410,6 +737,40 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     // Player acted
     socket.on("PLAYER_ACTED", (data) => {
       console.log("Player acted:", data);
+      const roomSnapshot = roomRef.current;
+      const actedPlayerBefore = roomSnapshot?.players.find((p) => p.id === data.playerId);
+      const preRoundCurrentBet = roomSnapshot?.currentHand?.currentBet ?? 0;
+      const preActionCurrentBet = actedPlayerBefore?.currentBet ?? 0;
+      const chipsCommitted = actedPlayerBefore
+        ? Math.max(0, actedPlayerBefore.chips - data.newChips)
+        : 0;
+      const committedAmount = data.committedAmount ?? chipsCommitted;
+      const isNoChipAction = data.action === "check" || data.action === "fold";
+      const totalBetAfterAction =
+        data.totalBetAfterAction ??
+        (isNoChipAction ? preActionCurrentBet : preActionCurrentBet + committedAmount);
+      const resolvedDisplayKind =
+        data.displayKind ??
+        resolveFallbackDisplayKind({
+          action: data.action,
+          preRoundCurrentBet,
+        });
+      const resolvedAmount = isNoChipAction ? undefined : totalBetAfterAction;
+
+      setLastPlayerActionEvent({
+        id: `${Date.now()}-${data.playerId}-${data.action}`,
+        playerId: data.playerId,
+        playerName: data.playerName,
+        action: data.action,
+        amount: resolvedAmount,
+        isOpeningBet: resolvedDisplayKind === "bet-to",
+        displayKind: resolvedDisplayKind,
+        totalBetAfterAction,
+        committedAmount,
+        blindType: data.blindType ?? null,
+        newPot: data.newPot,
+        createdAt: Date.now(),
+      });
       setRoom((prev) => {
         if (!prev) return prev;
         return {
@@ -427,10 +788,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                   // We derive the committed amount from chip delta.
                   ...(() => {
                     const chipsCommitted = Math.max(0, p.chips - data.newChips);
+                    const resolvedCommittedAmount = data.committedAmount ?? chipsCommitted;
                     const nextCurrentBet =
-                      data.action === "check" || data.action === "fold"
+                      data.totalBetAfterAction ??
+                      (data.action === "check" || data.action === "fold"
                         ? p.currentBet
-                        : p.currentBet + chipsCommitted;
+                        : p.currentBet + resolvedCommittedAmount);
 
                     return {
                       ...p,
@@ -448,7 +811,18 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       // Update player state if it's the current player
       setPlayer((prev) => {
         if (!prev || prev.id !== data.playerId) return prev;
-        return { ...prev, chips: data.newChips, lastAction: data.action };
+        const committedByDiff = Math.max(0, prev.chips - data.newChips);
+        const resolvedCommittedAmount = data.committedAmount ?? committedByDiff;
+        return {
+          ...prev,
+          chips: data.newChips,
+          lastAction: data.action,
+          currentBet:
+            data.totalBetAfterAction ??
+            (data.action === "check" || data.action === "fold"
+              ? prev.currentBet
+              : prev.currentBet + resolvedCommittedAmount),
+        };
       });
     });
 
@@ -456,15 +830,62 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     socket.on("BETTING_ROUND_COMPLETE", (data) => {
       console.log("Betting round complete, next round:", data.nextRound);
 
+      if (data.awaitingPlayerStreetReveal) {
+        setNextStreetRevealState({
+          nextRound: data.nextRound,
+          readyPlayerIds: data.readyPlayerIds ?? [],
+          requiredPlayerIds: data.requiredPlayerIds ?? [],
+        });
+      } else {
+        setNextStreetRevealState(null);
+      }
+
       // Reset all players' currentBet to 0 for the new betting round
       setRoom((prev) => {
         if (!prev) return prev;
 
         return {
           ...prev,
+          currentHand: prev.currentHand
+            ? {
+                ...prev.currentHand,
+                currentBet: 0,
+                currentPlayerTurn: data.awaitingPlayerStreetReveal
+                  ? null
+                  : prev.currentHand.currentPlayerTurn,
+                pendingStreetRevealRound: data.awaitingPlayerStreetReveal
+                  ? data.nextRound
+                  : null,
+              }
+            : prev.currentHand,
           players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
         };
       });
+    });
+
+    socket.on("CHAT_HISTORY_SYNC", (data: ChatHistorySyncData) => {
+      const normalizedMessages = normalizeChatMessages(data.messages ?? []);
+      setChatMessages((prev) => mergeChatMessageLists(prev, normalizedMessages));
+      setChatHasMore(Boolean(data.hasMore));
+      setChatNextBeforeSeq(data.nextBeforeSeq ?? null);
+      setChatLoadingHistory(false);
+      if (chatPanelOpenRef.current) {
+        setChatUnreadCount(0);
+      }
+    });
+
+    socket.on("CHAT_MESSAGE_ADDED", (data) => {
+      if (!data?.message) {
+        return;
+      }
+
+      setChatMessages((prev) => mergeChatMessageLists(prev, [data.message]));
+      if (
+        !chatPanelOpenRef.current &&
+        data.message.sender.playerId !== playerRef.current?.id
+      ) {
+        setChatUnreadCount((prev) => prev + 1);
+      }
     });
 
     // Error
@@ -484,6 +905,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("PLAYER_RECONNECTED");
       socket.off("PLAYER_AUTO_FOLDED");
       socket.off("HOST_CHANGED");
+      socket.off("ROOM_CONFIG_UPDATED");
       socket.off("GAME_STARTED");
       socket.off("YOUR_CARDS");
       socket.off("PLAYER_TURN");
@@ -491,8 +913,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("COMMUNITY_CARDS_DEALT");
       socket.off("HAND_COMPLETE");
       socket.off("PLAYER_HAND_REVEALED");
+      socket.off("GAME_ENDED");
       socket.off("NEW_HAND_STARTING");
+      socket.off("NEXT_STREET_REVEAL_STATE");
       socket.off("BETTING_ROUND_COMPLETE");
+      socket.off("CHAT_HISTORY_SYNC");
+      socket.off("CHAT_MESSAGE_ADDED");
       socket.off("ERROR");
     };
   }, [socket]);
@@ -506,8 +932,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       const roomState = roomRef.current;
       const playerState = playerRef.current;
       const fromState =
-        roomState?.id && playerState?.name
-          ? { roomId: roomState.id, playerName: playerState.name }
+        roomState?.id && playerState?.name && playerState?.id
+          ? {
+              roomId: roomState.id,
+              playerName: playerState.name,
+              playerId: playerState.id,
+            }
           : null;
       const fromStorage = readStoredSession();
       const payload = fromState ?? fromStorage;
@@ -559,10 +989,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     };
   }, [socket]);
 
-  const createRoom = useCallback((playerName: string) => {
+  const createRoom = useCallback((playerName: string, playerEmoji?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("CREATE_ROOM", { playerName }, (response) => {
+    socket.emit("CREATE_ROOM", { playerName, playerEmoji }, (response) => {
       console.log("Create room response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to create room");
@@ -570,10 +1000,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
-  const joinRoom = useCallback((roomId: string, playerName: string) => {
+  const joinRoom = useCallback((roomId: string, playerName: string, playerEmoji?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("JOIN_ROOM", { roomId, playerName }, (response) => {
+    socket.emit("JOIN_ROOM", { roomId, playerName, playerEmoji }, (response) => {
       console.log("Join room response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to join room");
@@ -603,6 +1033,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const endGame = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("END_GAME", (response) => {
+      console.log("End game response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to end game");
+      }
+    });
+  }, [socket]);
+
   const showMyHand = useCallback(() => {
     if (!socket) return;
     setLastError(null);
@@ -614,10 +1055,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
-  const performAction = useCallback((action: PlayerAction, amount?: number) => {
+  const performAction = useCallback((action: PlayerAction, amount?: number, actionId?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("PLAYER_ACTION", { action, amount }, (response) => {
+    socket.emit("PLAYER_ACTION", { action, amount, actionId: actionId || createActionId() }, (response) => {
       console.log("Action response:", response);
       if (response && "success" in response && !response.success && response.error) {
         setLastError(response.error);
@@ -625,17 +1066,46 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const revealNextStreet = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("REVEAL_NEXT_STREET", {}, (response) => {
+      console.log("Reveal next street response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to reveal next street");
+      }
+    });
+  }, [socket]);
+
   const leaveRoom = useCallback(() => {
+    const currentRoomId = roomRef.current?.id;
+    if (currentRoomId) {
+      clearStoredFinalResult(currentRoomId);
+    }
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
+    }
+    clearStoredSession();
+    setRoom(null);
+    setPlayer(null);
+    setYourCards(null);
+    setLastHandResult(null);
+    setFinalGameResult(null);
+    setLastPlayerActionEvent(null);
+    setRevealedHandPlayerIds([]);
+    setNextStreetRevealState(null);
+    setIsRecoveringSession(false);
+    setLastError(null);
+    setChatMessages([]);
+    setChatHasMore(false);
+    setChatNextBeforeSeq(null);
+    setChatLoadingHistory(false);
+    setChatUnreadCount(0);
+    setIsChatPanelOpenState(false);
+
     if (!socket) return;
     socket.emit("LEAVE_ROOM", () => {
-      clearStoredSession();
-      setRoom(null);
-      setPlayer(null);
-      setYourCards(null);
-      setLastHandResult(null);
-      setRevealedHandPlayerIds([]);
-      setIsRecoveringSession(false);
-      setLastError(null);
+      // Local state is already cleared optimistically.
     });
   }, [socket]);
 
@@ -650,6 +1120,115 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
   }, [socket]);
 
+  const updateRoomConfig = useCallback(
+    (config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("UPDATE_ROOM_CONFIG", { config }, (response) => {
+        console.log("Update room config response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to update room settings");
+        }
+      });
+    },
+    [socket],
+  );
+
+  const setChatPanelOpen = useCallback((open: boolean) => {
+    setIsChatPanelOpenState(open);
+    if (open) {
+      setChatUnreadCount(0);
+    }
+  }, []);
+
+  const clearChatUnread = useCallback(() => {
+    setChatUnreadCount(0);
+  }, []);
+
+  const sendChatPayload = useCallback(
+    (payload: SendChatMessageData) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("SEND_CHAT_MESSAGE", payload, (response: {
+        success?: boolean;
+        error?: string;
+        message?: ChatMessage;
+      }) => {
+        if (!response?.success) {
+          setLastError(response?.error || "Failed to send message");
+          return;
+        }
+
+        const message = response.message;
+        if (message) {
+          setChatMessages((prev) => mergeChatMessageLists(prev, [message]));
+        }
+      });
+    },
+    [socket],
+  );
+
+  const sendChatText = useCallback(
+    (text: string, clientMessageId?: string) => {
+      const normalizedText = text.trim();
+      if (!normalizedText) {
+        return;
+      }
+
+      sendChatPayload({
+        kind: "TEXT",
+        text: normalizedText,
+        clientMessageId: clientMessageId || createActionId(),
+      });
+    },
+    [sendChatPayload],
+  );
+
+  const sendChatVoice = useCallback(
+    (voice: VoiceMessagePayload, clientMessageId?: string) => {
+      sendChatPayload({
+        kind: "VOICE",
+        voice,
+        clientMessageId: clientMessageId || createActionId(),
+      });
+    },
+    [sendChatPayload],
+  );
+
+  const loadOlderChatMessages = useCallback(() => {
+    if (!socket || chatLoadingHistory || !chatHasMore || chatNextBeforeSeq === null) {
+      return;
+    }
+
+    setChatLoadingHistory(true);
+    socket.emit(
+      "GET_CHAT_HISTORY",
+      {
+        beforeSeq: chatNextBeforeSeq,
+        limit: CHAT_HISTORY_PAGE_LIMIT,
+      },
+      (response: {
+        success?: boolean;
+        error?: string;
+        messages?: ChatMessage[];
+        hasMore?: boolean;
+        nextBeforeSeq?: number | null;
+      }) => {
+        setChatLoadingHistory(false);
+        if (!response?.success) {
+          setLastError(response?.error || "Failed to load chat history");
+          return;
+        }
+
+        setChatMessages((prev) =>
+          mergeChatMessageLists(response.messages ?? [], prev),
+        );
+        setChatHasMore(Boolean(response.hasMore));
+        setChatNextBeforeSeq(response.nextBeforeSeq ?? null);
+      },
+    );
+  }, [socket, chatLoadingHistory, chatHasMore, chatNextBeforeSeq]);
+
   const clearError = useCallback(() => setLastError(null), []);
 
   const isHost = player?.id === room?.hostId;
@@ -662,13 +1241,18 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         getPlayer: () => player,
         getCards: () => yourCards,
         getLastHandResult: () => lastHandResult,
+        getFinalGameResult: () => finalGameResult,
+        getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
+        getNextStreetRevealState: () => nextStreetRevealState,
         getSocket: () => socket,
         createRoom,
         joinRoom,
         startGame,
         startNextHand,
+        endGame,
         showMyHand,
+        revealNextStreet,
         performAction,
         fold: () => performAction("fold"),
         check: () => performAction("check"),
@@ -677,6 +1261,15 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         allIn: () => performAction("all-in"),
         leaveRoom,
         requestRebuy,
+        updateRoomConfig,
+        getChatMessages: () => chatMessages,
+        getChatUnreadCount: () => chatUnreadCount,
+        sendChatText,
+        sendChatVoice,
+        loadOlderChatMessages,
+        setChatPanelOpen,
+        clearChatUnread,
+        getVoicePlaybackState,
         clearError,
         emitCustom: (event, data) => {
           const rawSocket = socket as unknown as {
@@ -697,17 +1290,30 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     player,
     yourCards,
     lastHandResult,
+    finalGameResult,
+    lastPlayerActionEvent,
     revealedHandPlayerIds,
+    nextStreetRevealState,
     socket,
     isHost,
     createRoom,
     joinRoom,
     startGame,
     startNextHand,
+    endGame,
     showMyHand,
+    revealNextStreet,
     performAction,
     leaveRoom,
     requestRebuy,
+    updateRoomConfig,
+    chatMessages,
+    chatUnreadCount,
+    sendChatText,
+    sendChatVoice,
+    loadOlderChatMessages,
+    setChatPanelOpen,
+    clearChatUnread,
     clearError,
   ]);
 
@@ -718,18 +1324,34 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         player,
         yourCards,
         lastHandResult,
+        finalGameResult,
+        lastPlayerActionEvent,
         revealedHandPlayerIds,
+        nextStreetRevealState,
         isHost,
         isRecoveringSession,
         lastError,
+        chatMessages,
+        chatHasMore,
+        chatLoadingHistory,
+        chatUnreadCount,
+        isChatPanelOpen,
         createRoom,
         joinRoom,
         startGame,
         startNextHand,
+        endGame,
         showMyHand,
+        revealNextStreet,
         performAction,
         leaveRoom,
         requestRebuy,
+        updateRoomConfig,
+        sendChatText,
+        sendChatVoice,
+        loadOlderChatMessages,
+        setChatPanelOpen,
+        clearChatUnread,
         clearError,
       }}
     >

@@ -111,6 +111,40 @@ Poker/
    - Create a new room or join an existing one
    - Share the room code with friends to play together!
 
+## 🐳 Docker Deployment
+
+This repository includes a production Docker setup where:
+
+- NestJS serves both API/WebSocket traffic and the built SPA
+- Room state is persisted with JSON files under `/app/data`
+- `/app/data` is mounted as a Docker volume so data survives container restarts
+
+### Run with Docker Compose
+
+```bash
+docker compose up --build -d
+```
+
+Then open [http://localhost:3000](http://localhost:3000).
+
+If port `3000` is already used locally, choose another host port:
+
+```bash
+HOST_PORT=3300 docker compose up --build -d
+```
+
+### Stop
+
+```bash
+docker compose down
+```
+
+### Reset stored room data
+
+```bash
+docker compose down -v
+```
+
 ## 🎮 How to Play
 
 1. **Create/Join a Room:**
@@ -135,6 +169,11 @@ Poker/
    - Players act in turn (clockwise from dealer)
    - Disconnected players have 30 seconds to reconnect
 
+## 📚 Product Rules
+
+- Chat unread & latest-preview rules:
+  - [2026-02-11 chat unread & preview rules](docs/plans/2026-02-11-chat-unread-preview-rules.md)
+
 ## 🧪 Testing
 
 Backend includes comprehensive unit tests:
@@ -142,6 +181,19 @@ Backend includes comprehensive unit tests:
 ```bash
 cd poker-server
 npm test
+```
+
+Pre-game readiness (build + health + LAN URL + critical smoke checks):
+
+```bash
+cd /Users/kai/Developer/games/Poker
+./scripts/pregame-readiness.sh
+```
+
+Quick mode (skip Playwright smoke):
+
+```bash
+./scripts/pregame-readiness.sh --fast
 ```
 
 Current test coverage:
@@ -178,11 +230,30 @@ PORT=3000
 CORS_ORIGIN=http://localhost:5173
 CLIENT_URL=http://localhost:5173
 NODE_ENV=development
+DATA_DIR=./data
+FRONTEND_DIST_PATH=../poker-client/dist
 ```
 
 ### Frontend
 
-Frontend connects to `http://localhost:3000` by default (configured in socket.service.ts)
+Frontend socket target can be set with:
+
+```
+VITE_SERVER_URL=http://localhost:3000
+VITE_SERVER_PROTOCOL=http
+VITE_SERVER_HOST=localhost
+VITE_SERVER_PORT=3000
+```
+
+If these are not set, the client falls back to runtime config and then a host/port fallback.
+
+### Docker build argument (optional)
+
+The Dockerfile accepts a client build-time socket URL override:
+
+```bash
+docker build --build-arg VITE_SERVER_URL=/ -t poker-app:latest .
+```
 
 ## 🔧 Development
 

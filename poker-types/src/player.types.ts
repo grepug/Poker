@@ -16,8 +16,12 @@ export interface Player {
   id: string;
   socketId: string;
   name: string;
+  emoji?: string;
   chips: number;
   totalBuyIn: number;
+  handsPlayedCount: number;
+  handsWonCount: number;
+  vpipHandsCount: number; // Voluntarily Put Money In Pot (pre-flop, excludes forced blinds)
   position: number; // Seat position 0-9
   status: PlayerStatus;
   cards: Card[] | null; // null if not in active hand

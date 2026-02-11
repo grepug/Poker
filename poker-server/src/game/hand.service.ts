@@ -6,6 +6,7 @@ import {
   Player,
   BettingRound,
   HandResult,
+  PotPayout,
   Card,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
@@ -42,10 +43,10 @@ export class HandService {
     const handNumber = room.currentHand ? room.currentHand.handNumber + 1 : 1;
 
     // Determine positions
-    const dealerPosition = this.getNextDealerPosition(room);
-    const activePlayers = room.players.filter(
-      (p) => p.chips > 0 && p.status !== 'left',
+    const activePlayers = this.getPlayersInSeatOrder(
+      room.players.filter((p) => p.chips > 0 && p.status !== 'left'),
     );
+    const dealerPosition = this.getNextDealerPosition(room, activePlayers);
     const activePlayerIds = activePlayers.map((p) => p.id);
     const playerCount = activePlayers.length;
 
@@ -53,12 +54,15 @@ export class HandService {
       throw new Error('Need at least 2 players with chips');
     }
 
-    const smallBlindPosition = (dealerPosition + 1) % playerCount;
-    const bigBlindPosition = (dealerPosition + 2) % playerCount;
-
-    // Collect blinds
-    const smallBlindPlayer = activePlayers[smallBlindPosition];
-    const bigBlindPlayer = activePlayers[bigBlindPosition];
+    const smallBlindPlayer = this.getNextPlayerByPosition(activePlayers, dealerPosition);
+    const bigBlindPlayer = smallBlindPlayer
+      ? this.getNextPlayerByPosition(activePlayers, smallBlindPlayer.position)
+      : null;
+    if (!smallBlindPlayer || !bigBlindPlayer) {
+      throw new Error('Unable to resolve blind players');
+    }
+    const smallBlindPosition = smallBlindPlayer.position;
+    const bigBlindPosition = bigBlindPlayer.position;
 
     const sbAmount = Math.min(room.config.smallBlind, smallBlindPlayer.chips);
     const bbAmount = Math.min(room.config.bigBlind, bigBlindPlayer.chips);
@@ -88,6 +92,7 @@ export class HandService {
     }
 
     for (const player of activePlayers) {
+      player.handsPlayedCount = (player.handsPlayedCount ?? 0) + 1;
       const { dealt, remaining } = dealCards(deck, 2);
       player.cards = dealt;
       player.status = 'connected';
@@ -102,11 +107,14 @@ export class HandService {
     // First to act pre-flop:
     // - Heads-up: small blind (who is the button/dealer) acts first
     // - 3+ players: player left of big blind acts first
-    const firstToAct =
+    const firstToActPlayer =
       playerCount === 2
-        ? smallBlindPosition
-        : (bigBlindPosition + 1) % playerCount;
-    const currentPlayerTurn = activePlayers[firstToAct].id;
+        ? smallBlindPlayer
+        : this.getNextPlayerByPosition(activePlayers, bigBlindPosition);
+    if (!firstToActPlayer) {
+      throw new Error('Unable to resolve first player to act');
+    }
+    const currentPlayerTurn = firstToActPlayer.id;
 
     const hand: Hand = {
       handNumber,
@@ -123,6 +131,7 @@ export class HandService {
       roundActions: {},
       sidePots: [],
       potContributions,
+      vpipPlayerIds: [],
       startedAt: Date.now(),
     };
 
@@ -265,14 +274,9 @@ export class HandService {
 
     // Set first to act (first active player after dealer)
     const activePlayers = this.getActivePlayers(room);
-    if (activePlayers.length > 0) {
-      const dealerIdx = activePlayers.findIndex(
-        (p) =>
-          room.players.findIndex((rp) => rp.id === p.id) ===
-          hand.dealerPosition,
-      );
-      const nextIdx = (dealerIdx + 1) % activePlayers.length;
-      hand.currentPlayerTurn = activePlayers[nextIdx].id;
+    const nextPlayer = this.getNextPlayerByPosition(activePlayers, hand.dealerPosition);
+    if (nextPlayer) {
+      hand.currentPlayerTurn = nextPlayer.id;
     }
 
     room.lastActivityAt = Date.now();
@@ -318,6 +322,7 @@ export class HandService {
         ? evaluateHand(winner.cards!.concat(hand.communityCards))
         : null;
 
+      winner.handsWonCount = (winner.handsWonCount ?? 0) + 1;
       const result: HandResult = {
         winners: [
           {
@@ -336,9 +341,24 @@ export class HandService {
           },
         ],
         totalPot: hand.pot,
+        payouts: [
+          {
+            segmentIndex: 0,
+            potType: 'MAIN',
+            amount: hand.pot,
+            eligiblePlayerIds: activePlayers.map((player) => player.id),
+            winnerShares: [
+              {
+                playerId: winner.id,
+                amountWon: hand.pot,
+              },
+            ],
+            uncontested: activePlayers.length === 1,
+          },
+        ],
       };
 
-      await this.cleanupHand(room);
+      await this.cleanupHand(room, winner.id);
       return result;
     }
 
@@ -360,9 +380,10 @@ export class HandService {
     hand.sidePots = sidePotSegments.slice(1);
 
     const payoutByPlayerId = new Map<string, number>();
+    const payouts: PotPayout[] = [];
     let distributedTotal = 0;
 
-    for (const segment of sidePotSegments) {
+    for (const [segmentIndex, segment] of sidePotSegments.entries()) {
       const eligibleEvaluations = segment.eligiblePlayers
         .map((playerId) => evaluationsByPlayerId.get(playerId))
         .filter((entry): entry is (typeof evaluations)[number] => !!entry)
@@ -392,16 +413,33 @@ export class HandService {
         segment.amount / winningEvaluations.length,
       );
       const remainder = segment.amount % winningEvaluations.length;
+      const winnerShares: PotPayout['winnerShares'] = [];
 
       for (let i = 0; i < winningEvaluations.length; i++) {
         const winner = winningEvaluations[i];
         const award = amountPerWinner + (i < remainder ? 1 : 0);
+        if (award <= 0) {
+          continue;
+        }
         payoutByPlayerId.set(
           winner.player.id,
           (payoutByPlayerId.get(winner.player.id) || 0) + award,
         );
+        winnerShares.push({
+          playerId: winner.player.id,
+          amountWon: award,
+        });
         distributedTotal += award;
       }
+
+      payouts.push({
+        segmentIndex,
+        potType: segmentIndex === 0 ? 'MAIN' : 'SIDE',
+        amount: segment.amount,
+        eligiblePlayerIds: segment.eligiblePlayers,
+        winnerShares,
+        uncontested: segment.eligiblePlayers.length === 1,
+      });
     }
 
     if (distributedTotal !== hand.pot && evaluations.length > 0) {
@@ -413,6 +451,26 @@ export class HandService {
         fallbackWinner.player.id,
         (payoutByPlayerId.get(fallbackWinner.player.id) || 0) + adjustment,
       );
+      const targetPayout =
+        payouts.find((segment) =>
+          segment.winnerShares.some(
+            (share) => share.playerId === fallbackWinner.player.id,
+          ),
+        ) ?? payouts[0];
+      if (targetPayout) {
+        const existingShare = targetPayout.winnerShares.find(
+          (share) => share.playerId === fallbackWinner.player.id,
+        );
+        if (existingShare) {
+          existingShare.amountWon += adjustment;
+        } else {
+          targetPayout.winnerShares.push({
+            playerId: fallbackWinner.player.id,
+            amountWon: adjustment,
+          });
+        }
+        targetPayout.amount += adjustment;
+      }
       distributedTotal += adjustment;
       this.logger.warn(
         `[determineWinner] Pot distribution adjusted by ${adjustment} to preserve chip conservation`,
@@ -440,6 +498,12 @@ export class HandService {
       })
       .sort((a, b) => b.amountWon - a.amountWon);
 
+    for (const winnerEntry of winners) {
+      const winnerPlayer = room.players.find((p) => p.id === winnerEntry.playerId);
+      if (!winnerPlayer) continue;
+      winnerPlayer.handsWonCount = (winnerPlayer.handsWonCount ?? 0) + 1;
+    }
+
     const result: HandResult = {
       winners,
       playerHands: evaluations
@@ -452,9 +516,10 @@ export class HandService {
           hand: evaluation,
         })),
       totalPot: hand.pot,
+      payouts,
     };
 
-    await this.cleanupHand(room);
+    await this.cleanupHand(room, winners[0]?.playerId);
     return result;
   }
 
@@ -548,13 +613,14 @@ export class HandService {
     const activePlayers = this.getActivePlayers(room);
     if (activePlayers.length === 0) return null;
 
-    const currentIdx = activePlayers.findIndex(
-      (p) => p.id === hand.currentPlayerTurn,
+    const currentTurnPlayer = room.players.find(
+      (player) => player.id === hand.currentPlayerTurn,
     );
-    if (currentIdx === -1) return activePlayers[0];
+    if (!currentTurnPlayer) {
+      return activePlayers[0];
+    }
 
-    const nextIdx = (currentIdx + 1) % activePlayers.length;
-    return activePlayers[nextIdx];
+    return this.getNextPlayerByPosition(activePlayers, currentTurnPlayer.position);
   }
 
   /**
@@ -584,35 +650,60 @@ export class HandService {
     const hand = room.currentHand;
     if (!hand) return [];
 
-    return room.players.filter(
-      (p) =>
-        hand.activePlayers.includes(p.id) &&
-        p.status !== 'folded' &&
-        p.status !== 'all-in' &&
-        p.chips > 0,
+    return this.getPlayersInSeatOrder(
+      room.players.filter(
+        (p) =>
+          hand.activePlayers.includes(p.id) &&
+          p.status !== 'folded' &&
+          p.status !== 'all-in' &&
+          p.chips > 0,
+      ),
     );
   }
 
   /**
    * Get next dealer position
    */
-  private getNextDealerPosition(room: Room): number {
-    if (!room.currentHand) {
-      return 0; // First hand, start at position 0
+  private getNextDealerPosition(room: Room, activePlayers: Player[]): number {
+    if (activePlayers.length === 0) {
+      return 0;
     }
 
-    const activePlayers = room.players.filter(
-      (p) => p.chips > 0 && p.status !== 'left',
-    );
-    const currentDealer = room.currentHand.dealerPosition;
+    if (!room.currentHand) {
+      return activePlayers[0].position;
+    }
 
-    return (currentDealer + 1) % activePlayers.length;
+    const currentDealer = room.currentHand.dealerPosition;
+    const nextDealer = this.getNextPlayerByPosition(activePlayers, currentDealer);
+    return nextDealer?.position ?? activePlayers[0].position;
+  }
+
+  private getPlayersInSeatOrder(players: Player[]): Player[] {
+    return [...players].sort((left, right) => left.position - right.position);
+  }
+
+  private getNextPlayerByPosition(
+    players: Player[],
+    currentPosition: number,
+  ): Player | null {
+    if (players.length === 0) {
+      return null;
+    }
+
+    const sortedPlayers = this.getPlayersInSeatOrder(players);
+    return (
+      sortedPlayers.find((player) => player.position > currentPosition) ??
+      sortedPlayers[0]
+    );
   }
 
   /**
    * Cleanup after hand ends
    */
-  private async cleanupHand(room: Room): Promise<void> {
+  private async cleanupHand(
+    room: Room,
+    preferredPlayerId?: string,
+  ): Promise<void> {
     this.logger.debug(
       `[cleanupHand] BEFORE cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
@@ -627,6 +718,8 @@ export class HandService {
       }
     }
 
+    this.reconcileChipConservation(room, 'cleanupHand', preferredPlayerId);
+
     this.logger.debug(
       `[cleanupHand] AFTER cleanup - players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
@@ -636,5 +729,81 @@ export class HandService {
 
     room.lastActivityAt = Date.now();
     await this.storageService.saveRoom(room);
+  }
+
+  private reconcileChipConservation(
+    room: Room,
+    context: string,
+    preferredPlayerId?: string,
+  ): void {
+    const expectedTotal = room.players.reduce(
+      (sum, player) => sum + (player.totalBuyIn ?? 0),
+      0,
+    );
+    const actualTotal = room.players.reduce(
+      (sum, player) => sum + player.chips + player.currentBet,
+      0,
+    );
+    const delta = expectedTotal - actualTotal;
+
+    if (delta === 0) {
+      return;
+    }
+
+    this.logger.error(
+      `[chip-conservation] ${context} mismatch in room ${room.id}: expected=${expectedTotal}, actual=${actualTotal}, delta=${delta}`,
+    );
+
+    const maxAutoAdjustment = Math.max(1, room.players.length);
+    if (Math.abs(delta) > maxAutoAdjustment) {
+      this.logger.error(
+        `[chip-conservation] Large mismatch in room ${room.id}; skipped auto-reconciliation to avoid unfair balance correction`,
+      );
+      return;
+    }
+
+    if (delta > 0) {
+      const recipient =
+        room.players.find((player) => player.id === preferredPlayerId) ??
+        [...room.players].sort((a, b) => b.chips - a.chips || a.position - b.position)[0];
+      if (!recipient) {
+        return;
+      }
+
+      recipient.chips += delta;
+      this.logger.warn(
+        `[chip-conservation] Credited ${delta} chips to ${recipient.name} in room ${room.id} to restore table invariants`,
+      );
+      return;
+    }
+
+    let remainingToRemove = Math.abs(delta);
+    const debitOrder = [...room.players].sort((a, b) => {
+      if (preferredPlayerId) {
+        if (a.id === preferredPlayerId && b.id !== preferredPlayerId) return -1;
+        if (b.id === preferredPlayerId && a.id !== preferredPlayerId) return 1;
+      }
+      return b.chips - a.chips || a.position - b.position;
+    });
+
+    for (const player of debitOrder) {
+      if (remainingToRemove <= 0) {
+        break;
+      }
+      const debit = Math.min(player.chips, remainingToRemove);
+      player.chips -= debit;
+      remainingToRemove -= debit;
+    }
+
+    if (remainingToRemove > 0) {
+      this.logger.error(
+        `[chip-conservation] Failed to fully debit mismatch in room ${room.id}, remaining=${remainingToRemove}`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `[chip-conservation] Debited ${Math.abs(delta)} chips across stacks in room ${room.id} to restore table invariants`,
+    );
   }
 }

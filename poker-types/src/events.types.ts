@@ -2,6 +2,13 @@ import { Card } from "./card.types";
 import { Player, PlayerAction } from "./player.types";
 import { Room, RoomConfig, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
+import {
+  ChatHistorySyncData,
+  ChatMessage,
+  GetChatHistoryData,
+  SendChatMessageData,
+  SendChatMessageAck,
+} from "./chat.types";
 
 // ============================================
 // Client -> Server Events
@@ -9,22 +16,26 @@ import { Hand, HandResult, BettingRound } from "./game.types";
 
 export interface CreateRoomData {
   playerName: string;
+  playerEmoji?: string;
   config?: Partial<RoomConfig>;
 }
 
 export interface JoinRoomData {
   roomId: string;
   playerName: string;
+  playerEmoji?: string;
 }
 
 export interface ReconnectData {
   roomId: string;
   playerName: string;
+  playerId?: string;
 }
 
 export interface PlayerActionData {
   action: PlayerAction;
   amount?: number; // For raises
+  actionId?: string; // Idempotency key for deduplicating retries
 }
 
 export interface RequestRebuyData {
@@ -32,6 +43,16 @@ export interface RequestRebuyData {
 }
 
 export interface ShowMyHandData {}
+export interface RevealNextStreetData {}
+
+export interface UpdateRoomConfigData {
+  config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>;
+}
+
+export interface GetChatHistoryAck extends ChatHistorySyncData {
+  success: boolean;
+  error?: string;
+}
 
 export interface ClientToServerEvents {
   CREATE_ROOM: (
@@ -46,6 +67,14 @@ export interface ClientToServerEvents {
     data: ShowMyHandData,
     callback: (response: any) => void,
   ) => void;
+  REVEAL_NEXT_STREET: (
+    data: RevealNextStreetData,
+    callback: (response: any) => void,
+  ) => void;
+  UPDATE_ROOM_CONFIG: (
+    data: UpdateRoomConfigData,
+    callback: (response: any) => void,
+  ) => void;
   PLAYER_ACTION: (
     data: PlayerActionData,
     callback: (response: any) => void,
@@ -53,6 +82,14 @@ export interface ClientToServerEvents {
   REQUEST_REBUY: (
     data: RequestRebuyData,
     callback: (response: any) => void,
+  ) => void;
+  SEND_CHAT_MESSAGE: (
+    data: SendChatMessageData,
+    callback: (response: SendChatMessageAck) => void,
+  ) => void;
+  GET_CHAT_HISTORY: (
+    data: GetChatHistoryData,
+    callback: (response: GetChatHistoryAck) => void,
   ) => void;
   LEAVE_ROOM: (callback: (response: any) => void) => void;
   END_GAME: (callback: (response: any) => void) => void;
@@ -110,12 +147,30 @@ export interface PlayerActedData {
   playerName: string;
   action: PlayerAction;
   amount?: number;
+  displayKind?: PlayerActionDisplayKind;
+  totalBetAfterAction?: number;
+  committedAmount?: number;
+  blindType?: BlindType | null;
   newPot: number;
   newChips: number;
 }
 
+export type BlindType = "SB" | "BB";
+
+export type PlayerActionDisplayKind =
+  | "blind"
+  | "bet-to"
+  | "raise-to"
+  | "call-to"
+  | "all-in-to"
+  | "check"
+  | "fold";
+
 export interface BettingRoundCompleteData {
   nextRound: BettingRound;
+  awaitingPlayerStreetReveal?: boolean;
+  readyPlayerIds?: string[];
+  requiredPlayerIds?: string[];
 }
 
 export interface CommunityCardsDealtData {
@@ -134,6 +189,12 @@ export interface PlayerHandRevealedData {
   playerId: string;
   playerName: string;
   handNumber: number;
+}
+
+export interface NextStreetRevealStateData {
+  nextRound: BettingRound;
+  readyPlayerIds: string[];
+  requiredPlayerIds: string[];
 }
 
 export interface PlayerDisconnectedData {
@@ -157,6 +218,10 @@ export interface HostChangedData {
   newHostName: string;
 }
 
+export interface RoomConfigUpdatedData {
+  config: RoomConfig;
+}
+
 export interface PlayerReboughtData {
   playerId: string;
   playerName: string;
@@ -177,12 +242,42 @@ export interface GameEndedData {
     finalChips: number;
     totalBuyIn: number;
     profit: number;
+    handsPlayedCount: number;
+    handsWonCount: number;
+    vpipHandsCount: number;
   }>;
+  summary: {
+    totalPlayers: number;
+    handsPlayed: number;
+    totalBuyIn: number;
+    totalChipsInPlay: number;
+    profitablePlayers: number;
+    averageFinalStack: number;
+    chipLeader: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestWinner: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+    biggestLoss: {
+      playerId: string;
+      playerName: string;
+      amount: number;
+    } | null;
+  };
 }
 
 export interface ErrorData {
   message: string;
   code?: string;
+}
+
+export interface ChatMessageAddedData {
+  message: ChatMessage;
 }
 
 export interface ServerToClientEvents {
@@ -199,13 +294,17 @@ export interface ServerToClientEvents {
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
   PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
+  NEXT_STREET_REVEAL_STATE: (data: NextStreetRevealStateData) => void;
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;
+  ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;
   PLAYER_REBOUGHT: (data: PlayerReboughtData) => void;
   PLAYER_LEFT: (data: PlayerLeftData) => void;
   GAME_ENDED: (data: GameEndedData) => void;
+  CHAT_HISTORY_SYNC: (data: ChatHistorySyncData) => void;
+  CHAT_MESSAGE_ADDED: (data: ChatMessageAddedData) => void;
   ERROR: (data: ErrorData) => void;
 }

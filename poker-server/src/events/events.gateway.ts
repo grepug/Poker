@@ -14,13 +14,20 @@ import { HandService } from '../game/hand.service';
 import { BettingService } from '../game/betting.service';
 import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
+import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
 import {
+  BettingRound,
+  BlindType,
   CreateRoomData,
   JoinRoomData,
   ReconnectData,
   PlayerActionData,
+  PlayerActionDisplayKind,
   RequestRebuyData,
+  RevealNextStreetData,
   ShowMyHandData,
+  UpdateRoomConfigData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -30,7 +37,15 @@ import {
   BettingRoundCompleteData,
   CommunityCardsDealtData,
   HandCompleteData,
+  GameEndedData,
+  NextStreetRevealStateData,
   PlayerHandRevealedData,
+  RoomConfigUpdatedData,
+  ChatHistorySyncData,
+  ChatMessage,
+  GetChatHistoryData,
+  SendChatMessageData,
+  SendChatMessageAck,
   Card,
 } from 'poker-types';
 
@@ -78,6 +93,42 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
+  private roomActionQueues: Map<string, Promise<void>> = new Map();
+  private processedActionFingerprints: Map<string, number> = new Map();
+  private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
+  private readonly maxProcessedActionFingerprints = 10000;
+
+  private processedChatMessageFingerprints: Map<
+    string,
+    { timestamp: number; message: ChatMessage }
+  > = new Map();
+  private readonly processedChatMessageTtlMs = Number(
+    process.env.CHAT_DEDUPE_WINDOW_MS || "600000"
+  );
+  private readonly maxProcessedChatMessageFingerprints = Number(
+    process.env.CHAT_MAX_DEDUPE_CACHE_SIZE || "50000"
+  );
+  private readonly chatRateLimitCount = Number(
+    process.env.CHAT_RATE_LIMIT_COUNT || "5"
+  );
+  private readonly chatRateLimitWindowMs = Number(
+    process.env.CHAT_RATE_LIMIT_WINDOW_MS || "10000"
+  );
+  private readonly chatMessageMaxLength = Number(
+    process.env.CHAT_TEXT_MAX_LENGTH || "300"
+  );
+  private readonly chatVoiceMaxDurationMs = Number(
+    process.env.CHAT_VOICE_MAX_DURATION_MS || "60000"
+  );
+  private readonly chatVoiceMaxBytes = Number(
+    process.env.CHAT_VOICE_MAX_BYTES || "2097152"
+  );
+  private readonly chatPageSize = Number(process.env.CHAT_PAGE_SIZE || "50");
+  private readonly chatPageMaxSize = Number(
+    process.env.CHAT_PAGE_MAX_SIZE || "200"
+  );
+  private readonly chatRateWindows = new Map<string, number[]>();
+
 
   private getRoomShareUrl(client: Socket, roomId: string) {
     const configuredClientUrl = process.env.CLIENT_URL?.trim();
@@ -108,6 +159,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly testDeckService: TestDeckService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
+    @Inject('IChatStorageService')
+    private readonly chatStorageService: IChatStorageService,
+    @Inject('IChatMediaStorageService')
+    private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {}
 
   handleConnection(client: Socket) {
@@ -119,22 +174,40 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const playerInfo = this.socketToPlayer.get(client.id);
     if (!playerInfo) return;
+    this.socketToPlayer.delete(client.id);
 
     const { roomId, playerId } = playerInfo;
 
-    // Start grace period timer
-    const timer = setTimeout(async () => {
-      await this.handleDisconnectTimeout(roomId, playerId);
-    }, 30000); // 30 second grace period
+    try {
+      await this.runRoomActionSequentially(roomId, async () => {
+        const room = await this.getRoom(roomId);
+        const gracePeriod = room?.config?.reconnectGracePeriod ?? 120000;
+        const playerName =
+          room?.players?.find((player) => player.id === playerId)?.name ?? '';
 
-    this.disconnectTimers.set(playerId, timer);
+        const existingTimer = this.disconnectTimers.get(playerId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
 
-    // Notify room of disconnect
-    this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
-      playerId,
-      playerName: '', // Would need to fetch from room
-      gracePeriod: 30000,
-    });
+        // Start grace period timer
+        const timer = setTimeout(async () => {
+          await this.handleDisconnectTimeout(roomId, playerId);
+        }, gracePeriod);
+
+        this.disconnectTimers.set(playerId, timer);
+        await this.gameService.markPlayerDisconnected(roomId, playerId);
+
+        // Notify room of disconnect
+        this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
+          playerId,
+          playerName,
+          gracePeriod,
+        });
+      });
+    } catch (error) {
+      this.logger.error(`Disconnect handling error: ${error.message}`);
+    }
   }
 
   @SubscribeMessage('CREATE_ROOM')
@@ -149,6 +222,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const room = await this.gameService.createRoom(
         client.id,
         data.playerName || hostName,
+        data.playerEmoji,
         data.config,
       );
 
@@ -156,10 +230,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(room.id);
 
       const host = room.players[0];
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: host.id,
-      });
+      this.trackPlayerSocket(client.id, room.id, host.id);
 
       const response: RoomCreatedData = {
         roomId: room.id,
@@ -168,6 +239,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       client.emit('ROOM_CREATED', response);
+      await this.emitInitialChatHistory(client, room.id);
       this.logger.log(`Room ${room.id} created`);
 
       return { success: true };
@@ -184,31 +256,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: JoinRoomData,
   ) {
     try {
-      const { room, player } = await this.gameService.addPlayerToRoom(
-        data.roomId,
-        client.id,
-        data.playerName,
-      );
+      return await this.runRoomActionSequentially(data.roomId, async () => {
+        const { room, player, rejoined } =
+          await this.gameService.addPlayerToRoom(
+            data.roomId,
+            client.id,
+            data.playerName,
+            data.playerEmoji,
+          );
 
-      client.join(room.id);
+        client.join(room.id);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: room.id,
-        playerId: player.id,
+        this.trackPlayerSocket(client.id, room.id, player.id);
+
+        if (rejoined) {
+          const timer = this.disconnectTimers.get(player.id);
+          if (timer) {
+            clearTimeout(timer);
+            this.disconnectTimers.delete(player.id);
+          }
+
+          this.server.to(room.id).emit('PLAYER_RECONNECTED', {
+            playerId: player.id,
+            playerName: player.name,
+          });
+        } else {
+          // Notify all in room
+          this.server.to(room.id).emit('PLAYER_JOINED', {
+            player: this.sanitizePlayer(player),
+          } as PlayerJoinedData);
+        }
+
+        client.emit('ROOM_JOINED', {
+          player,
+          room: this.sanitizeRoom(room),
+        });
+        await this.emitInitialChatHistory(client, room.id);
+
+        this.logger.log(
+          `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
+        );
+        return { success: true };
       });
-
-      // Notify all in room
-      this.server.to(room.id).emit('PLAYER_JOINED', {
-        player: this.sanitizePlayer(player),
-      } as PlayerJoinedData);
-
-      client.emit('ROOM_JOINED', {
-        player,
-        room: this.sanitizeRoom(room),
-      });
-
-      this.logger.log(`Player ${player.name} joined room ${room.id}`);
-      return { success: true };
     } catch (error) {
       this.logger.error(`Join room error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
@@ -222,51 +311,178 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: ReconnectData,
   ) {
     try {
-      const player = await this.gameService.updatePlayerSocket(
-        data.roomId,
-        data.playerName,
-        client.id,
-      );
+      return await this.runRoomActionSequentially(data.roomId, async () => {
+        const player = await this.gameService.updatePlayerSocket(
+          data.roomId,
+          data.playerName,
+          client.id,
+          data.playerId,
+        );
 
-      if (!player) {
-        client.emit('RECONNECT_ERROR', { reason: 'Player not found in room' });
-        return { success: false };
-      }
+        if (!player) {
+          client.emit('RECONNECT_ERROR', { reason: 'Player not found in room' });
+          return { success: false };
+        }
 
-      // Cancel disconnect timer
-      const timer = this.disconnectTimers.get(player.id);
-      if (timer) {
-        clearTimeout(timer);
-        this.disconnectTimers.delete(player.id);
-      }
+        // Cancel disconnect timer
+        const timer = this.disconnectTimers.get(player.id);
+        if (timer) {
+          clearTimeout(timer);
+          this.disconnectTimers.delete(player.id);
+        }
 
-      client.join(data.roomId);
+        client.join(data.roomId);
 
-      this.socketToPlayer.set(client.id, {
-        roomId: data.roomId,
-        playerId: player.id,
+        this.trackPlayerSocket(client.id, data.roomId, player.id);
+
+        // Get full room state - simplified, would need full sync
+        const room = await this.getRoom(data.roomId);
+        client.emit('RECONNECT_SUCCESS', {
+          player,
+          room: this.sanitizeRoom(room),
+          yourCards: player.cards,
+        });
+        await this.emitInitialChatHistory(client, data.roomId);
+
+        this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
+          playerId: player.id,
+          playerName: player.name,
+        });
+
+        this.logger.log(
+          `Player ${player.name} reconnected to room ${data.roomId}`,
+        );
+        return { success: true };
       });
-
-      // Get full room state - simplified, would need full sync
-      client.emit('RECONNECT_SUCCESS', {
-        player,
-        room: this.sanitizeRoom(await this.getRoom(data.roomId)),
-        yourCards: player.cards,
-      });
-
-      this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
-        playerId: player.id,
-        playerName: player.name,
-      });
-
-      this.logger.log(
-        `Player ${player.name} reconnected to room ${data.roomId}`,
-      );
-      return { success: true };
     } catch (error) {
       this.logger.error(`Reconnect error: ${error.message}`);
       client.emit('RECONNECT_ERROR', { reason: error.message });
       return { success: false };
+    }
+  }
+
+  @SubscribeMessage('SEND_CHAT_MESSAGE')
+  async handleSendChatMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: SendChatMessageData,
+  ): Promise<SendChatMessageAck> {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) {
+        throw new Error('Not in a room');
+      }
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        if (!room) {
+          throw new Error('Room not found');
+        }
+
+        const sender = room.players.find((player) => player.id === playerInfo.playerId);
+        if (!sender) {
+          throw new Error('Player not found in room');
+        }
+
+        const clientMessageId = data.clientMessageId?.trim();
+        if (!clientMessageId) {
+          throw new Error('clientMessageId is required');
+        }
+
+        const existing = this.getProcessedChatMessage(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          clientMessageId,
+        );
+        if (existing) {
+          return {
+            success: true,
+            duplicate: true,
+            message: existing,
+          };
+        }
+
+        this.assertChatRateLimit(playerInfo.roomId, playerInfo.playerId);
+        const normalized = this.normalizeChatMessageData(data, playerInfo.roomId);
+
+        const appendResult = await this.chatStorageService.appendMessage(
+          {
+            roomId: playerInfo.roomId,
+            kind: normalized.kind,
+            text: normalized.kind === 'TEXT' ? normalized.text : undefined,
+            voice: normalized.kind === 'VOICE' ? normalized.voice : undefined,
+            clientMessageId,
+            sender: {
+              playerId: sender.id,
+              playerName: sender.name,
+              playerEmoji: sender.emoji,
+            },
+          },
+          {
+            dedupeWindowMs: this.processedChatMessageTtlMs,
+          },
+        );
+
+        this.markProcessedChatMessage(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          clientMessageId,
+          appendResult.message,
+        );
+
+        if (!appendResult.duplicate) {
+          this.server.to(playerInfo.roomId).emit('CHAT_MESSAGE_ADDED', {
+            message: appendResult.message,
+          });
+        }
+
+        return {
+          success: true,
+          duplicate: appendResult.duplicate,
+          message: appendResult.message,
+        };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send chat message';
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
+    }
+  }
+
+  @SubscribeMessage('GET_CHAT_HISTORY')
+  async handleGetChatHistory(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: GetChatHistoryData,
+  ): Promise<
+    ChatHistorySyncData & {
+      success: boolean;
+      error?: string;
+    }
+  > {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) {
+        throw new Error('Not in a room');
+      }
+
+      const limit = this.normalizeHistoryPageLimit(data?.limit);
+      const page = await this.chatStorageService.getMessagePage(playerInfo.roomId, {
+        beforeSeq: data?.beforeSeq,
+        limit,
+      });
+
+      return {
+        success: true,
+        ...page,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load chat history';
+      return {
+        success: false,
+        error: message,
+        messages: [],
+        hasMore: false,
+        nextBeforeSeq: null,
+      };
     }
   }
 
@@ -277,24 +493,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!playerInfo) throw new Error('Not in a room');
 
       const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
 
       // Verify host
       if (room.hostId !== playerInfo.playerId) {
         throw new Error('Only host can start game');
       }
 
+      if (room.gameState === 'ENDED') {
+        throw new Error('Game has ended. Leave room to start a new game.');
+      }
+
       const hand = await this.handService.startNewHand(room);
       const updatedRoom = await this.getRoom(playerInfo.roomId);
-
-      // Send cards to each player privately
-      for (const player of updatedRoom.players) {
-        if (player.cards) {
-          const socket = this.findSocketByPlayerId(player.id);
-          if (socket) {
-            socket.emit('YOUR_CARDS', { cards: player.cards });
-          }
-        }
-      }
 
       // Broadcast game started
       const { activePlayers, ...handWithoutActivePlayers } = hand;
@@ -307,6 +518,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       this.server.to(playerInfo.roomId).emit('GAME_STARTED', gameStartedData);
+
+      // Send cards to each player privately after GAME_STARTED.
+      // Client state resets cards on GAME_STARTED to avoid stale hand data.
+      for (const seatPlayer of updatedRoom.players) {
+        if (seatPlayer.cards && seatPlayer.socketId) {
+          this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
+            cards: seatPlayer.cards,
+          } as YourCardsData);
+        }
+      }
 
       // Emit first player's turn
       const currentPlayer = updatedRoom.players.find(
@@ -339,6 +560,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new Error('Only host can start next hand');
       }
 
+      if (room.gameState === 'ENDED') {
+        throw new Error('Game has ended. Leave room to start a new game.');
+      }
+
       if (!room.currentHand) {
         throw new Error('No hand state found');
       }
@@ -351,6 +576,132 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { success: true };
     } catch (error) {
       this.logger.error(`Start next hand error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
+  @SubscribeMessage('END_GAME')
+  async handleEndGame(@ConnectedSocket() client: Socket) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const room = await this.getRoom(playerInfo.roomId);
+      if (!room) throw new Error('Room not found');
+
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can end game');
+      }
+
+      if (room.gameState !== 'IN_PROGRESS') {
+        throw new Error('Game is not in progress');
+      }
+
+      if (!room.currentHand) {
+        throw new Error('No hand state found');
+      }
+
+      if (room.currentHand.currentPlayerTurn) {
+        throw new Error('Can only end game between hands');
+      }
+
+      const standings = [...room.players]
+        .map((seatPlayer) => {
+          const finalChips = seatPlayer.chips + (seatPlayer.currentBet || 0);
+          const totalBuyIn = seatPlayer.totalBuyIn || 0;
+          return {
+            playerId: seatPlayer.id,
+            playerName: seatPlayer.name,
+            finalChips,
+            totalBuyIn,
+            profit: finalChips - totalBuyIn,
+            handsPlayedCount: seatPlayer.handsPlayedCount ?? 0,
+            handsWonCount: seatPlayer.handsWonCount ?? 0,
+            vpipHandsCount: seatPlayer.vpipHandsCount ?? 0,
+          };
+        })
+        .sort((a, b) => {
+          if (b.finalChips !== a.finalChips) return b.finalChips - a.finalChips;
+          if (b.profit !== a.profit) return b.profit - a.profit;
+          return a.playerName.localeCompare(b.playerName);
+        });
+
+      const totalPlayers = standings.length;
+      const totalBuyIn = standings.reduce((sum, entry) => sum + entry.totalBuyIn, 0);
+      const totalChipsInPlay = standings.reduce(
+        (sum, entry) => sum + entry.finalChips,
+        0,
+      );
+      const profitablePlayers = standings.filter((entry) => entry.profit > 0).length;
+      const averageFinalStack =
+        totalPlayers > 0 ? Math.round(totalChipsInPlay / totalPlayers) : 0;
+      const handsPlayed = room.currentHand.handNumber ?? 0;
+      const chipLeader = standings[0]
+        ? {
+            playerId: standings[0].playerId,
+            playerName: standings[0].playerName,
+            amount: standings[0].finalChips,
+          }
+        : null;
+
+      const biggestWinner = standings
+        .filter((entry) => entry.profit > 0)
+        .sort((a, b) => b.profit - a.profit)[0];
+      const biggestLoss = standings
+        .filter((entry) => entry.profit < 0)
+        .sort((a, b) => a.profit - b.profit)[0];
+
+      room.gameState = 'ENDED';
+      room.currentHand = null;
+      room.lastActivityAt = Date.now();
+      room.players = room.players.map((seatPlayer) => {
+        const nextStatus =
+          seatPlayer.status === 'disconnected' ? 'disconnected' : 'waiting';
+        return {
+          ...seatPlayer,
+          cards: null,
+          currentBet: 0,
+          lastAction: null,
+          status: nextStatus,
+        };
+      });
+      await this.storageService.saveRoom(room);
+
+      const gameEndedData: GameEndedData = {
+        standings,
+        summary: {
+          totalPlayers,
+          handsPlayed,
+          totalBuyIn,
+          totalChipsInPlay,
+          profitablePlayers,
+          averageFinalStack,
+          chipLeader,
+          biggestWinner: biggestWinner
+            ? {
+                playerId: biggestWinner.playerId,
+                playerName: biggestWinner.playerName,
+                amount: biggestWinner.profit,
+              }
+            : null,
+          biggestLoss: biggestLoss
+            ? {
+                playerId: biggestLoss.playerId,
+                playerName: biggestLoss.playerName,
+                amount: Math.abs(biggestLoss.profit),
+              }
+            : null,
+        },
+      };
+
+      this.server.to(room.id).emit('GAME_ENDED', gameEndedData);
+      this.logger.log(
+        `Game ended in room ${room.id} by host ${playerInfo.playerId}`,
+      );
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`End game error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
@@ -370,11 +721,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       if (room.currentHand.currentPlayerTurn) {
         throw new Error('Current hand is still in progress');
-      }
-
-      if (room.currentHand.bettingRound === 'SHOWDOWN') {
-        // Showdown is already public by default.
-        return { success: true };
       }
 
       const completedResult = room.currentHand.lastResult;
@@ -415,64 +761,248 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage('PLAYER_ACTION')
-  async handlePlayerAction(
+  @SubscribeMessage('REVEAL_NEXT_STREET')
+  async handleRevealNextStreet(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: PlayerActionData,
+    @MessageBody() _data: RevealNextStreetData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const hand = room?.currentHand;
+        if (!room || !hand) throw new Error('No active hand');
+
+        const nextRound = hand.pendingStreetRevealRound;
+        if (!nextRound) {
+          throw new Error('No next street reveal is pending');
+        }
+
+        const required = new Set<string>(
+          hand.nextStreetRequiredPlayerIds ?? this.getStreetRevealRequiredPlayerIds(room),
+        );
+        if (!required.has(playerInfo.playerId)) {
+          throw new Error('You are not eligible to reveal the next street');
+        }
+
+        const ready = new Set<string>(hand.nextStreetReadyPlayerIds ?? []);
+        if (!ready.has(playerInfo.playerId)) {
+          ready.add(playerInfo.playerId);
+          hand.nextStreetReadyPlayerIds = [...ready];
+          hand.nextStreetRequiredPlayerIds = [...required];
+          room.lastActivityAt = Date.now();
+          await this.storageService.saveRoom(room);
+        }
+
+        const revealState: NextStreetRevealStateData = {
+          nextRound,
+          readyPlayerIds: [...ready],
+          requiredPlayerIds: [...required],
+        };
+        this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', revealState);
+
+        const allReady = ready.size > 0;
+        if (allReady) {
+          await this.advanceRoundAndBroadcast(room);
+        }
+
+        return { success: true };
+      });
+    } catch (error) {
+      this.logger.error(`Reveal next street error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
+  @SubscribeMessage('UPDATE_ROOM_CONFIG')
+  async handleUpdateRoomConfig(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: UpdateRoomConfigData,
   ) {
     try {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
 
       const room = await this.getRoom(playerInfo.roomId);
-      const player = room.players.find((p) => p.id === playerInfo.playerId);
-      if (!player) throw new Error('Player not found');
-
-      await this.bettingService.processAction(
-        room,
-        playerInfo.playerId,
-        data.action,
-        data.amount,
-      );
-
-      const updatedRoom = await this.getRoom(playerInfo.roomId);
-
-      // Broadcast action
-      const actionData: PlayerActedData = {
-        playerId: player.id,
-        playerName: player.name,
-        action: data.action,
-        amount: data.amount,
-        newPot: updatedRoom.currentHand!.pot,
-        newChips: player.chips,
-      };
-
-      this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
-
-      // Check if betting round complete
-      const isComplete =
-        this.bettingService.isBettingRoundComplete(updatedRoom);
-      this.logger.debug(`Betting round complete: ${isComplete}`);
-
-      if (isComplete) {
-        await this.handleBettingRoundComplete(updatedRoom);
-      } else {
-        // Move to next player
-        const nextPlayer = this.handService.getNextPlayer(updatedRoom);
-        this.logger.debug(
-          `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
-        );
-        if (nextPlayer) {
-          updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
-          await this.storageService.saveRoom(updatedRoom);
-          this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
-          this.emitPlayerTurn(updatedRoom, nextPlayer);
-        }
+      if (!room) throw new Error('Room not found');
+      if (room.hostId !== playerInfo.playerId) {
+        throw new Error('Only host can update settings');
       }
 
+      const nextAllowReveal = data?.config?.allowPlayerStreetReveal;
+      if (typeof nextAllowReveal !== 'boolean') {
+        return { success: true };
+      }
+
+      room.config = {
+        ...room.config,
+        allowPlayerStreetReveal: nextAllowReveal,
+      };
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+
+      this.server.to(room.id).emit('ROOM_CONFIG_UPDATED', {
+        config: room.config,
+      } as RoomConfigUpdatedData);
       return { success: true };
     } catch (error) {
-      this.logger.error(`Player action error: ${error.message}`);
+      this.logger.error(`Update room config error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('PLAYER_ACTION')
+  async handlePlayerAction(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: PlayerActionData,
+  ) {
+    const playerInfo = this.socketToPlayer.get(client.id);
+    const requestActionId = data.actionId?.trim();
+    const baseActionLog = {
+      roomId: playerInfo?.roomId ?? null,
+      playerId: playerInfo?.playerId ?? null,
+      action: data.action,
+      amount: data.amount ?? null,
+      actionId: requestActionId ?? null,
+      socketId: client.id,
+    };
+
+    try {
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        const player = room.players.find((p) => p.id === playerInfo.playerId);
+        if (!player) throw new Error('Player not found');
+        if (!room.currentHand) throw new Error('No active hand');
+
+        const actionId = requestActionId;
+        const actionLog = {
+          ...baseActionLog,
+          roomId: room.id,
+          playerId: player.id,
+          handNumber: room.currentHand.handNumber,
+          playerName: player.name,
+        };
+
+        const preActionChips = player.chips;
+        const preRoundCurrentBet = room.currentHand.currentBet;
+
+        if (
+          actionId &&
+          this.hasProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          )
+        ) {
+          this.logger.warn(
+            `Duplicate action ignored ${this.serializeForLog(actionLog)}`,
+          );
+          return { success: true, duplicate: true };
+        }
+
+        await this.bettingService.processAction(
+          room,
+          playerInfo.playerId,
+          data.action,
+          data.amount,
+        );
+
+        if (actionId) {
+          this.markProcessedAction(
+            room.id,
+            room.currentHand.handNumber,
+            player.id,
+            actionId,
+          );
+        }
+
+        const updatedRoom = await this.getRoom(playerInfo.roomId);
+        const updatedPlayer = updatedRoom.players.find((p) => p.id === player.id);
+        if (!updatedPlayer) {
+          throw new Error('Updated player not found');
+        }
+
+        const resolvedAction = updatedPlayer.lastAction ?? data.action;
+
+        const displayKind = (() => {
+          switch (resolvedAction) {
+            case 'fold':
+              return 'fold' as PlayerActionDisplayKind;
+            case 'check':
+              return 'check' as PlayerActionDisplayKind;
+            case 'call':
+              return 'call-to' as PlayerActionDisplayKind;
+            case 'all-in':
+              return 'all-in-to' as PlayerActionDisplayKind;
+            case 'raise':
+              return preRoundCurrentBet <= 0
+                ? ('bet-to' as PlayerActionDisplayKind)
+                : ('raise-to' as PlayerActionDisplayKind);
+          }
+        })();
+
+        const committedAmount = Math.max(0, preActionChips - updatedPlayer.chips);
+        const blindType: BlindType | null = null;
+
+        // Broadcast action
+        const actionData: PlayerActedData = {
+          playerId: player.id,
+          playerName: player.name,
+          action: resolvedAction,
+          amount: resolvedAction === 'all-in' ? undefined : data.amount,
+          displayKind,
+          totalBetAfterAction: updatedPlayer.currentBet,
+          committedAmount,
+          blindType,
+          newPot: updatedRoom.currentHand!.pot,
+          newChips: updatedPlayer.chips,
+        };
+
+        this.server.to(playerInfo.roomId).emit('PLAYER_ACTED', actionData);
+        this.logger.log(
+          `Action applied ${this.serializeForLog({
+            ...actionLog,
+            newPot: updatedRoom.currentHand!.pot,
+            newChips: player.chips,
+          })}`,
+        );
+
+        // Check if betting round complete
+        const isComplete = this.bettingService.isBettingRoundComplete(updatedRoom);
+        this.logger.debug(`Betting round complete: ${isComplete}`);
+
+        if (isComplete) {
+          await this.handleBettingRoundComplete(updatedRoom);
+        } else {
+          // Move to next player
+          const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+          this.logger.debug(
+            `Next player: ${nextPlayer?.name}, current: ${updatedRoom.currentHand?.currentPlayerTurn}`,
+          );
+          if (nextPlayer) {
+            updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
+            await this.storageService.saveRoom(updatedRoom);
+            this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
+            this.emitPlayerTurn(updatedRoom, nextPlayer);
+          }
+        }
+
+        return { success: true };
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Player action rejected ${this.serializeForLog({
+          ...baseActionLog,
+          reason: error.message,
+        })}`,
+      );
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
@@ -517,124 +1047,472 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) return { success: true };
 
-      const room = await this.gameService.removePlayerFromRoom(
+      return await this.runRoomActionSequentially(
         playerInfo.roomId,
-        playerInfo.playerId,
+        async () => {
+          const room = await this.gameService.removePlayerFromRoom(
+            playerInfo.roomId,
+            playerInfo.playerId,
+          );
+
+          client.leave(playerInfo.roomId);
+          this.socketToPlayer.delete(client.id);
+
+          if (room) {
+            this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
+              playerId: playerInfo.playerId,
+              playerName: '', // Would need to cache
+            });
+
+            // If host changed
+            const oldHostId = playerInfo.playerId;
+            if (room.hostId !== oldHostId) {
+              const newHost = room.players.find((p) => p.id === room.hostId)!;
+              this.server.to(playerInfo.roomId).emit('HOST_CHANGED', {
+                newHostId: newHost.id,
+                newHostName: newHost.name,
+              });
+            }
+          } else {
+            await this.chatStorageService.deleteRoomChat(playerInfo.roomId);
+            await this.chatMediaStorageService.deleteRoomMedia(playerInfo.roomId);
+          }
+
+          return { success: true };
+        },
       );
-
-      client.leave(playerInfo.roomId);
-      this.socketToPlayer.delete(client.id);
-
-      if (room) {
-        this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
-          playerId: playerInfo.playerId,
-          playerName: '', // Would need to cache
-        });
-
-        // If host changed
-        const oldHostId = playerInfo.playerId;
-        if (room.hostId !== oldHostId) {
-          const newHost = room.players.find((p) => p.id === room.hostId)!;
-          this.server.to(playerInfo.roomId).emit('HOST_CHANGED', {
-            newHostId: newHost.id,
-            newHostName: newHost.name,
-          });
-        }
-      }
-
-      return { success: true };
     } catch (error) {
       this.logger.error(`Leave room error: ${error.message}`);
       return { success: false };
     }
   }
 
+  private normalizeHistoryPageLimit(limit?: number): number {
+    if (limit === undefined || !Number.isFinite(limit)) {
+      return Math.min(this.chatPageSize, this.chatPageMaxSize);
+    }
+
+    return Math.min(this.chatPageMaxSize, Math.max(1, Math.floor(limit)));
+  }
+
+  private async emitInitialChatHistory(client: Socket, roomId: string) {
+    try {
+      const page = await this.chatStorageService.getMessagePage(roomId, {
+        limit: this.normalizeHistoryPageLimit(this.chatPageSize),
+      });
+
+      client.emit('CHAT_HISTORY_SYNC', page);
+    } catch (error) {
+      this.logger.warn(
+        'Failed to emit initial chat history for room ' +
+          roomId +
+          ': ' +
+          (error as Error).message,
+      );
+    }
+  }
+
+  private normalizeChatMessageData(
+    data: SendChatMessageData,
+    roomId: string,
+  ):
+    | { kind: 'TEXT'; text: string }
+    | { kind: 'VOICE'; voice: SendChatMessageData['voice'] } {
+    if (!data || (data.kind !== 'TEXT' && data.kind !== 'VOICE')) {
+      throw new Error('Invalid chat message kind');
+    }
+
+    if (data.kind === 'TEXT') {
+      const text = data.text?.trim() || '';
+      if (!text) {
+        throw new Error('Message cannot be empty');
+      }
+      if (text.length > this.chatMessageMaxLength) {
+        throw new Error(`Message exceeds ${this.chatMessageMaxLength} characters`);
+      }
+      return {
+        kind: 'TEXT',
+        text,
+      };
+    }
+
+    const voice = data.voice;
+    if (!voice) {
+      throw new Error('Voice payload is required');
+    }
+
+    const allowedMimeTypes = new Set([
+      'audio/webm',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/x-wav',
+    ]);
+    const normalizedVoiceMimeType = voice.mimeType
+      ?.trim()
+      .toLowerCase()
+      .split(';', 1)[0]
+      ?.trim();
+    if (!normalizedVoiceMimeType || !allowedMimeTypes.has(normalizedVoiceMimeType)) {
+      throw new Error('Unsupported audio mime type');
+    }
+
+    if (!voice.audioUrl.startsWith(`/uploads/chat-audio/${encodeURIComponent(roomId)}/`)) {
+      throw new Error('Invalid voice audio URL for room');
+    }
+
+    if (!Number.isFinite(voice.durationMs) || voice.durationMs <= 0) {
+      throw new Error('Invalid voice duration');
+    }
+    if (voice.durationMs > this.chatVoiceMaxDurationMs) {
+      throw new Error(`Voice message exceeds ${this.chatVoiceMaxDurationMs}ms`);
+    }
+
+    if (!Number.isFinite(voice.sizeBytes) || voice.sizeBytes <= 0) {
+      throw new Error('Invalid voice size');
+    }
+    if (voice.sizeBytes > this.chatVoiceMaxBytes) {
+      throw new Error(`Voice message exceeds ${this.chatVoiceMaxBytes} bytes`);
+    }
+
+    return {
+      kind: 'VOICE',
+      voice: {
+        ...voice,
+        mimeType: normalizedVoiceMimeType,
+      },
+    };
+  }
+
+  private assertChatRateLimit(roomId: string, playerId: string) {
+    const key = `${roomId}:${playerId}`;
+    const now = Date.now();
+    const windowStart = now - this.chatRateLimitWindowMs;
+    const history = (this.chatRateWindows.get(key) || []).filter(
+      (timestamp) => timestamp >= windowStart,
+    );
+
+    if (history.length >= this.chatRateLimitCount) {
+      throw new Error('You are sending messages too quickly');
+    }
+
+    history.push(now);
+    this.chatRateWindows.set(key, history);
+
+    if (this.chatRateWindows.size > 10000) {
+      this.pruneChatRateWindows(now);
+    }
+  }
+
+  private pruneChatRateWindows(now: number) {
+    const windowStart = now - this.chatRateLimitWindowMs;
+    for (const [key, history] of this.chatRateWindows.entries()) {
+      const active = history.filter((timestamp) => timestamp >= windowStart);
+      if (active.length === 0) {
+        this.chatRateWindows.delete(key);
+      } else {
+        this.chatRateWindows.set(key, active);
+      }
+    }
+  }
+
+  private buildChatMessageFingerprint(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+  ): string {
+    return `${roomId}:${playerId}:${clientMessageId}`;
+  }
+
+  private getProcessedChatMessage(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+  ): ChatMessage | null {
+    this.pruneProcessedChatMessages();
+    const key = this.buildChatMessageFingerprint(roomId, playerId, clientMessageId);
+    return this.processedChatMessageFingerprints.get(key)?.message || null;
+  }
+
+  private markProcessedChatMessage(
+    roomId: string,
+    playerId: string,
+    clientMessageId: string,
+    message: ChatMessage,
+  ) {
+    this.pruneProcessedChatMessages();
+
+    const key = this.buildChatMessageFingerprint(roomId, playerId, clientMessageId);
+    this.processedChatMessageFingerprints.set(key, {
+      timestamp: Date.now(),
+      message,
+    });
+
+    if (
+      this.processedChatMessageFingerprints.size >
+      this.maxProcessedChatMessageFingerprints
+    ) {
+      const oldestKey = this.processedChatMessageFingerprints.keys().next().value;
+      if (oldestKey) {
+        this.processedChatMessageFingerprints.delete(oldestKey);
+      }
+    }
+  }
+
+  private pruneProcessedChatMessages() {
+    const cutoff = Date.now() - this.processedChatMessageTtlMs;
+    for (const [key, value] of this.processedChatMessageFingerprints.entries()) {
+      if (value.timestamp < cutoff) {
+        this.processedChatMessageFingerprints.delete(key);
+      }
+    }
+  }
+
   // Helper methods
+
+  private serializeForLog(payload: Record<string, unknown>): string {
+    return JSON.stringify(payload);
+  }
+
+  private async runRoomActionSequentially<T>(
+    roomId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.roomActionQueues.get(roomId) ?? Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const queuePromise = previous.finally(() => gate);
+    this.roomActionQueues.set(roomId, queuePromise);
+
+    await previous.catch(() => undefined);
+
+    try {
+      return await task();
+    } finally {
+      releaseCurrent();
+      if (this.roomActionQueues.get(roomId) === queuePromise) {
+        this.roomActionQueues.delete(roomId);
+      }
+    }
+  }
+
+  private buildActionFingerprint(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): string {
+    return `${roomId}:${handNumber}:${playerId}:${actionId}`;
+  }
+
+  private hasProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ): boolean {
+    this.pruneProcessedActions();
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    return this.processedActionFingerprints.has(fingerprint);
+  }
+
+  private markProcessedAction(
+    roomId: string,
+    handNumber: number,
+    playerId: string,
+    actionId: string,
+  ) {
+    const fingerprint = this.buildActionFingerprint(
+      roomId,
+      handNumber,
+      playerId,
+      actionId,
+    );
+    this.processedActionFingerprints.set(fingerprint, Date.now());
+    this.pruneProcessedActions();
+  }
+
+  private pruneProcessedActions() {
+    const cutoff = Date.now() - this.processedActionTtlMs;
+    for (const [key, timestamp] of this.processedActionFingerprints.entries()) {
+      if (timestamp < cutoff) {
+        this.processedActionFingerprints.delete(key);
+      }
+    }
+
+    while (
+      this.processedActionFingerprints.size >
+      this.maxProcessedActionFingerprints
+    ) {
+      const oldestKey = this.processedActionFingerprints.keys().next().value;
+      if (!oldestKey) break;
+      this.processedActionFingerprints.delete(oldestKey);
+    }
+  }
 
   private async handleBettingRoundComplete(room: any) {
     const hand = room.currentHand;
+    const allowPlayerStreetReveal = room.config?.allowPlayerStreetReveal ?? true;
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
-      const result = await this.handService.determineWinner(room);
-      const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-      const revealedPlayerIds = isShowdown
-        ? result.playerHands.map((entry) => entry.playerId)
-        : [];
-      room.currentHand.lastResult = result;
-      room.currentHand.revealedPlayerIds = revealedPlayerIds;
-      room.currentHand.currentPlayerTurn = null;
-      await this.storageService.saveRoom(room);
+      await this.completeAndBroadcastHand(room);
+      return;
+    }
 
-      const handCompleteData: HandCompleteData = {
-        result,
-        handNumber: room.currentHand.handNumber,
-        isShowdown,
-        revealedPlayerIds,
-      };
+    const nextRound = this.getNextBettingRound(hand.bettingRound);
+    const shouldWaitForPlayerReveal =
+      allowPlayerStreetReveal &&
+      !this.shouldAutoDealRemainingCommunityCards(room);
 
-      this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-      if (this.testDeckService.isTestMode()) {
-        // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-        setTimeout(async () => {
-          try {
-            await this.startAndBroadcastNewHand(room.id);
-          } catch (error) {
-            this.logger.error(`Error starting new hand: ${error.message}`);
-          }
-        }, 5000);
+    if (shouldWaitForPlayerReveal) {
+      const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
+      if (requiredPlayerIds.length === 0) {
+        await this.advanceRoundAndBroadcast(room);
+        return;
       }
-    } else {
-      // Advance to next round
-      const nextRound = await this.handService.advanceBettingRound(room);
-      const updatedRoom = await this.getRoom(room.id);
+
+      for (const seatPlayer of room.players) {
+        seatPlayer.currentBet = 0;
+      }
+      room.currentHand.currentBet = 0;
+      room.currentHand.currentPlayerTurn = null;
+      room.currentHand.roundActions = {};
+      room.currentHand.pendingStreetRevealRound = nextRound;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = requiredPlayerIds;
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
 
       this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
         nextRound,
+        awaitingPlayerStreetReveal: true,
+        readyPlayerIds: [],
+        requiredPlayerIds,
       } as BettingRoundCompleteData);
 
-      this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
-        cards: updatedRoom.currentHand!.communityCards,
-        round: nextRound,
-      } as CommunityCardsDealtData);
+      this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
+        nextRound,
+        readyPlayerIds: [],
+        requiredPlayerIds,
+      } as NextStreetRevealStateData);
+      return;
+    }
 
-      // If we reached showdown, determine winner immediately
-      if (nextRound === 'SHOWDOWN') {
-        const result = await this.handService.determineWinner(updatedRoom);
-        const isShowdown = true;
-        const revealedPlayerIds = result.playerHands.map((entry) => entry.playerId);
-        updatedRoom.currentHand.lastResult = result;
-        updatedRoom.currentHand.revealedPlayerIds = revealedPlayerIds;
-        updatedRoom.currentHand.currentPlayerTurn = null;
-        await this.storageService.saveRoom(updatedRoom);
+    await this.advanceRoundAndBroadcast(room);
+  }
 
-        const handCompleteData: HandCompleteData = {
-          result,
-          handNumber: updatedRoom.currentHand.handNumber,
-          isShowdown,
-          revealedPlayerIds,
-        };
+  private getNextBettingRound(round: BettingRound): BettingRound {
+    switch (round) {
+      case 'PRE_FLOP':
+        return 'FLOP';
+      case 'FLOP':
+        return 'TURN';
+      case 'TURN':
+        return 'RIVER';
+      case 'RIVER':
+      default:
+        return 'SHOWDOWN';
+    }
+  }
 
-        this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-        if (this.testDeckService.isTestMode()) {
-          // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
-          setTimeout(async () => {
-            try {
-              await this.startAndBroadcastNewHand(room.id);
-            } catch (error) {
-              this.logger.error(`Error starting new hand: ${error.message}`);
-            }
-          }, 5000);
+  private shouldAutoDealRemainingCommunityCards(room: any): boolean {
+    const hand = room.currentHand;
+    if (!hand) return false;
+
+    const playersWhoCanAct = room.players.filter(
+      (player: any) =>
+        hand.activePlayers.includes(player.id) &&
+        player.status !== 'folded' &&
+        player.status !== 'all-in',
+    );
+
+    return playersWhoCanAct.length <= 1;
+  }
+
+  private getStreetRevealRequiredPlayerIds(room: any): string[] {
+    return room.players
+      .filter(
+        (player: any) =>
+          Boolean(player.cards) &&
+          player.status !== 'waiting' &&
+          player.status !== 'left' &&
+          player.status !== 'disconnected',
+      )
+      .map((player: any) => player.id);
+  }
+
+  private async completeAndBroadcastHand(room: any) {
+    const result = await this.handService.determineWinner(room);
+    const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
+    const revealedPlayerIds = isShowdown
+      ? result.playerHands.map((entry) => entry.playerId)
+      : [];
+    room.currentHand.lastResult = result;
+    room.currentHand.revealedPlayerIds = revealedPlayerIds;
+    room.currentHand.currentPlayerTurn = null;
+    room.currentHand.pendingStreetRevealRound = null;
+    room.currentHand.nextStreetReadyPlayerIds = [];
+    room.currentHand.nextStreetRequiredPlayerIds = [];
+    await this.storageService.saveRoom(room);
+
+    const handCompleteData: HandCompleteData = {
+      result,
+      handNumber: room.currentHand.handNumber,
+      isShowdown,
+      revealedPlayerIds,
+    };
+
+    this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
+    if (this.testDeckService.isTestMode()) {
+      // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
+      setTimeout(async () => {
+        try {
+          await this.startAndBroadcastNewHand(room.id);
+        } catch (error) {
+          this.logger.error(`Error starting new hand: ${error.message}`);
         }
-      } else {
-        // Emit first player's turn for new round
-        const currentPlayer = updatedRoom.players.find(
-          (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
-        );
-        if (currentPlayer) {
-          this.emitPlayerTurn(updatedRoom, currentPlayer);
-        }
-      }
+      }, 5000);
+    }
+  }
+
+  private async advanceRoundAndBroadcast(room: any) {
+    if (room.currentHand) {
+      room.currentHand.pendingStreetRevealRound = null;
+      room.currentHand.nextStreetReadyPlayerIds = [];
+      room.currentHand.nextStreetRequiredPlayerIds = [];
+    }
+
+    const nextRound = await this.handService.advanceBettingRound(room);
+    const updatedRoom = await this.getRoom(room.id);
+
+    this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
+      nextRound,
+    } as BettingRoundCompleteData);
+
+    this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
+      cards: updatedRoom.currentHand!.communityCards,
+      round: nextRound,
+    } as CommunityCardsDealtData);
+
+    if (nextRound === 'SHOWDOWN') {
+      await this.completeAndBroadcastHand(updatedRoom);
+      return;
+    }
+
+    const currentPlayer = updatedRoom.players.find(
+      (p) => p.id === updatedRoom.currentHand!.currentPlayerTurn,
+    );
+    if (currentPlayer) {
+      this.emitPlayerTurn(updatedRoom, currentPlayer);
     }
   }
 
@@ -695,25 +1573,48 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleDisconnectTimeout(roomId: string, playerId: string) {
     try {
-      const room = await this.getRoom(roomId);
-
-      // Auto-fold if it's their turn
-      if (room.currentHand?.currentPlayerTurn === playerId) {
-        await this.bettingService.processAction(room, playerId, 'fold');
-
-        this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
-          playerId,
-          playerName: room.players.find((p) => p.id === playerId)?.name || '',
-        });
-
-        // Continue game
-        const updatedRoom = await this.getRoom(roomId);
-        if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
-          await this.handleBettingRoundComplete(updatedRoom);
+      await this.runRoomActionSequentially(roomId, async () => {
+        const room = await this.getRoom(roomId);
+        if (!room) {
+          return;
         }
-      }
 
-      await this.gameService.markPlayerDisconnected(roomId, playerId);
+        const player = room.players.find((p) => p.id === playerId);
+        if (!player || player.status !== 'disconnected') {
+          // Player already reconnected (or left); stale timeout should do nothing.
+          return;
+        }
+
+        // Auto-fold if it's their turn
+        if (room.currentHand?.currentPlayerTurn === playerId) {
+          await this.bettingService.processAction(room, playerId, 'fold');
+
+          this.server.to(roomId).emit('PLAYER_AUTO_FOLDED', {
+            playerId,
+            playerName: room.players.find((p) => p.id === playerId)?.name || '',
+          });
+
+          // Continue game
+          const updatedRoom = await this.getRoom(roomId);
+          if (!updatedRoom?.currentHand) {
+            await this.gameService.markPlayerDisconnected(roomId, playerId);
+            return;
+          }
+
+          if (this.bettingService.isBettingRoundComplete(updatedRoom)) {
+            await this.handleBettingRoundComplete(updatedRoom);
+          } else {
+            const nextPlayer = this.handService.getNextPlayer(updatedRoom);
+            if (nextPlayer) {
+              updatedRoom.currentHand.currentPlayerTurn = nextPlayer.id;
+              await this.storageService.saveRoom(updatedRoom);
+              this.emitPlayerTurn(updatedRoom, nextPlayer);
+            }
+          }
+        }
+
+        await this.gameService.markPlayerDisconnected(roomId, playerId);
+      });
     } catch (error) {
       this.logger.error(`Disconnect timeout error: ${error.message}`);
     }
@@ -769,12 +1670,39 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return await this.storageService.getRoom(roomId);
   }
 
-  private findSocketByPlayerId(playerId: string): Socket | null {
-    for (const [socketId, info] of this.socketToPlayer.entries()) {
-      if (info.playerId === playerId) {
-        return this.server.sockets.sockets.get(socketId) || null;
+  private trackPlayerSocket(socketId: string, roomId: string, playerId: string) {
+    for (const [trackedSocketId, tracked] of this.socketToPlayer.entries()) {
+      if (tracked.playerId === playerId && trackedSocketId !== socketId) {
+        this.socketToPlayer.delete(trackedSocketId);
       }
     }
+
+    this.socketToPlayer.set(socketId, { roomId, playerId });
+  }
+
+  private findSocketByPlayerId(playerId: string): Socket | null {
+    const staleSocketIds: string[] = [];
+
+    for (const [socketId, info] of this.socketToPlayer.entries()) {
+      if (info.playerId !== playerId) {
+        continue;
+      }
+
+      const socket = this.server.sockets.sockets.get(socketId) || null;
+      if (socket) {
+        for (const staleSocketId of staleSocketIds) {
+          this.socketToPlayer.delete(staleSocketId);
+        }
+        return socket;
+      }
+
+      staleSocketIds.push(socketId);
+    }
+
+    for (const staleSocketId of staleSocketIds) {
+      this.socketToPlayer.delete(staleSocketId);
+    }
+
     return null;
   }
 

@@ -1,6 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from '@nestjs/common';
+import * as express from 'express';
+import type { NextFunction, Request, Response } from 'express';
+import { existsSync } from 'fs';
+import * as path from 'path';
 
 const resolveCorsOrigin = () => {
   const raw = process.env.CORS_ORIGIN?.trim();
@@ -29,6 +33,49 @@ async function bootstrap() {
     origin: resolveCorsOrigin(),
     credentials: true,
   });
+
+  const dataDir = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
+  const chatAudioPath = path.join(dataDir, 'chat-audio');
+  app.use('/uploads/chat-audio', express.static(chatAudioPath, { index: false }));
+
+  const frontendPathCandidates = [
+    process.env.FRONTEND_DIST_PATH?.trim(),
+    path.resolve(process.cwd(), '../poker-client/dist'),
+    path.resolve(__dirname, '../../poker-client/dist'),
+    path.resolve(__dirname, '../../../poker-client/dist'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  const frontendDistPath = frontendPathCandidates.find((candidate) =>
+    existsSync(path.join(candidate, 'index.html')),
+  );
+
+  if (frontendDistPath) {
+    const frontendIndexPath = path.join(frontendDistPath, 'index.html');
+    app.use(express.static(frontendDistPath, { index: false }));
+
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp.get(
+      '*',
+      (req: Request, res: Response, next: NextFunction): void => {
+        if (
+          req.path.startsWith('/socket.io') ||
+          req.path.startsWith('/api') ||
+          req.path === '/health'
+        ) {
+          next();
+          return;
+        }
+
+        res.sendFile(frontendIndexPath);
+      },
+    );
+
+    logger.log(`Serving frontend from ${frontendDistPath}`);
+  } else {
+    logger.warn(
+      `Frontend dist not found; checked: ${frontendPathCandidates.join(', ')}`,
+    );
+  }
 
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '0.0.0.0';

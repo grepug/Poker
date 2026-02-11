@@ -19,6 +19,7 @@ export class GameService {
   async createRoom(
     hostSocketId: string,
     hostName: string,
+    hostEmoji?: string,
     config?: Partial<RoomConfig>,
   ): Promise<Room> {
     const roomId = generateRoomId();
@@ -26,18 +27,23 @@ export class GameService {
 
     const defaultConfig: RoomConfig = {
       startingChips: 1000,
-      smallBlind: 10,
-      bigBlind: 20,
+      smallBlind: 5,
+      bigBlind: 10,
       maxPlayers: 10,
-      reconnectGracePeriod: 30000,
+      reconnectGracePeriod: 120000,
+      allowPlayerStreetReveal: true,
     };
 
     const host: Player = {
       id: hostId,
       socketId: hostSocketId,
       name: hostName,
+      emoji: hostEmoji,
       chips: 0, // Chips assigned when game starts
       totalBuyIn: 0,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
       position: 0,
       status: 'waiting' as PlayerStatus,
       cards: null,
@@ -70,20 +76,36 @@ export class GameService {
     roomId: string,
     socketId: string,
     playerName: string,
-  ): Promise<{ room: Room; player: Player }> {
+    playerEmoji?: string,
+  ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
       throw new Error('Room not found');
     }
 
-    if (room.gameState !== 'WAITING') {
-      throw new Error('Cannot join room - game already in progress');
+    if (room.gameState === 'ENDED') {
+      throw new Error('Cannot join room - game has ended');
     }
 
-    // Check if name is taken
-    if (room.players.some((p) => p.name === playerName)) {
-      throw new Error('Name already taken');
+    const existingPlayer = room.players.find((p) => p.name === playerName);
+    if (existingPlayer) {
+      if (existingPlayer.status !== 'disconnected') {
+        throw new Error('Name already taken');
+      }
+
+      existingPlayer.socketId = socketId;
+      existingPlayer.status = 'connected';
+      existingPlayer.lastConnectedAt = Date.now();
+      if (playerEmoji !== undefined) {
+        existingPlayer.emoji = playerEmoji;
+      }
+      room.lastActivityAt = Date.now();
+
+      await this.storageService.saveRoom(room);
+      this.logger.log(`Player ${playerName} reclaimed seat in room ${roomId}`);
+
+      return { room, player: existingPlayer, rejoined: true };
     }
 
     // Check if room is full
@@ -91,15 +113,22 @@ export class GameService {
       throw new Error('Room is full');
     }
 
+    const joinsDuringActiveGame = room.gameState === 'IN_PROGRESS';
     const playerId = generatePlayerId();
     const position = this.findNextAvailablePosition(room);
+    const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
+    const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
     const player: Player = {
       id: playerId,
       socketId,
       name: playerName,
-      chips: 0,
-      totalBuyIn: 0,
+      emoji: playerEmoji,
+      chips: initialChips,
+      totalBuyIn: initialBuyIn,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
       position,
       status: 'waiting' as PlayerStatus,
       cards: null,
@@ -114,7 +143,7 @@ export class GameService {
     await this.storageService.saveRoom(room);
     this.logger.log(`Player ${playerName} joined room ${roomId}`);
 
-    return { room, player };
+    return { room, player, rejoined: false };
   }
 
   /**
@@ -166,6 +195,7 @@ export class GameService {
     roomId: string,
     playerName: string,
     newSocketId: string,
+    playerId?: string,
   ): Promise<Player | null> {
     const room = await this.storageService.getRoom(roomId);
 
@@ -173,7 +203,9 @@ export class GameService {
       return null;
     }
 
-    const player = room.players.find((p) => p.name === playerName);
+    const player = playerId
+      ? room.players.find((p) => p.id === playerId)
+      : room.players.find((p) => p.name === playerName);
     if (!player) {
       return null;
     }
@@ -184,7 +216,7 @@ export class GameService {
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
-    this.logger.log(`Player ${playerName} reconnected in room ${roomId}`);
+    this.logger.log(`Player ${player.name} reconnected in room ${roomId}`);
 
     return player;
   }
