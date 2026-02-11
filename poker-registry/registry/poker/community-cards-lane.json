@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/community-cards-lane",
+  "type": "registry:component",
+  "title": "Community Cards Lane",
+  "description": "Shared board card lane in the table center.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/community-cards-lane.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/community-cards-lane.tsx"
+    }
+  ]
+}

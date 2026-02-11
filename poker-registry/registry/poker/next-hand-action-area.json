@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/next-hand-action-area",
+  "type": "registry:component",
+  "title": "Next Hand Action Area",
+  "description": "Post-hand host/waiting/reveal control strip for next game actions.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "button"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/next-hand-action-area.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/next-hand-action-area.tsx"
+    }
+  ]
+}

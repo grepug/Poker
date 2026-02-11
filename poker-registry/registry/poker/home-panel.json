@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/home-panel",
+  "type": "registry:component",
+  "title": "Home Panel",
+  "description": "Lobby panel for player setup and room create/join flows.",
+  "dependencies": [
+    "react",
+    "poker-types",
+    "react-router-dom"
+  ],
+  "registryDependencies": [
+    "button",
+    "input",
+    "select",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/home-panel.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/home-panel.tsx"
+    }
+  ]
+}

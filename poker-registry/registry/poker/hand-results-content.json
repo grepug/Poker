@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/hand-results-content",
+  "type": "registry:component",
+  "title": "Hand Results Content",
+  "description": "Detailed showdown breakdown content for winner rows and payouts.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "table",
+    "badge",
+    "button"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/hand-results-content.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/hand-results-content.tsx"
+    }
+  ]
+}

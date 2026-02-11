@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/end-game-confirm-modal",
+  "type": "registry:component",
+  "title": "End Game Confirm Modal",
+  "description": "Host confirmation modal before ending the game for everyone.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "button"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/end-game-confirm-modal.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/end-game-confirm-modal.tsx"
+    }
+  ]
+}

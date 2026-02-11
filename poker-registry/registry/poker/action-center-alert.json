@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/action-center-alert",
+  "type": "registry:component",
+  "title": "Action Center Alert",
+  "description": "Center-screen action feedback for checks, raises, folds and all-ins.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/action-center-alert.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/action-center-alert.tsx"
+    }
+  ]
+}

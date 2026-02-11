@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/table-top-bar",
+  "type": "registry:component",
+  "title": "Table Top Bar",
+  "description": "Room HUD header with controls, invite flow, and chat preview strip.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "button",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/table-top-bar.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/table-top-bar.tsx"
+    }
+  ]
+}

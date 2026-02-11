@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/action-center-alert-overlay",
+  "type": "registry:component",
+  "title": "Action Center Alert Overlay",
+  "description": "Overlay wrapper with directional pointer for table action callouts.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/action-center-alert-overlay.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/action-center-alert-overlay.tsx"
+    }
+  ]
+}

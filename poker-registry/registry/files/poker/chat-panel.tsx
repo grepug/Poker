@@ -1,11 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "poker-types";
-import { useLocalization } from "../contexts/LocalizationContext";
-import { useGame } from "../contexts/GameContext";
-import { resolveServerResourceUrl } from "../services/socket.service";
-import { getVoicePlaybackState, subscribeVoicePlayback, toggleVoicePlayback } from "../services/voice-playback.service";
-import { formatRelativeTime } from "../utils/relative-time";
-import { computeVoiceBubbleWidthPx, formatVoiceDurationPrime, resolveVoiceAudioUrl } from "../utils/voice-message";
+import type { ChatMessage, Player, Room, VoiceMessagePayload } from "poker-types";
+import { useLocalization } from "@/contexts/LocalizationContext";
+import { useGame } from "@/contexts/GameContext";
+import type { Locale, MessageKey } from "@/i18n/messages";
+import { resolveServerResourceUrl } from "@/services/socket.service";
+import {
+  getVoicePlaybackState,
+  subscribeVoicePlayback,
+  toggleVoicePlayback,
+} from "@/services/voice-playback.service";
+import { formatRelativeTime } from "@/utils/relative-time";
+import {
+  computeVoiceBubbleWidthPx,
+  formatVoiceDurationPrime,
+  resolveVoiceAudioUrl,
+} from "@/utils/voice-message";
 
 const VOICE_MAX_BYTES = 2 * 1024 * 1024;
 const VOICE_MAX_DURATION_MS = 60 * 1000;
@@ -14,6 +23,22 @@ const VOICE_RELEASE_TAIL_MS = 300;
 type ChatPanelProps = {
   onClose: () => void;
 };
+
+type ChatPanelBindings = {
+  locale: Locale;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+  room: Room | null;
+  player: Player | null;
+  chatMessages: ChatMessage[];
+  chatHasMore: boolean;
+  chatLoadingHistory: boolean;
+  loadOlderChatMessages: () => void;
+  sendChatText: (text: string, clientMessageId?: string) => void;
+  sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
+  setChatPanelOpen: (open: boolean) => void;
+};
+
+export type ChatPanelViewProps = ChatPanelBindings & ChatPanelProps;
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -50,6 +75,7 @@ type VoicePlaybackBarProps = {
   durationMs: number;
   playLabel: string;
   stopLabel: string;
+  testId: string;
 };
 
 const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
@@ -57,6 +83,7 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
   durationMs,
   playLabel,
   stopLabel,
+  testId,
 }) => {
   const [playbackState, setPlaybackState] = useState(getVoicePlaybackState);
   const bubbleWidthPx = computeVoiceBubbleWidthPx(durationMs);
@@ -68,6 +95,7 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
   return (
     <button
       type="button"
+      data-testid={testId}
       className={`chat-panel__voice-player ${isPlaying ? "chat-panel__voice-player--playing" : ""}`}
       style={{ width: `${bubbleWidthPx}px`, minWidth: "50px", maxWidth: "72%", flex: "0 0 auto" }}
       onClick={() => {
@@ -84,22 +112,20 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
   );
 };
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
-
-
-  const { locale, t } = useLocalization();
-  const {
-    room,
-    player,
-    chatMessages,
-    chatHasMore,
-    chatLoadingHistory,
-    loadOlderChatMessages,
-    sendChatText,
-    sendChatVoice,
-    setChatPanelOpen,
-  } = useGame();
-
+export const ChatPanelView: React.FC<ChatPanelViewProps> = ({
+  onClose,
+  locale,
+  t,
+  room,
+  player,
+  chatMessages,
+  chatHasMore,
+  chatLoadingHistory,
+  loadOlderChatMessages,
+  sendChatText,
+  sendChatVoice,
+  setChatPanelOpen,
+}) => {
   const [draft, setDraft] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -496,6 +522,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
     return (
       <article
         key={message.id}
+        data-testid={
+          message.kind === "VOICE"
+            ? isSelf
+              ? "chat-voice-item-self"
+              : "chat-voice-item-other"
+            : isSelf
+              ? "chat-text-item-self"
+              : "chat-text-item-other"
+        }
+        data-message-kind={message.kind}
+        data-message-self={isSelf ? "self" : "other"}
         className={`chat-panel__item ${isSelf ? "chat-panel__item--self" : ""} ${message.kind === "VOICE" ? "chat-panel__item--voice" : ""}`.trim()}
       >
         <header className="chat-panel__meta">
@@ -511,12 +548,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
         {message.kind === "TEXT" ? (
           <p className="chat-panel__bubble">{message.text}</p>
         ) : (
-          <div className="chat-panel__bubble--voice">
+          <div className="chat-panel__bubble--voice" data-testid="chat-voice-bubble">
             <VoicePlaybackBar
               sourceUrl={resolveVoiceAudioUrl(message.voice.audioUrl)}
               durationMs={message.voice.durationMs}
               playLabel={t("game.chat.voice.play")}
               stopLabel={t("game.chat.voice.pause")}
+              testId="chat-voice-player"
             />
           </div>
         )}
@@ -591,5 +629,37 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
         </form>
       </div>
     </section>
+  );
+};
+
+export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
+  const { locale, t } = useLocalization();
+  const {
+    room,
+    player,
+    chatMessages,
+    chatHasMore,
+    chatLoadingHistory,
+    loadOlderChatMessages,
+    sendChatText,
+    sendChatVoice,
+    setChatPanelOpen,
+  } = useGame();
+
+  return (
+    <ChatPanelView
+      onClose={onClose}
+      locale={locale}
+      t={t}
+      room={room}
+      player={player}
+      chatMessages={chatMessages}
+      chatHasMore={chatHasMore}
+      chatLoadingHistory={chatLoadingHistory}
+      loadOlderChatMessages={loadOlderChatMessages}
+      sendChatText={sendChatText}
+      sendChatVoice={sendChatVoice}
+      setChatPanelOpen={setChatPanelOpen}
+    />
   );
 };
