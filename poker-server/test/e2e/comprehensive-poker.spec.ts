@@ -4580,6 +4580,52 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8b: Visual Smoke Covers Desktop And Mobile Table Layout', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const runtimeErrors: string[] = [];
+
+      alicePage.on('pageerror', (error) => runtimeErrors.push(error.message));
+      alicePage.on('console', (message) => {
+        if (message.type() === 'error') {
+          runtimeErrors.push(message.text());
+        }
+      });
+
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1280, height: 720 }),
+        bobPage.setViewportSize({ width: 1280, height: 720 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(alicePage.locator('[data-testid="room-title"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="table-board-section"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="pot-drop-zone"]')).toBeVisible();
+
+      const desktopScreenshot = await alicePage.screenshot({ fullPage: true });
+      expect(desktopScreenshot.byteLength).toBeGreaterThan(20_000);
+
+      await alicePage.setViewportSize({ width: 390, height: 844 });
+      await alicePage.waitForTimeout(180);
+
+      await expect(alicePage.locator('[data-testid="room-title"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="table-board-section"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="pot-drop-zone"]')).toBeVisible();
+
+      const mobileScreenshot = await alicePage.screenshot({ fullPage: true });
+      expect(mobileScreenshot.byteLength).toBeGreaterThan(12_000);
+      expect(runtimeErrors).toEqual([]);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {
