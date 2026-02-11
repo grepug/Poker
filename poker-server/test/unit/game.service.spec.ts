@@ -50,10 +50,12 @@ describe('GameService addPlayerToRoom', () => {
     players: Player[];
     maxPlayers?: number;
     startingChips?: number;
+    currentHand?: Room['currentHand'];
+    hostId?: string;
   }): Room {
     return {
       id: 'ROOM01',
-      hostId: params.players[0]?.id ?? 'host-id',
+      hostId: params.hostId ?? params.players[0]?.id ?? 'host-id',
       config: {
         startingChips: params.startingChips ?? 1000,
         smallBlind: 10,
@@ -64,7 +66,7 @@ describe('GameService addPlayerToRoom', () => {
       },
       players: params.players,
       gameState: params.gameState,
-      currentHand: null,
+      currentHand: params.currentHand ?? null,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
     };
@@ -228,6 +230,85 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
+  it('reclaims left player record when joining with same name', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: '',
+          name: 'Bob',
+          position: 1,
+          chips: 425,
+          totalBuyIn: 1000,
+          status: 'left',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const { player, rejoined } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-new-bob',
+      'Bob',
+      '🤠',
+    );
+
+    expect(rejoined).toBe(true);
+    expect(player.id).toBe('p-bob');
+    expect(player.socketId).toBe('s-new-bob');
+    expect(player.status).toBe('waiting');
+    expect(player.chips).toBe(425);
+    expect(player.totalBuyIn).toBe(1000);
+    expect((player as any).emoji).toBe('🤠');
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
+  it('ignores left players for room capacity checks', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      maxPlayers: 2,
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        createPlayer({
+          id: 'p-left',
+          socketId: '',
+          name: 'Bob',
+          position: 1,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'left',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+
+    expect(player.name).toBe('Charlie');
+    expect(player.position).toBe(1);
+    expect(player.status).toBe('waiting');
+    expect(room.players).toHaveLength(3);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
   it('rejects join when room is full', async () => {
     const room = createRoom({
       gameState: 'WAITING',
@@ -259,5 +340,66 @@ describe('GameService addPlayerToRoom', () => {
       gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie'),
     ).rejects.toThrow('Room is full');
     expect(storageService.saveRoom).not.toHaveBeenCalled();
+  });
+
+  it('marks player as left instead of removing player state', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      hostId: 'p-bob',
+      players: [
+        createPlayer({
+          id: 'p-alice',
+          socketId: 's-alice',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 850,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+      currentHand: {
+        handNumber: 3,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-bob',
+        pot: 30,
+        communityCards: [],
+        bettingRound: 'PRE_FLOP',
+        currentBet: 20,
+        lastRaiseSize: 10,
+        activePlayers: ['p-alice', 'p-bob'],
+        roundActions: { 'p-bob': true },
+        sidePots: [],
+        potContributions: {
+          'p-bob': 20,
+          'p-alice': 10,
+        },
+        vpipPlayerIds: [],
+        startedAt: Date.now(),
+      },
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-bob');
+
+    expect(updated).not.toBeNull();
+    const bob = room.players.find((player) => player.id === 'p-bob');
+    expect(bob?.status).toBe('left');
+    expect(bob?.socketId).toBe('');
+    expect(updated?.players).toHaveLength(2);
+    expect(updated?.hostId).toBe('p-alice');
+    expect(updated?.currentHand?.activePlayers).toEqual(['p-alice']);
+    expect(updated?.currentHand?.currentPlayerTurn).toBeNull();
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 });

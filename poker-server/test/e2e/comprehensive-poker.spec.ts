@@ -4383,6 +4383,86 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.4e: Leaving Preserves Rankings And Same Name Rejoin Keeps Player ID', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForHoleCards(charliePage);
+
+      const bobBeforeLeave = await bobPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+        };
+      });
+      expect(bobBeforeLeave.playerId).toBeTruthy();
+      expect(bobBeforeLeave.status).toBe('connected');
+      expect(bobBeforeLeave.cardsCount).toBe(2);
+
+      await bobPage.click('[data-testid="leave-room-button"]');
+      await expect(bobPage).toHaveURL(/\/$/);
+
+      await Promise.all([
+        alicePage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+        charliePage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+      ]);
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toContainText('Bob');
+      await expect(alicePage.locator('[data-testid="rankings-modal"]')).toContainText('LEFT');
+      await alicePage.click('[data-testid="close-rankings-button"]');
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="name-input"]', 'Bob');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+      await bobPage.click('[data-testid="join-room-button"]');
+
+      await Promise.all([
+        bobPage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 3/")',
+        ),
+        alicePage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 3/")',
+        ),
+      ]);
+
+      const bobAfterRejoin = await bobPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const cards = pokerDebug?.getCards?.();
+        const players = room?.players ?? [];
+        const leftStatusInRoom = players.find((entry: any) => entry.name === 'Bob')?.status ?? null;
+
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+          cardsCount: Array.isArray(cards) ? cards.length : 0,
+          statusInRoom: leftStatusInRoom,
+        };
+      });
+
+      expect(bobAfterRejoin.playerId).toBe(bobBeforeLeave.playerId);
+      expect(bobAfterRejoin.status).toBe('waiting');
+      expect(bobAfterRejoin.statusInRoom).toBe('waiting');
+      expect(bobAfterRejoin.cardsCount).toBe(0);
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
   test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 

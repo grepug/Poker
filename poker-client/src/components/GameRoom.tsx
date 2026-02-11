@@ -1169,12 +1169,16 @@ export const GameRoom: React.FC = () => {
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
+  const tablePlayers = useMemo(
+    () => room?.players.filter((entry) => entry.status !== "left") ?? [],
+    [room?.players],
+  );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
   const currentTurnPlayer =
-    room?.players.find((entry) => entry.id === currentHand?.currentPlayerTurn) ?? null;
+    tablePlayers.find((entry) => entry.id === currentHand?.currentPlayerTurn) ?? null;
 
   const minRaise = useMemo(() => {
     if (!room) return 0;
@@ -1277,7 +1281,7 @@ export const GameRoom: React.FC = () => {
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
   const canHostStartNextHand =
-    isHost && isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
+    isHost && isGameStarted && isHandPausedForNextHand && tablePlayers.length >= 2;
   const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
   const isWaitingForHostToStartNextHand =
     !isHost && isGameStarted && isHandPausedForNextHand;
@@ -1395,8 +1399,8 @@ export const GameRoom: React.FC = () => {
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () => getSeatSlotWidth(room?.players.length ?? 0),
-    [room?.players.length],
+    () => getSeatSlotWidth(tablePlayers.length),
+    [tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -1562,7 +1566,7 @@ export const GameRoom: React.FC = () => {
       anchor: SeatAnchor;
     }>;
     const myPosition = currentPlayer?.position ?? player.position;
-    const orderedPlayers = [...room.players].sort((a, b) => {
+    const orderedPlayers = [...tablePlayers].sort((a, b) => {
       const aOffset = (a.position - myPosition + orbitCapacity) % orbitCapacity;
       const bOffset = (b.position - myPosition + orbitCapacity) % orbitCapacity;
       return aOffset - bOffset;
@@ -1589,8 +1593,8 @@ export const GameRoom: React.FC = () => {
     feltSize.width,
     orbitCapacity,
     player,
-    room,
     seatSlotWidthPx,
+    tablePlayers,
     tableCornerRadiusPx.cornerRadiusX,
     tableCornerRadiusPx.cornerRadiusY,
   ]);
@@ -2434,7 +2438,7 @@ export const GameRoom: React.FC = () => {
                 data-testid="room-player-count"
               >
                 {t("game.playersCount", {
-                  count: room.players.length,
+                  count: tablePlayers.length,
                   max: room.config.maxPlayers,
                 })}
               </p>
@@ -2523,7 +2527,7 @@ export const GameRoom: React.FC = () => {
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {isHost && !isGameStarted && !isGameEnded && room.players.length >= 2 && (
+            {isHost && !isGameStarted && !isGameEnded && tablePlayers.length >= 2 && (
               <button
                 onClick={startGame}
                 data-testid="start-game-button"
@@ -3415,6 +3419,7 @@ export const GameRoom: React.FC = () => {
                       <td className="px-3 py-2">
                         {rankedPlayer.name}
                         {rankedPlayer.id === player.id ? ` (${t("common.you")})` : ""}
+                        {rankedPlayer.status === "left" ? ` (${t("game.status.left")})` : ""}
                       </td>
                       <td className="px-3 py-2 text-right">${rankedPlayer.tableStack}</td>
                       <td className="px-3 py-2 text-right">${rankedPlayer.totalBuyIn}</td>
