@@ -169,6 +169,11 @@ docker compose down -v
    - Players act in turn (clockwise from dealer)
    - Disconnected players have 30 seconds to reconnect
 
+## 📚 Product Rules
+
+- Chat unread & latest-preview rules:
+  - `/Users/kai/.codex/worktrees/16e7/Poker/docs/plans/2026-02-11-chat-unread-preview-rules.md`
+
 ## 🧪 Testing
 
 Backend includes comprehensive unit tests:

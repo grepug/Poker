@@ -5634,7 +5634,94 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
     }
   });
 
-  test('10.5: Incoming messages do not interrupt current voice source unless another voice is clicked', async ({
+  test('10.5: Self messages do not create preview, dismiss/open both clear unread preview', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await sendChatMessagesViaSocket(
+        bobPage,
+        ['bob-self-message'],
+        'bob-self-message',
+      );
+
+      await bobPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getChatMessages?.() ?? []).some(
+            (message: any) =>
+              message.kind === 'TEXT' && message.text === 'bob-self-message',
+          ),
+        { timeout: 10000 },
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      await sendChatMessagesViaSocket(
+        alicePage,
+        ['alice-unread-message'],
+        'alice-unread-message',
+      );
+
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 1,
+        { timeout: 10000 },
+      );
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await bobPage.click('[data-testid="chat-preview-dismiss"]');
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      await sendChatMessagesViaSocket(
+        alicePage,
+        ['alice-unread-message-2'],
+        'alice-unread-message-2',
+      );
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 1,
+        { timeout: 10000 },
+      );
+      await bobPage.waitForSelector('[data-testid="chat-preview-strip"]', {
+        state: 'visible',
+        timeout: 10000,
+      });
+
+      await openChatPanel(bobPage);
+      await bobPage.waitForFunction(
+        () => (window as any).pokerDebug?.getChatUnreadCount?.() === 0,
+        { timeout: 10000 },
+      );
+
+      await bobPage.click('[data-testid="close-chat-button"]');
+      await bobPage.waitForSelector('[data-testid="chat-panel"]', {
+        state: 'hidden',
+        timeout: 5000,
+      });
+      await expect(
+        bobPage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.6: Incoming messages do not interrupt current voice source unless another voice is clicked', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
