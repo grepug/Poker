@@ -1,5 +1,5 @@
 import { Card } from "./card.types";
-import { Player, PlayerAction } from "./player.types";
+import { Player, PlayerAction, PlayerStatus } from "./player.types";
 import { Room, RoomConfig, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
 import {
@@ -206,6 +206,7 @@ export interface PlayerDisconnectedData {
 export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
+  status?: PlayerStatus;
 }
 
 export interface PlayerAutoFoldedData {

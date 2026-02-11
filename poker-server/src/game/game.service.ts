@@ -90,13 +90,33 @@ export class GameService {
 
     const existingPlayer = room.players.find((p) => p.name === playerName);
     if (existingPlayer) {
-      if (existingPlayer.status !== 'disconnected') {
+      if (
+        existingPlayer.status !== 'disconnected' &&
+        existingPlayer.status !== 'left'
+      ) {
         throw new Error('Name already taken');
       }
 
+      const priorStatus = existingPlayer.status;
       existingPlayer.socketId = socketId;
-      existingPlayer.status = 'connected';
+      existingPlayer.status =
+        priorStatus === 'left' ? ('waiting' as PlayerStatus) : 'connected';
+      if (
+        priorStatus === 'left' &&
+        this.getSeatedPlayers(room).some(
+          (player) =>
+            player.id !== existingPlayer.id &&
+            player.position === existingPlayer.position,
+        )
+      ) {
+        existingPlayer.position = this.findNextAvailablePosition(room);
+      }
       existingPlayer.lastConnectedAt = Date.now();
+      if (priorStatus === 'left') {
+        existingPlayer.cards = null;
+        existingPlayer.currentBet = 0;
+        existingPlayer.lastAction = null;
+      }
       if (playerEmoji !== undefined) {
         existingPlayer.emoji = playerEmoji;
       }
@@ -109,7 +129,8 @@ export class GameService {
     }
 
     // Check if room is full
-    if (room.players.length >= room.config.maxPlayers) {
+    const seatedPlayers = this.getSeatedPlayers(room);
+    if (seatedPlayers.length >= room.config.maxPlayers) {
       throw new Error('Room is full');
     }
 
@@ -165,13 +186,34 @@ export class GameService {
     }
 
     const player = room.players[playerIndex];
-    room.players.splice(playerIndex, 1);
+    if (player.status === 'left') {
+      return room;
+    }
+    player.status = 'left';
+    player.socketId = '';
+    player.cards = null;
+    player.currentBet = 0;
+    player.lastAction = null;
+    player.lastConnectedAt = Date.now();
+
+    if (room.currentHand) {
+      room.currentHand.activePlayers = room.currentHand.activePlayers.filter(
+        (id) => id !== playerId,
+      );
+      if (room.currentHand.roundActions?.[playerId]) {
+        delete room.currentHand.roundActions[playerId];
+      }
+      if (room.currentHand.currentPlayerTurn === playerId) {
+        room.currentHand.currentPlayerTurn = null;
+      }
+    }
     room.lastActivityAt = Date.now();
 
-    this.logger.log(`Player ${player.name} removed from room ${roomId}`);
+    this.logger.log(`Player ${player.name} marked left in room ${roomId}`);
 
     // If room is empty, delete it
-    if (room.players.length === 0) {
+    const seatedPlayers = this.getSeatedPlayers(room);
+    if (seatedPlayers.length === 0) {
       await this.storageService.deleteRoom(roomId);
       this.logger.log(`Room ${roomId} deleted (empty)`);
       return null;
@@ -179,7 +221,7 @@ export class GameService {
 
     // If host left, transfer to next player
     if (room.hostId === playerId) {
-      const newHost = room.players[0];
+      const newHost = seatedPlayers[0];
       room.hostId = newHost.id;
       this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
     }
@@ -209,6 +251,9 @@ export class GameService {
     if (!player) {
       return null;
     }
+    if (player.status === 'left') {
+      return null;
+    }
 
     player.socketId = newSocketId;
     player.status = 'connected';
@@ -236,6 +281,9 @@ export class GameService {
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player) {
+      return room;
+    }
+    if (player.status === 'left') {
       return room;
     }
 
@@ -283,7 +331,9 @@ export class GameService {
    * Find next available position in room
    */
   private findNextAvailablePosition(room: Room): number {
-    const occupiedPositions = new Set(room.players.map((p) => p.position));
+    const occupiedPositions = new Set(
+      this.getSeatedPlayers(room).map((p) => p.position),
+    );
 
     for (let i = 0; i < room.config.maxPlayers; i++) {
       if (!occupiedPositions.has(i)) {
@@ -291,7 +341,7 @@ export class GameService {
       }
     }
 
-    return room.players.length; // Fallback
+    return this.getSeatedPlayers(room).length; // Fallback
   }
 
   /**
@@ -326,14 +376,19 @@ export class GameService {
       return false;
     }
 
-    if (room.players.length === 0) {
+    const seatedPlayers = this.getSeatedPlayers(room);
+    if (seatedPlayers.length === 0) {
       return false;
     }
 
-    if (!room.players.some((p) => p.id === room.hostId)) {
+    if (!seatedPlayers.some((p) => p.id === room.hostId)) {
       return false;
     }
 
     return true;
+  }
+
+  private getSeatedPlayers(room: Room): Player[] {
+    return room.players.filter((player) => player.status !== 'left');
   }
 }
