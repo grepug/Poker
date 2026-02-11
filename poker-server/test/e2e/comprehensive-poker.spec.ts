@@ -5857,6 +5857,71 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       await teardownTwoPlayerSession(session);
     }
   });
+
+  test('10.6: Outgoing voice message stays right-aligned without full-width stretch', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage } = session;
+
+      await sendVoiceMessageViaUpload(alicePage, 'voice-self-align');
+      await openChatPanel(alicePage);
+
+      const selfVoiceItems = alicePage.locator(
+        '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+      );
+      await expect(selfVoiceItems).toHaveCount(1);
+
+      const layoutMetrics = await alicePage.evaluate(() => {
+        const list = document.querySelector('[data-testid="chat-message-list"]') as HTMLElement | null;
+        const selfVoiceItem = document.querySelector(
+          '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+        ) as HTMLElement | null;
+        const voiceBubble = selfVoiceItem?.querySelector('.chat-panel__bubble--voice') as
+          | HTMLElement
+          | null;
+        const voicePlayer = selfVoiceItem?.querySelector('.chat-panel__voice-player') as
+          | HTMLElement
+          | null;
+
+        if (!list || !selfVoiceItem || !voiceBubble || !voicePlayer) {
+          return null;
+        }
+
+        const listRect = list.getBoundingClientRect();
+        const itemRect = selfVoiceItem.getBoundingClientRect();
+        const bubbleRect = voiceBubble.getBoundingClientRect();
+        const playerRect = voicePlayer.getBoundingClientRect();
+
+        const computedStyle = window.getComputedStyle(list);
+        const paddingLeft = Number.parseFloat(computedStyle.paddingLeft || '0');
+        const paddingRight = Number.parseFloat(computedStyle.paddingRight || '0');
+        const contentWidth = listRect.width - paddingLeft - paddingRight;
+        const contentRight = listRect.right - paddingRight;
+
+        return {
+          contentWidth,
+          contentRight,
+          itemWidth: itemRect.width,
+          itemRight: itemRect.right,
+          playerRight: playerRect.right,
+        };
+      });
+
+      expect(layoutMetrics).not.toBeNull();
+      if (!layoutMetrics) {
+        throw new Error('Failed to resolve chat layout metrics');
+      }
+
+      expect(layoutMetrics.itemWidth).toBeLessThan(layoutMetrics.contentWidth - 16);
+      expect(Math.abs(layoutMetrics.contentRight - layoutMetrics.itemRight)).toBeLessThanOrEqual(2);
+      expect(layoutMetrics.playerRight).toBeGreaterThanOrEqual(layoutMetrics.contentRight - 20);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
 });
 
 
