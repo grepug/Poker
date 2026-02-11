@@ -48,6 +48,7 @@ Poker/
 │       ├── storage/      # Storage layer
 │       ├── game/         # Game services
 │       └── events/       # WebSocket gateway
+├── poker-registry/       # Internal shadcn-compatible component registry
 └── poker-client/         # React frontend
     └── src/
         ├── components/   # React components
@@ -110,6 +111,24 @@ Poker/
    - Navigate to http://localhost:5173 in your browser
    - Create a new room or join an existing one
    - Share the room code with friends to play together!
+
+### Running the Internal UI Registry
+
+```bash
+cd poker-registry
+npm install
+npm run start
+```
+
+Registry default URL: [http://localhost:3022/registry/index.json](http://localhost:3022/registry/index.json)
+
+Available endpoints:
+
+- `/health`
+- `/registry/index.json`
+- `/registry/styles/poker-dark.json`
+- `/registry/poker/:item.json`
+- `/registry/files/*`
 
 ## 🐳 Docker Deployment
 
@@ -215,7 +234,12 @@ Current test coverage:
   - Vite 7.x
   - Socket.io Client 4.8.x
   - Tailwind CSS 4.x
+  - shadcn/ui-compatible primitives + tokens
   - React Router DOM 7.x
+
+- **Internal UI Registry:**
+  - Node.js + Fastify
+  - shadcn-compatible registry JSON endpoints
 
 - **Shared:**
   - TypeScript

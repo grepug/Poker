@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/table-shell",
+  "type": "registry:component",
+  "title": "Table Shell",
+  "description": "Main responsive table shell composition for poker gameplay.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "sheet",
+    "dialog",
+    "table",
+    "tabs",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/table-shell.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/table-shell.tsx"
+    }
+  ]
+}

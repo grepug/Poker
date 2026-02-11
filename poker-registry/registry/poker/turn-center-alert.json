@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/turn-center-alert",
+  "type": "registry:component",
+  "title": "Turn Center Alert",
+  "description": "Center-screen indicator when turn ownership changes.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/turn-center-alert.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/turn-center-alert.tsx"
+    }
+  ]
+}

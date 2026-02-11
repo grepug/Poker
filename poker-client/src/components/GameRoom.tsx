@@ -4,12 +4,27 @@ import { toPng } from "html-to-image";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import { Card } from "./Card";
-import { ChatPanel } from "./ChatPanel";
 import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
+import {
+  ActionCenterAlert as PokerActionCenterAlert,
+  ChatPanel,
+  ChipComposerDock,
+  CommunityCardsLane,
+  EndGameConfirmModal,
+  FinalSummaryModal,
+  HandResultsPanel,
+  PotDropZone,
+  RankingsModal,
+  RulesModal,
+  SeatPod,
+  SettingsModal,
+  TableShell,
+  TurnCenterAlert,
+} from "@/components/poker";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -2389,6 +2404,17 @@ export const GameRoom: React.FC = () => {
     return insight;
   }, [callAmount, currentTurnPlayer?.name, lastError, maxStack, minRaise, t]);
 
+  const rulesRankingRows = useMemo(
+    () =>
+      HAND_RANK_ORDER.map((rank, idx) => ({
+        key: rank,
+        order: idx + 1,
+        title: formatHandRank(rank, locale),
+        detail: HAND_RANK_DETAILS[locale][rank],
+      })),
+    [locale],
+  );
+
   if (!room || !player) {
     return (
       <main className="min-h-screen px-4 py-10">
@@ -2409,8 +2435,10 @@ export const GameRoom: React.FC = () => {
   }
 
   return (
-    <main
-      className={`table-shell${isYourTurn && isDesktopSideDock ? " table-shell--desktop-turn-dock" : ""}${isChatPanelOpen ? " table-shell--chat-open" : ""}`}
+    <TableShell
+      isYourTurn={isYourTurn}
+      isDesktopSideDock={isDesktopSideDock}
+      isChatPanelOpen={isChatPanelOpen}
     >
       <header className="table-micro-hud">
         <div className="flex items-center gap-3">
@@ -2541,6 +2569,7 @@ export const GameRoom: React.FC = () => {
               type="button"
               className="chat-preview-strip__open"
               onClick={handleOpenChatFromPreview}
+              data-testid="chat-preview-open"
             >
               <span className="chat-preview-strip__title">{t("game.chat.preview.title")}</span>
               <span className="chat-preview-strip__content">
@@ -2588,15 +2617,11 @@ export const GameRoom: React.FC = () => {
       )}
 
       {turnAlertToken !== null && (
-        <div
-          className="turn-center-alert-layer"
-          aria-live="assertive"
-          data-testid="turn-center-alert"
-        >
-          <div key={`turn-alert-${turnAlertToken}`} className="turn-center-alert">
-            <span className="turn-center-alert__eyebrow">{t("game.turnAlert.eyebrow")}</span>
-            <span className="turn-center-alert__title">{t("game.turnAlert.title")}</span>
-          </div>
+        <div aria-live="assertive" key={`turn-alert-${turnAlertToken}`}>
+          <TurnCenterAlert
+            eyebrow={t("game.turnAlert.eyebrow")}
+            title={t("game.turnAlert.title")}
+          />
         </div>
       )}
 
@@ -2665,16 +2690,16 @@ export const GameRoom: React.FC = () => {
               <span className="action-center-alert__arrow-head" />
             </div>
           )}
-          <div
-            ref={actionCenterAlertRef}
-            key={`action-alert-${actionCenterAlert.id}`}
-            className={`action-center-alert action-center-alert--${actionCenterAlert.tone} ${
-              actionCenterAlert.exiting ? "action-center-alert--exit" : ""
-            }`}
-          >
-            <span className="action-center-alert__eyebrow">User Action</span>
-            <span className="action-center-alert__actor">{actionCenterAlert.playerName}</span>
-            <span className="action-center-alert__title">{actionCenterAlert.text}</span>
+          <div ref={actionCenterAlertRef}>
+            <PokerActionCenterAlert
+              key={`action-alert-${actionCenterAlert.id}`}
+              eyebrow="User Action"
+              actor={actionCenterAlert.playerName}
+              title={actionCenterAlert.text}
+              tone={actionCenterAlert.tone}
+              exiting={actionCenterAlert.exiting}
+              testId="action-center-alert-card"
+            />
           </div>
         </div>
       )}
@@ -2682,7 +2707,7 @@ export const GameRoom: React.FC = () => {
       <section className="table-board-wrap" data-testid="table-board-section">
         <div ref={feltOvalRef} className="felt-oval">
           <div className="board-center-stack">
-            <div className="community-lane" data-testid="community-cards">
+            <CommunityCardsLane>
               {communitySlots.map((card, idx) => {
                 const isRevealed = Boolean(card);
                 return (
@@ -2700,25 +2725,19 @@ export const GameRoom: React.FC = () => {
                   </div>
                 );
               })}
-            </div>
+            </CommunityCardsLane>
 
             <div
               ref={potDropZoneRef}
-              data-testid="pot-drop-zone"
-              className={`pot-drop-zone ${
-                isYourTurn ? "pot-drop-zone--active" : ""
-              } ${dragState.overDropZone ? "pot-drop-zone--hover" : ""}`}
             >
-              <span className="pot-drop-zone__label">{t("game.potCenter")}</span>
-              <span
-                key={`pot-animation-${potAnimationTick}`}
-                className="pot-drop-zone__value pot-drop-zone__value--pulse"
-              >
-                ${animatedPotValue}
-              </span>
-              {isYourTurn && (
-                <span className="pot-drop-zone__hint">{t("game.dragHint")}</span>
-              )}
+              <PotDropZone
+                active={isYourTurn}
+                hover={dragState.overDropZone}
+                label={t("game.potCenter")}
+                value={`$${animatedPotValue}`}
+                hint={isYourTurn ? t("game.dragHint") : null}
+                pulse={potAnimationTick >= 0}
+              />
             </div>
           </div>
 
@@ -2767,6 +2786,14 @@ export const GameRoom: React.FC = () => {
                   : seatMainState === "waiting"
                     ? "seat-pod__status-badge--waiting"
                     : "";
+              const seatInlineStatusToneClass =
+                seatMainState === "folded"
+                  ? "seat-pod__status-badge--folded"
+                  : seatMainState === "disconnected"
+                    ? "seat-pod__status-badge--disconnected"
+                    : seatMainState === "all-in"
+                      ? "seat-pod__status-badge--allin"
+                      : "";
               const isForcedBlind = Boolean(
                 currentHand?.bettingRound === "PRE_FLOP" &&
                   seatPlayer.currentBet > 0 &&
@@ -2806,88 +2833,28 @@ export const GameRoom: React.FC = () => {
                     transform: "translate(-50%, -50%)",
                   }}
                 >
-                  <article
+                  <div
                     ref={(node) => {
                       seatNodeRefs.current[seatPlayer.id] = node;
                     }}
-                    data-testid={`player-seat-${seatPlayer.id}`}
-                    className={`seat-pod ${seatMainState === "turn" ? "seat-pod--turn" : ""} ${
-                      seatDensityClass
-                    } ${
-                      seatMainState === "all-in" ? "seat-pod--allin" : ""
-                    } ${
-                      seatMainState === "disconnected" ? "seat-pod--disconnected" : ""
-                    } ${
-                      seatMainState === "folded" ? "seat-pod--folded" : ""
-                    } ${
-                      seatMainState === "waiting" ? "seat-pod--waiting" : ""
-                    }`}
                   >
-                    {isSelfSeat && (
-                      <span
-                        className="seat-pod__you-indicator"
-                        aria-label={t("common.you")}
-                        title={t("common.you")}
-                      >
-                        🫵
-                      </span>
-                    )}
-                    {roleIcon && (
-                      <span
-                        className={`seat-pod__role-icon seat-pod__role-icon--${roleIcon}`}
-                        title={roleIcon === "dealer" ? "Dealer" : "Small Blind"}
-                        aria-label={roleIcon === "dealer" ? "Dealer" : "Small Blind"}
-                      >
-                        {roleIcon === "dealer" ? "D" : "SB"}
-                      </span>
-                    )}
-                    {seatExternalStatusLabel && (
-                      <span
-                        className={`seat-pod__status-badge seat-pod__status-badge--external ${seatExternalStatusToneClass}`}
-                      >
-                        {seatExternalStatusLabel}
-                      </span>
-                    )}
-                    <div className="seat-pod__row">
-                      {seatPlayer.emoji && (
-                        <span className="seat-pod__emoji" aria-hidden="true">
-                          {seatPlayer.emoji}
-                        </span>
-                      )}
-                      <span className="seat-pod__name">
-                        {seatPlayer.name}
-                      </span>
-                      {seatInlineStatusLabel && (
-                        <span
-                          className={`seat-pod__status-badge ${
-                            seatMainState === "folded"
-                              ? "seat-pod__status-badge--folded"
-                              : seatMainState === "disconnected"
-                                ? "seat-pod__status-badge--disconnected"
-                                : seatMainState === "all-in"
-                                    ? "seat-pod__status-badge--allin"
-                                    : ""
-                          }`}
-                        >
-                          {seatInlineStatusLabel}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="seat-pod__row seat-pod__row--action">
-                      <div
-                        className={`seat-pod__action ${
-                          seatActionLabel ? `seat-pod__action--${seatActionLabel.tone}` : ""
-                        }`}
-                      >
-                        {seatActionLabel?.text ?? " "}
-                      </div>
-                    </div>
-
-                    <div className="seat-pod__row seat-pod__row--remaining">
-                      <div className="seat-pod__remaining">{seatRemainingLabel}</div>
-                    </div>
-                  </article>
+                    <SeatPod
+                      testId={`player-seat-${seatPlayer.id}`}
+                      playerEmoji={seatPlayer.emoji || "🎲"}
+                      playerName={seatPlayer.name}
+                      isYou={isSelfSeat}
+                      roleIcon={roleIcon}
+                      roleLabel={roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null}
+                      externalStatusLabel={seatExternalStatusLabel}
+                      externalStatusToneClass={seatExternalStatusToneClass}
+                      internalStatusLabel={seatInlineStatusLabel}
+                      internalStatusToneClass={seatInlineStatusToneClass}
+                      actionLabel={seatActionLabel}
+                      remainingLabel={seatRemainingLabel}
+                      seatState={seatMainState}
+                      densityClass={seatDensityClass}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -2896,11 +2863,7 @@ export const GameRoom: React.FC = () => {
       </section>
 
       {lastHandResult && (
-        <section
-          ref={handResultsPanelRef}
-          className="surface-panel mx-3 mt-3 p-4"
-          data-testid="hand-results-panel"
-        >
+        <HandResultsPanel ref={handResultsPanelRef}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3
@@ -3073,7 +3036,7 @@ export const GameRoom: React.FC = () => {
               })}
             </div>
           )}
-        </section>
+        </HandResultsPanel>
       )}
 
       {canHostStartNextHand && (
@@ -3149,7 +3112,7 @@ export const GameRoom: React.FC = () => {
       )}
 
       {isYourTurn && !isAwaitingStreetReveal && (
-        <section ref={turnOverlayRef} className="chip-composer-dock" data-testid="turn-overlay">
+        <ChipComposerDock ref={turnOverlayRef}>
           <div data-testid="action-dock" className="chip-composer-dock__action-area">
             <div className="chip-composer-dock__header">
               <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
@@ -3189,6 +3152,7 @@ export const GameRoom: React.FC = () => {
                       className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
                       disabled={!preset.enabled}
                       data-testid={preset.testId}
+                      data-tray-preset={preset.key}
                     >
                       <span>{preset.label}</span>
                       <span>${preset.amount}</span>
@@ -3289,7 +3253,7 @@ export const GameRoom: React.FC = () => {
               </div>
             )}
           </div>
-        </section>
+        </ChipComposerDock>
       )}
 
       {dragState.active && (
@@ -3305,388 +3269,58 @@ export const GameRoom: React.FC = () => {
       )}
 
       {showSettingsModal && (
-        <div
-          className="fixed inset-0 z-[76] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-          data-testid="settings-modal"
-        >
-          <div className="surface-panel w-full max-w-xl p-4 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-black text-white">{t("game.settings.title")}</h3>
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                data-testid="close-settings-button"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.close")}
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-emerald-100/80">{t("game.settings.summary")}</p>
-
-            <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
-              <label
-                htmlFor="language-select"
-                className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70"
-              >
-                {t("common.language")}
-              </label>
-              <p className="mt-1 text-xs text-emerald-100/70">{t("game.settings.languageHelp")}</p>
-              <select
-                id="language-select"
-                value={locale}
-                onChange={(event) =>
-                  setLocale(event.target.value === "zh_hans" ? "zh_hans" : "en")
-                }
-                data-testid="language-select"
-                className="mt-3 w-full rounded-xl border border-emerald-700/60 bg-emerald-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-              >
-                <option value="en">{t("game.settings.english")}</option>
-                <option value="zh_hans">{t("game.settings.chineseSimplified")}</option>
-              </select>
-            </div>
-
-            {isHost && (
-              <div
-                className="mt-4 rounded-xl border border-cyan-700/60 bg-cyan-950/35 p-4"
-                data-testid="host-settings-section"
-              >
-                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100/80">
-                  {t("game.settings.hostOnly")}
-                </p>
-                <p className="mt-1 text-xs text-cyan-100/70">
-                  {t("game.settings.hostStreetRevealHelp")}
-                </p>
-                <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-cyan-50">
-                  <input
-                    type="checkbox"
-                    checked={isPlayerStreetRevealEnabled}
-                    onChange={(event) =>
-                      updateRoomConfig({ allowPlayerStreetReveal: event.target.checked })
-                    }
-                    data-testid="allow-player-street-reveal-toggle"
-                    className="h-4 w-4 accent-cyan-400"
-                  />
-                  <span>{t("game.settings.allowPlayerStreetReveal")}</span>
-                </label>
-              </div>
-            )}
-          </div>
-        </div>
+        <SettingsModal
+          locale={locale}
+          onLocaleChange={setLocale}
+          isHost={isHost}
+          isPlayerStreetRevealEnabled={isPlayerStreetRevealEnabled}
+          onStreetRevealChange={(enabled) =>
+            updateRoomConfig({ allowPlayerStreetReveal: enabled })
+          }
+          onClose={() => setShowSettingsModal(false)}
+          t={t}
+        />
       )}
 
       {showRankingsModal && (
-        <div
-          className="fixed inset-0 z-[75] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-          data-testid="rankings-modal"
-        >
-          <div className="surface-panel w-full max-w-2xl p-4 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-black text-white">{t("game.rankings.title")}</h3>
-              <button
-                onClick={() => setShowRankingsModal(false)}
-                data-testid="close-rankings-button"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.close")}
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-emerald-100/80">
-              {t("game.rankings.sortedBy")}
-            </p>
-
-            <div className="mt-4 overflow-x-auto rounded-xl border border-emerald-700/60">
-              <table className="min-w-full text-sm">
-                <thead className="bg-emerald-950/70 text-emerald-100/70">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.rank")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.stack")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-emerald-950/45">
-                  {playerRankings.map((rankedPlayer, idx) => (
-                    <tr
-                      key={rankedPlayer.id}
-                      className="border-t border-emerald-800/60 text-emerald-50"
-                      data-testid={`ranking-row-${idx + 1}`}
-                    >
-                      <td className="px-3 py-2">#{idx + 1}</td>
-                      <td className="px-3 py-2">
-                        {rankedPlayer.name}
-                        {rankedPlayer.id === player.id ? ` (${t("common.you")})` : ""}
-                      </td>
-                      <td className="px-3 py-2 text-right">${rankedPlayer.tableStack}</td>
-                      <td className="px-3 py-2 text-right">${rankedPlayer.totalBuyIn}</td>
-                      <td
-                        className={`px-3 py-2 text-right font-semibold ${
-                          rankedPlayer.net >= 0 ? "text-emerald-300" : "text-red-300"
-                        }`}
-                      >
-                        {rankedPlayer.net >= 0 ? "+" : ""}
-                        ${rankedPlayer.net}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <RankingsModal
+          playerRankings={playerRankings}
+          currentPlayerId={player.id}
+          onClose={() => setShowRankingsModal(false)}
+          t={t}
+        />
       )}
 
       {showRulesModal && (
-        <div
-          className="fixed inset-0 z-[77] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-          data-testid="rules-modal"
-        >
-          <section className="surface-panel w-full max-w-3xl max-h-[85vh] overflow-y-auto p-4 md:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-black text-white">{rulesCopy.modalTitle}</h3>
-                <p className="mt-1 text-sm text-emerald-100/80">{rulesCopy.modalSubtitle}</p>
-              </div>
-              <button
-                onClick={() => setShowRulesModal(false)}
-                data-testid="close-rules-button"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.close")}
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3 text-sm text-emerald-100/90">
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.objectiveTitle}</h4>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {rulesCopy.objectiveBullets.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.flowTitle}</h4>
-                <ol className="mt-2 list-decimal space-y-1 pl-5">
-                  {rulesCopy.flowSteps.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ol>
-              </section>
-
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.actionsTitle}</h4>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {rulesCopy.actionsBullets.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.showdownTitle}</h4>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {rulesCopy.showdownBullets.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.tiebreakTitle}</h4>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {rulesCopy.tiebreakBullets.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3">
-                <h4 className="text-sm font-semibold text-white">{rulesCopy.rankingTitle}</h4>
-                <p className="mt-1 text-xs text-emerald-100/75">{rulesCopy.rankingHint}</p>
-                <ol className="mt-2 space-y-2">
-                  {HAND_RANK_ORDER.map((rank, idx) => (
-                    <li
-                      key={rank}
-                      className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-2"
-                    >
-                      <p className="text-sm font-semibold text-white">
-                        #{idx + 1} {formatHandRank(rank, locale)}
-                      </p>
-                      <p className="mt-1 text-xs text-emerald-100/80">
-                        {HAND_RANK_DETAILS[locale][rank]}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            </div>
-          </section>
-        </div>
+        <RulesModal
+          rulesCopy={rulesCopy}
+          rankingRows={rulesRankingRows}
+          onClose={() => setShowRulesModal(false)}
+          t={t}
+        />
       )}
 
       {showEndGameConfirmModal && (
-        <div
-          className="fixed inset-0 z-[79] flex items-center justify-center bg-emerald-950/88 p-4 backdrop-blur-sm"
-          data-testid="end-game-confirm-modal"
-        >
-          <div className="surface-panel w-full max-w-md p-5">
-            <h3 className="text-lg font-black text-white">{t("game.endGameConfirm.title")}</h3>
-            <p className="mt-2 text-sm text-emerald-100/85">
-              {t("game.endGameConfirm.body")}
-            </p>
-            <p className="mt-3 rounded-lg border border-amber-300/60 bg-amber-300/15 px-3 py-2 text-xs font-semibold text-amber-100">
-              {t("game.endGameConfirm.warning")}
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setShowEndGameConfirmModal(false)}
-                data-testid="end-game-confirm-cancel"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={handleConfirmEndGame}
-                data-testid="end-game-confirm-accept"
-                className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400"
-              >
-                {t("game.endGameConfirm.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <EndGameConfirmModal
+          onCancel={() => setShowEndGameConfirmModal(false)}
+          onConfirm={handleConfirmEndGame}
+          t={t}
+        />
       )}
 
       {showFinalSummaryModal && finalGameResult && (
-        <div
-          className="fixed inset-0 z-[78] overflow-y-auto bg-emerald-950/88 p-4 backdrop-blur-sm"
-          data-testid="final-summary-modal"
-        >
-          <section
-            ref={finalSummaryPanelRef}
-            className="surface-panel mx-auto w-full max-w-4xl p-4 md:p-6"
-            data-testid="final-summary-panel"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-black text-white">{t("game.final.title")}</h3>
-                <p className="mt-1 text-sm text-emerald-100/80">{t("game.final.subtitle")}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleSaveFinalSummaryScreenshot}
-                  data-testid="save-final-summary-screenshot-button"
-                  className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
-                >
-                  {t("game.final.saveScreenshot")}
-                </button>
-                {isGameEnded ? (
-                  <button
-                    onClick={handleLeave}
-                    data-testid="leave-from-final-summary-button"
-                    className="rounded-lg border border-rose-400/70 bg-rose-900/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-800/40"
-                  >
-                    {t("common.leave")}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowFinalSummaryModal(false)}
-                    data-testid="close-final-summary-button"
-                    className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-                  >
-                    {t("common.close")}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-2 min-[520px]:grid-cols-2 xl:grid-cols-3">
-              {finalSummaryCards.map((card) => (
-                <article
-                  key={card.key}
-                  className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3"
-                >
-                  <p className="text-xs uppercase tracking-wide text-emerald-100/70">{card.label}</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{card.value}</p>
-                </article>
-              ))}
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-2 min-[520px]:grid-cols-2">
-              <article className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3">
-                <p className="text-xs uppercase tracking-wide text-emerald-100/70">
-                  {t("game.final.chipLeader")}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-white">
-                  {finalGameResult.summary.chipLeader
-                    ? `${finalGameResult.summary.chipLeader.playerName} ($${finalGameResult.summary.chipLeader.amount})`
-                    : t("game.final.none")}
-                </p>
-              </article>
-              <article className="rounded-xl border border-emerald-700/70 bg-emerald-950/55 p-3">
-                <p className="text-xs uppercase tracking-wide text-emerald-100/70">
-                  {t("game.final.biggestSwing")}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-white">
-                  {finalGameResult.summary.biggestWinner
-                    ? `${t("game.final.biggestWinner")}: ${finalGameResult.summary.biggestWinner.playerName} (+$${finalGameResult.summary.biggestWinner.amount})`
-                    : `${t("game.final.biggestWinner")}: ${t("game.final.none")}`}
-                </p>
-                <p className="mt-1 text-xs text-emerald-100/80">
-                  {finalGameResult.summary.biggestLoss
-                    ? `${t("game.final.biggestLoss")}: ${finalGameResult.summary.biggestLoss.playerName} (-$${finalGameResult.summary.biggestLoss.amount})`
-                    : `${t("game.final.biggestLoss")}: ${t("game.final.none")}`}
-                </p>
-              </article>
-            </div>
-
-            <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
-              <table className="min-w-full text-sm">
-                <thead className="bg-emerald-950/70 text-emerald-100/70">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.rank")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.handsWon")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.vpipHands")}</th>
-                    <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-emerald-950/45">
-                  {finalStandings.map((entry) => {
-                    const isSelf = entry.playerId === player.id;
-                    return (
-                      <tr
-                        key={entry.playerId}
-                        className="border-t border-emerald-800/60 text-emerald-50"
-                        data-testid={`final-ranking-row-${entry.rankOrder}`}
-                      >
-                        <td className="px-3 py-2">#{entry.rankOrder}</td>
-                        <td className="px-3 py-2">
-                          {entry.playerName}
-                          {isSelf ? ` (${t("common.you")})` : ""}
-                        </td>
-                        <td className="px-3 py-2 text-right">${entry.finalChips}</td>
-                        <td className="px-3 py-2 text-right">${entry.totalBuyIn}</td>
-                        <td className="px-3 py-2 text-right">{entry.handsWonCount ?? 0}</td>
-                        <td className="px-3 py-2 text-right">{entry.vpipHandsCount ?? 0}</td>
-                        <td
-                          className={`px-3 py-2 text-right font-semibold ${
-                            entry.profit >= 0 ? "text-emerald-300" : "text-red-300"
-                          }`}
-                        >
-                          {entry.profit >= 0 ? "+" : ""}${entry.profit}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <FinalSummaryModal
+          ref={finalSummaryPanelRef}
+          finalGameResult={finalGameResult}
+          finalSummaryCards={finalSummaryCards}
+          finalStandings={finalStandings}
+          currentPlayerId={player.id}
+          isGameEnded={isGameEnded}
+          onSaveScreenshot={handleSaveFinalSummaryScreenshot}
+          onLeave={handleLeave}
+          onClose={() => setShowFinalSummaryModal(false)}
+          t={t}
+        />
       )}
 
       {!isAutomationMode && quickConfirmAction && (
@@ -3789,6 +3423,6 @@ export const GameRoom: React.FC = () => {
           </div>
         </div>
       )}
-    </main>
+    </TableShell>
   );
 };

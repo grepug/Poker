@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/pot-drop-zone",
+  "type": "registry:component",
+  "title": "Pot Drop Zone",
+  "description": "Bet drop target with live pot status and animation states.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/pot-drop-zone.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/pot-drop-zone.tsx"
+    }
+  ]
+}

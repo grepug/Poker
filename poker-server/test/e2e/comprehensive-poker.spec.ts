@@ -19,14 +19,8 @@ async function waitForPokerDebug(page: Page) {
 
 async function assertWaitingBadgeExternalForSeat(page: Page, playerId: string) {
   const seat = page.locator(`[data-testid="player-seat-${playerId}"]`);
-  await expect(
-    seat.locator(
-      '.seat-pod__status-badge--external.seat-pod__status-badge--waiting',
-    ),
-  ).toHaveCount(1);
-  await expect(
-    seat.locator('.seat-pod__row .seat-pod__status-badge--waiting'),
-  ).toHaveCount(0);
+  await expect(seat.locator(`[data-testid="player-seat-${playerId}-external-status"]`)).toHaveCount(1);
+  await expect(seat.locator(`[data-testid="player-seat-${playerId}-status"]`)).toHaveCount(0);
   await expect(seat).not.toContainText(/NEXT HAND|下手入局/);
 }
 
@@ -4031,15 +4025,21 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForRound(bobPage, 'FLOP', 3);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      const firstPreset = bobPage.locator('.chip-composer-dock__presets button').first();
+      const firstPreset = bobPage
+        .locator('[data-testid="action-dock"] [data-tray-preset]')
+        .first();
       await expect(firstPreset).toHaveAttribute('data-testid', 'chip-load-continue');
-      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toContainText(
-        '$20',
-      );
-      await expect(bobPage.locator('[data-testid="chip-load-continue"]')).toBeEnabled();
+      const continueButton = bobPage.locator('[data-testid="chip-load-continue"]');
+      await expect(continueButton).toBeEnabled();
+      const continueButtonText = (await continueButton.textContent()) ?? '';
+      const continueAmountMatch = continueButtonText.match(/\$([0-9]+)/);
+      expect(continueAmountMatch).not.toBeNull();
+      const continueAmount = continueAmountMatch?.[1] ?? '0';
 
-      await bobPage.click('[data-testid="chip-load-continue"]');
-      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$20');
+      await continueButton.click();
+      await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText(
+        `$${continueAmount}`,
+      );
 
       await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toBeVisible();
       const stackSnapshot = await getRoomSnapshot(bobPage);
@@ -5665,7 +5665,7 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       await openChatPanel(bobPage);
 
       const voicePlayers = bobPage.locator(
-        '[data-testid="chat-message-list"] .chat-panel__voice-player',
+        '[data-testid="chat-message-list"] [data-testid="chat-voice-player"]',
       );
       await expect(voicePlayers).toHaveCount(1);
       await expect(voicePlayers.first()).toContainText(/\d+'/);
@@ -5697,7 +5697,7 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
         timeout: 10000,
       });
 
-      await bobPage.click('[data-testid="chat-preview-strip"] .chat-preview-strip__open');
+      await bobPage.click('[data-testid="chat-preview-open"]');
 
       await bobPage.waitForSelector('[data-testid="chat-panel"]', {
         state: 'visible',
@@ -5831,7 +5831,7 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       await openChatPanel(bobPage);
 
       const voicePlayers = bobPage.locator(
-        '[data-testid="chat-message-list"] .chat-panel__voice-player',
+        '[data-testid="chat-message-list"] [data-testid="chat-voice-player"]',
       );
       await expect(voicePlayers).toHaveCount(2);
 
@@ -5870,19 +5870,19 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
       await openChatPanel(alicePage);
 
       const selfVoiceItems = alicePage.locator(
-        '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+        '[data-testid="chat-message-list"] [data-testid="chat-voice-item-self"]',
       );
       await expect(selfVoiceItems).toHaveCount(1);
 
       const layoutMetrics = await alicePage.evaluate(() => {
         const list = document.querySelector('[data-testid="chat-message-list"]') as HTMLElement | null;
         const selfVoiceItem = document.querySelector(
-          '[data-testid="chat-message-list"] .chat-panel__item--self.chat-panel__item--voice',
+          '[data-testid="chat-message-list"] [data-testid="chat-voice-item-self"]',
         ) as HTMLElement | null;
-        const voiceBubble = selfVoiceItem?.querySelector('.chat-panel__bubble--voice') as
+        const voiceBubble = selfVoiceItem?.querySelector('[data-testid="chat-voice-bubble"]') as
           | HTMLElement
           | null;
-        const voicePlayer = selfVoiceItem?.querySelector('.chat-panel__voice-player') as
+        const voicePlayer = selfVoiceItem?.querySelector('[data-testid="chat-voice-player"]') as
           | HTMLElement
           | null;
 

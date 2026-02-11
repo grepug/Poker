@@ -1,6 +1,45 @@
 @import "tailwindcss";
 
 :root {
+  --radius: 0.7rem;
+
+  --background: #05150f;
+  --foreground: #e5f5eb;
+
+  --card: #0e2018;
+  --card-foreground: #e5f5eb;
+
+  --popover: #0a1f16;
+  --popover-foreground: #e5f5eb;
+
+  --primary: #22c55e;
+  --primary-foreground: #052e16;
+
+  --secondary: #0f3a2a;
+  --secondary-foreground: #d1fae5;
+
+  --muted: #113325;
+  --muted-foreground: #9fc0ae;
+
+  --accent: #14532d;
+  --accent-foreground: #ecfdf5;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fff1f2;
+
+  --border: rgba(52, 211, 153, 0.35);
+  --input: rgba(16, 185, 129, 0.45);
+  --ring: rgba(52, 211, 153, 0.9);
+
+  --sidebar: #062217;
+  --sidebar-foreground: #e5f5eb;
+  --sidebar-primary: #22c55e;
+  --sidebar-primary-foreground: #052e16;
+  --sidebar-accent: #123524;
+  --sidebar-accent-foreground: #e5f5eb;
+  --sidebar-border: rgba(52, 211, 153, 0.3);
+  --sidebar-ring: rgba(52, 211, 153, 0.8);
+
   font-family: "Sora", "Space Grotesk", "Avenir Next", sans-serif;
   color-scheme: dark;
   --bg-deep: #05150f;
@@ -15,6 +54,50 @@
   --state-warning: #f97316;
   --state-danger: #ef4444;
   --state-safe: #22c55e;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 * {

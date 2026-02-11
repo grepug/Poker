@@ -1,0 +1,104 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "poker-registry",
+  "homepage": "https://internal.poker.local/registry",
+  "version": "0.1.0",
+  "items": [
+    {
+      "name": "@poker/poker-dark",
+      "type": "registry:style",
+      "title": "Poker Dark",
+      "description": "Dark casino-style token palette for poker tables and overlays."
+    },
+    {
+      "name": "@poker/home-panel",
+      "type": "registry:component",
+      "title": "Home Panel",
+      "description": "Lobby panel for player setup and room create/join flows."
+    },
+    {
+      "name": "@poker/seat-pod",
+      "type": "registry:component",
+      "title": "Seat Pod",
+      "description": "Compact player seat card for the poker table orbit."
+    },
+    {
+      "name": "@poker/community-cards-lane",
+      "type": "registry:component",
+      "title": "Community Cards Lane",
+      "description": "Shared board card lane in the table center."
+    },
+    {
+      "name": "@poker/pot-drop-zone",
+      "type": "registry:component",
+      "title": "Pot Drop Zone",
+      "description": "Bet drop target with live pot status and animation states."
+    },
+    {
+      "name": "@poker/chip-composer-dock",
+      "type": "registry:component",
+      "title": "Chip Composer Dock",
+      "description": "Turn action dock for check/call/raise/all-in flows."
+    },
+    {
+      "name": "@poker/action-center-alert",
+      "type": "registry:component",
+      "title": "Action Center Alert",
+      "description": "Center-screen action feedback for checks, raises, folds and all-ins."
+    },
+    {
+      "name": "@poker/turn-center-alert",
+      "type": "registry:component",
+      "title": "Turn Center Alert",
+      "description": "Center-screen indicator when turn ownership changes."
+    },
+    {
+      "name": "@poker/chat-panel",
+      "type": "registry:component",
+      "title": "Chat Panel",
+      "description": "In-game chat panel with text and voice playback support."
+    },
+    {
+      "name": "@poker/hand-results-panel",
+      "type": "registry:component",
+      "title": "Hand Results Panel",
+      "description": "Hand outcome summary panel with winner and hand strength details."
+    },
+    {
+      "name": "@poker/rules-modal",
+      "type": "registry:component",
+      "title": "Rules Modal",
+      "description": "Modal for game objective, flow, and hand ranking guidance."
+    },
+    {
+      "name": "@poker/rankings-modal",
+      "type": "registry:component",
+      "title": "Rankings Modal",
+      "description": "Table standings modal sorted by stack and net value."
+    },
+    {
+      "name": "@poker/settings-modal",
+      "type": "registry:component",
+      "title": "Settings Modal",
+      "description": "In-room settings for locale and host-only gameplay toggles."
+    },
+    {
+      "name": "@poker/end-game-confirm-modal",
+      "type": "registry:component",
+      "title": "End Game Confirm Modal",
+      "description": "Host confirmation modal before ending the game for everyone."
+    },
+    {
+      "name": "@poker/final-summary-modal",
+      "type": "registry:component",
+      "title": "Final Summary Modal",
+      "description": "Post-game standings and summary metrics modal."
+    },
+    {
+      "name": "@poker/table-shell",
+      "type": "registry:component",
+      "title": "Table Shell",
+      "description": "Main responsive table shell composition for poker gameplay."
+    }
+  ]
+}

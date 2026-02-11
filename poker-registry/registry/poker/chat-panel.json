@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/chat-panel",
+  "type": "registry:component",
+  "title": "Chat Panel",
+  "description": "In-game chat panel with text and voice playback support.",
+  "dependencies": [
+    "react",
+    "poker-types",
+    "socket.io-client"
+  ],
+  "registryDependencies": [
+    "button",
+    "input",
+    "scroll-area",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/chat-panel.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/chat-panel.tsx"
+    }
+  ]
+}
