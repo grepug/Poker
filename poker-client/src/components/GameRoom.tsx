@@ -2738,12 +2738,16 @@ export const GameRoom: React.FC = () => {
       <NextHandActionArea
         canReadyNextHand={canReadyNextHand}
         hasReadiedNextHand={hasReadiedCurrentPhase}
+        canEndGame={canHostEndGame}
         showNextStreetActionArea={showNextStreetActionArea}
         isResultRevealStep={isResultRevealStep}
         canRevealNextStreet={canRevealNextStreet}
         hasRevealedNextStreet={hasRevealedNextStreet}
         onReadyNextHand={markReady}
-        onOpenEndGameConfirm={() => setShowEndGameConfirmModal(true)}
+        onOpenEndGameConfirm={() => {
+          if (!canHostEndGame) return;
+          setShowEndGameConfirmModal(true);
+        }}
         onRevealNextStreet={revealNextStreet}
         t={t}
       />

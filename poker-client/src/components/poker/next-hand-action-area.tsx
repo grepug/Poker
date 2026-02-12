@@ -6,6 +6,7 @@ type Translate = (key: MessageKey, values?: Record<string, string | number>) => 
 type NextHandActionAreaProps = {
   canReadyNextHand: boolean;
   hasReadiedNextHand: boolean;
+  canEndGame: boolean;
   showNextStreetActionArea: boolean;
   isResultRevealStep: boolean;
   canRevealNextStreet: boolean;
@@ -19,6 +20,7 @@ type NextHandActionAreaProps = {
 export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
   canReadyNextHand,
   hasReadiedNextHand,
+  canEndGame,
   showNextStreetActionArea,
   isResultRevealStep,
   canRevealNextStreet,
@@ -46,13 +48,15 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
               >
                 {hasReadiedNextHand ? t("game.ready.waitingOthers") : t("common.ready")}
               </button>
-              <button
-                onClick={onOpenEndGameConfirm}
-                data-testid="end-game-button"
-                className="rounded-xl border border-rose-300/70 bg-rose-500/25 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35"
-              >
-                {t("game.endGame")}
-              </button>
+              {canEndGame && (
+                <button
+                  onClick={onOpenEndGameConfirm}
+                  data-testid="end-game-button"
+                  className="rounded-xl border border-rose-300/70 bg-rose-500/25 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35"
+                >
+                  {t("game.endGame")}
+                </button>
+              )}
             </div>
           </div>
         </section>

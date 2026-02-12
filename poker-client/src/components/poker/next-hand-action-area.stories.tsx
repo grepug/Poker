@@ -12,6 +12,7 @@ const meta = {
   args: {
     canReadyNextHand: true,
     hasReadiedNextHand: false,
+    canEndGame: true,
     showNextStreetActionArea: false,
     isResultRevealStep: false,
     canRevealNextStreet: true,
@@ -39,12 +40,14 @@ export const WaitingForOthers: Story = {
   args: {
     canReadyNextHand: true,
     hasReadiedNextHand: true,
+    canEndGame: false,
   },
 };
 
 export const RevealNextStreet: Story = {
   args: {
     canReadyNextHand: false,
+    canEndGame: false,
     showNextStreetActionArea: true,
     isResultRevealStep: false,
   },
