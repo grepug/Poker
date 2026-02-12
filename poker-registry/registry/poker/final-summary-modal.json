@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/final-summary-modal",
+  "type": "registry:component",
+  "title": "Final Summary Modal",
+  "description": "Post-game standings and summary metrics modal.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "table",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/final-summary-modal.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/final-summary-modal.tsx"
+    }
+  ]
+}

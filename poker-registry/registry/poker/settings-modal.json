@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/settings-modal",
+  "type": "registry:component",
+  "title": "Settings Modal",
+  "description": "In-room settings for locale and host-only gameplay toggles.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "select"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/settings-modal.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/settings-modal.tsx"
+    }
+  ]
+}

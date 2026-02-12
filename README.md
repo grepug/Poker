@@ -48,6 +48,7 @@ Poker/
 │       ├── storage/      # Storage layer
 │       ├── game/         # Game services
 │       └── events/       # WebSocket gateway
+├── poker-registry/       # Internal shadcn-compatible component registry
 └── poker-client/         # React frontend
     └── src/
         ├── components/   # React components
@@ -110,6 +111,24 @@ Poker/
    - Navigate to http://localhost:5173 in your browser
    - Create a new room or join an existing one
    - Share the room code with friends to play together!
+
+### Running the Internal UI Registry
+
+```bash
+cd poker-registry
+npm install
+npm run start
+```
+
+Registry default URL: [http://localhost:3022/registry/index.json](http://localhost:3022/registry/index.json)
+
+Available endpoints:
+
+- `/health`
+- `/registry/index.json`
+- `/registry/styles/poker-dark.json`
+- `/registry/poker/:item.json`
+- `/registry/files/*`
 
 ## 🐳 Docker Deployment
 
@@ -196,6 +215,14 @@ Quick mode (skip Playwright smoke):
 ./scripts/pregame-readiness.sh --fast
 ```
 
+Run comprehensive Playwright in parallel (worker count configurable):
+
+```bash
+cd poker-server
+PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 PW_WORKERS=4 \
+  npm run test:e2e:playwright:comprehensive:parallel
+```
+
 Current test coverage:
 
 - ✅ Deck utilities (17/17 tests passing)
@@ -215,7 +242,12 @@ Current test coverage:
   - Vite 7.x
   - Socket.io Client 4.8.x
   - Tailwind CSS 4.x
+  - shadcn/ui-compatible primitives + tokens
   - React Router DOM 7.x
+
+- **Internal UI Registry:**
+  - Node.js + Fastify
+  - shadcn-compatible registry JSON endpoints
 
 - **Shared:**
   - TypeScript

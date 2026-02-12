@@ -1,0 +1,27 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/poker-dark",
+  "type": "registry:style",
+  "title": "Poker Dark",
+  "description": "Dark casino-style token palette for poker tables and overlays.",
+  "cssVars": {
+    "theme": {
+      "radius": "0.7rem",
+      "background": "#05150f",
+      "foreground": "#e5f5eb",
+      "primary": "#22c55e",
+      "primary-foreground": "#052e16",
+      "secondary": "#0f3a2a",
+      "secondary-foreground": "#d1fae5",
+      "muted": "#113325",
+      "muted-foreground": "#9fc0ae",
+      "accent": "#14532d",
+      "accent-foreground": "#ecfdf5",
+      "border": "rgba(52, 211, 153, 0.35)",
+      "input": "rgba(16, 185, 129, 0.45)",
+      "ring": "rgba(52, 211, 153, 0.9)",
+      "destructive": "#ef4444",
+      "destructive-foreground": "#fff1f2"
+    }
+  }
+}

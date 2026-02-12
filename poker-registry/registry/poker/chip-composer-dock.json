@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/chip-composer-dock",
+  "type": "registry:component",
+  "title": "Chip Composer Dock",
+  "description": "Turn action dock for check/call/raise/all-in flows.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "button",
+    "input",
+    "badge",
+    "tooltip"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/chip-composer-dock.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/chip-composer-dock.tsx"
+    }
+  ]
+}

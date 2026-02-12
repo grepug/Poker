@@ -31,7 +31,7 @@ export class GameService {
       bigBlind: 10,
       maxPlayers: 10,
       reconnectGracePeriod: 120000,
-      allowPlayerStreetReveal: true,
+      allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
 
     const host: Player = {

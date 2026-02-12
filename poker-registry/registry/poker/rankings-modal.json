@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/rankings-modal",
+  "type": "registry:component",
+  "title": "Rankings Modal",
+  "description": "Table standings modal sorted by stack and net value.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "table"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/rankings-modal.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/rankings-modal.tsx"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/rules-modal",
+  "type": "registry:component",
+  "title": "Rules Modal",
+  "description": "Modal for game objective, flow, and hand ranking guidance.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "table",
+    "scroll-area"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/rules-modal.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/rules-modal.tsx"
+    }
+  ]
+}

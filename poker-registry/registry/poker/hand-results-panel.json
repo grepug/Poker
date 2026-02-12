@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "@poker/hand-results-panel",
+  "type": "registry:component",
+  "title": "Hand Results Panel",
+  "description": "Hand outcome summary panel with winner and hand strength details.",
+  "dependencies": [
+    "react",
+    "poker-types"
+  ],
+  "registryDependencies": [
+    "table",
+    "badge"
+  ],
+  "files": [
+    {
+      "path": "/registry/files/poker/hand-results-panel.tsx",
+      "type": "registry:component",
+      "target": "src/components/poker/hand-results-panel.tsx"
+    }
+  ]
+}
