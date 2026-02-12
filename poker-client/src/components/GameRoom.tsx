@@ -1309,7 +1309,6 @@ export const GameRoom: React.FC = () => {
     [currentReadyPhase, room?.readyPhase, room?.readyPlayerIds],
   );
   const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
-  const waitingForOthersNextHand = canReadyNextHand && hasReadiedCurrentPhase;
   const showPreGameReadyButton =
     !isGameStarted && !isGameEnded && (room?.players.length ?? 0) >= 2;
   const shouldShowSeatReadyOverlay =
@@ -2739,7 +2738,6 @@ export const GameRoom: React.FC = () => {
       <NextHandActionArea
         canReadyNextHand={canReadyNextHand}
         hasReadiedNextHand={hasReadiedCurrentPhase}
-        waitingForOthersNextHand={waitingForOthersNextHand}
         showNextStreetActionArea={showNextStreetActionArea}
         isResultRevealStep={isResultRevealStep}
         canRevealNextStreet={canRevealNextStreet}

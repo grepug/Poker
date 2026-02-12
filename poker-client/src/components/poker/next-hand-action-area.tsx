@@ -6,7 +6,6 @@ type Translate = (key: MessageKey, values?: Record<string, string | number>) => 
 type NextHandActionAreaProps = {
   canReadyNextHand: boolean;
   hasReadiedNextHand: boolean;
-  waitingForOthersNextHand: boolean;
   showNextStreetActionArea: boolean;
   isResultRevealStep: boolean;
   canRevealNextStreet: boolean;
@@ -20,7 +19,6 @@ type NextHandActionAreaProps = {
 export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
   canReadyNextHand,
   hasReadiedNextHand,
-  waitingForOthersNextHand,
   showNextStreetActionArea,
   isResultRevealStep,
   canRevealNextStreet,
@@ -56,15 +54,6 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
                 {t("game.endGame")}
               </button>
             </div>
-          </div>
-        </section>
-      )}
-
-      {waitingForOthersNextHand && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="waiting-host-start-next-hand">
-          <div>
-            <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
-            <p className="text-xs text-emerald-100/70">{t("game.ready.waitingOthers")}</p>
           </div>
         </section>
       )}

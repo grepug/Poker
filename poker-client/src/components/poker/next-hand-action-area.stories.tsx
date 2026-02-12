@@ -12,7 +12,6 @@ const meta = {
   args: {
     canReadyNextHand: true,
     hasReadiedNextHand: false,
-    waitingForOthersNextHand: false,
     showNextStreetActionArea: false,
     isResultRevealStep: false,
     canRevealNextStreet: true,
@@ -36,10 +35,10 @@ type Story = StoryObj<typeof meta>;
 
 export const HostControls: Story = {};
 
-export const WaitingForHost: Story = {
+export const WaitingForOthers: Story = {
   args: {
-    canReadyNextHand: false,
-    waitingForOthersNextHand: true,
+    canReadyNextHand: true,
+    hasReadiedNextHand: true,
   },
 };
 
