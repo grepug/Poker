@@ -4345,11 +4345,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="start-next-hand-button"]'),
       ).toBeVisible();
       await expect(
-        alicePage.locator('[data-testid="ready-status-panel"]'),
-      ).toBeVisible();
+        alicePage.locator('[data-testid$="-ready-overlay"]'),
+      ).toHaveCount(2);
       await expect(
-        bobPage.locator('[data-testid="ready-status-panel"]'),
-      ).toBeVisible();
+        bobPage.locator('[data-testid$="-ready-overlay"]'),
+      ).toHaveCount(2);
 
       await alicePage.click('[data-testid="start-next-hand-button"]');
       await waitForHandStart(alicePage, 2);
