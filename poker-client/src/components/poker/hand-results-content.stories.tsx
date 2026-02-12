@@ -49,6 +49,7 @@ const meta = {
     currentHandNumber: 22,
     totalPot: 480,
     winnerCount: 1,
+    myNetChange: 240,
     currentPlayerId: "p1",
     communityCards,
     payoutBreakdownRows: [
@@ -73,6 +74,7 @@ const meta = {
         rankOrder: 1,
         isWinner: true,
         amountWon: 360,
+        netChange: 240,
         cards: [
           { rank: "K", suit: "spades" },
           { rank: "9", suit: "spades" },
@@ -85,6 +87,7 @@ const meta = {
         rankOrder: 2,
         isWinner: false,
         amountWon: 0,
+        netChange: -120,
         cards: [
           { rank: "A", suit: "diamonds" },
           { rank: "A", suit: "clubs" },

@@ -306,6 +306,7 @@ export class HandService {
     if (activePlayers.length === 0) {
       throw new Error('No active players');
     }
+    const contributions = this.getHandContributions(room);
 
     // If only one player left, they win
     if (activePlayers.length === 1) {
@@ -356,6 +357,7 @@ export class HandService {
             uncontested: activePlayers.length === 1,
           },
         ],
+        netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
       };
 
       await this.cleanupHand(room, winner.id);
@@ -372,7 +374,7 @@ export class HandService {
       evaluations.map((entry) => [entry.player.id, entry]),
     );
     const sidePotSegments = this.buildPotSegments(
-      this.getHandContributions(room),
+      contributions,
       hand.activePlayers,
     );
 
@@ -517,6 +519,7 @@ export class HandService {
         })),
       totalPot: hand.pot,
       payouts,
+      netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
     };
 
     await this.cleanupHand(room, winners[0]?.playerId);
@@ -601,6 +604,24 @@ export class HandService {
     }
 
     return segments;
+  }
+
+  private buildNetByPlayerId(
+    contributions: Record<string, number>,
+    payouts: Map<string, number>,
+  ): Record<string, number> {
+    const netByPlayerId: Record<string, number> = {};
+    const playerIds = new Set<string>([
+      ...Object.keys(contributions),
+      ...Array.from(payouts.keys()),
+    ]);
+
+    for (const playerId of playerIds) {
+      netByPlayerId[playerId] =
+        (payouts.get(playerId) || 0) - (contributions[playerId] || 0);
+    }
+
+    return netByPlayerId;
   }
 
   /**

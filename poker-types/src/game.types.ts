@@ -67,4 +67,5 @@ export interface HandResult {
   }>;
   totalPot: number;
   payouts: PotPayout[];
+  netByPlayerId?: Record<string, number>; // Net chip change per player for this hand
 }

@@ -1339,20 +1339,30 @@ export const GameRoom: React.FC = () => {
       ),
     [lastHandResult],
   );
+  const netByPlayerId = useMemo(() => lastHandResult?.netByPlayerId ?? {}, [lastHandResult]);
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
   );
+  const myHandNetChange = useMemo(() => {
+    if (!player?.id || !lastHandResult) return null;
+    const netFromResult = netByPlayerId[player.id];
+    if (typeof netFromResult === "number") {
+      return netFromResult;
+    }
+    return winnersByPlayerId.get(player.id)?.amountWon ?? 0;
+  }, [lastHandResult, netByPlayerId, player?.id, winnersByPlayerId]);
 
   const handResultRows = useMemo(() => {
     if (!lastHandResult) return [];
     return lastHandResult.playerHands.map((entry, idx) => ({
       ...entry,
       amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
+      netChange: netByPlayerId[entry.playerId] ?? winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
       isWinner: winnersByPlayerId.has(entry.playerId),
       rankOrder: idx + 1,
     }));
-  }, [lastHandResult, winnersByPlayerId]);
+  }, [lastHandResult, netByPlayerId, winnersByPlayerId]);
 
   const payoutBreakdownRows = useMemo(() => {
     if (!lastHandResult) return [];
@@ -2685,6 +2695,7 @@ export const GameRoom: React.FC = () => {
             currentHandNumber={currentHandNumber}
             totalPot={lastHandResult.totalPot}
             winnerCount={lastHandResult.winners.length}
+            myNetChange={myHandNetChange}
             currentPlayerId={player.id}
             communityCards={Array.from(
               { length: 5 },
