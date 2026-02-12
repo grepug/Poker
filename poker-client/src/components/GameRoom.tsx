@@ -1744,11 +1744,7 @@ export const GameRoom: React.FC = () => {
           remainingLabel: `$${seatPlayer.chips}`,
           seatState: seatMainState,
           densityClass: seatDensityClass,
-          readyOverlayLabel: showReadyOverlay
-            ? seatIsReady
-              ? t("game.ready.readyBadge")
-              : t("game.ready.pendingBadge")
-            : null,
+          readyOverlayLabel: showReadyOverlay && seatIsReady ? t("game.ready.readyBadge") : null,
           readyOverlayTone,
         };
       }),
