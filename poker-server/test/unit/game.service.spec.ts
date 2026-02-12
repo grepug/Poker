@@ -273,6 +273,48 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
+  it('rejects left player reclaim when table is full and original seat is occupied', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      maxPlayers: 2,
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-charlie',
+          socketId: 's-charlie',
+          name: 'Charlie',
+          position: 1,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: '',
+          name: 'Bob',
+          position: 1,
+          chips: 425,
+          totalBuyIn: 1000,
+          status: 'left',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    await expect(
+      gameService.addPlayerToRoom('ROOM01', 's-new-bob', 'Bob'),
+    ).rejects.toThrow('Room is full');
+    expect(storageService.saveRoom).not.toHaveBeenCalled();
+  });
+
   it('ignores left players for room capacity checks', async () => {
     const room = createRoom({
       gameState: 'WAITING',

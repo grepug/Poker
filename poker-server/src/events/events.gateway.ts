@@ -1083,12 +1083,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             if (
               room.currentHand &&
               room.gameState === 'IN_PROGRESS' &&
-              room.currentHand.currentPlayerTurn === null &&
               room.currentHand.bettingRound !== 'SHOWDOWN'
             ) {
               if (this.bettingService.isBettingRoundComplete(room)) {
                 await this.handleBettingRoundComplete(room);
-              } else {
+              } else if (room.currentHand.currentPlayerTurn === null) {
                 const nextPlayer = this.handService.getNextPlayer(room);
                 if (nextPlayer) {
                   room.currentHand.currentPlayerTurn = nextPlayer.id;

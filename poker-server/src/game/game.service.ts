@@ -98,19 +98,32 @@ export class GameService {
       }
 
       const priorStatus = existingPlayer.status;
+      const maxPlayers = room.config.maxPlayers;
+      if (priorStatus === 'left') {
+        const seatedPlayers = this.getSeatedPlayers(room);
+        const reclaimedSeatUnavailable =
+          existingPlayer.position < 0 ||
+          existingPlayer.position >= maxPlayers ||
+          seatedPlayers.some(
+            (player) => player.position === existingPlayer.position,
+          );
+
+        if (reclaimedSeatUnavailable) {
+          if (seatedPlayers.length >= maxPlayers) {
+            throw new Error('Room is full');
+          }
+
+          const nextPosition = this.findNextAvailablePosition(room);
+          if (nextPosition < 0 || nextPosition >= maxPlayers) {
+            throw new Error('Room is full');
+          }
+          existingPlayer.position = nextPosition;
+        }
+      }
+
       existingPlayer.socketId = socketId;
       existingPlayer.status =
         priorStatus === 'left' ? ('waiting' as PlayerStatus) : 'connected';
-      if (
-        priorStatus === 'left' &&
-        this.getSeatedPlayers(room).some(
-          (player) =>
-            player.id !== existingPlayer.id &&
-            player.position === existingPlayer.position,
-        )
-      ) {
-        existingPlayer.position = this.findNextAvailablePosition(room);
-      }
       existingPlayer.lastConnectedAt = Date.now();
       if (priorStatus === 'left') {
         existingPlayer.cards = null;
@@ -137,6 +150,9 @@ export class GameService {
     const joinsDuringActiveGame = room.gameState === 'IN_PROGRESS';
     const playerId = generatePlayerId();
     const position = this.findNextAvailablePosition(room);
+    if (position < 0 || position >= room.config.maxPlayers) {
+      throw new Error('Room is full');
+    }
     const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
     const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
@@ -341,7 +357,7 @@ export class GameService {
       }
     }
 
-    return this.getSeatedPlayers(room).length; // Fallback
+    return -1;
   }
 
   /**
