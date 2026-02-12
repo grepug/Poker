@@ -213,6 +213,7 @@ export interface PlayerDisconnectedData {
 export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
+  status?: PlayerStatus;
 }
 
 export interface PlayerAutoFoldedData {

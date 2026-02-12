@@ -162,7 +162,8 @@ export class BettingService {
       (p) =>
         hand.activePlayers.includes(p.id) &&
         p.status !== 'folded' &&
-        p.status !== 'all-in',
+        p.status !== 'all-in' &&
+        p.status !== 'left',
     );
 
     // If there's an outstanding bet that hasn't been called, round is not complete
@@ -171,6 +172,7 @@ export class BettingService {
         hand.activePlayers.includes(p.id) &&
         p.status !== 'folded' &&
         p.status !== 'all-in' &&
+        p.status !== 'left' &&
         p.currentBet < hand.currentBet,
     );
 

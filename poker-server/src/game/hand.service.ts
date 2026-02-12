@@ -28,12 +28,13 @@ export class HandService {
    * Start a new hand
    */
   async startNewHand(room: Room): Promise<Hand> {
-    if (room.players.length < 2) {
+    const seatedPlayers = room.players.filter((player) => player.status !== 'left');
+    if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
     }
 
     // Auto-refill busted players with starting chips and track it as an added buy-in.
-    for (const player of room.players) {
+    for (const player of seatedPlayers) {
       if (player.chips === 0) {
         player.chips = room.config.startingChips;
         player.totalBuyIn = (player.totalBuyIn ?? 0) + room.config.startingChips;
@@ -166,6 +167,7 @@ export class HandService {
         hand.activePlayers.includes(p.id) &&
         p.status !== 'folded' &&
         p.status !== 'all-in' &&
+        p.status !== 'left' &&
         p.chips > 0,
     );
 
@@ -301,8 +303,8 @@ export class HandService {
       `[determineWinner] START - pot: ${hand.pot}, players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
 
-    const activePlayers = room.players.filter((p) =>
-      hand.activePlayers.includes(p.id),
+    const activePlayers = room.players.filter(
+      (p) => hand.activePlayers.includes(p.id) && p.status !== 'left',
     );
 
     if (activePlayers.length === 0) {
@@ -658,6 +660,7 @@ export class HandService {
           hand.activePlayers.includes(p.id) &&
           p.status !== 'folded' &&
           p.status !== 'all-in' &&
+          p.status !== 'left' &&
           p.chips > 0,
       ),
     );

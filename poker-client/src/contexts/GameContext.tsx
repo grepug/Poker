@@ -447,7 +447,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         if (!prev) return null;
         return {
           ...prev,
-          players: prev.players.filter((p) => p.id !== data.playerId),
+          players: prev.players.map((p) =>
+            p.id === data.playerId
+              ? {
+                  ...p,
+                  status: "left",
+                  cards: null,
+                  currentBet: 0,
+                  lastAction: null,
+                }
+              : p,
+          ),
         };
       });
     });
@@ -470,18 +480,19 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     });
 
     socket.on("PLAYER_RECONNECTED", (data) => {
+      const nextStatus = data.status || "connected";
       setRoom((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           players: prev.players.map((p) =>
-            p.id === data.playerId ? { ...p, status: "connected" } : p,
+            p.id === data.playerId ? { ...p, status: nextStatus } : p,
           ),
         };
       });
       setPlayer((prev) =>
         prev && prev.id === data.playerId
-          ? { ...prev, status: "connected" }
+          ? { ...prev, status: nextStatus }
           : prev,
       );
     });

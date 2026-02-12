@@ -1185,12 +1185,16 @@ export const GameRoom: React.FC = () => {
   const previousIsYourTurnRef = useRef<boolean | null>(null);
 
   const currentHand = room?.currentHand ?? null;
+  const tablePlayers = useMemo(
+    () => room?.players.filter((entry) => entry.status !== "left") ?? [],
+    [room?.players],
+  );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
   const currentPlayer = room?.players.find((entry) => entry.id === player?.id) ?? null;
   const currentTurnPlayer =
-    room?.players.find((entry) => entry.id === currentHand?.currentPlayerTurn) ?? null;
+    tablePlayers.find((entry) => entry.id === currentHand?.currentPlayerTurn) ?? null;
 
   const minRaise = useMemo(() => {
     if (!room) return 0;
@@ -1427,8 +1431,8 @@ export const GameRoom: React.FC = () => {
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () => getSeatSlotWidth(room?.players.length ?? 0),
-    [room?.players.length],
+    () => getSeatSlotWidth(tablePlayers.length),
+    [tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -1600,7 +1604,7 @@ export const GameRoom: React.FC = () => {
       anchor: SeatAnchor;
     }>;
     const myPosition = currentPlayer?.position ?? player.position;
-    const orderedPlayers = [...room.players].sort((a, b) => {
+    const orderedPlayers = [...tablePlayers].sort((a, b) => {
       const aOffset = (a.position - myPosition + orbitCapacity) % orbitCapacity;
       const bOffset = (b.position - myPosition + orbitCapacity) % orbitCapacity;
       return aOffset - bOffset;
@@ -1627,8 +1631,8 @@ export const GameRoom: React.FC = () => {
     feltSize.width,
     orbitCapacity,
     player,
-    room,
     seatSlotWidthPx,
+    tablePlayers,
     tableCornerRadiusPx.cornerRadiusX,
     tableCornerRadiusPx.cornerRadiusY,
   ]);
@@ -2587,7 +2591,7 @@ export const GameRoom: React.FC = () => {
       <TableTopBar
         roomTitle={t("game.room", { roomId: room.id })}
         playerCountLabel={t("game.playersCount", {
-          count: room.players.length,
+          count: tablePlayers.length,
           max: room.config.maxPlayers,
         })}
         inviteCopyLabel={t("game.copyInvite")}
