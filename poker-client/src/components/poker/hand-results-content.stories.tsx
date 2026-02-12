@@ -50,6 +50,7 @@ const meta = {
     totalPot: 480,
     winnerCount: 1,
     myNetChange: 240,
+    showNetChange: true,
     currentPlayerId: "p1",
     communityCards,
     payoutBreakdownRows: [

@@ -23,7 +23,7 @@ type HandResultRow = {
   rankOrder: number;
   isWinner: boolean;
   amountWon: number;
-  netChange: number;
+  netChange: number | null;
   cards: PokerCard[];
   hand: HandEvaluation | null;
 };
@@ -33,6 +33,7 @@ type HandResultsContentProps = {
   totalPot: number;
   winnerCount: number;
   myNetChange: number | null;
+  showNetChange: boolean;
   currentPlayerId: string;
   communityCards: Array<PokerCard | null>;
   payoutBreakdownRows: PayoutBreakdownRow[];
@@ -48,6 +49,7 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   totalPot,
   winnerCount: _winnerCount,
   myNetChange,
+  showNetChange,
   currentPlayerId,
   communityCards,
   payoutBreakdownRows,
@@ -191,7 +193,11 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                       {isSelf ? ` (${t("common.you")})` : ""}
                     </p>
                     <p className="text-xs text-emerald-100/70">
-                      {t("game.netChange", { amount: formatNet(entry.netChange) })}
+                      {showNetChange && typeof entry.netChange === "number"
+                        ? t("game.netChange", { amount: formatNet(entry.netChange) })
+                        : entry.isWinner
+                          ? t("game.wonAmount", { amount: entry.amountWon })
+                          : t("game.noPayout")}
                     </p>
                   </div>
                   {entry.isWinner && (
