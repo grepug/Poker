@@ -718,6 +718,10 @@ body {
   max-width: min(7.6rem, calc(100% + 4.6rem));
 }
 
+.seat-pod__status-badge--inline-action {
+  margin-left: 0;
+}
+
 
 .seat-pod__row--action,
 .seat-pod__row--remaining {

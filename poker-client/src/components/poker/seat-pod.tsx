@@ -47,6 +47,9 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   seatState,
   densityClass,
 }) => {
+  const shouldRenderStatusInActionRow =
+    seatState === "folded" && Boolean(internalStatusLabel);
+
   return (
     <div
       data-testid={testId}
@@ -91,7 +94,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         </span>
         <span className="seat-pod__name">{playerName}</span>
 
-        {internalStatusLabel && (
+        {internalStatusLabel && !shouldRenderStatusInActionRow && (
           <span
             className={`seat-pod__status-badge ${internalStatusToneClass}`}
             data-testid={`${testId}-status`}
@@ -103,15 +106,29 @@ export const SeatPod: React.FC<SeatPodProps> = ({
       </div>
 
       <div className="seat-pod__row seat-pod__row--action">
-        <div
-          className={cn(
-            "seat-pod__action",
-            actionLabel ? `seat-pod__action--${actionLabel.tone}` : "",
-          )}
-          data-testid={`${testId}-action`}
-        >
-          {actionLabel?.text ?? ""}
-        </div>
+        {shouldRenderStatusInActionRow ? (
+          <span
+            className={cn(
+              "seat-pod__status-badge",
+              "seat-pod__status-badge--inline-action",
+              internalStatusToneClass,
+            )}
+            data-testid={`${testId}-status`}
+            data-seat-status={internalStatusLabel}
+          >
+            {internalStatusLabel}
+          </span>
+        ) : (
+          <div
+            className={cn(
+              "seat-pod__action",
+              actionLabel ? `seat-pod__action--${actionLabel.tone}` : "",
+            )}
+            data-testid={`${testId}-action`}
+          >
+            {actionLabel?.text ?? ""}
+          </div>
+        )}
       </div>
 
       <div className="seat-pod__row seat-pod__row--remaining">
