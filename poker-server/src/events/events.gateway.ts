@@ -279,6 +279,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.server.to(room.id).emit('PLAYER_RECONNECTED', {
             playerId: player.id,
             playerName: player.name,
+            status: player.status,
           });
         } else {
           // Notify all in room
@@ -347,6 +348,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
           playerId: player.id,
           playerName: player.name,
+          status: player.status,
         });
 
         this.logger.log(
@@ -1051,6 +1053,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return await this.runRoomActionSequentially(
         playerInfo.roomId,
         async () => {
+          const roomBeforeLeave = await this.getRoom(playerInfo.roomId);
+          const leavingPlayer = roomBeforeLeave?.players.find(
+            (player) => player.id === playerInfo.playerId,
+          );
           const room = await this.gameService.removePlayerFromRoom(
             playerInfo.roomId,
             playerInfo.playerId,
@@ -1062,7 +1068,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           if (room) {
             this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
               playerId: playerInfo.playerId,
-              playerName: '', // Would need to cache
+              playerName: leavingPlayer?.name ?? '',
             });
 
             // If host changed
@@ -1073,6 +1079,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 newHostId: newHost.id,
                 newHostName: newHost.name,
               });
+            }
+
+            if (
+              room.currentHand &&
+              room.gameState === 'IN_PROGRESS' &&
+              room.currentHand.bettingRound !== 'SHOWDOWN'
+            ) {
+              if (this.bettingService.isBettingRoundComplete(room)) {
+                await this.handleBettingRoundComplete(room);
+              } else if (room.currentHand.currentPlayerTurn === null) {
+                const nextPlayer = this.handService.getNextPlayer(room);
+                if (nextPlayer) {
+                  room.currentHand.currentPlayerTurn = nextPlayer.id;
+                  await this.storageService.saveRoom(room);
+                  this.emitPlayerTurn(room, nextPlayer);
+                }
+              }
             }
           } else {
             await this.chatStorageService.deleteRoomChat(playerInfo.roomId);

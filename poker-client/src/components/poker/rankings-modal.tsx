@@ -12,6 +12,7 @@ type PlayerRanking = {
   tableStack: number;
   totalBuyIn: number;
   net: number;
+  status?: string;
 };
 
 type RankingsModalProps = {
@@ -66,6 +67,7 @@ export const RankingsModal: React.FC<RankingsModalProps> = ({
                 <td className="px-3 py-2">
                   {rankedPlayer.name}
                   {rankedPlayer.id === currentPlayerId ? ` (${t("common.you")})` : ""}
+                  {rankedPlayer.status === "left" ? ` (${t("game.status.left")})` : ""}
                 </td>
                 <td className="px-3 py-2 text-right">${rankedPlayer.tableStack}</td>
                 <td className="px-3 py-2 text-right">${rankedPlayer.totalBuyIn}</td>
