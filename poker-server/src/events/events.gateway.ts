@@ -956,6 +956,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           playerId: player.id,
           playerName: player.name,
           action: resolvedAction,
+          playerStatus: updatedPlayer.status,
           amount: resolvedAction === 'all-in' ? undefined : data.amount,
           displayKind,
           totalBetAfterAction: updatedPlayer.currentBet,

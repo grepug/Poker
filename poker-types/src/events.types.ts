@@ -1,5 +1,5 @@
 import { Card } from "./card.types";
-import { Player, PlayerAction } from "./player.types";
+import { Player, PlayerAction, PlayerStatus } from "./player.types";
 import { Room, RoomConfig, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
 import {
@@ -146,6 +146,7 @@ export interface PlayerActedData {
   playerId: string;
   playerName: string;
   action: PlayerAction;
+  playerStatus?: PlayerStatus;
   amount?: number;
   displayKind?: PlayerActionDisplayKind;
   totalBetAfterAction?: number;
