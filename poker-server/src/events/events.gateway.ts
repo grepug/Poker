@@ -28,6 +28,7 @@ import {
   RevealNextStreetData,
   ShowMyHandData,
   UpdateRoomConfigData,
+  PlayerReadyData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -41,6 +42,8 @@ import {
   NextStreetRevealStateData,
   PlayerHandRevealedData,
   RoomConfigUpdatedData,
+  ReadyStateUpdatedData,
+  ReadyPhase,
   ChatHistorySyncData,
   ChatMessage,
   GetChatHistoryData,
@@ -165,6 +168,150 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {}
 
+  private resolveRoomReadyPhase(room: any): ReadyPhase | null {
+    if (room?.gameState === 'WAITING') {
+      return 'START_GAME';
+    }
+
+    if (
+      room?.gameState === 'IN_PROGRESS' &&
+      room?.currentHand &&
+      room.currentHand.currentPlayerTurn === null &&
+      room.currentHand.lastResult
+    ) {
+      return 'NEXT_HAND';
+    }
+
+    return null;
+  }
+
+  private getReadyEligiblePlayerIds(room: any): string[] {
+    return (room?.players ?? [])
+      .filter((player: any) => player.status !== 'left' && player.status !== 'disconnected')
+      .map((player: any) => player.id);
+  }
+
+  private syncRoomReadyState(room: any): void {
+    const phase = this.resolveRoomReadyPhase(room);
+    const eligiblePlayerIds = this.getReadyEligiblePlayerIds(room);
+    const currentReady = Array.isArray(room?.readyPlayerIds) ? room.readyPlayerIds : [];
+
+    if (!phase) {
+      room.readyPhase = null;
+      room.readyPlayerIds = [];
+      return;
+    }
+
+    room.readyPhase = phase;
+    room.readyPlayerIds = currentReady.filter((playerId: string) =>
+      eligiblePlayerIds.includes(playerId),
+    );
+  }
+
+  private emitReadyStateUpdated(roomId: string, room: any): void {
+    const payload: ReadyStateUpdatedData = {
+      phase: room?.readyPhase ?? null,
+      readyPlayerIds: room?.readyPlayerIds ?? [],
+    };
+    this.server.to(roomId).emit('READY_STATE_UPDATED', payload);
+  }
+
+  private areAllEligiblePlayersReady(room: any): boolean {
+    const eligiblePlayerIds = this.getReadyEligiblePlayerIds(room);
+    if (eligiblePlayerIds.length < 2) {
+      return false;
+    }
+
+    const readySet = new Set(room?.readyPlayerIds ?? []);
+    return eligiblePlayerIds.every((playerId) => readySet.has(playerId));
+  }
+
+  private async startGameAndBroadcast(room: any): Promise<void> {
+    const hand = await this.handService.startNewHand(room);
+    const updatedRoom = await this.getRoom(room.id);
+
+    const { activePlayers, ...handWithoutActivePlayers } = hand;
+    const gameStartedData: GameStartedData = {
+      hand: handWithoutActivePlayers,
+      players: updatedRoom.players.map((p) => ({
+        ...this.sanitizePlayer(p),
+        hasCards: !!p.cards,
+      })),
+    };
+
+    this.server.to(room.id).emit('GAME_STARTED', gameStartedData);
+
+    for (const seatPlayer of updatedRoom.players) {
+      if (seatPlayer.cards && seatPlayer.socketId) {
+        this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
+          cards: seatPlayer.cards,
+        } as YourCardsData);
+      }
+    }
+
+    const currentPlayer = updatedRoom.players.find(
+      (p) => p.id === hand.currentPlayerTurn,
+    );
+    if (currentPlayer) {
+      this.emitPlayerTurn(updatedRoom, currentPlayer);
+    }
+
+    this.logger.log(`Game started in room ${room.id}`);
+  }
+
+  private async markPlayerReadyAndMaybeStart(
+    roomId: string,
+    playerId: string,
+    phase: ReadyPhase,
+    allowTestShortcut: boolean,
+  ) {
+    const room = await this.getRoom(roomId);
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    if (room.gameState === 'ENDED') {
+      throw new Error('Game has ended. Leave room to start a new game.');
+    }
+
+    this.syncRoomReadyState(room);
+    if (room.readyPhase !== phase) {
+      throw new Error('Not accepting ready actions right now');
+    }
+
+    const eligiblePlayerIds = this.getReadyEligiblePlayerIds(room);
+    if (!eligiblePlayerIds.includes(playerId)) {
+      throw new Error('You are not eligible to ready');
+    }
+
+    const readySet = new Set(room.readyPlayerIds ?? []);
+    readySet.add(playerId);
+
+    if (allowTestShortcut && this.testDeckService.isTestMode()) {
+      for (const eligiblePlayerId of eligiblePlayerIds) {
+        readySet.add(eligiblePlayerId);
+      }
+    }
+
+    room.readyPlayerIds = [...readySet];
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+    this.emitReadyStateUpdated(room.id, room);
+
+    const allReady = this.areAllEligiblePlayersReady(room);
+    if (!allReady) {
+      return { started: false };
+    }
+
+    if (phase === 'START_GAME') {
+      await this.startGameAndBroadcast(room);
+      return { started: true };
+    }
+
+    await this.startAndBroadcastNewHand(room.id);
+    return { started: true };
+  }
+
   handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
   }
@@ -196,7 +343,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }, gracePeriod);
 
         this.disconnectTimers.set(playerId, timer);
-        await this.gameService.markPlayerDisconnected(roomId, playerId);
+        const updatedRoom = await this.gameService.markPlayerDisconnected(roomId, playerId);
+        if (updatedRoom) {
+          this.syncRoomReadyState(updatedRoom);
+          await this.storageService.saveRoom(updatedRoom);
+          this.emitReadyStateUpdated(roomId, updatedRoom);
+        }
 
         // Notify room of disconnect
         this.server.to(roomId).emit('PLAYER_DISCONNECTED', {
@@ -296,6 +448,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.log(
           `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
         );
+        this.syncRoomReadyState(room);
+        await this.storageService.saveRoom(room);
+        this.emitReadyStateUpdated(room.id, room);
         return { success: true };
       });
     } catch (error) {
@@ -337,6 +492,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         // Get full room state - simplified, would need full sync
         const room = await this.getRoom(data.roomId);
+        if (!room) {
+          throw new Error('Room not found');
+        }
+        this.syncRoomReadyState(room);
+        await this.storageService.saveRoom(room);
         client.emit('RECONNECT_SUCCESS', {
           player,
           room: this.sanitizeRoom(room),
@@ -348,6 +508,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           playerId: player.id,
           playerName: player.name,
         });
+        this.emitReadyStateUpdated(data.roomId, room);
 
         this.logger.log(
           `Player ${player.name} reconnected to room ${data.roomId}`,
@@ -491,54 +652,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
-
-      const room = await this.getRoom(playerInfo.roomId);
-      if (!room) throw new Error('Room not found');
-
-      // Verify host
-      if (room.hostId !== playerInfo.playerId) {
-        throw new Error('Only host can start game');
-      }
-
-      if (room.gameState === 'ENDED') {
-        throw new Error('Game has ended. Leave room to start a new game.');
-      }
-
-      const hand = await this.handService.startNewHand(room);
-      const updatedRoom = await this.getRoom(playerInfo.roomId);
-
-      // Broadcast game started
-      const { activePlayers, ...handWithoutActivePlayers } = hand;
-      const gameStartedData: GameStartedData = {
-        hand: handWithoutActivePlayers,
-        players: updatedRoom.players.map((p) => ({
-          ...this.sanitizePlayer(p),
-          hasCards: !!p.cards,
-        })),
-      };
-
-      this.server.to(playerInfo.roomId).emit('GAME_STARTED', gameStartedData);
-
-      // Send cards to each player privately after GAME_STARTED.
-      // Client state resets cards on GAME_STARTED to avoid stale hand data.
-      for (const seatPlayer of updatedRoom.players) {
-        if (seatPlayer.cards && seatPlayer.socketId) {
-          this.server.to(seatPlayer.socketId).emit('YOUR_CARDS', {
-            cards: seatPlayer.cards,
-          } as YourCardsData);
-        }
-      }
-
-      // Emit first player's turn
-      const currentPlayer = updatedRoom.players.find(
-        (p) => p.id === hand.currentPlayerTurn,
-      );
-      if (currentPlayer) {
-        this.emitPlayerTurn(updatedRoom, currentPlayer);
-      }
-
-      this.logger.log(`Game started in room ${playerInfo.roomId}`);
-      return { success: true };
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const result = await this.markPlayerReadyAndMaybeStart(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          'START_GAME',
+          true,
+        );
+        return { success: true, started: result.started };
+      });
     } catch (error) {
       this.logger.error(`Start game error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
@@ -551,31 +673,50 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const playerInfo = this.socketToPlayer.get(client.id);
       if (!playerInfo) throw new Error('Not in a room');
-
-      const room = await this.getRoom(playerInfo.roomId);
-      if (!room) throw new Error('Room not found');
-
-      // Verify host
-      if (room.hostId !== playerInfo.playerId) {
-        throw new Error('Only host can start next hand');
-      }
-
-      if (room.gameState === 'ENDED') {
-        throw new Error('Game has ended. Leave room to start a new game.');
-      }
-
-      if (!room.currentHand) {
-        throw new Error('No hand state found');
-      }
-
-      if (room.currentHand.currentPlayerTurn) {
-        throw new Error('Current hand is still in progress');
-      }
-
-      await this.startAndBroadcastNewHand(room.id);
-      return { success: true };
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const result = await this.markPlayerReadyAndMaybeStart(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          'NEXT_HAND',
+          true,
+        );
+        return { success: true, started: result.started };
+      });
     } catch (error) {
       this.logger.error(`Start next hand error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false };
+    }
+  }
+
+  @SubscribeMessage('PLAYER_READY')
+  async handlePlayerReady(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() _data: PlayerReadyData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(playerInfo.roomId, async () => {
+        const room = await this.getRoom(playerInfo.roomId);
+        if (!room) throw new Error('Room not found');
+
+        const phase = this.resolveRoomReadyPhase(room);
+        if (!phase) {
+          throw new Error('No readiness action available right now');
+        }
+
+        const result = await this.markPlayerReadyAndMaybeStart(
+          playerInfo.roomId,
+          playerInfo.playerId,
+          phase,
+          true,
+        );
+        return { success: true, started: result.started };
+      });
+    } catch (error) {
+      this.logger.error(`Player ready error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false };
     }
@@ -654,6 +795,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       room.gameState = 'ENDED';
       room.currentHand = null;
+      room.readyPhase = null;
+      room.readyPlayerIds = [];
       room.lastActivityAt = Date.now();
       room.players = room.players.map((seatPlayer) => {
         const nextStatus =
@@ -1060,10 +1203,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.socketToPlayer.delete(client.id);
 
           if (room) {
+            this.syncRoomReadyState(room);
+            await this.storageService.saveRoom(room);
             this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
               playerId: playerInfo.playerId,
               playerName: '', // Would need to cache
             });
+            this.emitReadyStateUpdated(playerInfo.roomId, room);
 
             // If host changed
             const oldHostId = playerInfo.playerId;
@@ -1463,6 +1609,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     room.currentHand.pendingStreetRevealRound = null;
     room.currentHand.nextStreetReadyPlayerIds = [];
     room.currentHand.nextStreetRequiredPlayerIds = [];
+    room.readyPhase = 'NEXT_HAND';
+    room.readyPlayerIds = [];
     await this.storageService.saveRoom(room);
 
     const handCompleteData: HandCompleteData = {
@@ -1473,6 +1621,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
 
     this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
+    this.emitReadyStateUpdated(room.id, room);
     if (this.testDeckService.isTestMode()) {
       // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
       setTimeout(async () => {
@@ -1528,6 +1677,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!updatedRoom) {
       throw new Error(`Room ${roomId} missing after starting new hand`);
     }
+
+    this.emitReadyStateUpdated(roomId, updatedRoom);
 
     this.server.to(roomId).emit('NEW_HAND_STARTING');
 
@@ -1598,7 +1749,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           // Continue game
           const updatedRoom = await this.getRoom(roomId);
           if (!updatedRoom?.currentHand) {
-            await this.gameService.markPlayerDisconnected(roomId, playerId);
+            const disconnectedRoom = await this.gameService.markPlayerDisconnected(
+              roomId,
+              playerId,
+            );
+            if (disconnectedRoom) {
+              this.syncRoomReadyState(disconnectedRoom);
+              await this.storageService.saveRoom(disconnectedRoom);
+              this.emitReadyStateUpdated(roomId, disconnectedRoom);
+            }
             return;
           }
 
@@ -1614,7 +1773,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           }
         }
 
-        await this.gameService.markPlayerDisconnected(roomId, playerId);
+        const disconnectedRoom = await this.gameService.markPlayerDisconnected(
+          roomId,
+          playerId,
+        );
+        if (disconnectedRoom) {
+          this.syncRoomReadyState(disconnectedRoom);
+          await this.storageService.saveRoom(disconnectedRoom);
+          this.emitReadyStateUpdated(roomId, disconnectedRoom);
+        }
       });
     } catch (error) {
       this.logger.error(`Disconnect timeout error: ${error.message}`);

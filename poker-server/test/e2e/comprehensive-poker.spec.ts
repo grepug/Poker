@@ -4320,7 +4320,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('@critical 8.5: Host Can Start Next Hand After Break', async ({ browser }) => {
+  test('@critical 8.5: Players Can Ready Next Hand After Break', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
@@ -4342,7 +4342,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.locator('[data-testid="start-next-hand-button"]'),
       ).toBeVisible();
       await expect(
-        bobPage.locator('[data-testid="waiting-host-start-next-hand"]'),
+        bobPage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="ready-status-panel"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="ready-status-panel"]'),
       ).toBeVisible();
 
       await alicePage.click('[data-testid="start-next-hand-button"]');

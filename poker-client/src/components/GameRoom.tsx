@@ -1128,8 +1128,7 @@ export const GameRoom: React.FC = () => {
     isHost,
     lastError,
     clearError,
-    startGame,
-    startNextHand,
+    markReady,
     endGame,
     revealNextStreet,
     performAction,
@@ -1293,11 +1292,41 @@ export const GameRoom: React.FC = () => {
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
-  const canHostStartNextHand =
-    isHost && isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
+  const canReadyNextHand =
+    isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
   const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
-  const isWaitingForHostToStartNextHand =
-    !isHost && isGameStarted && isHandPausedForNextHand;
+  const currentReadyPhase =
+    !isGameStarted && !isGameEnded
+      ? "START_GAME"
+      : isHandPausedForNextHand
+        ? "NEXT_HAND"
+        : null;
+  const readyPlayerIdSet = useMemo(
+    () =>
+      room?.readyPhase === currentReadyPhase
+        ? new Set(room?.readyPlayerIds ?? [])
+        : new Set<string>(),
+    [currentReadyPhase, room?.readyPhase, room?.readyPlayerIds],
+  );
+  const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
+  const waitingForOthersNextHand = canReadyNextHand && hasReadiedCurrentPhase;
+  const showPreGameReadyButton =
+    !isGameStarted && !isGameEnded && (room?.players.length ?? 0) >= 2;
+  const shouldShowReadyStatusPanel =
+    !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
+  const readyStatusPlayers = useMemo(
+    () =>
+      (room?.players ?? [])
+        .filter((seatPlayer) => seatPlayer.status !== "disconnected")
+        .map((seatPlayer) => ({
+        id: seatPlayer.id,
+        name: seatPlayer.name,
+        emoji: seatPlayer.emoji || "🎲",
+        ready: readyPlayerIdSet.has(seatPlayer.id),
+      })),
+    [readyPlayerIdSet, room?.players],
+  );
+  const readyCount = readyStatusPlayers.filter((entry) => entry.ready).length;
 
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
@@ -2574,7 +2603,8 @@ export const GameRoom: React.FC = () => {
             : t("game.chat.button")
         }
         finalResultsLabel={t("game.final.title")}
-        startLabel={t("common.start")}
+        startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
+        startDisabled={hasReadiedCurrentPhase}
         hiddenHudCopy={{
           potLabel: t("game.pot", { amount: displayPot }),
           chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
@@ -2600,7 +2630,7 @@ export const GameRoom: React.FC = () => {
               }
         }
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
-        showStartGameButton={isHost && !isGameStarted && !isGameEnded && room.players.length >= 2}
+        showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
         onLeave={handleLeave}
         onOpenSettings={() => setShowSettingsModal(true)}
@@ -2608,7 +2638,7 @@ export const GameRoom: React.FC = () => {
         onOpenRankings={() => setShowRankingsModal(true)}
         onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
         onOpenFinalResults={() => setShowFinalSummaryModal(true)}
-        onStartGame={startGame}
+        onStartGame={markReady}
         onOpenChatFromPreview={handleOpenChatFromPreview}
         onDismissPreview={handleDismissPreview}
       />
@@ -2622,6 +2652,37 @@ export const GameRoom: React.FC = () => {
       {isWaitingForNextHand && (
         <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">
           {t("game.cardsAppearWhenHandStarts")}
+        </section>
+      )}
+
+      {shouldShowReadyStatusPanel && (
+        <section
+          className="mx-3 mt-2 rounded-xl border border-emerald-600/55 bg-emerald-950/45 px-3 py-2"
+          data-testid="ready-status-panel"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-emerald-100">{t("game.ready.title")}</h3>
+            <span className="text-[11px] font-semibold text-emerald-200/90">
+              {t("game.ready.progress", { ready: readyCount, total: readyStatusPlayers.length })}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {readyStatusPlayers.map((entry) => (
+              <span
+                key={entry.id}
+                data-testid={`ready-status-player-${entry.id}`}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                  entry.ready
+                    ? "border-emerald-300/70 bg-emerald-500/20 text-emerald-100"
+                    : "border-slate-400/40 bg-slate-800/40 text-slate-200"
+                }`}
+              >
+                <span aria-hidden="true">{entry.emoji}</span>
+                <span>{entry.name}</span>
+                <span>{entry.ready ? "✓" : "…"}</span>
+              </span>
+            ))}
+          </div>
         </section>
       )}
 
@@ -2706,13 +2767,14 @@ export const GameRoom: React.FC = () => {
       )}
 
       <NextHandActionArea
-        canHostStartNextHand={canHostStartNextHand}
-        isWaitingForHostToStartNextHand={isWaitingForHostToStartNextHand}
+        canReadyNextHand={canReadyNextHand}
+        hasReadiedNextHand={hasReadiedCurrentPhase}
+        waitingForOthersNextHand={waitingForOthersNextHand}
         showNextStreetActionArea={showNextStreetActionArea}
         isResultRevealStep={isResultRevealStep}
         canRevealNextStreet={canRevealNextStreet}
         hasRevealedNextStreet={hasRevealedNextStreet}
-        onStartNextHand={startNextHand}
+        onReadyNextHand={markReady}
         onOpenEndGameConfirm={() => setShowEndGameConfirmModal(true)}
         onRevealNextStreet={revealNextStreet}
         t={t}

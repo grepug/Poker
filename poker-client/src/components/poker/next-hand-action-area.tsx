@@ -4,33 +4,35 @@ import type { MessageKey } from "@/i18n/messages";
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
 type NextHandActionAreaProps = {
-  canHostStartNextHand: boolean;
-  isWaitingForHostToStartNextHand: boolean;
+  canReadyNextHand: boolean;
+  hasReadiedNextHand: boolean;
+  waitingForOthersNextHand: boolean;
   showNextStreetActionArea: boolean;
   isResultRevealStep: boolean;
   canRevealNextStreet: boolean;
   hasRevealedNextStreet: boolean;
-  onStartNextHand: () => void;
+  onReadyNextHand: () => void;
   onOpenEndGameConfirm: () => void;
   onRevealNextStreet: () => void;
   t: Translate;
 };
 
 export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
-  canHostStartNextHand,
-  isWaitingForHostToStartNextHand,
+  canReadyNextHand,
+  hasReadiedNextHand,
+  waitingForOthersNextHand,
   showNextStreetActionArea,
   isResultRevealStep,
   canRevealNextStreet,
   hasRevealedNextStreet,
-  onStartNextHand,
+  onReadyNextHand,
   onOpenEndGameConfirm,
   onRevealNextStreet,
   t,
 }) => {
   return (
     <>
-      {canHostStartNextHand && (
+      {canReadyNextHand && (
         <section className="surface-panel mx-3 mt-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -39,11 +41,12 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={onStartNextHand}
+                onClick={onReadyNextHand}
+                disabled={hasReadiedNextHand}
                 data-testid="start-next-hand-button"
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {t("game.startNextHand")}
+                {hasReadiedNextHand ? t("game.ready.waitingOthers") : t("common.ready")}
               </button>
               <button
                 onClick={onOpenEndGameConfirm}
@@ -57,11 +60,11 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
         </section>
       )}
 
-      {isWaitingForHostToStartNextHand && (
+      {waitingForOthersNextHand && (
         <section className="surface-panel mx-3 mt-3 p-4" data-testid="waiting-host-start-next-hand">
           <div>
             <h3 className="text-sm font-semibold text-emerald-100">{t("game.handComplete")}</h3>
-            <p className="text-xs text-emerald-100/70">{t("game.waitingHostStartNextHand")}</p>
+            <p className="text-xs text-emerald-100/70">{t("game.ready.waitingOthers")}</p>
           </div>
         </section>
       )}

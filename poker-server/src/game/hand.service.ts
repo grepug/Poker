@@ -137,6 +137,8 @@ export class HandService {
 
     room.currentHand = hand;
     room.gameState = 'IN_PROGRESS';
+    room.readyPhase = null;
+    room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);

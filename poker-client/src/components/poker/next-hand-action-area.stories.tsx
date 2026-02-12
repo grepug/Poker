@@ -10,13 +10,14 @@ const meta = {
   },
   tags: ["autodocs"],
   args: {
-    canHostStartNextHand: true,
-    isWaitingForHostToStartNextHand: false,
+    canReadyNextHand: true,
+    hasReadiedNextHand: false,
+    waitingForOthersNextHand: false,
     showNextStreetActionArea: false,
     isResultRevealStep: false,
     canRevealNextStreet: true,
     hasRevealedNextStreet: false,
-    onStartNextHand: () => {},
+    onReadyNextHand: () => {},
     onOpenEndGameConfirm: () => {},
     onRevealNextStreet: () => {},
     t: storyTranslate,
@@ -37,14 +38,14 @@ export const HostControls: Story = {};
 
 export const WaitingForHost: Story = {
   args: {
-    canHostStartNextHand: false,
-    isWaitingForHostToStartNextHand: true,
+    canReadyNextHand: false,
+    waitingForOthersNextHand: true,
   },
 };
 
 export const RevealNextStreet: Story = {
   args: {
-    canHostStartNextHand: false,
+    canReadyNextHand: false,
     showNextStreetActionArea: true,
     isResultRevealStep: false,
   },
