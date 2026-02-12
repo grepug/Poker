@@ -1512,8 +1512,8 @@ export const GameRoom: React.FC = () => {
           };
         })
         .sort((a, b) => {
-          if (b.tableStack !== a.tableStack) return b.tableStack - a.tableStack;
           if (b.net !== a.net) return b.net - a.net;
+          if (b.tableStack !== a.tableStack) return b.tableStack - a.tableStack;
           return a.name.localeCompare(b.name, locale === "zh_hans" ? "zh-Hans" : "en");
         });
     },
@@ -1522,11 +1522,17 @@ export const GameRoom: React.FC = () => {
 
   const finalStandings = useMemo(
     () =>
-      (finalGameResult?.standings ?? []).map((entry, idx) => ({
-        ...entry,
-        rankOrder: idx + 1,
-      })),
-    [finalGameResult],
+      [...(finalGameResult?.standings ?? [])]
+        .sort((a, b) => {
+          if (b.profit !== a.profit) return b.profit - a.profit;
+          if (b.finalChips !== a.finalChips) return b.finalChips - a.finalChips;
+          return a.playerName.localeCompare(b.playerName, locale === "zh_hans" ? "zh-Hans" : "en");
+        })
+        .map((entry, idx) => ({
+          ...entry,
+          rankOrder: idx + 1,
+        })),
+    [finalGameResult, locale],
   );
   const rulesCopy = useMemo(() => RULES_COPY[locale], [locale]);
 

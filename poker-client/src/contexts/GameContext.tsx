@@ -756,6 +756,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           preRoundCurrentBet,
         });
       const resolvedAmount = isNoChipAction ? undefined : totalBetAfterAction;
+      const resolvedStatus =
+        data.playerStatus ??
+        (data.action === "fold"
+          ? "folded"
+          : data.action === "all-in"
+            ? "all-in"
+            : undefined);
 
       setLastPlayerActionEvent({
         id: `${Date.now()}-${data.playerId}-${data.action}`,
@@ -798,6 +805,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                     return {
                       ...p,
                       chips: data.newChips,
+                      status: resolvedStatus ?? p.status,
                       lastAction: data.action,
                       currentBet: nextCurrentBet,
                     };
@@ -816,6 +824,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         return {
           ...prev,
           chips: data.newChips,
+          status: resolvedStatus ?? prev.status,
           lastAction: data.action,
           currentBet:
             data.totalBetAfterAction ??

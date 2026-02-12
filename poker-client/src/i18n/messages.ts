@@ -197,7 +197,7 @@ export const EN_MESSAGES = {
   "game.raise": "Raise",
 
   "game.rankings.title": "Player Rankings",
-  "game.rankings.sortedBy": "Sorted by table stack (`chips + current bet`).",
+  "game.rankings.sortedBy": "Sorted by net income (`stack - buy-in`).",
   "game.rankings.rank": "Rank",
   "game.rankings.player": "Player",
   "game.rankings.stack": "Stack",
@@ -462,7 +462,7 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.raise": "加注",
 
   "game.rankings.title": "玩家排行榜",
-  "game.rankings.sortedBy": "按桌面筹码（`筹码 + 当前下注`）排序。",
+  "game.rankings.sortedBy": "按净收益（`桌面筹码 - 买入`）排序。",
   "game.rankings.rank": "排名",
   "game.rankings.player": "玩家",
   "game.rankings.stack": "筹码",
