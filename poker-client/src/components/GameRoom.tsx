@@ -701,7 +701,7 @@ const solveSeatDistanceToEdge = ({
   }
 
   const maxDistance = Math.hypot(halfTableWidth, halfTableHeight);
-  const sampleCount = 96;
+  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
   let farthestSampleFit = -1;
 
   for (let index = 0; index <= sampleCount; index += 1) {
@@ -732,7 +732,7 @@ const solveSeatDistanceToEdge = ({
   let bestDistance = farthestSampleFit;
   let step = maxDistance / sampleCount;
 
-  for (let index = 0; index < 24; index += 1) {
+  for (let index = 0; index < DISTANCE_SOLVER_REFINE_STEPS; index += 1) {
     const candidateDistance = bestDistance + step;
     if (candidateDistance > maxDistance) {
       step /= 2;
@@ -768,6 +768,8 @@ const solveSeatDistanceToEdge = ({
 const ORBIT_BOUNDARY_SAMPLE_COUNT = 540;
 const MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX = 700;
 const MOBILE_BALANCED_ORBIT_SAMPLE_COUNT = 960;
+const DISTANCE_SOLVER_SAMPLE_COUNT = 72;
+const DISTANCE_SOLVER_REFINE_STEPS = 16;
 
 const getOrbitAnchors = ({
   totalSeats,
@@ -912,8 +914,6 @@ const getOrbitAnchors = ({
     }
   }
 
-  const outerBoundaryObstacleRects: RectBounds[] = [];
-
   const startAngle = Math.PI / 2;
   const sampleCount = Math.max(ORBIT_BOUNDARY_SAMPLE_COUNT, safeTotal * 64);
   const boundarySamples: Array<{
@@ -942,7 +942,7 @@ const getOrbitAnchors = ({
       halfTableHeight,
       cornerRadiusX,
       cornerRadiusY,
-      obstacleRects: outerBoundaryObstacleRects,
+      obstacleRects: [],
     });
 
     if (distance <= 0) {
@@ -2021,15 +2021,17 @@ export const GameRoom: React.FC = () => {
       },
     ];
   }, [finalGameResult, t]);
+  const hasRoom = Boolean(room);
+  const playerSeatPosition = player?.position;
 
   const seatSlots = useMemo(() => {
-    if (!room || !player) return [] as Array<{
+    if (!hasRoom || playerSeatPosition === undefined) return [] as Array<{
       slotIndex: number;
       position: number;
       seatPlayer: Player;
       anchor: SeatAnchor;
     }>;
-    const myPosition = currentPlayer?.position ?? player.position;
+    const myPosition = currentPlayer?.position ?? playerSeatPosition;
     const orderedPlayers = [...tablePlayers].sort((a, b) => {
       const aOffset = (a.position - myPosition + orbitCapacity) % orbitCapacity;
       const bOffset = (b.position - myPosition + orbitCapacity) % orbitCapacity;
@@ -2054,12 +2056,12 @@ export const GameRoom: React.FC = () => {
       anchor: orbitAnchors[slotIndex] ?? getFallbackOrbitAnchor(slotIndex, orderedPlayers.length),
     }));
   }, [
+    hasRoom,
+    playerSeatPosition,
     currentPlayer?.position,
     feltSize.height,
     feltSize.width,
     orbitCapacity,
-    player,
-    room,
     seatSlotHeightPx,
     seatSlotWidthPx,
     tableObstacleRects,

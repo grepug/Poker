@@ -633,6 +633,8 @@ body {
   position: absolute;
   width: min(20.6vw, 6.3rem);
   min-width: 3rem;
+  container-type: inline-size;
+  container-name: seat-slot;
 }
 
 .seat-pod {
@@ -661,8 +663,6 @@ body {
   gap: 0.12rem;
   overflow: visible;
   isolation: isolate;
-  container-type: inline-size;
-  container-name: seatpod;
 }
 
 .seat-pod--action-wrapped {
@@ -1030,7 +1030,7 @@ body {
   color: #e0f2fe;
 }
 
-@container seatpod (max-width: 76px) {
+@container seat-slot (max-width: 76px) {
   .seat-pod {
     padding: 0.2rem 0.24rem 0.22rem;
     gap: 0.08rem;
@@ -1039,7 +1039,7 @@ body {
     --seat-name-size: 0.54rem;
     --seat-stack-size: 0.6rem;
     --seat-bet-size: 0.48rem;
-    --seat-status-size: 0.38rem;
+    --seat-status-size: 0.42rem;
   }
 
   .seat-pod__status-badge {
@@ -1055,7 +1055,7 @@ body {
   }
 }
 
-@container seatpod (max-width: 66px) {
+@container seat-slot (max-width: 66px) {
   .seat-pod {
     padding: 0.16rem 0.2rem 0.18rem;
     gap: 0.06rem;
@@ -1064,7 +1064,7 @@ body {
     --seat-name-size: 0.49rem;
     --seat-stack-size: 0.54rem;
     --seat-bet-size: 0.42rem;
-    --seat-status-size: 0.34rem;
+    --seat-status-size: 0.42rem;
     border-radius: 0.68rem;
   }
 

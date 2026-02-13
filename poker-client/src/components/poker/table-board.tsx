@@ -333,6 +333,8 @@ export const TableBoard: React.FC<TableBoardProps> = ({
   seatOrbitItems,
 }) => {
   const seatOrbitRef = useRef<HTMLDivElement | null>(null);
+  const baseSeatWidthToken = seatOrbitItems[0]?.width ?? null;
+  const seatOrbitItemCount = seatOrbitItems.length;
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") {
@@ -341,7 +343,6 @@ export const TableBoard: React.FC<TableBoardProps> = ({
 
     const feltNode = feltOvalRef.current;
     const seatOrbitNode = seatOrbitRef.current;
-    const baseSeatWidthToken = seatOrbitItems[0]?.width;
 
     if (!feltNode || !seatOrbitNode || !baseSeatWidthToken) {
       return;
@@ -410,7 +411,8 @@ export const TableBoard: React.FC<TableBoardProps> = ({
     communityLaneRef,
     feltOvalRef,
     potDropZoneRef,
-    seatOrbitItems,
+    baseSeatWidthToken,
+    seatOrbitItemCount,
   ]);
 
   return (

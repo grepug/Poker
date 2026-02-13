@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from "react";
+import React, { useCallback, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -238,6 +238,26 @@ export const SeatPod: React.FC<SeatPodProps> = ({
     ? `${testId}-external-status`
     : `${testId}-status`;
   const seatNodeRef = useRef<HTMLDivElement | null>(null);
+  const rafIdRef = useRef(0);
+
+  const scheduleFit = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const seatNode = seatNodeRef.current;
+    if (!seatNode) {
+      return;
+    }
+
+    if (rafIdRef.current) {
+      window.cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = window.requestAnimationFrame(() => {
+      rafIdRef.current = 0;
+      autoFitSeatText(seatNode);
+    });
+  }, []);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") {
@@ -248,17 +268,6 @@ export const SeatPod: React.FC<SeatPodProps> = ({
     if (!seatNode) {
       return;
     }
-
-    let rafId = 0;
-    const scheduleFit = () => {
-      if (rafId) {
-        window.cancelAnimationFrame(rafId);
-      }
-      rafId = window.requestAnimationFrame(() => {
-        rafId = 0;
-        autoFitSeatText(seatNode);
-      });
-    };
 
     scheduleFit();
 
@@ -276,14 +285,20 @@ export const SeatPod: React.FC<SeatPodProps> = ({
     window.addEventListener("resize", scheduleFit);
 
     return () => {
-      if (rafId) {
-        window.cancelAnimationFrame(rafId);
+      if (rafIdRef.current) {
+        window.cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
       }
       resizeObserver?.disconnect();
       mutationObserver.disconnect();
       window.removeEventListener("resize", scheduleFit);
     };
+  }, [scheduleFit]);
+
+  useLayoutEffect(() => {
+    scheduleFit();
   }, [
+    scheduleFit,
     actionLabel?.text,
     densityClass,
     floatingStatusLabel,

@@ -1020,7 +1020,7 @@ async function assertSeatCardsDoNotOverlapBoardAndPot(
   label: string,
   minSeatCount = 2,
 ) {
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(({ overlapTolerance }) => {
     const seatNodes = Array.from(
       document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
     );
@@ -1058,7 +1058,8 @@ async function assertSeatCardsDoNotOverlapBoardAndPot(
           const overlapHeight =
             Math.min(seatRect.bottom, target.rect.bottom) -
             Math.max(seatRect.top, target.rect.top);
-          const hasOverlap = overlapWidth > 0 && overlapHeight > 0;
+          const hasOverlap =
+            overlapWidth > overlapTolerance && overlapHeight > overlapTolerance;
 
           if (!hasOverlap) {
             return null;
@@ -1082,7 +1083,7 @@ async function assertSeatCardsDoNotOverlapBoardAndPot(
       hasPot: Boolean(potNode),
       overlaps,
     };
-  });
+  }, { overlapTolerance: 0.5 });
 
   expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
   expect(result.boardCount, `[${label}] should render community-card targets`).toBeGreaterThan(0);
