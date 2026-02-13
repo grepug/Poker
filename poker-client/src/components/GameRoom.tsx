@@ -27,6 +27,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
 const ACTION_ALERT_VISIBLE_MS = 1300;
@@ -72,8 +73,7 @@ type RectBounds = {
   bottom: number;
 };
 
-type OrbitAnchorInput = {
-  slotIndex: number;
+type OrbitAnchorsInput = {
   totalSeats: number;
   tableWidth: number;
   tableHeight: number;
@@ -765,8 +765,11 @@ const solveSeatDistanceToEdge = ({
   return bestDistance;
 };
 
-const getOrbitAnchor = ({
-  slotIndex,
+const ORBIT_BOUNDARY_SAMPLE_COUNT = 540;
+const MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX = 700;
+const MOBILE_BALANCED_ORBIT_SAMPLE_COUNT = 960;
+
+const getOrbitAnchors = ({
   totalSeats,
   tableWidth,
   tableHeight,
@@ -775,15 +778,15 @@ const getOrbitAnchor = ({
   seatWidth,
   seatHeight,
   obstacleRects,
-}: OrbitAnchorInput): SeatAnchor => {
-  if (tableWidth <= 0 || tableHeight <= 0 || seatWidth <= 0 || seatHeight <= 0) {
-    return getFallbackOrbitAnchor(slotIndex, totalSeats);
-  }
-
+}: OrbitAnchorsInput): SeatAnchor[] => {
   const safeTotal = Math.max(1, totalSeats);
-  const angleStep = (Math.PI * 2) / safeTotal;
-  const startAngle = Math.PI / 2;
-  const angle = startAngle + slotIndex * angleStep;
+  const fallbackAnchors = Array.from({ length: safeTotal }, (_, slotIndex) =>
+    getFallbackOrbitAnchor(slotIndex, safeTotal),
+  );
+
+  if (tableWidth <= 0 || tableHeight <= 0 || seatWidth <= 0 || seatHeight <= 0) {
+    return fallbackAnchors;
+  }
 
   const centerX = tableWidth / 2;
   const centerY = tableHeight / 2;
@@ -803,11 +806,11 @@ const getOrbitAnchor = ({
   const topExtent = seatHeight / 2 + SEAT_OUTER_TOP_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
   const bottomExtent = seatHeight / 2 + SEAT_OUTER_BOTTOM_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
 
-  if (leftExtent + rightExtent >= halfTableWidth * 2 || topExtent + bottomExtent >= halfTableHeight * 2) {
-    return {
-      left: `${centerX}px`,
-      top: `${centerY}px`,
-    };
+  if (
+    leftExtent + rightExtent >= halfTableWidth * 2 ||
+    topExtent + bottomExtent >= halfTableHeight * 2
+  ) {
+    return fallbackAnchors;
   }
 
   const centeredObstacleRects = obstacleRects
@@ -822,22 +825,113 @@ const getOrbitAnchor = ({
         obstacleRect.right > obstacleRect.left && obstacleRect.bottom > obstacleRect.top,
     );
 
-  const maxAngleOffset =
-    centeredObstacleRects.length > 0 ? Math.min(Math.PI / 2.4, angleStep * 0.46) : 0;
-  const angleOffsetSamples = centeredObstacleRects.length > 0 ? 16 : 0;
-  let bestCandidate: { angle: number; distance: number; angleOffset: number } | null = null;
+  const useBalancedMobileOrbit =
+    tableWidth <= MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX && safeTotal >= 8 && safeTotal % 2 === 0;
+  if (useBalancedMobileOrbit) {
+    const horizontalBoundaryDistance = solveSeatDistanceToEdge({
+      cosine: 1,
+      sine: 0,
+      leftExtent,
+      rightExtent,
+      topExtent,
+      bottomExtent,
+      halfTableWidth,
+      halfTableHeight,
+      cornerRadiusX,
+      cornerRadiusY,
+      obstacleRects: [],
+    });
+    const verticalBoundaryDistance = solveSeatDistanceToEdge({
+      cosine: 0,
+      sine: 1,
+      leftExtent,
+      rightExtent,
+      topExtent,
+      bottomExtent,
+      halfTableWidth,
+      halfTableHeight,
+      cornerRadiusX,
+      cornerRadiusY,
+      obstacleRects: [],
+    });
 
-  for (
-    let offsetIndex = -angleOffsetSamples;
-    offsetIndex <= angleOffsetSamples;
-    offsetIndex += 1
-  ) {
-    const angleOffset =
-      angleOffsetSamples === 0 ? 0 : (offsetIndex / angleOffsetSamples) * maxAngleOffset;
-    const candidateAngle = angle + angleOffset;
-    const cosine = Math.cos(candidateAngle);
-    const sine = Math.sin(candidateAngle);
-    const seatDistance = solveSeatDistanceToEdge({
+    const baseOrbitPoints =
+      horizontalBoundaryDistance > 0 && verticalBoundaryDistance > 0
+        ? buildEqualArcEllipsePoints({
+            totalSeats: safeTotal,
+            radiusX: horizontalBoundaryDistance,
+            radiusY: verticalBoundaryDistance,
+            sampleCount: MOBILE_BALANCED_ORBIT_SAMPLE_COUNT,
+          })
+        : null;
+
+    if (baseOrbitPoints) {
+      const isScaleFeasible = (scale: number) =>
+        baseOrbitPoints.every(({ x, y }) => {
+          const centerXFromOrigin = x * scale;
+          const centerYFromOrigin = y * scale;
+          const distance = Math.hypot(centerXFromOrigin, centerYFromOrigin);
+          if (distance <= 0) {
+            return false;
+          }
+
+          const angle = Math.atan2(centerYFromOrigin, centerXFromOrigin);
+          return canFitSeatAtDistance({
+            distance,
+            cosine: Math.cos(angle),
+            sine: Math.sin(angle),
+            leftExtent,
+            rightExtent,
+            topExtent,
+            bottomExtent,
+            halfTableWidth,
+            halfTableHeight,
+            cornerRadiusX,
+            cornerRadiusY,
+            obstacleRects: centeredObstacleRects,
+          });
+        });
+
+      let low = 0;
+      let high = 1;
+      for (let step = 0; step < 20; step += 1) {
+        const mid = (low + high) / 2;
+        if (isScaleFeasible(mid)) {
+          low = mid;
+          continue;
+        }
+        high = mid;
+      }
+
+      if (low > 0.2) {
+        return baseOrbitPoints.map(({ x, y }) => ({
+          left: `${centerX + x * low}px`,
+          top: `${centerY + y * low}px`,
+        }));
+      }
+    }
+  }
+
+  const outerBoundaryObstacleRects: RectBounds[] = [];
+
+  const startAngle = Math.PI / 2;
+  const sampleCount = Math.max(ORBIT_BOUNDARY_SAMPLE_COUNT, safeTotal * 64);
+  const boundarySamples: Array<{
+    angle: number;
+    distance: number;
+    x: number;
+    y: number;
+    cumulativeLength: number;
+  }> = [];
+
+  let cumulativeLength = 0;
+  let previousSample: { x: number; y: number } | null = null;
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const angle = startAngle + (index / sampleCount) * Math.PI * 2;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const distance = solveSeatDistanceToEdge({
       cosine,
       sine,
       leftExtent,
@@ -848,64 +942,81 @@ const getOrbitAnchor = ({
       halfTableHeight,
       cornerRadiusX,
       cornerRadiusY,
-      obstacleRects: centeredObstacleRects,
+      obstacleRects: outerBoundaryObstacleRects,
     });
 
-    if (seatDistance <= 0) {
-      continue;
+    if (distance <= 0) {
+      return fallbackAnchors;
     }
 
-    const canFitAtCandidate = canFitSeatAtDistance({
-      distance: seatDistance,
-      cosine,
-      sine,
-      leftExtent,
-      rightExtent,
-      topExtent,
-      bottomExtent,
-      halfTableWidth,
-      halfTableHeight,
-      cornerRadiusX,
-      cornerRadiusY,
-      obstacleRects: centeredObstacleRects,
+    const x = cosine * distance;
+    const y = sine * distance;
+
+    if (previousSample) {
+      cumulativeLength += Math.hypot(x - previousSample.x, y - previousSample.y);
+    }
+
+    boundarySamples.push({
+      angle,
+      distance,
+      x,
+      y,
+      cumulativeLength,
     });
-    if (!canFitAtCandidate) {
-      continue;
-    }
+    previousSample = { x, y };
+  }
 
-    if (!bestCandidate) {
-      bestCandidate = { angle: candidateAngle, distance: seatDistance, angleOffset };
-      continue;
-    }
+  const totalBoundaryLength = boundarySamples[boundarySamples.length - 1]?.cumulativeLength ?? 0;
+  if (totalBoundaryLength <= 0) {
+    return fallbackAnchors;
+  }
 
-    const distanceImprovement = seatDistance - bestCandidate.distance;
-    if (distanceImprovement > 0.25) {
-      bestCandidate = { angle: candidateAngle, distance: seatDistance, angleOffset };
-      continue;
-    }
+  return Array.from({ length: safeTotal }, (_, slotIndex) => {
+    const targetLength = (totalBoundaryLength * slotIndex) / safeTotal;
+    let lowerIndex = 0;
 
-    if (
-      Math.abs(distanceImprovement) <= 0.25 &&
-      Math.abs(angleOffset) < Math.abs(bestCandidate.angleOffset)
+    while (
+      lowerIndex < boundarySamples.length - 1 &&
+      boundarySamples[lowerIndex + 1].cumulativeLength < targetLength
     ) {
-      bestCandidate = { angle: candidateAngle, distance: seatDistance, angleOffset };
+      lowerIndex += 1;
     }
-  }
 
-  if (!bestCandidate) {
+    const lowerSample = boundarySamples[lowerIndex];
+    const upperSample =
+      boundarySamples[Math.min(lowerIndex + 1, boundarySamples.length - 1)];
+    const segmentLength = upperSample.cumulativeLength - lowerSample.cumulativeLength;
+    const segmentRatio =
+      segmentLength > 0
+        ? (targetLength - lowerSample.cumulativeLength) / segmentLength
+        : 0;
+    const seatAngle =
+      lowerSample.angle + (upperSample.angle - lowerSample.angle) * segmentRatio;
+    const cosine = Math.cos(seatAngle);
+    const sine = Math.sin(seatAngle);
+    const solvedDistance = solveSeatDistanceToEdge({
+      cosine,
+      sine,
+      leftExtent,
+      rightExtent,
+      topExtent,
+      bottomExtent,
+      halfTableWidth,
+      halfTableHeight,
+      cornerRadiusX,
+      cornerRadiusY,
+      obstacleRects: centeredObstacleRects,
+    });
+    if (solvedDistance <= 0) {
+      return fallbackAnchors[slotIndex] ?? getFallbackOrbitAnchor(slotIndex, safeTotal);
+    }
+    const seatDistance = solvedDistance;
+
     return {
-      left: `${centerX}px`,
-      top: `${centerY}px`,
+      left: `${centerX + cosine * seatDistance}px`,
+      top: `${centerY + sine * seatDistance}px`,
     };
-  }
-
-  const left = centerX + Math.cos(bestCandidate.angle) * bestCandidate.distance;
-  const top = centerY + Math.sin(bestCandidate.angle) * bestCandidate.distance;
-
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-  };
+  });
 };
 
 const RECT_COMPARISON_TOLERANCE_PX = 0.25;
@@ -1925,21 +2036,22 @@ export const GameRoom: React.FC = () => {
       return aOffset - bOffset;
     });
 
+    const orbitAnchors = getOrbitAnchors({
+      totalSeats: orderedPlayers.length,
+      tableWidth: feltSize.width,
+      tableHeight: feltSize.height,
+      tableCornerRadiusX: tableCornerRadiusPx.cornerRadiusX,
+      tableCornerRadiusY: tableCornerRadiusPx.cornerRadiusY,
+      seatWidth: seatSlotWidthPx,
+      seatHeight: seatSlotHeightPx,
+      obstacleRects: tableObstacleRects,
+    });
+
     return orderedPlayers.map((seatPlayer, slotIndex) => ({
       slotIndex,
       position: seatPlayer.position,
       seatPlayer,
-      anchor: getOrbitAnchor({
-        slotIndex,
-        totalSeats: orderedPlayers.length,
-        tableWidth: feltSize.width,
-        tableHeight: feltSize.height,
-        tableCornerRadiusX: tableCornerRadiusPx.cornerRadiusX,
-        tableCornerRadiusY: tableCornerRadiusPx.cornerRadiusY,
-        seatWidth: seatSlotWidthPx,
-        seatHeight: seatSlotHeightPx,
-        obstacleRects: tableObstacleRects,
-      }),
+      anchor: orbitAnchors[slotIndex] ?? getFallbackOrbitAnchor(slotIndex, orderedPlayers.length),
     }));
   }, [
     currentPlayer?.position,

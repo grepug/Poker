@@ -665,10 +665,15 @@ body {
   container-name: seatpod;
 }
 
+.seat-pod--action-wrapped {
+  aspect-ratio: auto;
+}
+
 .seat-pod::before {
   content: "";
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgba(15, 23, 42, 0.16) 100%),
     linear-gradient(92deg, rgba(110, 231, 183, 0.1), transparent 60%);
@@ -781,37 +786,37 @@ body {
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow-wrap: normal;
-  backdrop-filter: blur(6px);
+  backdrop-filter: none;
 }
 
 .seat-pod__status-badge--folded {
   color: #fecdd3;
   border-color: rgba(251, 113, 133, 0.64);
-  background: rgba(136, 19, 55, 0.5);
+  background: rgba(136, 19, 55, 0.94);
 }
 
 .seat-pod__status-badge--disconnected {
   color: #dbeafe;
   border-color: rgba(148, 163, 184, 0.68);
-  background: rgba(30, 41, 59, 0.62);
+  background: rgba(30, 41, 59, 0.95);
 }
 
 .seat-pod__status-badge--allin {
   color: #fed7aa;
   border-color: rgba(251, 146, 60, 0.74);
-  background: rgba(154, 52, 18, 0.58);
+  background: rgba(154, 52, 18, 0.94);
 }
 
 .seat-pod__status-badge--waiting {
   color: #bfdbfe;
   border-color: rgba(96, 165, 250, 0.7);
-  background: rgba(30, 58, 138, 0.54);
+  background: rgba(30, 58, 138, 0.92);
 }
 
 .seat-pod__status-badge--turn {
   color: #fef3c7;
   border-color: rgba(251, 191, 36, 0.8);
-  background: rgba(120, 53, 15, 0.62);
+  background: rgba(120, 53, 15, 0.94);
 }
 
 .seat-pod__status-badge--external {
@@ -867,15 +872,12 @@ body {
 }
 
 .seat-pod__row--identity {
+  padding-top: 0.08rem;
   padding-right: 0;
 }
 
-.seat-pod--you .seat-pod__row--identity {
-  padding-left: 0.72rem;
-}
-
-.seat-pod--you.seat-pod--has-status-badge .seat-pod__row--identity {
-  padding-left: 0.62rem;
+.seat-pod--has-status-badge .seat-pod__row--identity {
+  padding-top: 0.14rem;
 }
 
 .seat-pod__row--action,
@@ -922,10 +924,10 @@ body {
 .seat-pod__action {
   font-size: var(--seat-bet-size);
   color: rgba(207, 250, 254, 0.94);
-  white-space: nowrap;
+  white-space: normal;
   line-height: 1.14;
   font-weight: 720;
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
   word-break: normal;
   min-height: calc(var(--seat-bet-size) * 1.12);
   display: block;
@@ -963,7 +965,7 @@ body {
   font-size: calc(var(--seat-stack-size) * 0.9);
   color: rgba(110, 231, 183, 0.96);
   font-weight: 760;
-  line-height: 1.05;
+  line-height: 1;
   white-space: nowrap;
   overflow-wrap: normal;
   max-width: 100%;
@@ -971,12 +973,13 @@ body {
   text-overflow: clip;
   letter-spacing: 0.012em;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  padding-block: 1px;
 }
 
 .seat-pod__you-indicator {
-  position: absolute;
-  top: 0.24rem;
-  left: 0.28rem;
+  flex: 0 0 auto;
   width: 0.66rem;
   height: 0.66rem;
   border-radius: 9999px;
@@ -988,7 +991,7 @@ body {
   justify-content: center;
   font-size: 0.36rem;
   line-height: 1;
-  z-index: 2;
+  margin-right: 0.02rem;
 }
 
 .seat-pod__role-icon {
@@ -1816,7 +1819,7 @@ body {
     transform: translate(24%, -38%);
     min-width: 0.78rem;
     height: 0.64rem;
-    font-size: 0.32rem;
+    font-size: 0.36rem;
   }
 }
 

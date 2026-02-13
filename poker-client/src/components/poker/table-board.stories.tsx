@@ -2,6 +2,7 @@ import React from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card as PokerCard } from "poker-types";
 import { TableBoard } from "@/components/poker/table-board";
+import { buildEqualArcEllipsePercentAnchors } from "@/components/poker/seat-orbit-layout";
 
 const boardCards: Array<PokerCard | null> = [
   { rank: "A", suit: "spades" },
@@ -19,7 +20,7 @@ type SeatOrbitItems = React.ComponentProps<typeof TableBoard>["seatOrbitItems"];
 const seatOrbitItems: SeatOrbitItems = [
   {
     slotIndex: 0,
-    top: "86%",
+    top: "88%",
     left: "50%",
     width: "clamp(3.6rem, 12.4vw, 5.5rem)",
     playerId: "p1",
@@ -258,7 +259,7 @@ const mobileLandscapeSeatOrbitItems: SeatOrbitItems = applyMobileSeatSideMargin(
 const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   {
     slotIndex: 0,
-    top: "86%",
+    top: "88%",
     left: "50%",
     width: "4.4rem",
     playerId: "e1",
@@ -278,8 +279,8 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 1,
-    top: "72%",
-    left: "20%",
+    top: "76.9%",
+    left: "20.3%",
     width: "4.4rem",
     playerId: "e2",
     playerEmoji: "🐼",
@@ -298,7 +299,7 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 2,
-    top: "48%",
+    top: "50%",
     left: "8%",
     width: "4.4rem",
     playerId: "e3",
@@ -318,8 +319,8 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 3,
-    top: "20%",
-    left: "22%",
+    top: "23.1%",
+    left: "20.3%",
     width: "4.4rem",
     playerId: "e4",
     playerEmoji: "🐙",
@@ -358,8 +359,8 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 5,
-    top: "20%",
-    left: "78%",
+    top: "23.1%",
+    left: "79.7%",
     width: "4.4rem",
     playerId: "e6",
     playerEmoji: "🦉",
@@ -371,14 +372,14 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
     externalStatusToneClass: "",
     internalStatusLabel: "ALL-IN",
     internalStatusToneClass: "seat-pod__status-badge--allin",
-    actionLabel: { text: "All-in $420", tone: "allin" as const },
+    actionLabel: { text: "All-in $12,420", tone: "allin" as const },
     remainingLabel: "$0",
     seatState: "all-in" as const,
     densityClass: "seat-pod--dense",
   },
   {
     slotIndex: 6,
-    top: "48%",
+    top: "50%",
     left: "92%",
     width: "4.4rem",
     playerId: "e7",
@@ -398,8 +399,8 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 7,
-    top: "72%",
-    left: "80%",
+    top: "76.9%",
+    left: "79.7%",
     width: "4.4rem",
     playerId: "e8",
     playerEmoji: "🐧",
@@ -421,7 +422,7 @@ const eightHandedStatusSeatOrbitItems: SeatOrbitItems = [
 const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   {
     slotIndex: 0,
-    top: "86%",
+    top: "88%",
     left: "50%",
     width: "4.15rem",
     playerId: "t1",
@@ -441,8 +442,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 1,
-    top: "73%",
-    left: "19%",
+    top: "80.7%",
+    left: "25.3%",
     width: "4.15rem",
     playerId: "t2",
     playerEmoji: "🐼",
@@ -461,8 +462,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 2,
-    top: "53%",
-    left: "8%",
+    top: "61.7%",
+    left: "10.1%",
     width: "4.15rem",
     playerId: "t3",
     playerEmoji: "🦁",
@@ -481,8 +482,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 3,
-    top: "30%",
-    left: "14%",
+    top: "38.3%",
+    left: "10.1%",
     width: "4.15rem",
     playerId: "t4",
     playerEmoji: "🐙",
@@ -501,8 +502,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 4,
-    top: "14%",
-    left: "32%",
+    top: "19.3%",
+    left: "25.3%",
     width: "4.15rem",
     playerId: "t5",
     playerEmoji: "🐯",
@@ -534,15 +535,15 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
     externalStatusToneClass: "",
     internalStatusLabel: "ALL-IN",
     internalStatusToneClass: "seat-pod__status-badge--allin",
-    actionLabel: { text: "All-in $420", tone: "allin" as const },
+    actionLabel: { text: "All-in $12,420", tone: "allin" as const },
     remainingLabel: "$0",
     seatState: "all-in" as const,
     densityClass: "seat-pod--dense",
   },
   {
     slotIndex: 6,
-    top: "14%",
-    left: "68%",
+    top: "19.3%",
+    left: "74.7%",
     width: "4.15rem",
     playerId: "t7",
     playerEmoji: "🦄",
@@ -561,8 +562,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 7,
-    top: "30%",
-    left: "86%",
+    top: "38.3%",
+    left: "89.9%",
     width: "4.15rem",
     playerId: "t8",
     playerEmoji: "🐧",
@@ -581,8 +582,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 8,
-    top: "53%",
-    left: "92%",
+    top: "61.7%",
+    left: "89.9%",
     width: "4.15rem",
     playerId: "t9",
     playerEmoji: "🐺",
@@ -601,8 +602,8 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
   {
     slotIndex: 9,
-    top: "73%",
-    left: "81%",
+    top: "80.7%",
+    left: "74.7%",
     width: "4.15rem",
     playerId: "t10",
     playerEmoji: "🦝",
@@ -621,83 +622,94 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
 ];
 
-const applySeatMobileLayout = (
+const applyPreciseEllipseSeatLayout = (
   seats: SeatOrbitItems,
-  layout: Array<{ top: string; left: string }>,
-  width: string,
-) =>
-  applyMobileSeatSideMargin(
-    seats.map((seat, index) => ({
-      ...seat,
-      top: layout[index]?.top ?? seat.top,
-      left: layout[index]?.left ?? seat.left,
-      width,
-      densityClass: "seat-pod--dense",
-    })),
-  );
+  {
+    radiusXPercent,
+    radiusYPercent,
+    centerYPercent,
+    width,
+  }: {
+    radiusXPercent: number;
+    radiusYPercent: number;
+    centerYPercent: number;
+    width: string;
+  },
+) => {
+  const anchors = buildEqualArcEllipsePercentAnchors({
+    totalSeats: seats.length,
+    radiusXPercent,
+    radiusYPercent,
+    centerYPercent,
+  });
 
-const eightHandedMobilePortraitSeatOrbitItems = applySeatMobileLayout(
+  return seats.map((seat, index) => ({
+    ...seat,
+    left: anchors?.[index]?.left ?? seat.left,
+    top: anchors?.[index]?.top ?? seat.top,
+    width,
+    densityClass: "seat-pod--dense",
+  }));
+};
+
+const eightHandedDesktopSeatOrbitItems = applyPreciseEllipseSeatLayout(
   eightHandedStatusSeatOrbitItems,
-  [
-    { top: "86%", left: "50%" },
-    { top: "77%", left: "18%" },
-    { top: "58%", left: "8%" },
-    { top: "32%", left: "14%" },
-    { top: "14%", left: "50%" },
-    { top: "32%", left: "86%" },
-    { top: "58%", left: "92%" },
-    { top: "77%", left: "82%" },
-  ],
-  "3.95rem",
+  {
+    radiusXPercent: 42.5,
+    radiusYPercent: 36.8,
+    centerYPercent: 50,
+    width: "4.32rem",
+  },
 );
 
-const eightHandedMobileLandscapeSeatOrbitItems = applySeatMobileLayout(
+const tenHandedDesktopSeatOrbitItems = applyPreciseEllipseSeatLayout(
+  tenHandedStatusSeatOrbitItems,
+  {
+    radiusXPercent: 43.2,
+    radiusYPercent: 37.4,
+    centerYPercent: 50,
+    width: "4.08rem",
+  },
+);
+
+const eightHandedMobilePortraitSeatOrbitItems = applyPreciseEllipseSeatLayout(
   eightHandedStatusSeatOrbitItems,
-  [
-    { top: "84%", left: "50%" },
-    { top: "74%", left: "18%" },
-    { top: "54%", left: "8%" },
-    { top: "24%", left: "16%" },
-    { top: "12%", left: "50%" },
-    { top: "24%", left: "84%" },
-    { top: "54%", left: "92%" },
-    { top: "74%", left: "82%" },
-  ],
-  "3.75rem",
+  {
+    radiusXPercent: 41.2,
+    radiusYPercent: 36,
+    centerYPercent: 50,
+    width: "3.88rem",
+  },
 );
 
-const tenHandedMobilePortraitSeatOrbitItems = applySeatMobileLayout(
-  tenHandedStatusSeatOrbitItems,
-  [
-    { top: "87%", left: "50%" },
-    { top: "79%", left: "18%" },
-    { top: "65%", left: "8%" },
-    { top: "43%", left: "10%" },
-    { top: "21%", left: "20%" },
-    { top: "13%", left: "50%" },
-    { top: "21%", left: "80%" },
-    { top: "43%", left: "90%" },
-    { top: "65%", left: "92%" },
-    { top: "79%", left: "82%" },
-  ],
-  "3.55rem",
+const eightHandedMobileLandscapeSeatOrbitItems = applyPreciseEllipseSeatLayout(
+  eightHandedStatusSeatOrbitItems,
+  {
+    radiusXPercent: 40.8,
+    radiusYPercent: 35.2,
+    centerYPercent: 49.5,
+    width: "3.68rem",
+  },
 );
 
-const tenHandedMobileLandscapeSeatOrbitItems = applySeatMobileLayout(
+const tenHandedMobilePortraitSeatOrbitItems = applyPreciseEllipseSeatLayout(
   tenHandedStatusSeatOrbitItems,
-  [
-    { top: "85%", left: "50%" },
-    { top: "77%", left: "17%" },
-    { top: "63%", left: "8%" },
-    { top: "39%", left: "12%" },
-    { top: "17%", left: "24%" },
-    { top: "11%", left: "50%" },
-    { top: "17%", left: "76%" },
-    { top: "39%", left: "88%" },
-    { top: "63%", left: "92%" },
-    { top: "77%", left: "83%" },
-  ],
-  "3.35rem",
+  {
+    radiusXPercent: 41.4,
+    radiusYPercent: 36.5,
+    centerYPercent: 50,
+    width: "3.52rem",
+  },
+);
+
+const tenHandedMobileLandscapeSeatOrbitItems = applyPreciseEllipseSeatLayout(
+  tenHandedStatusSeatOrbitItems,
+  {
+    radiusXPercent: 40.8,
+    radiusYPercent: 35.8,
+    centerYPercent: 49.5,
+    width: "3.28rem",
+  },
 );
 
 type TableBoardComponentProps = React.ComponentProps<typeof TableBoard>;
@@ -806,7 +818,7 @@ const mobileLandscapeArgs: TableBoardStoryArgs = {
 
 const eightHandedShowcaseArgs: TableBoardStoryArgs = {
   ...desktopArgs,
-  seatOrbitItems: eightHandedStatusSeatOrbitItems,
+  seatOrbitItems: eightHandedDesktopSeatOrbitItems,
   isYourTurn: false,
   potHint: null,
   potPulse: false,
@@ -822,7 +834,7 @@ const eightHandedShowcaseArgs: TableBoardStoryArgs = {
 
 const tenHandedShowcaseArgs: TableBoardStoryArgs = {
   ...desktopArgs,
-  seatOrbitItems: tenHandedStatusSeatOrbitItems,
+  seatOrbitItems: tenHandedDesktopSeatOrbitItems,
   isYourTurn: false,
   potHint: null,
   potPulse: false,
