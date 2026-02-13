@@ -534,12 +534,24 @@ export class HandService {
 
     // Fallback for legacy hand states that don't have tracked contributions.
     const fallback: Record<string, number> = {};
-    const activePlayerIds = [...hand.activePlayers];
-    if (activePlayerIds.length === 0 || hand.pot <= 0) {
+    const dealtPlayerIds = room.players
+      .filter(
+        (player) =>
+          Boolean(player.cards) &&
+          player.status !== 'left' &&
+          player.status !== 'waiting',
+      )
+      .map((player) => player.id);
+    const fallbackPlayerIds =
+      dealtPlayerIds.length > 0
+        ? [...new Set(dealtPlayerIds)]
+        : [...new Set(hand.activePlayers)];
+
+    if (fallbackPlayerIds.length === 0 || hand.pot <= 0) {
       return fallback;
     }
 
-    const sortedActive = activePlayerIds.sort((a, b) => {
+    const sortedActive = fallbackPlayerIds.sort((a, b) => {
       const aPos = room.players.find((p) => p.id === a)?.position ?? 0;
       const bPos = room.players.find((p) => p.id === b)?.position ?? 0;
       return aPos - bPos;

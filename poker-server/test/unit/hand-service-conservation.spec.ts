@@ -54,6 +54,7 @@ describe('HandService chip conservation reconciliation', () => {
     loserChips: number;
     winnerTotalBuyIn?: number;
     loserTotalBuyIn?: number;
+    potContributions?: Record<string, number>;
   }): Room {
     const winner = buildPlayer({
       id: 'p1',
@@ -99,10 +100,12 @@ describe('HandService chip conservation reconciliation', () => {
         activePlayers: [winner.id],
         roundActions: {},
         sidePots: [],
-        potContributions: {
-          [winner.id]: params.pot,
-          [loser.id]: 0,
-        },
+        potContributions:
+          params.potContributions ??
+          {
+            [winner.id]: params.pot,
+            [loser.id]: 0,
+          },
         startedAt: Date.now(),
       },
       createdAt: Date.now(),
@@ -151,6 +154,21 @@ describe('HandService chip conservation reconciliation', () => {
     expect(totalChips).toBe(expectedTotal);
     expect(winner?.chips).toBe(1000);
     expect(loser?.chips).toBe(1000);
+    expect(storageService.saveRoom).toHaveBeenCalled();
+  });
+
+  it('legacy fallback contributions include folded dealt players for net outcomes', async () => {
+    const room = buildSingleWinnerRoom({
+      pot: 15,
+      winnerChips: 900,
+      loserChips: 1000,
+      potContributions: {},
+    });
+
+    const result = await handService.determineWinner(room);
+
+    expect(result.netByPlayerId['p1']).toBe(7);
+    expect(result.netByPlayerId['p2']).toBe(-7);
     expect(storageService.saveRoom).toHaveBeenCalled();
   });
 });
