@@ -49,13 +49,13 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   densityClass,
   readyOverlayLabel,
 }) => {
-  const isDenseSeat = densityClass === "seat-pod--dense";
-  const shouldRenderStatusInActionRow =
-    Boolean(internalStatusLabel) && (seatState === "folded" || isDenseSeat);
-  const shouldRenderFloatingExternalStatus =
-    Boolean(externalStatusLabel) && !isDenseSeat;
-  const shouldRenderInlineExternalStatus =
-    Boolean(externalStatusLabel) && isDenseSeat && !shouldRenderStatusInActionRow;
+  const floatingStatusLabel = externalStatusLabel ?? internalStatusLabel;
+  const floatingStatusToneClass = externalStatusLabel
+    ? externalStatusToneClass
+    : internalStatusToneClass;
+  const floatingStatusTestId = externalStatusLabel
+    ? `${testId}-external-status`
+    : `${testId}-status`;
 
   return (
     <div
@@ -64,7 +64,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         "seat-pod",
         isYou && "seat-pod--you",
         Boolean(roleIcon && roleLabel) && "seat-pod--has-role-icon",
-        Boolean(externalStatusLabel) && "seat-pod--has-external-status",
+        Boolean(floatingStatusLabel) && "seat-pod--has-status-badge",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
         seatState === "disconnected" && "seat-pod--disconnected",
@@ -98,13 +98,17 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         </div>
       )}
 
-      {shouldRenderFloatingExternalStatus && (
+      {floatingStatusLabel && (
         <div
-          className={`seat-pod__status-badge seat-pod__status-badge--external ${externalStatusToneClass}`}
-          data-testid={`${testId}-external-status`}
-          data-seat-status={externalStatusLabel}
+          className={cn(
+            "seat-pod__status-badge",
+            "seat-pod__status-badge--external",
+            floatingStatusToneClass,
+          )}
+          data-testid={floatingStatusTestId}
+          data-seat-status={floatingStatusLabel}
         >
-          {externalStatusLabel}
+          {floatingStatusLabel}
         </div>
       )}
 
@@ -113,55 +117,18 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           {playerEmoji}
         </span>
         <span className="seat-pod__name">{playerName}</span>
-
-        {internalStatusLabel && !shouldRenderStatusInActionRow && (
-          <span
-            className={`seat-pod__status-badge ${internalStatusToneClass}`}
-            data-testid={`${testId}-status`}
-            data-seat-status={internalStatusLabel}
-          >
-            {internalStatusLabel}
-          </span>
-        )}
       </div>
 
       <div className="seat-pod__row seat-pod__row--action">
-        {shouldRenderStatusInActionRow ? (
-          <span
-            className={cn(
-              "seat-pod__status-badge",
-              "seat-pod__status-badge--inline-action",
-              internalStatusToneClass,
-            )}
-            data-testid={`${testId}-status`}
-            data-seat-status={internalStatusLabel}
-          >
-            {internalStatusLabel}
-          </span>
-        ) : shouldRenderInlineExternalStatus ? (
-          <span
-            className={cn(
-              "seat-pod__status-badge",
-              "seat-pod__status-badge--inline-action",
-              "seat-pod__status-badge--external-inline",
-              externalStatusToneClass,
-            )}
-            data-testid={`${testId}-external-status`}
-            data-seat-status={externalStatusLabel}
-          >
-            {externalStatusLabel}
-          </span>
-        ) : (
-          <div
-            className={cn(
-              "seat-pod__action",
-              actionLabel ? `seat-pod__action--${actionLabel.tone}` : "",
-            )}
-            data-testid={`${testId}-action`}
-          >
-            {actionLabel?.text ?? ""}
-          </div>
-        )}
+        <div
+          className={cn(
+            "seat-pod__action",
+            actionLabel ? `seat-pod__action--${actionLabel.tone}` : "",
+          )}
+          data-testid={`${testId}-action`}
+        >
+          {actionLabel?.text ?? ""}
+        </div>
       </div>
 
       <div className="seat-pod__row seat-pod__row--remaining">

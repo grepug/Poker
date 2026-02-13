@@ -1093,83 +1093,84 @@ async function assertSeatCardsDoNotOverlapBoardAndPot(
   ).toEqual([]);
 }
 
-async function assertSeatCardsCoreTextUnclippedWhenRoomy(
+async function assertSeatCardsNonNameTextUnclipped(
   page: Page,
   label: string,
   {
-    minSeatWidthPx = 74,
     minSeatCount = 2,
-    overflowTolerancePx = 6,
+    overflowTolerancePx = 0.75,
   }: {
-    minSeatWidthPx?: number;
     minSeatCount?: number;
     overflowTolerancePx?: number;
   } = {},
 ) {
-  const result = await page.evaluate(({ minSeatWidth, overflowTolerance }) => {
+  const result = await page.evaluate(({ overflowTolerance }) => {
     const seatNodes = Array.from(
       document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
     );
+    const textSelectors = [
+      '.seat-pod__status-badge',
+      '.seat-pod__action',
+      '.seat-pod__remaining',
+      '.seat-pod__ready-overlay',
+      '.seat-pod__role-icon',
+    ];
 
-    const roomySeats = seatNodes.filter(
-      (seatNode) => seatNode.getBoundingClientRect().width >= minSeatWidth,
-    );
-
-    const failures = roomySeats.flatMap((seatNode) => {
-      const seatRect = seatNode.getBoundingClientRect();
+    const failures = seatNodes.flatMap((seatNode) => {
       const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
-      const checks: Array<{ key: string; node: HTMLElement | null }> = [
-        { key: 'name', node: seatNode.querySelector<HTMLElement>('.seat-pod__name') },
-        { key: 'remaining', node: seatNode.querySelector<HTMLElement>('.seat-pod__remaining') },
-        {
-          key: 'external-status',
-          node: seatNode.querySelector<HTMLElement>('.seat-pod__status-badge--external'),
-        },
-      ];
-
-      return checks
-        .filter((entry): entry is { key: string; node: HTMLElement } => Boolean(entry.node))
-        .map(({ key, node }) => {
-          const overflowX = node.scrollWidth - node.clientWidth;
-          if (overflowX <= overflowTolerance) {
-            return null;
+      return textSelectors.flatMap((selector) =>
+        Array.from(seatNode.querySelectorAll<HTMLElement>(selector)).flatMap((node) => {
+          const text = (node.textContent || '').trim();
+          if (!text) {
+            return [];
           }
 
-          return {
-            seatId,
-            key,
-            text: (node.textContent || '').trim(),
-            seatWidth: Number(seatRect.width.toFixed(1)),
-            overflowX: Number(overflowX.toFixed(2)),
-          };
-        })
-        .filter(
-          (
-            entry,
-          ): entry is {
-            seatId: string;
-            key: string;
-            text: string;
-            seatWidth: number;
-            overflowX: number;
-          } => Boolean(entry),
-        );
+          const style = window.getComputedStyle(node);
+          const overflowX = node.scrollWidth - node.clientWidth;
+          const overflowY = node.scrollHeight - node.clientHeight;
+          const overflowModeX = style.overflowX === 'visible' ? style.overflow : style.overflowX;
+          const overflowModeY = style.overflowY === 'visible' ? style.overflow : style.overflowY;
+          const clipX = (overflowModeX === 'hidden' || overflowModeX === 'clip') && overflowX > overflowTolerance;
+          const clipY = (overflowModeY === 'hidden' || overflowModeY === 'clip') && overflowY > overflowTolerance;
+
+          const textOverflow = style.textOverflow;
+          const lineClampRaw =
+            style.getPropertyValue('-webkit-line-clamp') || (style as CSSStyleDeclaration & { webkitLineClamp?: string }).webkitLineClamp || '0';
+          const lineClamp = Number.parseInt(lineClampRaw, 10);
+          const hasLineClamp = Number.isFinite(lineClamp) && lineClamp > 0;
+          const hasEllipsis = textOverflow === 'ellipsis';
+
+          if (!clipX && !clipY && !hasLineClamp && !hasEllipsis) {
+            return [];
+          }
+
+          return [
+            {
+              seatId,
+              selector,
+              text,
+              overflowX: Number(overflowX.toFixed(2)),
+              overflowY: Number(overflowY.toFixed(2)),
+              overflowModeX,
+              overflowModeY,
+              textOverflow,
+              lineClamp: hasLineClamp ? lineClamp : 0,
+            },
+          ];
+        }),
+      );
     });
 
     return {
       seatCount: seatNodes.length,
-      roomySeatCount: roomySeats.length,
       failures,
     };
-  }, { minSeatWidth: minSeatWidthPx, overflowTolerance: overflowTolerancePx });
+  }, { overflowTolerance: overflowTolerancePx });
 
   expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
-  if (result.roomySeatCount === 0) {
-    return;
-  }
   expect(
     result.failures,
-    `[${label}] core seat text should not clip on roomy cards: ${JSON.stringify(result.failures)}`,
+    `[${label}] non-name seat text should not be truncated: ${JSON.stringify(result.failures)}`,
   ).toEqual([]);
 }
 
@@ -4807,8 +4808,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         { label: 'desktop-wide', width: 1536, height: 864 },
         { label: 'tablet-landscape', width: 1024, height: 768 },
         { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-large-portrait', width: 412, height: 915 },
+        { label: 'mobile-medium-portrait', width: 390, height: 844 },
+        { label: 'mobile-small-portrait', width: 360, height: 640 },
+        { label: 'mobile-xsmall-portrait', width: 320, height: 568 },
         { label: 'mobile-landscape', width: 844, height: 390 },
-        { label: 'mobile-portrait', width: 390, height: 844 },
       ];
 
       for (const viewport of viewports) {
@@ -4829,7 +4833,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('@critical 8.8d: Roomy Seat Cards Keep Core Text Unclipped Across Viewports', async ({
+  test('@critical 8.8d: Non-Name Seat Text Never Truncates Across Viewports', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -4844,8 +4848,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         { label: 'desktop-wide', width: 1536, height: 864 },
         { label: 'tablet-landscape', width: 1024, height: 768 },
         { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-large-portrait', width: 412, height: 915 },
+        { label: 'mobile-medium-portrait', width: 390, height: 844 },
+        { label: 'mobile-small-portrait', width: 360, height: 640 },
+        { label: 'mobile-xsmall-portrait', width: 320, height: 568 },
         { label: 'mobile-landscape', width: 844, height: 390 },
-        { label: 'mobile-portrait', width: 390, height: 844 },
       ];
 
       for (const viewport of viewports) {
@@ -4856,16 +4863,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         await alicePage.waitForTimeout(180);
         await bobPage.waitForTimeout(180);
 
-        await assertSeatCardsCoreTextUnclippedWhenRoomy(
-          alicePage,
-          `${viewport.label}-alice`,
-          { minSeatWidthPx: 74 },
-        );
-        await assertSeatCardsCoreTextUnclippedWhenRoomy(
-          bobPage,
-          `${viewport.label}-bob`,
-          { minSeatWidthPx: 74 },
-        );
+        await assertSeatCardsNonNameTextUnclipped(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsNonNameTextUnclipped(bobPage, `${viewport.label}-bob`);
       }
     } finally {
       await teardownTwoPlayerSession(session);

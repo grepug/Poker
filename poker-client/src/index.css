@@ -779,7 +779,8 @@ body {
   font-weight: 760;
   line-height: 1.1;
   letter-spacing: 0.02em;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   backdrop-filter: blur(6px);
 }
 
@@ -815,19 +816,17 @@ body {
 
 .seat-pod__status-badge--external {
   position: absolute;
-  right: 0.34rem;
-  top: 0.3rem;
-  margin-left: auto;
-  transform: none;
+  left: 0.34rem;
+  top: 0.08rem;
+  right: auto;
+  margin-left: 0;
+  transform: translateY(-58%);
   z-index: 4;
   pointer-events: none;
-  text-align: center;
-  justify-content: center;
+  text-align: left;
+  justify-content: flex-start;
   max-width: calc(100% - 0.72rem);
-}
-
-.seat-pod__status-badge--inline-action {
-  margin-left: 0;
+  line-height: 1.05;
 }
 
 .seat-pod__ready-overlay {
@@ -846,9 +845,10 @@ body {
   min-height: 1rem;
   max-width: calc(100% - 0.48rem);
   width: fit-content;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
   font-size: clamp(0.56rem, 1.1vw, 0.72rem);
   font-weight: 860;
   line-height: 1;
@@ -866,23 +866,15 @@ body {
   background: rgba(6, 78, 59, 0.94);
 }
 
-.seat-pod__status-badge--external-inline {
-  max-width: 100%;
-}
-
 .seat-pod__row--identity {
   padding-right: 0;
-}
-
-.seat-pod--has-external-status .seat-pod__row--identity {
-  padding-right: var(--seat-external-status-reserve);
 }
 
 .seat-pod--you .seat-pod__row--identity {
   padding-left: 0.72rem;
 }
 
-.seat-pod--you.seat-pod--has-external-status .seat-pod__row--identity {
+.seat-pod--you.seat-pod--has-status-badge .seat-pod__row--identity {
   padding-left: 0.62rem;
 }
 
@@ -934,11 +926,10 @@ body {
   line-height: 1.14;
   font-weight: 720;
   overflow-wrap: anywhere;
+  word-break: break-word;
   min-height: calc(var(--seat-bet-size) * 1.12);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
 }
 
 .seat-pod__action--blind {
@@ -972,11 +963,12 @@ body {
   font-size: calc(var(--seat-stack-size) * 0.9);
   color: rgba(110, 231, 183, 0.96);
   font-weight: 760;
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 1.05;
+  white-space: normal;
+  overflow-wrap: anywhere;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   letter-spacing: 0.012em;
   font-variant-numeric: tabular-nums;
 }
@@ -1078,10 +1070,6 @@ body {
 
   .seat-pod--dense {
     --seat-external-status-reserve: 0;
-  }
-
-  .seat-pod__action {
-    -webkit-line-clamp: 1;
   }
 
   .seat-pod__you-indicator {
