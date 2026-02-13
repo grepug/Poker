@@ -1339,20 +1339,40 @@ export const GameRoom: React.FC = () => {
       ),
     [lastHandResult],
   );
+  const netByPlayerId = useMemo(() => lastHandResult?.netByPlayerId ?? {}, [lastHandResult]);
+  const hasNetByPlayerId = useMemo(
+    () => Object.keys(netByPlayerId).length > 0,
+    [netByPlayerId],
+  );
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
   );
+  const myHandNetChange = useMemo(() => {
+    if (!player?.id || !lastHandResult || !hasNetByPlayerId) return null;
+    if (!Object.prototype.hasOwnProperty.call(netByPlayerId, player.id)) {
+      return null;
+    }
+    const netFromResult = netByPlayerId[player.id];
+    if (typeof netFromResult === "number") {
+      return netFromResult;
+    }
+    return null;
+  }, [hasNetByPlayerId, lastHandResult, netByPlayerId, player?.id]);
 
   const handResultRows = useMemo(() => {
     if (!lastHandResult) return [];
     return lastHandResult.playerHands.map((entry, idx) => ({
       ...entry,
       amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
+      netChange:
+        hasNetByPlayerId && Object.prototype.hasOwnProperty.call(netByPlayerId, entry.playerId)
+          ? netByPlayerId[entry.playerId]
+          : null,
       isWinner: winnersByPlayerId.has(entry.playerId),
       rankOrder: idx + 1,
     }));
-  }, [lastHandResult, winnersByPlayerId]);
+  }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
 
   const payoutBreakdownRows = useMemo(() => {
     if (!lastHandResult) return [];
@@ -2685,6 +2705,8 @@ export const GameRoom: React.FC = () => {
             currentHandNumber={currentHandNumber}
             totalPot={lastHandResult.totalPot}
             winnerCount={lastHandResult.winners.length}
+            myNetChange={myHandNetChange}
+            showNetChange={hasNetByPlayerId}
             currentPlayerId={player.id}
             communityCards={Array.from(
               { length: 5 },

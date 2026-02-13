@@ -147,6 +147,8 @@ export const EN_MESSAGES = {
   "game.noPayout": "No payout",
   "game.winner": "Winner",
   "game.cardsShownNoEvaluated": "Cards shown (no evaluated hand).",
+  "game.yourHandNet": "Your hand: {amount}",
+  "game.netChange": "Net: {amount}",
 
   "game.handComplete": "Hand complete",
   "game.handCompleteHint": "Host can start the next hand when everyone is ready.",
@@ -412,6 +414,8 @@ export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.noPayout": "未获分配",
   "game.winner": "赢家",
   "game.cardsShownNoEvaluated": "已亮牌（无牌型评估）。",
+  "game.yourHandNet": "你本手：{amount}",
+  "game.netChange": "净变化：{amount}",
 
   "game.handComplete": "本局结束",
   "game.handCompleteHint": "所有人准备好后，房主可以开始下一局。",
