@@ -29,6 +29,7 @@ type SeatPodProps = {
   remainingLabel: string;
   seatState: SeatState;
   densityClass: string;
+  readyOverlayLabel?: string | null;
 };
 
 export const SeatPod: React.FC<SeatPodProps> = ({
@@ -46,6 +47,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   remainingLabel,
   seatState,
   densityClass,
+  readyOverlayLabel,
 }) => {
   const shouldRenderStatusInActionRow =
     seatState === "folded" && Boolean(internalStatusLabel);
@@ -75,6 +77,16 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           data-testid={`${testId}-${roleIcon}-icon`}
         >
           {roleLabel}
+        </div>
+      )}
+
+      {readyOverlayLabel && (
+        <div
+          className="seat-pod__ready-overlay seat-pod__ready-overlay--ready"
+          data-testid={`${testId}-ready-overlay`}
+          data-ready-state="ready"
+        >
+          {readyOverlayLabel}
         </div>
       )}
 

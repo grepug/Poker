@@ -86,6 +86,7 @@ type DebugApi = {
   joinRoom: (roomId: string, name: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  markReady: () => void;
   endGame: () => void;
   showMyHand: () => void;
   revealNextStreet: () => void;
@@ -137,6 +138,7 @@ interface GameContextType {
   joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
+  markReady: () => void;
   endGame: () => void;
   showMyHand: () => void;
   revealNextStreet: () => void;
@@ -540,6 +542,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       });
     });
 
+    socket.on("READY_STATE_UPDATED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          readyPhase: data.phase ?? null,
+          readyPlayerIds: data.readyPlayerIds ?? [],
+        };
+      });
+    });
+
     // Game started
     socket.on("GAME_STARTED", (data) => {
       setLastHandResult(null);
@@ -572,6 +585,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           currentHand: data.hand as Hand,
           players: playersWithCards,
           gameState: "IN_PROGRESS",
+          readyPhase: null,
+          readyPlayerIds: [],
         } as Room;
       });
 
@@ -687,6 +702,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
           ...prev,
           gameState: "ENDED",
           currentHand: null,
+          readyPhase: null,
+          readyPlayerIds: [],
           players: prev.players.map((seatPlayer) => {
             const standing = standingsByPlayerId.get(seatPlayer.id);
             return {
@@ -926,6 +943,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("PLAYER_AUTO_FOLDED");
       socket.off("HOST_CHANGED");
       socket.off("ROOM_CONFIG_UPDATED");
+      socket.off("READY_STATE_UPDATED");
       socket.off("GAME_STARTED");
       socket.off("YOUR_CARDS");
       socket.off("PLAYER_TURN");
@@ -1049,6 +1067,17 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Start next hand response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to start next hand");
+      }
+    });
+  }, [socket]);
+
+  const markReady = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("PLAYER_READY", {}, (response) => {
+      console.log("Player ready response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to mark ready");
       }
     });
   }, [socket]);
@@ -1270,6 +1299,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         joinRoom,
         startGame,
         startNextHand,
+        markReady,
         endGame,
         showMyHand,
         revealNextStreet,
@@ -1320,6 +1350,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     joinRoom,
     startGame,
     startNextHand,
+    markReady,
     endGame,
     showMyHand,
     revealNextStreet,
@@ -1360,6 +1391,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         joinRoom,
         startGame,
         startNextHand,
+        markReady,
         endGame,
         showMyHand,
         revealNextStreet,

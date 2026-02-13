@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { Room, RoomConfig, Player, PlayerStatus } from 'poker-types';
+import {
+  Room,
+  RoomConfig,
+  Player,
+  PlayerStatus,
+  ReadyPhase,
+} from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
 
@@ -59,6 +65,8 @@ export class GameService {
       players: [host],
       gameState: 'WAITING',
       currentHand: null,
+      readyPhase: 'START_GAME' as ReadyPhase,
+      readyPlayerIds: [],
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
     };
@@ -223,6 +231,9 @@ export class GameService {
         room.currentHand.currentPlayerTurn = null;
       }
     }
+    room.readyPlayerIds = (room.readyPlayerIds || []).filter(
+      (readyPlayerId) => readyPlayerId !== playerId,
+    );
     room.lastActivityAt = Date.now();
 
     this.logger.log(`Player ${player.name} marked left in room ${roomId}`);

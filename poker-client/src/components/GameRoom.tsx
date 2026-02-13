@@ -1128,8 +1128,7 @@ export const GameRoom: React.FC = () => {
     isHost,
     lastError,
     clearError,
-    startGame,
-    startNextHand,
+    markReady,
     endGame,
     revealNextStreet,
     performAction,
@@ -1189,6 +1188,10 @@ export const GameRoom: React.FC = () => {
   const tablePlayers = useMemo(
     () => room?.players.filter((entry) => entry.status !== "left") ?? [],
     [room?.players],
+  );
+  const readyEligiblePlayers = useMemo(
+    () => tablePlayers.filter((entry) => entry.status !== "disconnected"),
+    [tablePlayers],
   );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
@@ -1297,11 +1300,27 @@ export const GameRoom: React.FC = () => {
   const isHandPausedForNext =
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
-  const canHostStartNextHand =
-    isHost && isGameStarted && isHandPausedForNextHand && tablePlayers.length >= 2;
+  const canReadyNextHand =
+    isGameStarted && isHandPausedForNextHand && readyEligiblePlayers.length >= 2;
   const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
-  const isWaitingForHostToStartNextHand =
-    !isHost && isGameStarted && isHandPausedForNextHand;
+  const currentReadyPhase =
+    !isGameStarted && !isGameEnded
+      ? "START_GAME"
+      : isHandPausedForNextHand
+        ? "NEXT_HAND"
+        : null;
+  const readyPlayerIdSet = useMemo(
+    () =>
+      room?.readyPhase === currentReadyPhase
+        ? new Set(room?.readyPlayerIds ?? [])
+        : new Set<string>(),
+    [currentReadyPhase, room?.readyPhase, room?.readyPlayerIds],
+  );
+  const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
+  const showPreGameReadyButton =
+    !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
+  const shouldShowSeatReadyOverlay =
+    !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
 
   const myCompletedHand =
     lastHandResult?.playerHands.find((entry) => entry.playerId === player?.id) ?? null;
@@ -1729,6 +1748,8 @@ export const GameRoom: React.FC = () => {
             : seatSlots.length >= 5
               ? "seat-pod--compact"
               : "seat-pod--spacious";
+        const showReadyOverlay = shouldShowSeatReadyOverlay && !isDisconnected;
+        const seatIsReady = showReadyOverlay && readyPlayerIdSet.has(seatPlayer.id);
 
         return {
           slotIndex: slot.slotIndex,
@@ -1749,9 +1770,20 @@ export const GameRoom: React.FC = () => {
           remainingLabel: `$${seatPlayer.chips}`,
           seatState: seatMainState,
           densityClass: seatDensityClass,
+          readyOverlayLabel: showReadyOverlay && seatIsReady ? t("game.ready.readyBadge") : null,
         };
       }),
-    [currentHand, lastPlayerActionEvent, resolvedPlayerId, seatSlotWidth, seatSlots, t],
+    [
+      currentHand,
+      lastPlayerActionEvent,
+      readyPlayerIdSet,
+      readyEligiblePlayers.length,
+      resolvedPlayerId,
+      seatSlotWidth,
+      seatSlots,
+      shouldShowSeatReadyOverlay,
+      t,
+    ],
   );
 
   const dropResolution = useMemo(
@@ -2598,7 +2630,8 @@ export const GameRoom: React.FC = () => {
             : t("game.chat.button")
         }
         finalResultsLabel={t("game.final.title")}
-        startLabel={t("common.start")}
+        startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
+        startDisabled={hasReadiedCurrentPhase}
         hiddenHudCopy={{
           potLabel: t("game.pot", { amount: displayPot }),
           chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
@@ -2624,9 +2657,7 @@ export const GameRoom: React.FC = () => {
               }
         }
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
-        showStartGameButton={
-          isHost && !isGameStarted && !isGameEnded && tablePlayers.length >= 2
-        }
+        showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
         onLeave={handleLeave}
         onOpenSettings={() => setShowSettingsModal(true)}
@@ -2634,7 +2665,7 @@ export const GameRoom: React.FC = () => {
         onOpenRankings={() => setShowRankingsModal(true)}
         onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
         onOpenFinalResults={() => setShowFinalSummaryModal(true)}
-        onStartGame={startGame}
+        onStartGame={markReady}
         onOpenChatFromPreview={handleOpenChatFromPreview}
         onDismissPreview={handleDismissPreview}
       />
@@ -2734,14 +2765,18 @@ export const GameRoom: React.FC = () => {
       )}
 
       <NextHandActionArea
-        canHostStartNextHand={canHostStartNextHand}
-        isWaitingForHostToStartNextHand={isWaitingForHostToStartNextHand}
+        canReadyNextHand={canReadyNextHand}
+        hasReadiedNextHand={hasReadiedCurrentPhase}
+        canEndGame={canHostEndGame}
         showNextStreetActionArea={showNextStreetActionArea}
         isResultRevealStep={isResultRevealStep}
         canRevealNextStreet={canRevealNextStreet}
         hasRevealedNextStreet={hasRevealedNextStreet}
-        onStartNextHand={startNextHand}
-        onOpenEndGameConfirm={() => setShowEndGameConfirmModal(true)}
+        onReadyNextHand={markReady}
+        onOpenEndGameConfirm={() => {
+          if (!canHostEndGame) return;
+          setShowEndGameConfirmModal(true);
+        }}
         onRevealNextStreet={revealNextStreet}
         t={t}
       />
