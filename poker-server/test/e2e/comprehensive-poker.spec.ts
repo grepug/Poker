@@ -954,7 +954,7 @@ async function assertSeatCardsWithinTableBounds(
   const result = await page.evaluate(({ tolerance }) => {
     const feltNode = document.querySelector('.felt-oval');
     const seatNodes = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
     );
 
     if (!feltNode) {
@@ -1012,6 +1012,164 @@ async function assertSeatCardsWithinTableBounds(
   expect(
     result.failures,
     `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
+}
+
+async function assertSeatCardsDoNotOverlapBoardAndPot(
+  page: Page,
+  label: string,
+  minSeatCount = 2,
+) {
+  const result = await page.evaluate(() => {
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
+    );
+    const boardNodes = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid^="community-card-"], [data-testid^="board-back-"]',
+      ),
+    );
+    const potNode = document.querySelector<HTMLElement>('[data-testid="pot-drop-zone"]');
+
+    const targets = [
+      ...boardNodes.map((node) => ({
+        id: node.getAttribute('data-testid') || 'community-card',
+        rect: node.getBoundingClientRect(),
+      })),
+      ...(potNode
+        ? [
+            {
+              id: potNode.getAttribute('data-testid') || 'pot-drop-zone',
+              rect: potNode.getBoundingClientRect(),
+            },
+          ]
+        : []),
+    ];
+
+    const overlaps = seatNodes.flatMap((seatNode) => {
+      const seatRect = seatNode.getBoundingClientRect();
+      const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
+
+      return targets
+        .map((target) => {
+          const overlapWidth =
+            Math.min(seatRect.right, target.rect.right) -
+            Math.max(seatRect.left, target.rect.left);
+          const overlapHeight =
+            Math.min(seatRect.bottom, target.rect.bottom) -
+            Math.max(seatRect.top, target.rect.top);
+          const hasOverlap = overlapWidth > 0 && overlapHeight > 0;
+
+          if (!hasOverlap) {
+            return null;
+          }
+
+          return {
+            seatId,
+            targetId: target.id,
+            overlapWidth: Number(overlapWidth.toFixed(2)),
+            overlapHeight: Number(overlapHeight.toFixed(2)),
+          };
+        })
+        .filter((entry): entry is { seatId: string; targetId: string; overlapWidth: number; overlapHeight: number } =>
+          Boolean(entry),
+        );
+    });
+
+    return {
+      seatCount: seatNodes.length,
+      boardCount: boardNodes.length,
+      hasPot: Boolean(potNode),
+      overlaps,
+    };
+  });
+
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+  expect(result.boardCount, `[${label}] should render community-card targets`).toBeGreaterThan(0);
+  expect(result.hasPot, `[${label}] should render pot drop zone`).toBe(true);
+  expect(
+    result.overlaps,
+    `[${label}] seat cards overlap community cards or pot: ${JSON.stringify(result.overlaps)}`,
+  ).toEqual([]);
+}
+
+async function assertSeatCardsCoreTextUnclippedWhenRoomy(
+  page: Page,
+  label: string,
+  {
+    minSeatWidthPx = 74,
+    minSeatCount = 2,
+    overflowTolerancePx = 6,
+  }: {
+    minSeatWidthPx?: number;
+    minSeatCount?: number;
+    overflowTolerancePx?: number;
+  } = {},
+) {
+  const result = await page.evaluate(({ minSeatWidth, overflowTolerance }) => {
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
+    );
+
+    const roomySeats = seatNodes.filter(
+      (seatNode) => seatNode.getBoundingClientRect().width >= minSeatWidth,
+    );
+
+    const failures = roomySeats.flatMap((seatNode) => {
+      const seatRect = seatNode.getBoundingClientRect();
+      const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
+      const checks: Array<{ key: string; node: HTMLElement | null }> = [
+        { key: 'name', node: seatNode.querySelector<HTMLElement>('.seat-pod__name') },
+        { key: 'remaining', node: seatNode.querySelector<HTMLElement>('.seat-pod__remaining') },
+        {
+          key: 'external-status',
+          node: seatNode.querySelector<HTMLElement>('.seat-pod__status-badge--external'),
+        },
+      ];
+
+      return checks
+        .filter((entry): entry is { key: string; node: HTMLElement } => Boolean(entry.node))
+        .map(({ key, node }) => {
+          const overflowX = node.scrollWidth - node.clientWidth;
+          if (overflowX <= overflowTolerance) {
+            return null;
+          }
+
+          return {
+            seatId,
+            key,
+            text: (node.textContent || '').trim(),
+            seatWidth: Number(seatRect.width.toFixed(1)),
+            overflowX: Number(overflowX.toFixed(2)),
+          };
+        })
+        .filter(
+          (
+            entry,
+          ): entry is {
+            seatId: string;
+            key: string;
+            text: string;
+            seatWidth: number;
+            overflowX: number;
+          } => Boolean(entry),
+        );
+    });
+
+    return {
+      seatCount: seatNodes.length,
+      roomySeatCount: roomySeats.length,
+      failures,
+    };
+  }, { minSeatWidth: minSeatWidthPx, overflowTolerance: overflowTolerancePx });
+
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+  if (result.roomySeatCount === 0) {
+    return;
+  }
+  expect(
+    result.failures,
+    `[${label}] core seat text should not clip on roomy cards: ${JSON.stringify(result.failures)}`,
   ).toEqual([]);
 }
 
@@ -4629,6 +4787,86 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await assertSeatCardsWithinTableBounds(alicePage, 'mobile-alice');
       await assertSeatCardsWithinTableBounds(bobPage, 'mobile-bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8c: Seat Cards Never Overlap Community Cards Or Pot Across Viewports', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const viewports = [
+        { label: 'desktop-720p', width: 1280, height: 720 },
+        { label: 'desktop-wide', width: 1536, height: 864 },
+        { label: 'tablet-landscape', width: 1024, height: 768 },
+        { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-landscape', width: 844, height: 390 },
+        { label: 'mobile-portrait', width: 390, height: 844 },
+      ];
+
+      for (const viewport of viewports) {
+        await Promise.all([
+          alicePage.setViewportSize({ width: viewport.width, height: viewport.height }),
+          bobPage.setViewportSize({ width: viewport.width, height: viewport.height }),
+        ]);
+        await alicePage.waitForTimeout(180);
+        await bobPage.waitForTimeout(180);
+
+        await assertSeatCardsWithinTableBounds(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsWithinTableBounds(bobPage, `${viewport.label}-bob`);
+        await assertSeatCardsDoNotOverlapBoardAndPot(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsDoNotOverlapBoardAndPot(bobPage, `${viewport.label}-bob`);
+      }
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8d: Roomy Seat Cards Keep Core Text Unclipped Across Viewports', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const viewports = [
+        { label: 'desktop-720p', width: 1280, height: 720 },
+        { label: 'desktop-wide', width: 1536, height: 864 },
+        { label: 'tablet-landscape', width: 1024, height: 768 },
+        { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-landscape', width: 844, height: 390 },
+        { label: 'mobile-portrait', width: 390, height: 844 },
+      ];
+
+      for (const viewport of viewports) {
+        await Promise.all([
+          alicePage.setViewportSize({ width: viewport.width, height: viewport.height }),
+          bobPage.setViewportSize({ width: viewport.width, height: viewport.height }),
+        ]);
+        await alicePage.waitForTimeout(180);
+        await bobPage.waitForTimeout(180);
+
+        await assertSeatCardsCoreTextUnclippedWhenRoomy(
+          alicePage,
+          `${viewport.label}-alice`,
+          { minSeatWidthPx: 74 },
+        );
+        await assertSeatCardsCoreTextUnclippedWhenRoomy(
+          bobPage,
+          `${viewport.label}-bob`,
+          { minSeatWidthPx: 74 },
+        );
+      }
     } finally {
       await teardownTwoPlayerSession(session);
     }

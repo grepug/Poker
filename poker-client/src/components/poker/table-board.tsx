@@ -36,6 +36,8 @@ type SeatOrbitItem = {
 
 type TableBoardProps = {
   feltOvalRef: React.RefObject<HTMLDivElement | null>;
+  boardCenterStackRef: React.RefObject<HTMLDivElement | null>;
+  communityLaneRef: React.RefObject<HTMLDivElement | null>;
   potDropZoneRef: React.RefObject<HTMLDivElement | null>;
   setSeatNodeRef: (playerId: string, node: HTMLDivElement | null) => void;
   communitySlots: Array<PokerCard | null>;
@@ -50,6 +52,8 @@ type TableBoardProps = {
 
 export const TableBoard: React.FC<TableBoardProps> = ({
   feltOvalRef,
+  boardCenterStackRef,
+  communityLaneRef,
   potDropZoneRef,
   setSeatNodeRef,
   communitySlots,
@@ -64,26 +68,28 @@ export const TableBoard: React.FC<TableBoardProps> = ({
   return (
     <section className="table-board-wrap" data-testid="table-board-section">
       <div ref={feltOvalRef} className="felt-oval">
-        <div className="board-center-stack">
-          <CommunityCardsLane>
-            {communitySlots.map((card, idx) => {
-              const isRevealed = Boolean(card);
-              return (
-                <div
-                  key={`community-slot-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
-                  className={isRevealed ? "community-reveal" : ""}
-                  style={isRevealed ? { animationDelay: `${idx * 70}ms` } : undefined}
-                >
-                  <Card
-                    card={card}
-                    size="medium"
-                    faceDown={!isRevealed}
-                    dataTestId={isRevealed ? `community-card-${idx}` : `board-back-${idx}`}
-                  />
-                </div>
-              );
-            })}
-          </CommunityCardsLane>
+        <div ref={boardCenterStackRef} className="board-center-stack">
+          <div ref={communityLaneRef}>
+            <CommunityCardsLane>
+              {communitySlots.map((card, idx) => {
+                const isRevealed = Boolean(card);
+                return (
+                  <div
+                    key={`community-slot-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                    className={isRevealed ? "community-reveal" : ""}
+                    style={isRevealed ? { animationDelay: `${idx * 70}ms` } : undefined}
+                  >
+                    <Card
+                      card={card}
+                      size="medium"
+                      faceDown={!isRevealed}
+                      dataTestId={isRevealed ? `community-card-${idx}` : `board-back-${idx}`}
+                    />
+                  </div>
+                );
+              })}
+            </CommunityCardsLane>
+          </div>
 
           <div ref={potDropZoneRef}>
             <PotDropZone

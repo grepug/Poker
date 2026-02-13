@@ -49,14 +49,22 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   densityClass,
   readyOverlayLabel,
 }) => {
+  const isDenseSeat = densityClass === "seat-pod--dense";
   const shouldRenderStatusInActionRow =
-    seatState === "folded" && Boolean(internalStatusLabel);
+    Boolean(internalStatusLabel) && (seatState === "folded" || isDenseSeat);
+  const shouldRenderFloatingExternalStatus =
+    Boolean(externalStatusLabel) && !isDenseSeat;
+  const shouldRenderInlineExternalStatus =
+    Boolean(externalStatusLabel) && isDenseSeat && !shouldRenderStatusInActionRow;
 
   return (
     <div
       data-testid={testId}
       className={cn(
         "seat-pod",
+        isYou && "seat-pod--you",
+        Boolean(roleIcon && roleLabel) && "seat-pod--has-role-icon",
+        Boolean(externalStatusLabel) && "seat-pod--has-external-status",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
         seatState === "disconnected" && "seat-pod--disconnected",
@@ -90,7 +98,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         </div>
       )}
 
-      {externalStatusLabel && (
+      {shouldRenderFloatingExternalStatus && (
         <div
           className={`seat-pod__status-badge seat-pod__status-badge--external ${externalStatusToneClass}`}
           data-testid={`${testId}-external-status`}
@@ -100,7 +108,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         </div>
       )}
 
-      <div className="seat-pod__row">
+      <div className="seat-pod__row seat-pod__row--identity">
         <span className="seat-pod__emoji" aria-hidden="true">
           {playerEmoji}
         </span>
@@ -129,6 +137,19 @@ export const SeatPod: React.FC<SeatPodProps> = ({
             data-seat-status={internalStatusLabel}
           >
             {internalStatusLabel}
+          </span>
+        ) : shouldRenderInlineExternalStatus ? (
+          <span
+            className={cn(
+              "seat-pod__status-badge",
+              "seat-pod__status-badge--inline-action",
+              "seat-pod__status-badge--external-inline",
+              externalStatusToneClass,
+            )}
+            data-testid={`${testId}-external-status`}
+            data-seat-status={externalStatusLabel}
+          >
+            {externalStatusLabel}
           </span>
         ) : (
           <div
