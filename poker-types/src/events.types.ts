@@ -1,6 +1,6 @@
 import { Card } from "./card.types";
 import { Player, PlayerAction, PlayerStatus } from "./player.types";
-import { Room, RoomConfig, ReadyPhase, SanitizedRoom } from "./room.types";
+import { RoomConfig, ReadyPhase, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
 import {
   ChatHistorySyncData,

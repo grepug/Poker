@@ -1189,6 +1189,10 @@ export const GameRoom: React.FC = () => {
     () => room?.players.filter((entry) => entry.status !== "left") ?? [],
     [room?.players],
   );
+  const readyEligiblePlayers = useMemo(
+    () => tablePlayers.filter((entry) => entry.status !== "disconnected"),
+    [tablePlayers],
+  );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
   const isGameStarted = room?.gameState === "IN_PROGRESS";
   const isGameEnded = room?.gameState === "ENDED";
@@ -1297,7 +1301,7 @@ export const GameRoom: React.FC = () => {
     Boolean(currentHand) && currentHand?.currentPlayerTurn === null;
   const isHandPausedForNextHand = isHandPausedForNext && Boolean(lastHandResult);
   const canReadyNextHand =
-    isGameStarted && isHandPausedForNextHand && (room?.players.length ?? 0) >= 2;
+    isGameStarted && isHandPausedForNextHand && readyEligiblePlayers.length >= 2;
   const canHostEndGame = isHost && isGameStarted && isHandPausedForNextHand;
   const currentReadyPhase =
     !isGameStarted && !isGameEnded
@@ -1314,7 +1318,7 @@ export const GameRoom: React.FC = () => {
   );
   const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
   const showPreGameReadyButton =
-    !isGameStarted && !isGameEnded && (room?.players.length ?? 0) >= 2;
+    !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
   const shouldShowSeatReadyOverlay =
     !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
 
@@ -1726,7 +1730,6 @@ export const GameRoom: React.FC = () => {
               : "seat-pod--spacious";
         const showReadyOverlay = shouldShowSeatReadyOverlay && !isDisconnected;
         const seatIsReady = showReadyOverlay && readyPlayerIdSet.has(seatPlayer.id);
-        const readyOverlayTone: "ready" | "pending" = seatIsReady ? "ready" : "pending";
 
         return {
           slotIndex: slot.slotIndex,
@@ -1748,13 +1751,13 @@ export const GameRoom: React.FC = () => {
           seatState: seatMainState,
           densityClass: seatDensityClass,
           readyOverlayLabel: showReadyOverlay && seatIsReady ? t("game.ready.readyBadge") : null,
-          readyOverlayTone,
         };
       }),
     [
       currentHand,
       lastPlayerActionEvent,
       readyPlayerIdSet,
+      readyEligiblePlayers.length,
       resolvedPlayerId,
       seatSlotWidth,
       seatSlots,

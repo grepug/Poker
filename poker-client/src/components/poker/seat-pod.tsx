@@ -30,7 +30,6 @@ type SeatPodProps = {
   seatState: SeatState;
   densityClass: string;
   readyOverlayLabel?: string | null;
-  readyOverlayTone?: "ready" | "pending";
 };
 
 export const SeatPod: React.FC<SeatPodProps> = ({
@@ -49,7 +48,6 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   seatState,
   densityClass,
   readyOverlayLabel,
-  readyOverlayTone = "pending",
 }) => {
   const shouldRenderStatusInActionRow =
     seatState === "folded" && Boolean(internalStatusLabel);
@@ -84,14 +82,9 @@ export const SeatPod: React.FC<SeatPodProps> = ({
 
       {readyOverlayLabel && (
         <div
-          className={cn(
-            "seat-pod__ready-overlay",
-            readyOverlayTone === "ready"
-              ? "seat-pod__ready-overlay--ready"
-              : "seat-pod__ready-overlay--pending",
-          )}
+          className="seat-pod__ready-overlay seat-pod__ready-overlay--ready"
           data-testid={`${testId}-ready-overlay`}
-          data-ready-state={readyOverlayTone}
+          data-ready-state="ready"
         >
           {readyOverlayLabel}
         </div>

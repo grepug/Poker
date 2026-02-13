@@ -283,6 +283,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!eligiblePlayerIds.includes(playerId)) {
       throw new Error('You are not eligible to ready');
     }
+    if (eligiblePlayerIds.length < 2) {
+      throw new Error('Need at least 2 connected players to start.');
+    }
 
     const readySet = new Set(room.readyPlayerIds ?? []);
     readySet.add(playerId);
@@ -310,6 +313,26 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.startAndBroadcastNewHand(room.id);
     return { started: true };
+  }
+
+  private async maybeStartReadyPhaseIfAllReady(roomId: string, room: any): Promise<boolean> {
+    this.syncRoomReadyState(room);
+    const phase = room?.readyPhase;
+    if (phase !== 'START_GAME' && phase !== 'NEXT_HAND') {
+      return false;
+    }
+
+    if (!this.areAllEligiblePlayersReady(room)) {
+      return false;
+    }
+
+    if (phase === 'START_GAME') {
+      await this.startGameAndBroadcast(room);
+      return true;
+    }
+
+    await this.startAndBroadcastNewHand(roomId);
+    return true;
   }
 
   handleConnection(client: Socket) {
@@ -347,7 +370,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (updatedRoom) {
           this.syncRoomReadyState(updatedRoom);
           await this.storageService.saveRoom(updatedRoom);
-          this.emitReadyStateUpdated(roomId, updatedRoom);
+          const started = await this.maybeStartReadyPhaseIfAllReady(roomId, updatedRoom);
+          if (!started) {
+            this.emitReadyStateUpdated(roomId, updatedRoom);
+          }
         }
 
         // Notify room of disconnect
@@ -666,7 +692,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Start game error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
-      return { success: false };
+      return { success: false, error: error.message };
     }
   }
 
@@ -687,7 +713,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Start next hand error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
-      return { success: false };
+      return { success: false, error: error.message };
     }
   }
 
@@ -720,7 +746,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Player ready error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
-      return { success: false };
+      return { success: false, error: error.message };
     }
   }
 
@@ -1779,7 +1805,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             if (disconnectedRoom) {
               this.syncRoomReadyState(disconnectedRoom);
               await this.storageService.saveRoom(disconnectedRoom);
-              this.emitReadyStateUpdated(roomId, disconnectedRoom);
+              const started = await this.maybeStartReadyPhaseIfAllReady(
+                roomId,
+                disconnectedRoom,
+              );
+              if (!started) {
+                this.emitReadyStateUpdated(roomId, disconnectedRoom);
+              }
             }
             return;
           }
@@ -1803,7 +1835,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (disconnectedRoom) {
           this.syncRoomReadyState(disconnectedRoom);
           await this.storageService.saveRoom(disconnectedRoom);
-          this.emitReadyStateUpdated(roomId, disconnectedRoom);
+          const started = await this.maybeStartReadyPhaseIfAllReady(roomId, disconnectedRoom);
+          if (!started) {
+            this.emitReadyStateUpdated(roomId, disconnectedRoom);
+          }
         }
       });
     } catch (error) {

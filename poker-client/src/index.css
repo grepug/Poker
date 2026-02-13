@@ -758,12 +758,6 @@ body {
   background: rgba(6, 78, 59, 0.94);
 }
 
-.seat-pod__ready-overlay--pending {
-  color: #fde68a;
-  border-color: rgba(148, 163, 184, 0.8);
-  background: rgba(30, 41, 59, 0.92);
-}
-
 
 .seat-pod__row--action,
 .seat-pod__row--remaining {

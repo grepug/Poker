@@ -32,7 +32,6 @@ type SeatOrbitItem = {
   seatState: SeatMainState;
   densityClass: string;
   readyOverlayLabel?: string | null;
-  readyOverlayTone?: "ready" | "pending";
 };
 
 type TableBoardProps = {
@@ -127,7 +126,6 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                   seatState={item.seatState}
                   densityClass={item.densityClass}
                   readyOverlayLabel={item.readyOverlayLabel}
-                  readyOverlayTone={item.readyOverlayTone}
                 />
               </div>
             </div>
