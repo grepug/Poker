@@ -1947,6 +1947,7 @@ export const GameRoom: React.FC = () => {
     feltSize.width,
     orbitCapacity,
     player,
+    room,
     seatSlotHeightPx,
     seatSlotWidthPx,
     tableObstacleRects,
