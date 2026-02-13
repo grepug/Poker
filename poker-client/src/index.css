@@ -779,8 +779,8 @@ body {
   font-weight: 760;
   line-height: 1.1;
   letter-spacing: 0.02em;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow-wrap: normal;
   backdrop-filter: blur(6px);
 }
 
@@ -845,10 +845,10 @@ body {
   min-height: 1rem;
   max-width: calc(100% - 0.48rem);
   width: fit-content;
-  white-space: normal;
+  white-space: nowrap;
   overflow: visible;
   text-overflow: clip;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   font-size: clamp(0.56rem, 1.1vw, 0.72rem);
   font-weight: 860;
   line-height: 1;
@@ -922,11 +922,11 @@ body {
 .seat-pod__action {
   font-size: var(--seat-bet-size);
   color: rgba(207, 250, 254, 0.94);
-  white-space: normal;
+  white-space: nowrap;
   line-height: 1.14;
   font-weight: 720;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
   min-height: calc(var(--seat-bet-size) * 1.12);
   display: block;
   overflow: visible;
@@ -964,8 +964,8 @@ body {
   color: rgba(110, 231, 183, 0.96);
   font-weight: 760;
   line-height: 1.05;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow-wrap: normal;
   max-width: 100%;
   overflow: visible;
   text-overflow: clip;
@@ -1005,6 +1005,7 @@ body {
   color: #dbeafe;
   font-size: clamp(0.38rem, 0.82vw, 0.5rem);
   font-weight: 800;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1033,9 +1034,9 @@ body {
     --seat-external-status-reserve: 1.56rem;
     --seat-emoji-size: 0.52rem;
     --seat-name-size: 0.54rem;
-    --seat-stack-size: 0.62rem;
-    --seat-bet-size: 0.5rem;
-    --seat-status-size: 0.4rem;
+    --seat-stack-size: 0.6rem;
+    --seat-bet-size: 0.48rem;
+    --seat-status-size: 0.38rem;
   }
 
   .seat-pod__status-badge {
@@ -1058,9 +1059,9 @@ body {
     --seat-external-status-reserve: 1.4rem;
     --seat-emoji-size: 0.48rem;
     --seat-name-size: 0.49rem;
-    --seat-stack-size: 0.56rem;
-    --seat-bet-size: 0.45rem;
-    --seat-status-size: 0.36rem;
+    --seat-stack-size: 0.54rem;
+    --seat-bet-size: 0.42rem;
+    --seat-status-size: 0.34rem;
     border-radius: 0.68rem;
   }
 

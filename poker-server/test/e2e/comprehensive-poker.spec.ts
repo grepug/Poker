@@ -1115,6 +1115,13 @@ async function assertSeatCardsNonNameTextUnclipped(
       '.seat-pod__ready-overlay',
       '.seat-pod__role-icon',
     ];
+    const noWrapSelectors = new Set([
+      '.seat-pod__status-badge',
+      '.seat-pod__action',
+      '.seat-pod__remaining',
+      '.seat-pod__ready-overlay',
+      '.seat-pod__role-icon',
+    ]);
 
     const failures = seatNodes.flatMap((seatNode) => {
       const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
@@ -1134,13 +1141,16 @@ async function assertSeatCardsNonNameTextUnclipped(
           const clipY = (overflowModeY === 'hidden' || overflowModeY === 'clip') && overflowY > overflowTolerance;
 
           const textOverflow = style.textOverflow;
+          const whiteSpace = style.whiteSpace;
           const lineClampRaw =
             style.getPropertyValue('-webkit-line-clamp') || (style as CSSStyleDeclaration & { webkitLineClamp?: string }).webkitLineClamp || '0';
           const lineClamp = Number.parseInt(lineClampRaw, 10);
           const hasLineClamp = Number.isFinite(lineClamp) && lineClamp > 0;
           const hasEllipsis = textOverflow === 'ellipsis';
+          const mustNotWrap = noWrapSelectors.has(selector);
+          const invalidWhiteSpace = mustNotWrap && whiteSpace !== 'nowrap';
 
-          if (!clipX && !clipY && !hasLineClamp && !hasEllipsis) {
+          if (!clipX && !clipY && !hasLineClamp && !hasEllipsis && !invalidWhiteSpace) {
             return [];
           }
 
@@ -1153,8 +1163,10 @@ async function assertSeatCardsNonNameTextUnclipped(
               overflowY: Number(overflowY.toFixed(2)),
               overflowModeX,
               overflowModeY,
+              whiteSpace,
               textOverflow,
               lineClamp: hasLineClamp ? lineClamp : 0,
+              invalidWhiteSpace,
             },
           ];
         }),

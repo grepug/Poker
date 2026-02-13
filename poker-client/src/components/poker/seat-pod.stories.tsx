@@ -40,7 +40,7 @@ export const TurnSeat: Story = {
     externalStatusToneClass: "seat-pod__status-badge--waiting",
     internalStatusLabel: null,
     internalStatusToneClass: "seat-pod__status-badge--waiting",
-    actionLabel: { text: "Raise $120", tone: "aggressive" },
+    actionLabel: { text: "Raise to $120", tone: "aggressive" },
     remainingLabel: "$960 behind",
     seatState: "turn",
     densityClass: "seat-pod--spacious",
