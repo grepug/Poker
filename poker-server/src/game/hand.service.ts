@@ -308,6 +308,7 @@ export class HandService {
     if (activePlayers.length === 0) {
       throw new Error('No active players');
     }
+    const contributions = this.getHandContributions(room);
 
     // If only one player left, they win
     if (activePlayers.length === 1) {
@@ -358,6 +359,7 @@ export class HandService {
             uncontested: activePlayers.length === 1,
           },
         ],
+        netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
       };
 
       await this.cleanupHand(room, winner.id);
@@ -374,7 +376,7 @@ export class HandService {
       evaluations.map((entry) => [entry.player.id, entry]),
     );
     const sidePotSegments = this.buildPotSegments(
-      this.getHandContributions(room),
+      contributions,
       hand.activePlayers,
     );
 
@@ -519,6 +521,7 @@ export class HandService {
         })),
       totalPot: hand.pot,
       payouts,
+      netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
     };
 
     await this.cleanupHand(room, winners[0]?.playerId);
@@ -533,12 +536,24 @@ export class HandService {
 
     // Fallback for legacy hand states that don't have tracked contributions.
     const fallback: Record<string, number> = {};
-    const activePlayerIds = [...hand.activePlayers];
-    if (activePlayerIds.length === 0 || hand.pot <= 0) {
+    const dealtPlayerIds = room.players
+      .filter(
+        (player) =>
+          Boolean(player.cards) &&
+          player.status !== 'left' &&
+          player.status !== 'waiting',
+      )
+      .map((player) => player.id);
+    const fallbackPlayerIds =
+      dealtPlayerIds.length > 0
+        ? [...new Set(dealtPlayerIds)]
+        : [...new Set(hand.activePlayers)];
+
+    if (fallbackPlayerIds.length === 0 || hand.pot <= 0) {
       return fallback;
     }
 
-    const sortedActive = activePlayerIds.sort((a, b) => {
+    const sortedActive = fallbackPlayerIds.sort((a, b) => {
       const aPos = room.players.find((p) => p.id === a)?.position ?? 0;
       const bPos = room.players.find((p) => p.id === b)?.position ?? 0;
       return aPos - bPos;
@@ -603,6 +618,24 @@ export class HandService {
     }
 
     return segments;
+  }
+
+  private buildNetByPlayerId(
+    contributions: Record<string, number>,
+    payouts: Map<string, number>,
+  ): Record<string, number> {
+    const netByPlayerId: Record<string, number> = {};
+    const playerIds = new Set<string>([
+      ...Object.keys(contributions),
+      ...Array.from(payouts.keys()),
+    ]);
+
+    for (const playerId of playerIds) {
+      netByPlayerId[playerId] =
+        (payouts.get(playerId) || 0) - (contributions[playerId] || 0);
+    }
+
+    return netByPlayerId;
   }
 
   /**

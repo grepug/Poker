@@ -2041,12 +2041,32 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       expect(winnerAmounts.get('Alice')).toBe(3000);
       expect(winnerAmounts.get('Bob')).toBe(1000);
       expect(winnerAmounts.get('Charlie') || 0).toBe(0);
+      expect(result.netByPlayerId).toBeDefined();
+
+      const netByPlayerName = new Map(
+        result.playerHands.map((entry: any) => [
+          entry.playerName,
+          result.netByPlayerId?.[entry.playerId] ?? null,
+        ]),
+      );
+      expect(netByPlayerName.get('Alice')).toBe(2000);
+      expect(netByPlayerName.get('Bob')).toBe(-500);
+      expect(netByPlayerName.get('Charlie')).toBe(-1500);
 
       const totalAwarded = result.winners.reduce(
         (sum: number, winner: any) => sum + winner.amountWon,
         0,
       );
       expect(totalAwarded).toBe(4000);
+      await expect(alicePage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        'Your hand: +$2000',
+      );
+      await expect(bobPage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        'Your hand: -$500',
+      );
+      await expect(charliePage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        'Your hand: -$1500',
+      );
       await expect(alicePage.locator('[data-testid="hand-results-payouts"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="payout-segment-0"]')).toContainText(
         'Main Pot',
@@ -3809,6 +3829,19 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
         DEFAULT_TWO_PLAYER_MATCHED_POT / 2,
       ]);
       expect(result.totalPot).toBe(DEFAULT_TWO_PLAYER_MATCHED_POT);
+      expect(result.netByPlayerId).toBeDefined();
+      const netChanges = Object.values(result.netByPlayerId ?? {});
+      expect(netChanges).toHaveLength(2);
+      expect(netChanges.every((value) => value === 0)).toBe(true);
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        'Your hand: +$0',
+      );
+      await expect(bobPage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        'Your hand: +$0',
+      );
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -5219,6 +5252,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
         'Hand results are visible to all players.',
+      );
+      const expectedWinnerNet = DEFAULT_SMALL_BLIND;
+      await expect(alicePage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        `Your hand: +$${expectedWinnerNet}`,
+      );
+      await expect(bobPage.locator('[data-testid="hand-results-your-net"]')).toContainText(
+        `Your hand: -$${expectedWinnerNet}`,
       );
       await expect(alicePage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(
         2,
