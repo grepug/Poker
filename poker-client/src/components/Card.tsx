@@ -54,13 +54,17 @@ export const Card: React.FC<CardProps> = ({
       data-suit={card.suit}
       className={`${sizeClasses[size]} card-enter relative overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-md`}
     >
-      <div className={`absolute left-1.5 top-1 font-bold leading-none ${suitColors[card.suit]}`}>
+      <div
+        className={`card-rank card-rank--top absolute left-1.5 top-1 font-bold leading-none ${suitColors[card.suit]}`}
+      >
         {card.rank}
       </div>
-      <div className={`absolute bottom-1.5 right-1.5 rotate-180 font-bold leading-none ${suitColors[card.suit]}`}>
+      <div
+        className={`card-rank card-rank--bottom absolute bottom-1.5 right-1.5 rotate-180 font-bold leading-none ${suitColors[card.suit]}`}
+      >
         {card.rank}
       </div>
-      <div className={`flex h-full items-center justify-center text-2xl ${suitColors[card.suit]}`}>
+      <div className={`card-suit-symbol flex h-full items-center justify-center text-2xl ${suitColors[card.suit]}`}>
         {suitSymbols[card.suit]}
       </div>
     </div>

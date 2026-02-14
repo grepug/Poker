@@ -954,7 +954,7 @@ async function assertSeatCardsWithinTableBounds(
   const result = await page.evaluate(({ tolerance }) => {
     const feltNode = document.querySelector('.felt-oval');
     const seatNodes = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
     );
 
     if (!feltNode) {
@@ -1012,6 +1012,278 @@ async function assertSeatCardsWithinTableBounds(
   expect(
     result.failures,
     `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
+}
+
+async function assertSeatCardsDoNotOverlapBoardAndPot(
+  page: Page,
+  label: string,
+  minSeatCount = 2,
+) {
+  const result = await page.evaluate(({ overlapTolerance }) => {
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
+    );
+    const boardNodes = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid^="community-card-"], [data-testid^="board-back-"]',
+      ),
+    );
+    const potNode = document.querySelector<HTMLElement>('[data-testid="pot-drop-zone"]');
+
+    const targets = [
+      ...boardNodes.map((node) => ({
+        id: node.getAttribute('data-testid') || 'community-card',
+        rect: node.getBoundingClientRect(),
+      })),
+      ...(potNode
+        ? [
+            {
+              id: potNode.getAttribute('data-testid') || 'pot-drop-zone',
+              rect: potNode.getBoundingClientRect(),
+            },
+          ]
+        : []),
+    ];
+
+    const overlaps = seatNodes.flatMap((seatNode) => {
+      const seatRect = seatNode.getBoundingClientRect();
+      const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
+
+      return targets
+        .map((target) => {
+          const overlapWidth =
+            Math.min(seatRect.right, target.rect.right) -
+            Math.max(seatRect.left, target.rect.left);
+          const overlapHeight =
+            Math.min(seatRect.bottom, target.rect.bottom) -
+            Math.max(seatRect.top, target.rect.top);
+          const hasOverlap =
+            overlapWidth > overlapTolerance && overlapHeight > overlapTolerance;
+
+          if (!hasOverlap) {
+            return null;
+          }
+
+          return {
+            seatId,
+            targetId: target.id,
+            overlapWidth: Number(overlapWidth.toFixed(2)),
+            overlapHeight: Number(overlapHeight.toFixed(2)),
+          };
+        })
+        .filter((entry): entry is { seatId: string; targetId: string; overlapWidth: number; overlapHeight: number } =>
+          Boolean(entry),
+        );
+    });
+
+    return {
+      seatCount: seatNodes.length,
+      boardCount: boardNodes.length,
+      hasPot: Boolean(potNode),
+      overlaps,
+    };
+  }, { overlapTolerance: 0.5 });
+
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+  expect(result.boardCount, `[${label}] should render community-card targets`).toBeGreaterThan(0);
+  expect(result.hasPot, `[${label}] should render pot drop zone`).toBe(true);
+  expect(
+    result.overlaps,
+    `[${label}] seat cards overlap community cards or pot: ${JSON.stringify(result.overlaps)}`,
+  ).toEqual([]);
+}
+
+async function assertSeatCardsNonNameTextUnclipped(
+  page: Page,
+  label: string,
+  {
+    minSeatCount = 2,
+    overflowTolerancePx = 1.25,
+    minFontTolerancePx = 0.15,
+  }: {
+    minSeatCount?: number;
+    overflowTolerancePx?: number;
+    minFontTolerancePx?: number;
+  } = {},
+) {
+  const result = await page.evaluate(({ overflowTolerance, minFontTolerance }) => {
+    const seatNodes = Array.from(
+      document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
+    );
+    const textSelectors = [
+      '.seat-pod__status-badge',
+      '.seat-pod__action',
+      '.seat-pod__remaining',
+      '.seat-pod__ready-overlay',
+      '.seat-pod__role-icon',
+    ];
+    const noWrapSelectors = new Set([
+      '.seat-pod__status-badge',
+      '.seat-pod__remaining',
+      '.seat-pod__ready-overlay',
+      '.seat-pod__role-icon',
+    ]);
+    const minFontBySelector = new Map<string, number>([
+      ['.seat-pod__status-badge', 6.5],
+      ['.seat-pod__action', 7],
+      ['.seat-pod__remaining', 7.5],
+      ['.seat-pod__ready-overlay', 6.5],
+      ['.seat-pod__role-icon', 5.7],
+    ]);
+
+    const failures = seatNodes.flatMap((seatNode) => {
+      const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
+      return textSelectors.flatMap((selector) =>
+        Array.from(seatNode.querySelectorAll<HTMLElement>(selector)).flatMap((node) => {
+          const text = (node.textContent || '').trim();
+          if (!text) {
+            return [];
+          }
+
+          const style = window.getComputedStyle(node);
+          const overflowX = node.scrollWidth - node.clientWidth;
+          const overflowY = node.scrollHeight - node.clientHeight;
+          const overflowModeX = style.overflowX === 'visible' ? style.overflow : style.overflowX;
+          const overflowModeY = style.overflowY === 'visible' ? style.overflow : style.overflowY;
+          const hasOverflowX = overflowX > overflowTolerance;
+          const hasOverflowY = overflowY > overflowTolerance;
+
+          const textOverflow = style.textOverflow;
+          const whiteSpace = style.whiteSpace;
+          const lineClampRaw =
+            style.getPropertyValue('-webkit-line-clamp') || (style as CSSStyleDeclaration & { webkitLineClamp?: string }).webkitLineClamp || '0';
+          const lineClamp = Number.parseInt(lineClampRaw, 10);
+          const hasLineClamp = Number.isFinite(lineClamp) && lineClamp > 0;
+          const hasEllipsis = textOverflow === 'ellipsis';
+          const mustNotWrap = noWrapSelectors.has(selector);
+          const invalidWhiteSpace = mustNotWrap && whiteSpace !== 'nowrap';
+          const fontSizePx = Number.parseFloat(style.fontSize || '0');
+          const minFontPx = minFontBySelector.get(selector);
+          const isFontTooSmall =
+            Number.isFinite(fontSizePx) &&
+            Number.isFinite(minFontPx) &&
+            fontSizePx + minFontTolerance < minFontPx;
+
+          if (
+            !hasOverflowX &&
+            !hasOverflowY &&
+            !hasLineClamp &&
+            !hasEllipsis &&
+            !invalidWhiteSpace &&
+            !isFontTooSmall
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              seatId,
+              selector,
+              text,
+              overflowX: Number(overflowX.toFixed(2)),
+              overflowY: Number(overflowY.toFixed(2)),
+              overflowModeX,
+              overflowModeY,
+              whiteSpace,
+              textOverflow,
+              lineClamp: hasLineClamp ? lineClamp : 0,
+              invalidWhiteSpace,
+              fontSizePx: Number(fontSizePx.toFixed(2)),
+              minFontPx: Number(minFontPx?.toFixed(2) ?? '0'),
+              isFontTooSmall,
+            },
+          ];
+        }),
+      );
+    });
+
+    return {
+      seatCount: seatNodes.length,
+      failures,
+    };
+  }, { overflowTolerance: overflowTolerancePx, minFontTolerance: minFontTolerancePx });
+
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+  expect(
+    result.failures,
+    `[${label}] non-name seat text should not be truncated: ${JSON.stringify(result.failures)}`,
+  ).toEqual([]);
+}
+
+async function assertSeatCardsWhitespaceRatioWithinLimit(
+  page: Page,
+  label: string,
+  {
+    minSeatCount = 2,
+    maxExtraHeightRatio = 0.25,
+    maxWrappedExtraHeightRatio = 0.55,
+    tolerancePx = 1.25,
+  }: {
+    minSeatCount?: number;
+    maxExtraHeightRatio?: number;
+    maxWrappedExtraHeightRatio?: number;
+    tolerancePx?: number;
+  } = {},
+) {
+  const result = await page.evaluate(
+    ({ maxExtraRatio, maxWrappedExtraRatio, tolerance, baseAspectRatio }) => {
+      const seatNodes = Array.from(
+        document.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
+      );
+
+      const failures = seatNodes.flatMap((seatNode) => {
+        const seatId = seatNode.getAttribute('data-testid') || 'unknown-seat';
+        const seatRect = seatNode.getBoundingClientRect();
+        const actionLines = Number.parseInt(seatNode.dataset.actionLines ?? '1', 10);
+
+        if (seatRect.width <= tolerance || seatRect.height <= tolerance || baseAspectRatio <= 0) {
+          return [];
+        }
+
+        const expectedHeight = seatRect.width / baseAspectRatio;
+        const extraHeight = Math.max(0, seatRect.height - expectedHeight);
+        const extraHeightRatio = expectedHeight > 0 ? extraHeight / expectedHeight : 0;
+        const maxAllowedRatio =
+          Number.isFinite(actionLines) && actionLines > 1
+            ? maxWrappedExtraRatio
+            : maxExtraRatio;
+
+        if (extraHeightRatio <= maxAllowedRatio + 0.02) {
+          return [];
+        }
+
+        return [
+          {
+            seatId,
+            actionLines: Number.isFinite(actionLines) ? actionLines : 1,
+            width: Number(seatRect.width.toFixed(2)),
+            height: Number(seatRect.height.toFixed(2)),
+            expectedHeight: Number(expectedHeight.toFixed(2)),
+            extraHeight: Number(extraHeight.toFixed(2)),
+            extraHeightRatio: Number(extraHeightRatio.toFixed(3)),
+            maxAllowedRatio: Number(maxAllowedRatio.toFixed(3)),
+          },
+        ];
+      });
+
+      return {
+        seatCount: seatNodes.length,
+        failures,
+      };
+    },
+    {
+      maxExtraRatio: maxExtraHeightRatio,
+      maxWrappedExtraRatio: maxWrappedExtraHeightRatio,
+      tolerance: tolerancePx,
+      baseAspectRatio: 1.26,
+    },
+  );
+
+  expect(result.seatCount, `[${label}] should render at least ${minSeatCount} seat cards`).toBeGreaterThanOrEqual(minSeatCount);
+  expect(
+    result.failures,
+    `[${label}] seat card whitespace ratio exceeded limit: ${JSON.stringify(result.failures)}`,
   ).toEqual([]);
 }
 
@@ -4629,6 +4901,122 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await assertSeatCardsWithinTableBounds(alicePage, 'mobile-alice');
       await assertSeatCardsWithinTableBounds(bobPage, 'mobile-bob');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8c: Seat Cards Never Overlap Community Cards Or Pot Across Viewports', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const viewports = [
+        { label: 'desktop-720p', width: 1280, height: 720 },
+        { label: 'desktop-wide', width: 1536, height: 864 },
+        { label: 'tablet-landscape', width: 1024, height: 768 },
+        { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-large-portrait', width: 412, height: 915 },
+        { label: 'mobile-medium-portrait', width: 390, height: 844 },
+        { label: 'mobile-small-portrait', width: 360, height: 640 },
+        { label: 'mobile-xsmall-portrait', width: 320, height: 568 },
+        { label: 'mobile-landscape', width: 844, height: 390 },
+      ];
+
+      for (const viewport of viewports) {
+        await Promise.all([
+          alicePage.setViewportSize({ width: viewport.width, height: viewport.height }),
+          bobPage.setViewportSize({ width: viewport.width, height: viewport.height }),
+        ]);
+        await alicePage.waitForTimeout(180);
+        await bobPage.waitForTimeout(180);
+
+        await assertSeatCardsWithinTableBounds(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsWithinTableBounds(bobPage, `${viewport.label}-bob`);
+        await assertSeatCardsDoNotOverlapBoardAndPot(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsDoNotOverlapBoardAndPot(bobPage, `${viewport.label}-bob`);
+      }
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8d: Non-Name Seat Text Never Truncates Across Viewports', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const viewports = [
+        { label: 'desktop-720p', width: 1280, height: 720 },
+        { label: 'desktop-wide', width: 1536, height: 864 },
+        { label: 'tablet-landscape', width: 1024, height: 768 },
+        { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-large-portrait', width: 412, height: 915 },
+        { label: 'mobile-medium-portrait', width: 390, height: 844 },
+        { label: 'mobile-small-portrait', width: 360, height: 640 },
+        { label: 'mobile-xsmall-portrait', width: 320, height: 568 },
+        { label: 'mobile-landscape', width: 844, height: 390 },
+      ];
+
+      for (const viewport of viewports) {
+        await Promise.all([
+          alicePage.setViewportSize({ width: viewport.width, height: viewport.height }),
+          bobPage.setViewportSize({ width: viewport.width, height: viewport.height }),
+        ]);
+        await alicePage.waitForTimeout(180);
+        await bobPage.waitForTimeout(180);
+
+        await assertSeatCardsNonNameTextUnclipped(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsNonNameTextUnclipped(bobPage, `${viewport.label}-bob`);
+      }
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8e: Seat Cards Do Not Become Overly Empty Across Viewports', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const viewports = [
+        { label: 'desktop-720p', width: 1280, height: 720 },
+        { label: 'desktop-wide', width: 1536, height: 864 },
+        { label: 'tablet-landscape', width: 1024, height: 768 },
+        { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-large-portrait', width: 412, height: 915 },
+        { label: 'mobile-medium-portrait', width: 390, height: 844 },
+        { label: 'mobile-small-portrait', width: 360, height: 640 },
+        { label: 'mobile-xsmall-portrait', width: 320, height: 568 },
+        { label: 'mobile-landscape', width: 844, height: 390 },
+      ];
+
+      for (const viewport of viewports) {
+        await Promise.all([
+          alicePage.setViewportSize({ width: viewport.width, height: viewport.height }),
+          bobPage.setViewportSize({ width: viewport.width, height: viewport.height }),
+        ]);
+        await alicePage.waitForTimeout(180);
+        await bobPage.waitForTimeout(180);
+
+        await assertSeatCardsWhitespaceRatioWithinLimit(alicePage, `${viewport.label}-alice`);
+        await assertSeatCardsWhitespaceRatioWithinLimit(bobPage, `${viewport.label}-bob`);
+      }
     } finally {
       await teardownTwoPlayerSession(session);
     }
