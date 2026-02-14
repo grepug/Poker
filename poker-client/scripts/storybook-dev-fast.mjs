@@ -14,6 +14,10 @@ const PREWARM_STORY_IDS = [
 ];
 const PREWARM_SERVER_READY_TIMEOUT_MS = 15_000;
 const PREWARM_TOTAL_TIMEOUT_MS = 45_000;
+const PLAYWRIGHT_MODULE_CANDIDATES = [
+  "playwright",
+  "../../poker-server/node_modules/playwright",
+];
 
 const readArgValue = (args, name) => {
   const index = args.indexOf(name);
@@ -63,6 +67,21 @@ const waitForServerReady = async (url, timeoutMs = 120_000) => {
   return false;
 };
 
+const loadPlaywright = () => {
+  for (const moduleName of PLAYWRIGHT_MODULE_CANDIDATES) {
+    try {
+      const resolvedModule = require(moduleName);
+      if (resolvedModule?.chromium) {
+        return resolvedModule;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+};
+
 const prewarmStories = async (baseUrl) => {
   const prewarmStartedAt = Date.now();
   const remainingBudget = () => PREWARM_TOTAL_TIMEOUT_MS - (Date.now() - prewarmStartedAt);
@@ -76,10 +95,8 @@ const prewarmStories = async (baseUrl) => {
     return;
   }
 
-  let playwright;
-  try {
-    playwright = require("../../poker-server/node_modules/playwright");
-  } catch {
+  const playwright = loadPlaywright();
+  if (!playwright) {
     console.warn("[storybook-prewarm] skipped: playwright module not found");
     return;
   }
