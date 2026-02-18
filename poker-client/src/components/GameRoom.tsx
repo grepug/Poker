@@ -3213,6 +3213,12 @@ export const GameRoom: React.FC = () => {
             onTrayInputBlur={handleCustomTrayInputBlur}
             onClearTray={clearTray}
             onQuickDecisionAction={handleQuickDecisionAction}
+            quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
+            onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
+            onQuickConfirmAccept={(action) => {
+              setQuickConfirmAction(null);
+              performAction(action);
+            }}
             onLegacyAction={handleLegacyAction}
             onLegacyRaiseAmountChange={setLegacyRaiseAmount}
             t={t}
@@ -3285,44 +3291,6 @@ export const GameRoom: React.FC = () => {
           onClose={() => setShowFinalSummaryModal(false)}
           t={t}
         />
-      )}
-
-      {!isAutomationMode && quickConfirmAction && (
-        <div
-          className="fixed inset-0 z-[84] flex items-center justify-center bg-emerald-950/80 p-4 backdrop-blur-sm"
-          data-testid="action-quick-confirm-modal"
-        >
-          <div className="surface-panel w-full max-w-xs p-4">
-            <p className="text-sm font-semibold text-white">
-              {t("game.quickConfirm.prompt", {
-                action:
-                  quickConfirmAction === "check"
-                    ? t("common.check")
-                    : t("common.fold"),
-              })}
-            </p>
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={() => setQuickConfirmAction(null)}
-                data-testid="action-quick-confirm-cancel"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={() => {
-                  const actionToApply = quickConfirmAction;
-                  setQuickConfirmAction(null);
-                  performAction(actionToApply);
-                }}
-                data-testid="action-quick-confirm-accept"
-                className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-300"
-              >
-                {t("common.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {feedbackInsight && (

@@ -38,6 +38,9 @@ type TurnActionDockProps = {
   onTrayInputBlur: React.FocusEventHandler<HTMLInputElement>;
   onClearTray: () => void;
   onQuickDecisionAction: (action: QuickDecisionAction) => void;
+  quickConfirmAction: QuickDecisionAction | null;
+  onQuickConfirmDismiss: () => void;
+  onQuickConfirmAccept: (action: QuickDecisionAction) => void;
   onLegacyAction: (action: LegacyAction) => void;
   onLegacyRaiseAmountChange: (amount: number) => void;
   t: Translate;
@@ -64,6 +67,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onTrayInputBlur,
   onClearTray,
   onQuickDecisionAction,
+  quickConfirmAction,
+  onQuickConfirmDismiss,
+  onQuickConfirmAccept,
   onLegacyAction,
   onLegacyRaiseAmountChange,
   t,
@@ -138,22 +144,60 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
             </button>
           </div>
 
-          <div className="chip-composer-dock__footer">
-            <button
-              onClick={() => onQuickDecisionAction("check")}
-              disabled={!canCheck}
-              data-testid={canCheck ? "action-check" : "action-check-disabled"}
-              className="chip-action chip-action--check"
-            >
-              {t("common.check")}
-            </button>
-            <button
-              onClick={() => onQuickDecisionAction("fold")}
-              data-testid="action-fold"
-              className="chip-action chip-action--fold"
-            >
-              {t("common.fold")}
-            </button>
+          <div className="relative">
+            {!isAutomationMode && quickConfirmAction && (
+              <div
+                role="dialog"
+                aria-label={t("game.confirmAction.title")}
+                data-testid="action-quick-confirm-popover"
+                className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-emerald-500/65 bg-emerald-950/95 p-3 shadow-2xl shadow-emerald-950/70 backdrop-blur-sm"
+              >
+                <p className="text-xs font-semibold text-emerald-50">
+                  {t("game.quickConfirm.prompt", {
+                    action:
+                      quickConfirmAction === "check"
+                        ? t("common.check")
+                        : t("common.fold"),
+                  })}
+                </p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={onQuickConfirmDismiss}
+                    data-testid="action-quick-confirm-cancel"
+                    className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onQuickConfirmAccept(quickConfirmAction)}
+                    data-testid="action-quick-confirm-accept"
+                    className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-300"
+                  >
+                    {t("common.confirm")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="chip-composer-dock__footer">
+              <button
+                onClick={() => onQuickDecisionAction("check")}
+                disabled={!canCheck}
+                data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                className="chip-action chip-action--check"
+              >
+                {t("common.check")}
+              </button>
+              <button
+                onClick={() => onQuickDecisionAction("fold")}
+                data-testid="action-fold"
+                className="chip-action chip-action--fold"
+              >
+                {t("common.fold")}
+              </button>
+            </div>
           </div>
         </div>
       </div>
