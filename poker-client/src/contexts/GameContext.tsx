@@ -72,6 +72,10 @@ export interface NextStreetRevealState {
   requiredPlayerIds: string[];
 }
 
+export interface CreateRoomOptions {
+  useShortDeckRules?: boolean;
+}
+
 type DebugApi = {
   getRoom: () => Room | null;
   getPlayer: () => Player | null;
@@ -82,7 +86,7 @@ type DebugApi = {
   getRevealedHandPlayerIds: () => string[];
   getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
-  createRoom: (name: string, emoji?: string) => void;
+  createRoom: (name: string, emoji?: string, options?: CreateRoomOptions) => void;
   joinRoom: (roomId: string, name: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
@@ -134,7 +138,11 @@ interface GameContextType {
   chatLoadingHistory: boolean;
   chatUnreadCount: number;
   isChatPanelOpen: boolean;
-  createRoom: (playerName: string, playerEmoji?: string) => void;
+  createRoom: (
+    playerName: string,
+    playerEmoji?: string,
+    options?: CreateRoomOptions,
+  ) => void;
   joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
@@ -1027,16 +1035,33 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     };
   }, [socket]);
 
-  const createRoom = useCallback((playerName: string, playerEmoji?: string) => {
-    if (!socket) return;
-    setLastError(null);
-    socket.emit("CREATE_ROOM", { playerName, playerEmoji }, (response) => {
-      console.log("Create room response:", response);
-      if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Failed to create room");
-      }
-    });
-  }, [socket]);
+  const createRoom = useCallback(
+    (
+      playerName: string,
+      playerEmoji?: string,
+      options: CreateRoomOptions = {},
+    ) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit(
+        "CREATE_ROOM",
+        {
+          playerName,
+          playerEmoji,
+          config: {
+            useShortDeckRules: Boolean(options.useShortDeckRules),
+          },
+        },
+        (response) => {
+          console.log("Create room response:", response);
+          if (response && "success" in response && !response.success) {
+            setLastError(response.error || "Failed to create room");
+          }
+        },
+      );
+    },
+    [socket],
+  );
 
   const joinRoom = useCallback((roomId: string, playerName: string, playerEmoji?: string) => {
     if (!socket) return;

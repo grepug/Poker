@@ -42,6 +42,18 @@ describe('Deck Utility', () => {
       const heartCards = deck.filter((c) => c.suit === 'hearts');
       expect(heartCards).toHaveLength(13);
     });
+
+    it('should create a 36-card deck in short-deck mode', () => {
+      const deck = createDeck({ useShortDeckRules: true });
+      expect(deck).toHaveLength(36);
+      const ranks = new Set(deck.map((card) => card.rank));
+      expect(ranks.has('2')).toBe(false);
+      expect(ranks.has('3')).toBe(false);
+      expect(ranks.has('4')).toBe(false);
+      expect(ranks.has('5')).toBe(false);
+      expect(ranks.has('6')).toBe(true);
+      expect(ranks.has('A')).toBe(true);
+    });
   });
 
   describe('shuffleDeck', () => {

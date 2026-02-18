@@ -72,6 +72,24 @@ describe('GameService addPlayerToRoom', () => {
     };
   }
 
+  it('creates room with standard rules by default', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice');
+
+    expect(room.config.useShortDeckRules).toBe(false);
+    expect(room.config.maxPlayers).toBe(10);
+    expect(room.players[0].name).toBe('Alice');
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
+  it('creates room with short-deck rules when requested', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
+      useShortDeckRules: true,
+    });
+
+    expect(room.config.useShortDeckRules).toBe(true);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
   it('adds joiner with zero chips while table is waiting', async () => {
     const room = createRoom({
       gameState: 'WAITING',

@@ -1980,6 +1980,13 @@ export const GameRoom: React.FC = () => {
     [finalGameResult, locale],
   );
   const rulesCopy = useMemo(() => RULES_COPY[locale], [locale]);
+  const ruleVariantLabel = useMemo(
+    () =>
+      room?.config.useShortDeckRules
+        ? t("game.ruleVariant.shortDeck")
+        : t("game.ruleVariant.standard"),
+    [room?.config.useShortDeckRules, t],
+  );
 
   const finalSummaryCards = useMemo(() => {
     if (!finalGameResult) return [];
@@ -3024,6 +3031,7 @@ export const GameRoom: React.FC = () => {
           count: tablePlayers.length,
           max: room.config.maxPlayers,
         })}
+        ruleVariantLabel={ruleVariantLabel}
         inviteCopyLabel={t("game.copyInvite")}
         inviteCopyStatus={inviteCopyStatus}
         inviteCopyStatusTone={inviteCopyStatusTone}

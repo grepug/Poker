@@ -12,6 +12,7 @@ type HomePanelProps = {
   isEmojiPopoverOpen: boolean;
   feedback: string | null;
   lastError: string | null;
+  useShortDeckRules: boolean;
   emojiOptions: readonly string[];
   emojiPickerRef?: RefObject<HTMLDivElement | null>;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -19,6 +20,7 @@ type HomePanelProps = {
   onToggleEmojiPopover: () => void;
   onRandomEmoji: () => void;
   onEmojiPick: (emoji: string) => void;
+  onUseShortDeckRulesChange: (enabled: boolean) => void;
   onCreateRoom: () => void;
   onEnableJoinMode: () => void;
   onRoomIdChange: (value: string) => void;
@@ -37,6 +39,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   isEmojiPopoverOpen,
   feedback,
   lastError,
+  useShortDeckRules,
   emojiOptions,
   emojiPickerRef,
   t,
@@ -44,6 +47,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   onToggleEmojiPopover,
   onRandomEmoji,
   onEmojiPick,
+  onUseShortDeckRulesChange,
   onCreateRoom,
   onEnableJoinMode,
   onRoomIdChange,
@@ -176,6 +180,19 @@ export const HomePanel: React.FC<HomePanelProps> = ({
 
       {!isJoining ? (
         <>
+          <label
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-500/80"
+            data-testid="short-deck-toggle"
+          >
+            <input
+              type="checkbox"
+              checked={useShortDeckRules}
+              onChange={(event) => onUseShortDeckRulesChange(event.target.checked)}
+              className="h-4 w-4 rounded border-emerald-500/70 bg-emerald-950/60 text-emerald-400 focus:ring-emerald-500/50"
+            />
+            <span className="font-semibold">{t("home.shortDeckRules")}</span>
+          </label>
+
           <button
             onClick={onCreateRoom}
             disabled={!connected || isRecoveringSession}

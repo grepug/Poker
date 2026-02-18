@@ -36,6 +36,7 @@ export class GameService {
       smallBlind: 5,
       bigBlind: 10,
       maxPlayers: 10,
+      useShortDeckRules: false,
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
