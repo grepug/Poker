@@ -79,7 +79,31 @@ type ThreePlayerSession = {
 
 type SetupTwoPlayerOptions = {
   roomConfig?: Record<string, unknown>;
+  forceNonAutomationMode?: boolean;
 };
+
+async function createBrowserContext(
+  browser: any,
+  forceNonAutomationMode = false,
+) {
+  const context = await browser.newContext();
+  if (!forceNonAutomationMode) {
+    return context;
+  }
+
+  await context.addInitScript(() => {
+    try {
+      Object.defineProperty(window.navigator, 'webdriver', {
+        configurable: true,
+        get: () => false,
+      });
+    } catch {
+      // no-op fallback: test will still run in automation mode
+    }
+  });
+
+  return context;
+}
 
 async function createRoomViaSocket(
   page: Page,
@@ -127,8 +151,14 @@ async function setupTwoPlayerSession(
   browser: any,
   options?: SetupTwoPlayerOptions,
 ): Promise<TwoPlayerSession> {
-  const aliceContext = await browser.newContext();
-  const bobContext = await browser.newContext();
+  const aliceContext = await createBrowserContext(
+    browser,
+    options?.forceNonAutomationMode ?? false,
+  );
+  const bobContext = await createBrowserContext(
+    browser,
+    options?.forceNonAutomationMode ?? false,
+  );
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
 
@@ -5590,6 +5620,96 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
       ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13a: Concurrent Reveal Clicks Advance Once Without Error', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+
+      await Promise.all([
+        alicePage.evaluate(() => {
+          document
+            .querySelector<HTMLElement>('[data-testid="reveal-next-street-button"]')
+            ?.click();
+        }),
+        bobPage.evaluate(() => {
+          document
+            .querySelector<HTMLElement>('[data-testid="reveal-next-street-button"]')
+            ?.click();
+        }),
+      ]);
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="error-modal"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="error-modal"]')).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13b: Check/Fold Uses Popover Confirmation Instead Of Fullscreen Modal', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await bobPage.waitForFunction(() => window.navigator.webdriver === false);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
+      await bobPage.click('[data-testid="action-fold"]');
+
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-modal"]'),
+      ).toHaveCount(0);
+
+      await bobPage.click('[data-testid="action-quick-confirm-cancel"]');
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toHaveCount(0);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await bobPage.click('[data-testid="action-quick-confirm-accept"]');
+
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
     }

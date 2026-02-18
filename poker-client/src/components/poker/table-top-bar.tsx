@@ -99,12 +99,6 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
             >
               {inviteCopyLabel}
             </button>
-            <p
-              className="shrink-0 whitespace-nowrap text-[11px] text-emerald-100/70"
-              data-testid="room-player-count"
-            >
-              {playerCountLabel}
-            </p>
             <span
               className="shrink-0 rounded-full border border-violet-300/55 bg-violet-900/35 px-2.5 py-0.5 text-[11px] font-semibold text-violet-100"
               data-testid="room-rule-variant"
@@ -139,6 +133,9 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         </span>
         <span className="hud-chip" data-testid="your-chips">
           {hiddenHudCopy.chipsLabel}
+        </span>
+        <span className="hud-chip" data-testid="room-player-count">
+          {playerCountLabel}
         </span>
         {hiddenHudCopy.roundLabel && (
           <span className="hud-chip" data-testid="round-value">

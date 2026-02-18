@@ -982,9 +982,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return { success: true };
       });
     } catch (error) {
-      this.logger.error(`Reveal next street error: ${error.message}`);
-      client.emit('ERROR', { message: error.message });
-      return { success: false };
+      const message =
+        error instanceof Error ? error.message : 'Reveal next street failed';
+
+      if (message === 'No next street reveal is pending') {
+        this.logger.debug(
+          `Reveal next street already handled (duplicate request): ${client.id}`,
+        );
+        return { success: true, duplicate: true };
+      }
+
+      this.logger.error(`Reveal next street error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
     }
   }
 
