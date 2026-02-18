@@ -1947,6 +1947,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (nextRound === 'SHOWDOWN') {
       if (updatedRoom.currentHand) {
+        updatedRoom.currentHand.currentPlayerTurn = null;
         updatedRoom.currentHand.revealedPlayerIds = [];
         updatedRoom.lastActivityAt = Date.now();
         await this.storageService.saveRoom(updatedRoom);
