@@ -93,6 +93,7 @@ type DebugApi = {
   markReady: () => void;
   endGame: () => void;
   showMyHand: () => void;
+  muckMyHand: () => void;
   revealNextStreet: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   fold: () => void;
@@ -149,6 +150,7 @@ interface GameContextType {
   markReady: () => void;
   endGame: () => void;
   showMyHand: () => void;
+  muckMyHand: () => void;
   revealNextStreet: () => void;
   performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
   leaveRoom: () => void;
@@ -687,6 +689,26 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       );
     });
 
+    socket.on("PLAYER_HAND_MUCKED", (data) => {
+      setRevealedHandPlayerIds((prev) => prev.filter((playerId) => playerId !== data.playerId));
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((seatPlayer) =>
+            seatPlayer.id === data.playerId
+              ? { ...seatPlayer, status: "folded", lastAction: "fold" }
+              : seatPlayer,
+          ),
+        };
+      });
+      setPlayer((prev) =>
+        prev && prev.id === data.playerId
+          ? { ...prev, status: "folded", lastAction: "fold" }
+          : prev,
+      );
+    });
+
     socket.on("GAME_ENDED", (data) => {
       setFinalGameResult(data);
       const currentRoomId = roomRef.current?.id;
@@ -959,6 +981,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("COMMUNITY_CARDS_DEALT");
       socket.off("HAND_COMPLETE");
       socket.off("PLAYER_HAND_REVEALED");
+      socket.off("PLAYER_HAND_MUCKED");
       socket.off("GAME_ENDED");
       socket.off("NEW_HAND_STARTING");
       socket.off("NEXT_STREET_REVEAL_STATE");
@@ -1125,6 +1148,16 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       console.log("Show hand response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to show hand");
+      }
+    });
+  }, [socket]);
+
+  const muckMyHand = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("MUCK_MY_HAND", {}, (response) => {
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to muck hand");
       }
     });
   }, [socket]);
@@ -1327,6 +1360,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         markReady,
         endGame,
         showMyHand,
+        muckMyHand,
         revealNextStreet,
         performAction,
         fold: () => performAction("fold"),
@@ -1378,6 +1412,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     markReady,
     endGame,
     showMyHand,
+    muckMyHand,
     revealNextStreet,
     performAction,
     leaveRoom,
@@ -1419,6 +1454,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         markReady,
         endGame,
         showMyHand,
+        muckMyHand,
         revealNextStreet,
         performAction,
         leaveRoom,
