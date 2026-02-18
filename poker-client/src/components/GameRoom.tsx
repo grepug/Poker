@@ -166,6 +166,7 @@ type RulesCopy = {
   rankingTitle: string;
   rankingHint: string;
 };
+type RuleVariant = "standard" | "shortDeck";
 
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
@@ -276,7 +277,7 @@ const formatHandDescription = (
   return text;
 };
 
-const HAND_RANK_ORDER: HandEvaluation["rank"][] = [
+const STANDARD_HAND_RANK_ORDER: HandEvaluation["rank"][] = [
   "ROYAL_FLUSH",
   "STRAIGHT_FLUSH",
   "FOUR_OF_A_KIND",
@@ -289,7 +290,25 @@ const HAND_RANK_ORDER: HandEvaluation["rank"][] = [
   "HIGH_CARD",
 ];
 
-const HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+const SHORT_DECK_HAND_RANK_ORDER: HandEvaluation["rank"][] = [
+  "ROYAL_FLUSH",
+  "STRAIGHT_FLUSH",
+  "FOUR_OF_A_KIND",
+  "FLUSH",
+  "FULL_HOUSE",
+  "STRAIGHT",
+  "THREE_OF_A_KIND",
+  "TWO_PAIR",
+  "ONE_PAIR",
+  "HIGH_CARD",
+];
+
+const HAND_RANK_ORDER_BY_VARIANT: Record<RuleVariant, HandEvaluation["rank"][]> = {
+  standard: STANDARD_HAND_RANK_ORDER,
+  shortDeck: SHORT_DECK_HAND_RANK_ORDER,
+};
+
+const STANDARD_HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
   en: {
     ROYAL_FLUSH: "A-K-Q-J-10, all same suit.",
     STRAIGHT_FLUSH: "Five consecutive cards, all same suit.",
@@ -316,7 +335,26 @@ const HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> 
   },
 };
 
-const RULES_COPY: Record<Locale, RulesCopy> = {
+const SHORT_DECK_HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+  en: {
+    ...STANDARD_HAND_RANK_DETAILS.en,
+    STRAIGHT: "Five consecutive ranks; A can be high or low (A-6-7-8-9).",
+  },
+  zh_hans: {
+    ...STANDARD_HAND_RANK_DETAILS.zh_hans,
+    STRAIGHT: "任意连续五张；A 可作最大或最小（A-6-7-8-9）。",
+  },
+};
+
+const HAND_RANK_DETAILS_BY_VARIANT: Record<
+  RuleVariant,
+  Record<Locale, Record<HandEvaluation["rank"], string>>
+> = {
+  standard: STANDARD_HAND_RANK_DETAILS,
+  shortDeck: SHORT_DECK_HAND_RANK_DETAILS,
+};
+
+const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
   en: {
     buttonLabel: "Game Rules",
     modalTitle: "Texas Hold'em Rules",
@@ -398,6 +436,37 @@ const RULES_COPY: Record<Locale, RulesCopy> = {
     rankingTitle: "6）牌型大小排序（从大到小）",
     rankingHint: "高一级牌型永远大于低一级牌型。",
   },
+};
+
+const SHORT_DECK_RULES_COPY: Record<Locale, RulesCopy> = {
+  en: {
+    ...STANDARD_RULES_COPY.en,
+    modalTitle: "Short-Deck Hold'em Rules",
+    modalSubtitle:
+      "No-Limit Short-Deck Hold'em quick reference for this table, including hand rankings.",
+    tiebreakBullets: [
+      "Same hand type: compare key ranks first (for example, pair value, then kickers).",
+      "For straights, compare highest card in the straight (A-6-7-8-9 is the lowest straight).",
+      "For flush/high card, compare highest cards from top to bottom.",
+    ],
+    rankingHint: "Short-deck note: flush beats full house.",
+  },
+  zh_hans: {
+    ...STANDARD_RULES_COPY.zh_hans,
+    modalTitle: "短牌德州扑克规则",
+    modalSubtitle: "本桌为无限注短牌德州。以下为完整流程、操作说明与牌型大小排序。",
+    tiebreakBullets: [
+      "同一牌型先比主体牌值（如对子点数），再比踢脚牌。",
+      "顺子比较最大那张（A-6-7-8-9 为最小顺子）。",
+      "同花/高牌按从大到小逐张比较。",
+    ],
+    rankingHint: "短牌规则补充：同花大于葫芦。",
+  },
+};
+
+const RULES_COPY_BY_VARIANT: Record<RuleVariant, Record<Locale, RulesCopy>> = {
+  standard: STANDARD_RULES_COPY,
+  shortDeck: SHORT_DECK_RULES_COPY,
 };
 
 const resolveDropIntent = ({
@@ -1979,13 +2048,18 @@ export const GameRoom: React.FC = () => {
         })),
     [finalGameResult, locale],
   );
-  const rulesCopy = useMemo(() => RULES_COPY[locale], [locale]);
+  const isShortDeckRules = Boolean(room?.config.useShortDeckRules);
+  const rulesVariant: RuleVariant = isShortDeckRules ? "shortDeck" : "standard";
+  const rulesCopy = useMemo(
+    () => RULES_COPY_BY_VARIANT[rulesVariant][locale],
+    [locale, rulesVariant],
+  );
   const ruleVariantLabel = useMemo(
     () =>
-      room?.config.useShortDeckRules
+      isShortDeckRules
         ? t("game.ruleVariant.shortDeck")
         : t("game.ruleVariant.standard"),
-    [room?.config.useShortDeckRules, t],
+    [isShortDeckRules, t],
   );
 
   const finalSummaryCards = useMemo(() => {
@@ -2991,13 +3065,13 @@ export const GameRoom: React.FC = () => {
 
   const rulesRankingRows = useMemo(
     () =>
-      HAND_RANK_ORDER.map((rank, idx) => ({
+      HAND_RANK_ORDER_BY_VARIANT[rulesVariant].map((rank, idx) => ({
         key: rank,
         order: idx + 1,
         title: formatHandRank(rank, locale),
-        detail: HAND_RANK_DETAILS[locale][rank],
+        detail: HAND_RANK_DETAILS_BY_VARIANT[rulesVariant][locale][rank],
       })),
-    [locale],
+    [locale, rulesVariant],
   );
 
   if (!room || !player) {

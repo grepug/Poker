@@ -4481,6 +4481,17 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="room-rule-variant"]')).toContainText(
         /Short Deck Rules|短牌规则/,
       );
+
+      await alicePage.click('[data-testid="open-rules-button"]');
+      const rulesModal = alicePage.locator('[data-testid="rules-modal"]');
+      await expect(rulesModal).toBeVisible();
+      await expect(rulesModal).toContainText(/A-6-7-8-9/);
+      await expect(rulesModal).not.toContainText(/A-2-3-4-5/);
+      await expect(rulesModal).toContainText(/#4\s*(Flush|同花)/);
+      await expect(rulesModal).toContainText(/#5\s*(Full House|葫芦)/);
+      await expect(rulesModal).not.toContainText(/#4\s*(Full House|葫芦)/);
+      await alicePage.click('[data-testid="close-rules-button"]');
+      await expect(rulesModal).toBeHidden();
     } finally {
       await Promise.allSettled([aliceContext.close(), bobContext.close()]);
     }
