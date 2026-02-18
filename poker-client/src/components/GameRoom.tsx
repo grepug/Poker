@@ -1271,6 +1271,13 @@ const resolveSeatPrimaryActionLabel = ({
   latestSeatActionEvent: PlayerActionFlashEvent | null;
   t: Translate;
 }): SeatActionLabel | null => {
+  if (latestSeatActionEvent?.displayKind === "check") {
+    return {
+      text: t("common.check"),
+      tone: "call",
+    };
+  }
+
   if (seatPlayer.currentBet <= 0) {
     return null;
   }
