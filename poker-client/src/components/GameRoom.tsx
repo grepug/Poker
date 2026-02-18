@@ -1340,6 +1340,10 @@ const resolveSeatPrimaryActionLabel = ({
   latestSeatActionEvent: PlayerActionFlashEvent | null;
   t: Translate;
 }): SeatActionLabel | null => {
+  if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
+    return null;
+  }
+
   if (latestSeatActionEvent?.displayKind === "check") {
     return {
       text: t("common.check"),
@@ -1351,11 +1355,7 @@ const resolveSeatPrimaryActionLabel = ({
     return null;
   }
 
-  if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
-    return null;
-  }
-
-  if (seatPlayer.lastAction === "check" || seatPlayer.lastAction === "fold") {
+  if (seatPlayer.lastAction === "fold") {
     return null;
   }
 
