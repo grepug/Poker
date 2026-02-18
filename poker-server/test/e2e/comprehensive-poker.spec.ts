@@ -4411,6 +4411,81 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4ab: Host can create short-deck room from lobby and keep short-deck state in game', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await Promise.all([alicePage.goto(FRONTEND_URL), bobPage.goto(FRONTEND_URL)]);
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="connection-status"]'),
+        bobPage.waitForSelector('[data-testid="connection-status"]'),
+      ]);
+      await Promise.all([
+        expect(alicePage.locator('[data-testid="connection-status"]')).toContainText('Connected'),
+        expect(bobPage.locator('[data-testid="connection-status"]')).toContainText('Connected'),
+      ]);
+
+      await alicePage.fill('[data-testid="name-input"]', 'Alice');
+      const shortDeckToggle = alicePage.locator(
+        '[data-testid="short-deck-toggle"] input[type="checkbox"]',
+      );
+      await expect(shortDeckToggle).not.toBeChecked();
+      await shortDeckToggle.check();
+      await expect(shortDeckToggle).toBeChecked();
+
+      await alicePage.click('[data-testid="create-room-button"]');
+      await alicePage.waitForSelector('[data-testid="room-title"]');
+      await expect(alicePage.locator('[data-testid="room-rule-variant"]')).toContainText(
+        /Short Deck Rules|短牌规则/,
+      );
+
+      const hostRoomState = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return {
+          roomCode: room?.id ?? null,
+          useShortDeckRules: room?.config?.useShortDeckRules === true,
+        };
+      });
+      expect(hostRoomState.roomCode).toBeTruthy();
+      expect(hostRoomState.useShortDeckRules).toBe(true);
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="name-input"]', 'Bob');
+      await bobPage.fill('[data-testid="room-id-input"]', hostRoomState.roomCode as string);
+      await bobPage.click('[data-testid="join-room-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")'),
+        bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")'),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+
+      const dealtState = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const cards = (window as any).pokerDebug?.getCards?.() ?? [];
+        return {
+          useShortDeckRules: room?.config?.useShortDeckRules === true,
+          myRanks: cards.map((card: { rank: string }) => card.rank),
+        };
+      });
+      expect(dealtState.useShortDeckRules).toBe(true);
+      expect(dealtState.myRanks).toHaveLength(2);
+      expect(
+        dealtState.myRanks.some((rank: string) => ['2', '3', '4', '5'].includes(rank)),
+      ).toBe(false);
+      await expect(alicePage.locator('[data-testid="room-rule-variant"]')).toContainText(
+        /Short Deck Rules|短牌规则/,
+      );
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+    }
+  });
+
   test('8.4b: Home Prefills Last Used Player Name', async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
