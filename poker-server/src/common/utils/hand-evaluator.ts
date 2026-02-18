@@ -5,11 +5,44 @@ import { getRankValue } from './deck';
 // so keep category gaps comfortably larger than that.
 const CATEGORY_BASE = 10_000_000_000;
 
+export interface HandEvaluationOptions {
+  useShortDeckRules?: boolean;
+}
+
+const STANDARD_RANK_MULTIPLIERS: Record<HandRank, number> = {
+  ROYAL_FLUSH: 10,
+  STRAIGHT_FLUSH: 9,
+  FOUR_OF_A_KIND: 8,
+  FULL_HOUSE: 7,
+  FLUSH: 6,
+  STRAIGHT: 5,
+  THREE_OF_A_KIND: 4,
+  TWO_PAIR: 3,
+  ONE_PAIR: 2,
+  HIGH_CARD: 1,
+};
+
+const SHORT_DECK_RANK_MULTIPLIERS: Record<HandRank, number> = {
+  ROYAL_FLUSH: 10,
+  STRAIGHT_FLUSH: 9,
+  FOUR_OF_A_KIND: 8,
+  FLUSH: 7,
+  FULL_HOUSE: 6,
+  STRAIGHT: 5,
+  THREE_OF_A_KIND: 4,
+  TWO_PAIR: 3,
+  ONE_PAIR: 2,
+  HIGH_CARD: 1,
+};
+
 /**
  * Evaluate a poker hand from any number of cards (typically 5-7)
  * Returns the best 5-card hand possible
  */
-export function evaluateHand(cards: Card[]): HandEvaluation {
+export function evaluateHand(
+  cards: Card[],
+  options: HandEvaluationOptions = {},
+): HandEvaluation {
   if (cards.length < 5) {
     throw new Error('Need at least 5 cards to evaluate a hand');
   }
@@ -21,7 +54,7 @@ export function evaluateHand(cards: Card[]): HandEvaluation {
   let bestHand: HandEvaluation | null = null;
 
   for (const combo of combinations) {
-    const evaluation = evaluate5CardHand(combo);
+    const evaluation = evaluate5CardHand(combo, options);
     if (!bestHand || evaluation.value > bestHand.value) {
       bestHand = evaluation;
     }
@@ -56,7 +89,13 @@ function get5CardCombinations(cards: Card[]): Card[][] {
 /**
  * Evaluate exactly 5 cards
  */
-function evaluate5CardHand(cards: Card[]): HandEvaluation {
+function evaluate5CardHand(
+  cards: Card[],
+  options: HandEvaluationOptions = {},
+): HandEvaluation {
+  const rankMultipliers = options.useShortDeckRules
+    ? SHORT_DECK_RANK_MULTIPLIERS
+    : STANDARD_RANK_MULTIPLIERS;
   const sorted = [...cards].sort(
     (a, b) => getRankValue(b.rank) - getRankValue(a.rank),
   );
@@ -65,17 +104,18 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (isRoyalFlush(sorted)) {
     return {
       rank: 'ROYAL_FLUSH',
-      value: 10 * CATEGORY_BASE,
+      value: rankMultipliers.ROYAL_FLUSH * CATEGORY_BASE,
       cards: sorted,
       description: 'Royal Flush',
     };
   }
 
-  const straightFlush = isStraightFlush(sorted);
+  const straightFlush = isStraightFlush(sorted, options);
   if (straightFlush) {
     return {
       rank: 'STRAIGHT_FLUSH',
-      value: 9 * CATEGORY_BASE + straightFlush.highCard,
+      value:
+        rankMultipliers.STRAIGHT_FLUSH * CATEGORY_BASE + straightFlush.highCard,
       cards: sorted,
       description: `Straight Flush, ${straightFlush.highCard} high`,
     };
@@ -85,7 +125,10 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (fourOfAKind) {
     return {
       rank: 'FOUR_OF_A_KIND',
-      value: 8 * CATEGORY_BASE + fourOfAKind.quadValue * 100 + fourOfAKind.kicker,
+      value:
+        rankMultipliers.FOUR_OF_A_KIND * CATEGORY_BASE +
+        fourOfAKind.quadValue * 100 +
+        fourOfAKind.kicker,
       cards: sorted,
       description: `Four ${fourOfAKind.quadRank}s`,
     };
@@ -95,7 +138,10 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (fullHouse) {
     return {
       rank: 'FULL_HOUSE',
-      value: 7 * CATEGORY_BASE + fullHouse.tripValue * 100 + fullHouse.pairValue,
+      value:
+        rankMultipliers.FULL_HOUSE * CATEGORY_BASE +
+        fullHouse.tripValue * 100 +
+        fullHouse.pairValue,
       cards: sorted,
       description: `Full House, ${fullHouse.tripRank}s over ${fullHouse.pairRank}s`,
     };
@@ -105,17 +151,17 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (flush) {
     return {
       rank: 'FLUSH',
-      value: 6 * CATEGORY_BASE + flush.value,
+      value: rankMultipliers.FLUSH * CATEGORY_BASE + flush.value,
       cards: sorted,
       description: 'Flush',
     };
   }
 
-  const straight = isStraight(sorted);
+  const straight = isStraight(sorted, options);
   if (straight) {
     return {
       rank: 'STRAIGHT',
-      value: 5 * CATEGORY_BASE + straight.highCard,
+      value: rankMultipliers.STRAIGHT * CATEGORY_BASE + straight.highCard,
       cards: sorted,
       description: `Straight, ${straight.highCard} high`,
     };
@@ -126,7 +172,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
     return {
       rank: 'THREE_OF_A_KIND',
       value:
-        4 * CATEGORY_BASE +
+        rankMultipliers.THREE_OF_A_KIND * CATEGORY_BASE +
         threeOfAKind.tripValue * 10000 +
         threeOfAKind.kickers,
       cards: sorted,
@@ -139,7 +185,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
     return {
       rank: 'TWO_PAIR',
       value:
-        3 * CATEGORY_BASE +
+        rankMultipliers.TWO_PAIR * CATEGORY_BASE +
         twoPair.highPair * 10000 +
         twoPair.lowPair * 100 +
         twoPair.kicker,
@@ -152,7 +198,10 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   if (onePair) {
     return {
       rank: 'ONE_PAIR',
-      value: 2 * CATEGORY_BASE + onePair.pairValue * 10000 + onePair.kickers,
+      value:
+        rankMultipliers.ONE_PAIR * CATEGORY_BASE +
+        onePair.pairValue * 10000 +
+        onePair.kickers,
       cards: sorted,
       description: `Pair of ${onePair.pairRank}s`,
     };
@@ -162,7 +211,7 @@ function evaluate5CardHand(cards: Card[]): HandEvaluation {
   const highCardValue = calculateKickers(sorted.map((c) => c.rank));
   return {
     rank: 'HIGH_CARD',
-    value: 1 * CATEGORY_BASE + highCardValue,
+    value: rankMultipliers.HIGH_CARD * CATEGORY_BASE + highCardValue,
     cards: sorted,
     description: `High Card ${sorted[0].rank}`,
   };
@@ -187,9 +236,12 @@ function isRoyalFlush(cards: Card[]): boolean {
 /**
  * Check if hand is a straight flush
  */
-function isStraightFlush(cards: Card[]): { highCard: number } | null {
+function isStraightFlush(
+  cards: Card[],
+  options: HandEvaluationOptions = {},
+): { highCard: number } | null {
   if (!isFlush(cards)) return null;
-  return isStraight(cards);
+  return isStraight(cards, options);
 }
 
 /**
@@ -262,7 +314,10 @@ function isFlush(cards: Card[]): { value: number } | null {
 /**
  * Check if hand is a straight
  */
-function isStraight(cards: Card[]): { highCard: number } | null {
+function isStraight(
+  cards: Card[],
+  options: HandEvaluationOptions = {},
+): { highCard: number } | null {
   const values = cards.map((c) => getRankValue(c.rank)).sort((a, b) => b - a);
 
   // Check for normal straight
@@ -278,10 +333,15 @@ function isStraight(cards: Card[]): { highCard: number } | null {
     return { highCard: values[0] };
   }
 
-  // Check for A-2-3-4-5 (wheel)
+  // Check for A-2-3-4-5 (wheel) in standard deck
   const ranks = cards.map((c) => c.rank).sort();
-  if (ranks.join(',') === '2,3,4,5,A') {
+  if (!options.useShortDeckRules && ranks.join(',') === '2,3,4,5,A') {
     return { highCard: 5 }; // In wheel, 5 is high card
+  }
+
+  // Check for A-6-7-8-9 (short-deck wheel)
+  if (options.useShortDeckRules && ranks.join(',') === '6,7,8,9,A') {
+    return { highCard: 9 }; // In short deck, A-6-7-8-9 is the lowest straight
   }
 
   return null;

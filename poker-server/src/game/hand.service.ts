@@ -28,6 +28,7 @@ export class HandService {
    * Start a new hand
    */
   async startNewHand(room: Room): Promise<Hand> {
+    const useShortDeckRules = Boolean(room.config.useShortDeckRules);
     const seatedPlayers = room.players.filter((player) => player.status !== 'left');
     if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
@@ -89,7 +90,7 @@ export class HandService {
       this.logger.debug(`Using test deck for room ${room.id}`);
       deck = testDeck;
     } else {
-      deck = shuffleDeck(createDeck());
+      deck = shuffleDeck(createDeck({ useShortDeckRules }));
     }
 
     for (const player of activePlayers) {
@@ -152,6 +153,7 @@ export class HandService {
    * Advance to next betting round
    */
   async advanceBettingRound(room: Room): Promise<BettingRound> {
+    const useShortDeckRules = Boolean(room.config.useShortDeckRules);
     const hand = room.currentHand;
     if (!hand) {
       throw new Error('No active hand');
@@ -185,7 +187,7 @@ export class HandService {
       this.logger.debug(`Using test deck for room ${room.id}`);
       deck = testDeck;
     } else {
-      deck = shuffleDeck(createDeck());
+      deck = shuffleDeck(createDeck({ useShortDeckRules }));
 
       // Remove already dealt cards (only needed for random decks)
       const dealtCards = [
@@ -324,7 +326,9 @@ export class HandService {
       const hasEnoughCards =
         winner.cards!.length + hand.communityCards.length >= 5;
       const winnerHand = hasEnoughCards
-        ? evaluateHand(winner.cards!.concat(hand.communityCards))
+        ? evaluateHand(winner.cards!.concat(hand.communityCards), {
+            useShortDeckRules: Boolean(room.config.useShortDeckRules),
+          })
         : null;
 
       winner.handsWonCount = (winner.handsWonCount ?? 0) + 1;
@@ -371,7 +375,9 @@ export class HandService {
     // Evaluate all hands
     const evaluations = activePlayers.map((player) => ({
       player,
-      evaluation: evaluateHand(player.cards!.concat(hand.communityCards)),
+      evaluation: evaluateHand(player.cards!.concat(hand.communityCards), {
+        useShortDeckRules: Boolean(room.config.useShortDeckRules),
+      }),
     }));
 
     const evaluationsByPlayerId = new Map(

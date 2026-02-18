@@ -38,6 +38,7 @@ export const Home: React.FC<HomeProps> = ({
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
   const [playerName, setPlayerName] = useState(() => readLastPlayerName());
   const [playerEmoji, setPlayerEmoji] = useState(() => getRandomPlayerEmoji());
+  const [useShortDeckRules, setUseShortDeckRules] = useState(false);
   const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
@@ -114,7 +115,7 @@ export const Home: React.FC<HomeProps> = ({
     clearFeedback();
     writeLastPlayerName(trimmedName);
     writeLastPlayerEmoji(playerEmoji);
-    createRoom(trimmedName, playerEmoji);
+    createRoom(trimmedName, playerEmoji, { useShortDeckRules });
   };
 
   const handleJoinRoom = () => {
@@ -156,6 +157,7 @@ export const Home: React.FC<HomeProps> = ({
           isEmojiPopoverOpen={isEmojiPopoverOpen}
           feedback={feedback}
           lastError={lastError}
+          useShortDeckRules={useShortDeckRules}
           emojiOptions={PLAYER_EMOJI_OPTIONS}
           emojiPickerRef={emojiPickerRef}
           t={t}
@@ -166,6 +168,10 @@ export const Home: React.FC<HomeProps> = ({
           onToggleEmojiPopover={() => setIsEmojiPopoverOpen((open) => !open)}
           onRandomEmoji={handleRandomEmoji}
           onEmojiPick={handleEmojiPick}
+          onUseShortDeckRulesChange={(enabled) => {
+            setUseShortDeckRules(enabled);
+            clearFeedback();
+          }}
           onCreateRoom={handleCreateRoom}
           onEnableJoinMode={() => {
             if (isRecoveringSession) {

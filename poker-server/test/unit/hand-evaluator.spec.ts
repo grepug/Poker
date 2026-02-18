@@ -201,6 +201,48 @@ describe('Hand Evaluator', () => {
     });
   });
 
+  describe('Short Deck Rules', () => {
+    it('should treat A-6-7-8-9 as a straight in short-deck mode', () => {
+      const cards: Card[] = [
+        { suit: 'hearts', rank: 'A' },
+        { suit: 'diamonds', rank: '6' },
+        { suit: 'clubs', rank: '7' },
+        { suit: 'spades', rank: '8' },
+        { suit: 'hearts', rank: '9' },
+      ];
+      const result = evaluateHand(cards, { useShortDeckRules: true });
+      expect(result.rank).toBe('STRAIGHT');
+      expect(result.description).toContain('9 high');
+    });
+
+    it('should rank flush above full house in short-deck mode', () => {
+      const flush = evaluateHand(
+        [
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'hearts', rank: 'K' },
+          { suit: 'hearts', rank: 'Q' },
+          { suit: 'hearts', rank: '9' },
+          { suit: 'hearts', rank: '6' },
+        ],
+        { useShortDeckRules: true },
+      );
+      const fullHouse = evaluateHand(
+        [
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'diamonds', rank: 'A' },
+          { suit: 'clubs', rank: 'A' },
+          { suit: 'spades', rank: 'K' },
+          { suit: 'hearts', rank: 'K' },
+        ],
+        { useShortDeckRules: true },
+      );
+
+      expect(flush.rank).toBe('FLUSH');
+      expect(fullHouse.rank).toBe('FULL_HOUSE');
+      expect(compareHands(flush, fullHouse)).toBeGreaterThan(0);
+    });
+  });
+
   describe('Three of a Kind', () => {
     it('should identify three of a kind', () => {
       const cards: Card[] = [

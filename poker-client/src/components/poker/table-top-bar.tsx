@@ -21,6 +21,7 @@ type ChatPreview = {
 type TableTopBarProps = {
   roomTitle: string;
   playerCountLabel: string;
+  ruleVariantLabel: string;
   inviteCopyLabel: string;
   inviteCopyStatus: string | null;
   inviteCopyStatusTone: "success" | "error" | null;
@@ -52,6 +53,7 @@ type TableTopBarProps = {
 export const TableTopBar: React.FC<TableTopBarProps> = ({
   roomTitle,
   playerCountLabel,
+  ruleVariantLabel,
   inviteCopyLabel,
   inviteCopyStatus,
   inviteCopyStatusTone,
@@ -97,6 +99,12 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
             >
               {inviteCopyLabel}
             </button>
+            <span
+              className="shrink-0 rounded-full border border-violet-300/55 bg-violet-900/35 px-2.5 py-0.5 text-[11px] font-semibold text-violet-100"
+              data-testid="room-rule-variant"
+            >
+              {ruleVariantLabel}
+            </span>
           </div>
           {inviteCopyStatus && (
             <span

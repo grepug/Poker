@@ -9,6 +9,7 @@ export interface RoomConfig {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number; // 2-10
+  useShortDeckRules?: boolean; // short deck: remove 2-5 and use short deck ranking rules
   reconnectGracePeriod: number; // milliseconds (default 120000)
   allowPlayerStreetReveal: boolean; // require each player to confirm before revealing the next street
 }
