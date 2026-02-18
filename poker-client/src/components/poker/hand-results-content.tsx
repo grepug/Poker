@@ -23,6 +23,7 @@ type HandResultRow = {
   rankOrder: number;
   isWinner: boolean;
   amountWon: number;
+  netChange: number | null;
   cards: PokerCard[];
   hand: HandEvaluation | null;
 };
@@ -31,6 +32,8 @@ type HandResultsContentProps = {
   currentHandNumber: number | null;
   totalPot: number;
   winnerCount: number;
+  myNetChange: number | null;
+  showNetChange: boolean;
   currentPlayerId: string;
   communityCards: Array<PokerCard | null>;
   payoutBreakdownRows: PayoutBreakdownRow[];
@@ -44,7 +47,9 @@ type HandResultsContentProps = {
 export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   currentHandNumber,
   totalPot,
-  winnerCount,
+  winnerCount: _winnerCount,
+  myNetChange,
+  showNetChange,
   currentPlayerId,
   communityCards,
   payoutBreakdownRows,
@@ -54,6 +59,8 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   describeEvaluatedHand,
   t,
 }) => {
+  const formatNet = (amount: number) => `${amount >= 0 ? "+" : "-"}$${Math.abs(amount)}`;
+
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -69,9 +76,23 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
           <span className="hud-chip" data-testid="hand-results-pot">
             {t("game.pot", { amount: totalPot })}
           </span>
-          <span className="hud-chip" data-testid="hand-results-winner-count">
-            {t("game.winnersCount", { count: winnerCount })}
+          <span className="sr-only" data-testid="hand-results-winner-count">
+            {t("game.winnersCount", { count: _winnerCount })}
           </span>
+          {myNetChange !== null && (
+            <span
+              className={`hud-chip ${
+                myNetChange > 0
+                  ? "border-emerald-300/70 text-emerald-100"
+                  : myNetChange < 0
+                    ? "border-rose-300/70 text-rose-100"
+                    : ""
+              }`}
+              data-testid="hand-results-your-net"
+            >
+              {t("game.yourHandNet", { amount: formatNet(myNetChange) })}
+            </span>
+          )}
           <button
             onClick={onSaveResultScreenshot}
             data-testid="save-result-screenshot-button"
@@ -172,9 +193,11 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                       {isSelf ? ` (${t("common.you")})` : ""}
                     </p>
                     <p className="text-xs text-emerald-100/70">
-                      {entry.isWinner
-                        ? t("game.wonAmount", { amount: entry.amountWon })
-                        : t("game.noPayout")}
+                      {showNetChange && typeof entry.netChange === "number"
+                        ? t("game.netChange", { amount: formatNet(entry.netChange) })
+                        : entry.isWinner
+                          ? t("game.wonAmount", { amount: entry.amountWon })
+                          : t("game.noPayout")}
                     </p>
                   </div>
                   {entry.isWinner && (

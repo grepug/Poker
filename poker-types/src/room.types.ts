@@ -1,6 +1,8 @@
 import { Player } from "./player.types";
 import { Hand, GameStateType } from "./game.types";
 
+export type ReadyPhase = "START_GAME" | "NEXT_HAND";
+
 // Room configuration
 export interface RoomConfig {
   startingChips: number;
@@ -19,6 +21,8 @@ export interface Room {
   players: Player[];
   gameState: GameStateType;
   currentHand: Hand | null;
+  readyPhase?: ReadyPhase | null;
+  readyPlayerIds?: string[];
   createdAt: number;
   lastActivityAt: number;
 }
@@ -31,5 +35,7 @@ export interface SanitizedRoom {
   players: Array<Omit<Player, "cards"> & { hasCards: boolean }>;
   gameState: GameStateType;
   currentHand: Omit<Hand, "activePlayers"> | null;
+  readyPhase?: ReadyPhase | null;
+  readyPlayerIds?: string[];
   createdAt: number;
 }

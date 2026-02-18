@@ -31,6 +31,7 @@ type TableTopBarProps = {
   chatLabel: string;
   finalResultsLabel: string;
   startLabel: string;
+  startDisabled?: boolean;
   hiddenHudCopy: HiddenHudCopy;
   isChatPanelOpen: boolean;
   chatPreview: ChatPreview | null;
@@ -61,6 +62,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   chatLabel,
   finalResultsLabel,
   startLabel,
+  startDisabled = false,
   hiddenHudCopy,
   isChatPanelOpen,
   chatPreview,
@@ -188,8 +190,9 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
           {showStartGameButton && (
             <button
               onClick={onStartGame}
+              disabled={startDisabled}
               data-testid="start-game-button"
-              className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400"
+              className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {startLabel}
             </button>

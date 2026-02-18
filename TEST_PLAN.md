@@ -14,6 +14,12 @@
 - [ ] Both browser sessions connected
 - [ ] Chip conservation formula: `Σ(player.chips + player.currentBet) = 2000` or `Σ(player.chips) + pot = 2000` (depends on round state representation)
 
+## Net Change Regression Addendum (2026-02-12)
+
+- [x] **3.4 Partial All-In (Side Pot):** Validate `netByPlayerId` and UI net chips (`Alice +2000`, `Bob -500`, `Charlie -1500`).
+- [x] **7.3 Tie (Split Pot):** Validate showdown split keeps both players at net `0` and UI shows `Your hand: +$0`.
+- [x] **8.16 Non-Showdown Fold:** Validate fold winner/loser net is `±small blind` and UI mirrors it.
+
 ---
 
 ## Test Suite 1: Basic Betting Actions

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLocalization } from "../contexts/LocalizationContext";
 
@@ -29,27 +29,24 @@ const isStandaloneMode = () => {
   );
 };
 
+const resolveInitialPromptVisibility = (canShowPrompt: boolean) => {
+  if (!canShowPrompt || isStandaloneMode()) {
+    return false;
+  }
+
+  try {
+    const dismissed = window.localStorage.getItem(IOS_INSTALL_PROMPT_DISMISSED_KEY) === "1";
+    return !dismissed;
+  } catch {
+    return true;
+  }
+};
+
 export const IosInstallPrompt: React.FC = () => {
   const location = useLocation();
   const { t } = useLocalization();
-  const [visible, setVisible] = useState(false);
-
   const canShowPrompt = useMemo(() => isIosDevice() && isSafariOnIos(), []);
-
-  useEffect(() => {
-    if (!canShowPrompt || isStandaloneMode()) {
-      return;
-    }
-
-    try {
-      const dismissed = window.localStorage.getItem(IOS_INSTALL_PROMPT_DISMISSED_KEY) === "1";
-      if (!dismissed) {
-        setVisible(true);
-      }
-    } catch {
-      setVisible(true);
-    }
-  }, [canShowPrompt]);
+  const [visible, setVisible] = useState(() => resolveInitialPromptVisibility(canShowPrompt));
 
   const handleDismiss = () => {
     try {

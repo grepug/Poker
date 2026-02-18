@@ -1,6 +1,6 @@
 import { Card } from "./card.types";
-import { Player, PlayerAction } from "./player.types";
-import { Room, RoomConfig, SanitizedRoom } from "./room.types";
+import { Player, PlayerAction, PlayerStatus } from "./player.types";
+import { RoomConfig, ReadyPhase, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
 import {
   ChatHistorySyncData,
@@ -49,6 +49,8 @@ export interface UpdateRoomConfigData {
   config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>;
 }
 
+export interface PlayerReadyData {}
+
 export interface GetChatHistoryAck extends ChatHistorySyncData {
   success: boolean;
   error?: string;
@@ -73,6 +75,10 @@ export interface ClientToServerEvents {
   ) => void;
   UPDATE_ROOM_CONFIG: (
     data: UpdateRoomConfigData,
+    callback: (response: any) => void,
+  ) => void;
+  PLAYER_READY: (
+    data: PlayerReadyData,
     callback: (response: any) => void,
   ) => void;
   PLAYER_ACTION: (
@@ -146,6 +152,7 @@ export interface PlayerActedData {
   playerId: string;
   playerName: string;
   action: PlayerAction;
+  playerStatus?: PlayerStatus;
   amount?: number;
   displayKind?: PlayerActionDisplayKind;
   totalBetAfterAction?: number;
@@ -206,6 +213,7 @@ export interface PlayerDisconnectedData {
 export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
+  status?: PlayerStatus;
 }
 
 export interface PlayerAutoFoldedData {
@@ -220,6 +228,11 @@ export interface HostChangedData {
 
 export interface RoomConfigUpdatedData {
   config: RoomConfig;
+}
+
+export interface ReadyStateUpdatedData {
+  phase: ReadyPhase | null;
+  readyPlayerIds: string[];
 }
 
 export interface PlayerReboughtData {
@@ -301,6 +314,7 @@ export interface ServerToClientEvents {
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;
   ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;
+  READY_STATE_UPDATED: (data: ReadyStateUpdatedData) => void;
   PLAYER_REBOUGHT: (data: PlayerReboughtData) => void;
   PLAYER_LEFT: (data: PlayerLeftData) => void;
   GAME_ENDED: (data: GameEndedData) => void;

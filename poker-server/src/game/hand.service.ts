@@ -28,12 +28,13 @@ export class HandService {
    * Start a new hand
    */
   async startNewHand(room: Room): Promise<Hand> {
-    if (room.players.length < 2) {
+    const seatedPlayers = room.players.filter((player) => player.status !== 'left');
+    if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
     }
 
     // Auto-refill busted players with starting chips and track it as an added buy-in.
-    for (const player of room.players) {
+    for (const player of seatedPlayers) {
       if (player.chips === 0) {
         player.chips = room.config.startingChips;
         player.totalBuyIn = (player.totalBuyIn ?? 0) + room.config.startingChips;
@@ -137,6 +138,8 @@ export class HandService {
 
     room.currentHand = hand;
     room.gameState = 'IN_PROGRESS';
+    room.readyPhase = null;
+    room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
@@ -164,6 +167,7 @@ export class HandService {
         hand.activePlayers.includes(p.id) &&
         p.status !== 'folded' &&
         p.status !== 'all-in' &&
+        p.status !== 'left' &&
         p.chips > 0,
     );
 
@@ -299,13 +303,14 @@ export class HandService {
       `[determineWinner] START - pot: ${hand.pot}, players: ${room.players.map((p) => `${p.name}: chips=${p.chips}, currentBet=${p.currentBet}`).join(', ')}`,
     );
 
-    const activePlayers = room.players.filter((p) =>
-      hand.activePlayers.includes(p.id),
+    const activePlayers = room.players.filter(
+      (p) => hand.activePlayers.includes(p.id) && p.status !== 'left',
     );
 
     if (activePlayers.length === 0) {
       throw new Error('No active players');
     }
+    const contributions = this.getHandContributions(room);
 
     // If only one player left, they win
     if (activePlayers.length === 1) {
@@ -356,6 +361,7 @@ export class HandService {
             uncontested: activePlayers.length === 1,
           },
         ],
+        netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
       };
 
       await this.cleanupHand(room, winner.id);
@@ -372,7 +378,7 @@ export class HandService {
       evaluations.map((entry) => [entry.player.id, entry]),
     );
     const sidePotSegments = this.buildPotSegments(
-      this.getHandContributions(room),
+      contributions,
       hand.activePlayers,
     );
 
@@ -517,6 +523,7 @@ export class HandService {
         })),
       totalPot: hand.pot,
       payouts,
+      netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
     };
 
     await this.cleanupHand(room, winners[0]?.playerId);
@@ -531,12 +538,24 @@ export class HandService {
 
     // Fallback for legacy hand states that don't have tracked contributions.
     const fallback: Record<string, number> = {};
-    const activePlayerIds = [...hand.activePlayers];
-    if (activePlayerIds.length === 0 || hand.pot <= 0) {
+    const dealtPlayerIds = room.players
+      .filter(
+        (player) =>
+          Boolean(player.cards) &&
+          player.status !== 'left' &&
+          player.status !== 'waiting',
+      )
+      .map((player) => player.id);
+    const fallbackPlayerIds =
+      dealtPlayerIds.length > 0
+        ? [...new Set(dealtPlayerIds)]
+        : [...new Set(hand.activePlayers)];
+
+    if (fallbackPlayerIds.length === 0 || hand.pot <= 0) {
       return fallback;
     }
 
-    const sortedActive = activePlayerIds.sort((a, b) => {
+    const sortedActive = fallbackPlayerIds.sort((a, b) => {
       const aPos = room.players.find((p) => p.id === a)?.position ?? 0;
       const bPos = room.players.find((p) => p.id === b)?.position ?? 0;
       return aPos - bPos;
@@ -603,6 +622,24 @@ export class HandService {
     return segments;
   }
 
+  private buildNetByPlayerId(
+    contributions: Record<string, number>,
+    payouts: Map<string, number>,
+  ): Record<string, number> {
+    const netByPlayerId: Record<string, number> = {};
+    const playerIds = new Set<string>([
+      ...Object.keys(contributions),
+      ...Array.from(payouts.keys()),
+    ]);
+
+    for (const playerId of playerIds) {
+      netByPlayerId[playerId] =
+        (payouts.get(playerId) || 0) - (contributions[playerId] || 0);
+    }
+
+    return netByPlayerId;
+  }
+
   /**
    * Get next player to act
    */
@@ -656,6 +693,7 @@ export class HandService {
           hand.activePlayers.includes(p.id) &&
           p.status !== 'folded' &&
           p.status !== 'all-in' &&
+          p.status !== 'left' &&
           p.chips > 0,
       ),
     );
