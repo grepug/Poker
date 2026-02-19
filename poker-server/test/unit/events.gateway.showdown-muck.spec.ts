@@ -123,6 +123,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
 
     handService = {
       advanceBettingRound: jest.fn(),
+      isHandComplete: jest.fn(() => false),
       determineWinner: jest.fn(async () => ({
         winners: [
           {
@@ -151,6 +152,9 @@ describe('EventsGateway showdown reveal/muck flow', () => {
               kickers: [],
               description: 'Pair',
             },
+            resultStatus: 'shown',
+            cardsVisibility: 'shown',
+            seatPosition: 1,
           },
         ],
         totalPot: 200,
@@ -369,5 +373,60 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     );
     expect(revealResponse).toEqual(expect.objectContaining({ success: true }));
     expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues reveal-result step for fold-out even when street reveal config is disabled', async () => {
+    roomState.config.allowPlayerStreetReveal = false;
+    roomState.currentHand.bettingRound = 'PRE_FLOP';
+    roomState.currentHand.currentPlayerTurn = 'p-bob';
+    roomState.currentHand.activePlayers = ['p-alice'];
+    roomState.players = roomState.players.map((player: any) =>
+      player.id === 'p-bob'
+        ? { ...player, status: 'folded', lastAction: 'fold' }
+        : player,
+    );
+    handService.isHandComplete.mockReturnValue(true);
+
+    await (gateway as any).handleBettingRoundComplete(roomState);
+
+    expect(handService.determineWinner).not.toHaveBeenCalled();
+    expect(roomState.currentHand.currentPlayerTurn).toBeNull();
+    expect(roomState.currentHand.pendingStreetRevealRound).toBe('SHOWDOWN');
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      'NEXT_STREET_REVEAL_STATE',
+      expect.objectContaining({
+        nextRound: 'SHOWDOWN',
+      }),
+    );
+  });
+
+  it('settles fold-out hand after reveal-result action', async () => {
+    roomState.config.allowPlayerStreetReveal = false;
+    roomState.currentHand.bettingRound = 'PRE_FLOP';
+    roomState.currentHand.currentPlayerTurn = null;
+    roomState.currentHand.activePlayers = ['p-alice'];
+    roomState.currentHand.pendingStreetRevealRound = 'SHOWDOWN';
+    roomState.currentHand.nextStreetReadyPlayerIds = [];
+    roomState.currentHand.nextStreetRequiredPlayerIds = ['p-alice'];
+    roomState.players = roomState.players.map((player: any) =>
+      player.id === 'p-bob'
+        ? { ...player, status: 'folded', lastAction: 'fold' }
+        : player,
+    );
+    handService.isHandComplete.mockReturnValue(true);
+
+    const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
+    const revealResponse = await gateway.handleRevealNextStreet(
+      aliceClient,
+      {} as any,
+    );
+
+    expect(revealResponse).toEqual(expect.objectContaining({ success: true }));
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    expect(
+      roomEmitter.emit.mock.calls.some(
+        ([eventName]) => eventName === 'HAND_COMPLETE',
+      ),
+    ).toBe(true);
   });
 });

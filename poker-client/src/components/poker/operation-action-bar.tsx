@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
@@ -13,14 +14,14 @@ type OperationActionBarProps = {
   hasRevealedNextStreet: boolean;
   canShowMyHand: boolean;
   hasShownMyHand: boolean;
-  canMuckMyHand: boolean;
-  hasMuckedMyHand: boolean;
+  canFoldMyHand: boolean;
+  hasFoldedMyHand: boolean;
   showdownIsDecisionTurn: boolean;
   showdownWaitingPlayerName: string | null;
   showdownIsForcedRevealTurn: boolean;
   onRevealNextStreet: () => void;
   onShowMyHand: () => void;
-  onMuckMyHand: () => void;
+  onFoldMyHand: () => void;
   t: Translate;
 };
 
@@ -32,21 +33,30 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
   hasRevealedNextStreet,
   canShowMyHand,
   hasShownMyHand,
-  canMuckMyHand,
-  hasMuckedMyHand,
+  canFoldMyHand,
+  hasFoldedMyHand,
   showdownIsDecisionTurn,
   showdownWaitingPlayerName,
   showdownIsForcedRevealTurn,
   onRevealNextStreet,
   onShowMyHand,
-  onMuckMyHand,
+  onFoldMyHand,
   t,
 }) => {
-  const [showMuckQuickConfirm, setShowMuckQuickConfirm] = React.useState(false);
+  const [showFoldQuickConfirm, setShowFoldQuickConfirm] = React.useState(false);
+  const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const foldQuickConfirmRef = React.useRef<HTMLDivElement | null>(null);
+  const foldQuickConfirmStyle = useAnchoredPopover({
+    isOpen: !isAutomationMode && showFoldQuickConfirm,
+    anchorRef: foldActionButtonRef,
+    popoverRef: foldQuickConfirmRef,
+    preferredPlacement: "top",
+    align: "end",
+  });
 
   React.useEffect(() => {
     if (mode !== "showdown" || !showdownIsDecisionTurn) {
-      setShowMuckQuickConfirm(false);
+      setShowFoldQuickConfirm(false);
     }
   }, [mode, showdownIsDecisionTurn]);
 
@@ -66,22 +76,24 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
           </div>
           {showdownIsDecisionTurn && (
             <div className="relative flex flex-wrap items-center gap-2">
-              {!isAutomationMode && showMuckQuickConfirm && (
+              {!isAutomationMode && showFoldQuickConfirm && (
                 <div
+                  ref={foldQuickConfirmRef}
                   role="dialog"
                   aria-label={t("game.confirmAction.title")}
                   data-testid="action-quick-confirm-popover"
-                  className="absolute bottom-full right-0 z-20 mb-2 min-w-[14rem] rounded-xl border border-emerald-500/65 bg-emerald-950/95 p-3 shadow-2xl shadow-emerald-950/70 backdrop-blur-sm"
+                  className="action-quick-confirm-popover"
+                  style={foldQuickConfirmStyle}
                 >
                   <p className="text-xs font-semibold text-emerald-50">
                     {t("game.quickConfirm.prompt", {
-                      action: t("game.showdown.muck"),
+                      action: t("common.fold"),
                     })}
                   </p>
                   <div className="mt-2 flex justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowMuckQuickConfirm(false)}
+                      onClick={() => setShowFoldQuickConfirm(false)}
                       data-testid="action-quick-confirm-cancel"
                       className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
                     >
@@ -90,8 +102,8 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setShowMuckQuickConfirm(false);
-                        onMuckMyHand();
+                        setShowFoldQuickConfirm(false);
+                        onFoldMyHand();
                       }}
                       data-testid="action-quick-confirm-accept"
                       className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-300"
@@ -103,26 +115,29 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
               )}
               <button
                 onClick={onShowMyHand}
-                disabled={!canShowMyHand || hasShownMyHand || hasMuckedMyHand}
+                disabled={!canShowMyHand || hasShownMyHand || hasFoldedMyHand}
                 data-testid="show-my-hand-button"
                 className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {hasShownMyHand ? t("game.showdown.shown") : t("game.showdown.show")}
               </button>
-              <button
-                onClick={() => {
-                  if (isAutomationMode) {
-                    onMuckMyHand();
-                    return;
-                  }
-                  setShowMuckQuickConfirm(true);
-                }}
-                disabled={!canMuckMyHand || hasMuckedMyHand || hasShownMyHand}
-                data-testid="muck-my-hand-button"
-                className="rounded-xl border border-amber-300/70 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {hasMuckedMyHand ? t("game.showdown.mucked") : t("game.showdown.muck")}
-              </button>
+              {!showdownIsForcedRevealTurn && (
+                <button
+                  ref={foldActionButtonRef}
+                  onClick={() => {
+                    if (isAutomationMode) {
+                      onFoldMyHand();
+                      return;
+                    }
+                    setShowFoldQuickConfirm(true);
+                  }}
+                  disabled={!canFoldMyHand || hasFoldedMyHand || hasShownMyHand}
+                  data-testid="fold-my-hand-button"
+                  className="rounded-xl border border-rose-300/70 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {hasFoldedMyHand ? t("game.showdown.mucked") : t("common.fold")}
+                </button>
+              )}
             </div>
           )}
         </div>

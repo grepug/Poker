@@ -1850,18 +1850,18 @@ const useGameRoomElement = () => {
     () => new Set(nextStreetRevealState?.requiredPlayerIds ?? []),
     [nextStreetRevealState?.requiredPlayerIds],
   );
+  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
   const canRevealNextStreet = Boolean(
     !lastHandResult &&
       nextStreetRevealState &&
       player?.id &&
       nextStreetRequiredPlayerIdSet.has(player.id) &&
-      isPlayerStreetRevealEnabled,
+      (isResultRevealStep || isPlayerStreetRevealEnabled),
   );
   const hasRevealedNextStreet = player?.id
     ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
-  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
@@ -1916,7 +1916,7 @@ const useGameRoomElement = () => {
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
   );
-  const hasMuckedMyHandAtShowdown = Boolean(
+  const hasFoldedMyHandAtShowdown = Boolean(
     isShowdownDecisionStep && !hasShownMyHandAtShowdown && player?.status === "folded",
   );
   const canShowMyHandAtShowdown = Boolean(
@@ -1924,10 +1924,10 @@ const useGameRoomElement = () => {
       isShowdownContender &&
       isMyShowdownDecisionTurn &&
       !hasShownMyHandAtShowdown &&
-      !hasMuckedMyHandAtShowdown,
+      !hasFoldedMyHandAtShowdown,
   );
   const showShowdownDecisionArea = isShowdownDecisionStep;
-  const canMuckMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
+  const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
   const showNextHandActionArea = canReadyNextHand;
   const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
   const operationBarMode = showShowdownDecisionArea
@@ -3490,14 +3490,14 @@ const useGameRoomElement = () => {
             hasRevealedNextStreet={hasRevealedNextStreet}
             canShowMyHand={canShowMyHandAtShowdown}
             hasShownMyHand={hasShownMyHandAtShowdown}
-            canMuckMyHand={canMuckMyHandAtShowdown}
-            hasMuckedMyHand={hasMuckedMyHandAtShowdown}
+            canFoldMyHand={canFoldMyHandAtShowdown}
+            hasFoldedMyHand={hasFoldedMyHandAtShowdown}
             showdownIsDecisionTurn={isMyShowdownDecisionTurn}
             showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
             showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
             onRevealNextStreet={revealNextStreet}
             onShowMyHand={showMyHand}
-            onMuckMyHand={muckMyHand}
+            onFoldMyHand={muckMyHand}
             t={t}
           />
         </ChipComposerDock>

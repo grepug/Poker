@@ -1039,7 +1039,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const isPendingShowdown =
             hand.bettingRound === 'SHOWDOWN' && !hand.lastResult;
           if (!isPendingShowdown) {
-            throw new Error('Muck is only available during showdown');
+            throw new Error('Fold is only available during showdown');
           }
 
           if ((hand.showdownDecisionOrder ?? []).length === 0) {
@@ -1047,7 +1047,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           }
 
           if (!hand.activePlayers.includes(playerInfo.playerId)) {
-            throw new Error('You cannot muck for this hand');
+            throw new Error('You cannot fold for this hand');
           }
 
           if (hand.showdownDecisionPlayerId !== playerInfo.playerId) {
@@ -1072,7 +1072,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       );
     } catch (error) {
-      this.logger.error(`Muck hand error: ${error.message}`);
+      this.logger.error(`Fold hand error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false, error: error.message };
     }
@@ -1126,9 +1126,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
           const allReady = ready.size > 0;
           if (allReady) {
-            const shouldRevealShowdownResult =
-              nextRound === 'SHOWDOWN' && hand.bettingRound === 'SHOWDOWN';
-            if (shouldRevealShowdownResult) {
+            const shouldRevealHandResult =
+              nextRound === 'SHOWDOWN' &&
+              (hand.bettingRound === 'SHOWDOWN' ||
+                (typeof this.handService.isHandComplete === 'function' &&
+                  this.handService.isHandComplete(room)));
+            if (shouldRevealHandResult) {
               await this.completeAndBroadcastHand(room);
             } else {
               await this.advanceRoundAndBroadcast(room);
@@ -1764,7 +1767,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
-      await this.completeAndBroadcastHand(room);
+      const queuedResultReveal = await this.queueHandResultRevealGate(room);
+      if (!queuedResultReveal) {
+        await this.completeAndBroadcastHand(room);
+      }
       return;
     }
 
@@ -2089,7 +2095,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         room.lastActivityAt = Date.now();
         await this.storageService.saveRoom(room);
         this.emitShowdownDecisionState(room);
-        const queuedResultReveal = await this.queueShowdownResultReveal(room);
+        const queuedResultReveal = await this.queueHandResultRevealGate(room);
         if (!queuedResultReveal) {
           await this.completeAndBroadcastHand(room);
         }
@@ -2105,7 +2111,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         room.lastActivityAt = Date.now();
         await this.storageService.saveRoom(room);
         this.emitShowdownDecisionState(room);
-        const queuedResultReveal = await this.queueShowdownResultReveal(room);
+        const queuedResultReveal = await this.queueHandResultRevealGate(room);
         if (!queuedResultReveal) {
           await this.completeAndBroadcastHand(room);
         }
@@ -2129,16 +2135,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     throw new Error('Showdown decision advance exceeded safety limit');
   }
 
-  private async queueShowdownResultReveal(room: any): Promise<boolean> {
+  private async queueHandResultRevealGate(room: any): Promise<boolean> {
     const hand = room?.currentHand;
-    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+    if (!hand || hand.lastResult) {
       return false;
     }
 
-    const allowPlayerStreetReveal =
-      room.config?.allowPlayerStreetReveal ?? true;
-    if (!allowPlayerStreetReveal) {
-      return false;
+    if (hand.pendingStreetRevealRound === 'SHOWDOWN') {
+      return true;
     }
 
     const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
@@ -2146,6 +2150,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return false;
     }
 
+    hand.currentPlayerTurn = null;
     hand.pendingStreetRevealRound = 'SHOWDOWN';
     hand.nextStreetReadyPlayerIds = [];
     hand.nextStreetRequiredPlayerIds = requiredPlayerIds;
@@ -2164,9 +2169,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async completeAndBroadcastHand(room: any) {
     const result = await this.handService.determineWinner(room);
     const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-    const revealedPlayerIds = isShowdown
-      ? result.playerHands.map((entry) => entry.playerId)
-      : [];
+    const revealedPlayerIds = result.playerHands
+      .filter((entry) => entry.cardsVisibility === 'shown')
+      .map((entry) => entry.playerId);
     room.currentHand.lastResult = result;
     room.currentHand.revealedPlayerIds = revealedPlayerIds;
     room.currentHand.currentPlayerTurn = null;

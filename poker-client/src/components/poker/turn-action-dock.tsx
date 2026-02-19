@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
@@ -74,6 +75,19 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onLegacyRaiseAmountChange,
   t,
 }) => {
+  const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const quickConfirmAnchorRef =
+    quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
+  const quickConfirmStyle = useAnchoredPopover({
+    isOpen: !isAutomationMode && Boolean(quickConfirmAction),
+    anchorRef: quickConfirmAnchorRef,
+    popoverRef: quickConfirmPopoverRef,
+    preferredPlacement: "top",
+    align: "start",
+  });
+
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
       <div className="chip-composer-dock__header">
@@ -147,10 +161,12 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
           <div className="relative">
             {!isAutomationMode && quickConfirmAction && (
               <div
+                ref={quickConfirmPopoverRef}
                 role="dialog"
                 aria-label={t("game.confirmAction.title")}
                 data-testid="action-quick-confirm-popover"
-                className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-emerald-500/65 bg-emerald-950/95 p-3 shadow-2xl shadow-emerald-950/70 backdrop-blur-sm"
+                className="action-quick-confirm-popover action-quick-confirm-popover--wide"
+                style={quickConfirmStyle}
               >
                 <p className="text-xs font-semibold text-emerald-50">
                   {t("game.quickConfirm.prompt", {
@@ -183,6 +199,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
 
             <div className="chip-composer-dock__footer">
               <button
+                ref={checkActionButtonRef}
                 onClick={() => onQuickDecisionAction("check")}
                 disabled={!canCheck}
                 data-testid={canCheck ? "action-check" : "action-check-disabled"}
@@ -191,6 +208,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                 {t("common.check")}
               </button>
               <button
+                ref={foldActionButtonRef}
                 onClick={() => onQuickDecisionAction("fold")}
                 data-testid="action-fold"
                 className="chip-action chip-action--fold"

@@ -26,6 +26,9 @@ type HandResultRow = {
   netChange: number | null;
   cards: PokerCard[];
   hand: HandEvaluation | null;
+  resultStatus: "shown" | "folded_pre_showdown" | "folded_at_showdown" | "hidden_contender";
+  cardsVisibility: "shown" | "hidden";
+  seatPosition: number;
 };
 
 type HandResultsContentProps = {
@@ -92,6 +95,17 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   t,
 }) => {
   const formatNet = (amount: number) => `${amount >= 0 ? "+" : "-"}$${Math.abs(amount)}`;
+  const getResultStatusLabel = (
+    resultStatus: HandResultRow["resultStatus"],
+  ): string => {
+    if (resultStatus === "shown") {
+      return t("game.resultStatus.shown");
+    }
+    if (resultStatus === "folded_pre_showdown" || resultStatus === "folded_at_showdown") {
+      return t("game.resultStatus.folded");
+    }
+    return t("game.resultStatus.hidden");
+  };
 
   return (
     <>
@@ -209,7 +223,14 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
         <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
           {handResultRows.map((entry) => {
             const isSelf = entry.playerId === currentPlayerId;
-            const showCards = revealedHandPlayerIdSet.has(entry.playerId);
+            const showCards =
+              entry.cardsVisibility === "shown" || revealedHandPlayerIdSet.has(entry.playerId);
+            const resultStatusLabel = showCards
+              ? t("game.resultStatus.shown")
+              : getResultStatusLabel(entry.resultStatus);
+            const isFoldedResultStatus =
+              entry.resultStatus === "folded_pre_showdown" ||
+              entry.resultStatus === "folded_at_showdown";
 
             return (
               <article
@@ -226,6 +247,9 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                     <p className="text-sm font-semibold text-white">
                       #{entry.rankOrder} {entry.playerName}
                       {isSelf ? ` (${t("common.you")})` : ""}
+                    </p>
+                    <p className="text-xs text-emerald-100/70" data-testid={`hand-result-status-${entry.playerId}`}>
+                      {resultStatusLabel}
                     </p>
                     <p className="text-xs text-emerald-100/70">
                       {showNetChange && typeof entry.netChange === "number"
@@ -271,7 +295,9 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                     ? entry.hand
                       ? describeEvaluatedHand(entry.hand)
                       : t("game.cardsShownNoEvaluated")
-                    : t("game.handHidden")}
+                    : isFoldedResultStatus
+                      ? `${t("game.resultStatus.folded")} · ${t("game.handHidden")}`
+                      : t("game.handHidden")}
                 </p>
               </article>
             );

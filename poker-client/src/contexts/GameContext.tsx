@@ -705,7 +705,13 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         const myHand = data.result.playerHands.find(
           (entry) => entry.playerId === currentPlayerId,
         );
-        return myHand?.cards ?? prevCards;
+        if (!myHand) {
+          return prevCards;
+        }
+        if (myHand.cardsVisibility === "shown" && myHand.cards.length > 0) {
+          return myHand.cards;
+        }
+        return prevCards;
       });
       // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
       setRoom((prev) => {
@@ -855,6 +861,17 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         nextRound: data.nextRound,
         readyPlayerIds: data.readyPlayerIds ?? [],
         requiredPlayerIds: data.requiredPlayerIds ?? [],
+      });
+      setRoom((prev) => {
+        if (!prev || !prev.currentHand) return prev;
+        return {
+          ...prev,
+          currentHand: {
+            ...prev.currentHand,
+            currentPlayerTurn: null,
+            pendingStreetRevealRound: data.nextRound,
+          },
+        };
       });
     });
 
@@ -1256,7 +1273,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setLastError(null);
     socket.emit("MUCK_MY_HAND", {}, (response) => {
       if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Failed to muck hand");
+        setLastError(response.error || "Failed to fold hand");
       }
     });
   }, [socket]);
