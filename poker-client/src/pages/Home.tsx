@@ -16,10 +16,10 @@ interface HomeProps {
   forceJoinMode?: boolean;
 }
 
-export const Home: React.FC<HomeProps> = ({
+const useHomeElement = ({
   prefilledRoomId,
   forceJoinMode = false,
-}) => {
+}: HomeProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { connected } = useSocket();
@@ -79,13 +79,14 @@ export const Home: React.FC<HomeProps> = ({
       }
     };
 
+    const passiveTouchOptions: AddEventListenerOptions = { passive: true };
     document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener("touchstart", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick, passiveTouchOptions);
     document.addEventListener("keydown", handleEscape);
 
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener("touchstart", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick, passiveTouchOptions);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isEmojiPopoverOpen]);
@@ -196,3 +197,5 @@ export const Home: React.FC<HomeProps> = ({
     </main>
   );
 };
+
+export const Home: React.FC<HomeProps> = (props) => useHomeElement(props);

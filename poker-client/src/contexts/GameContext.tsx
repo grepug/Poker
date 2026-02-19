@@ -66,13 +66,13 @@ const resolveFallbackDisplayKind = ({
   }
 };
 
-export interface NextStreetRevealState {
+interface NextStreetRevealState {
   nextRound: BettingRound;
   readyPlayerIds: string[];
   requiredPlayerIds: string[];
 }
 
-export interface CreateRoomOptions {
+interface CreateRoomOptions {
   useShortDeckRules?: boolean;
 }
 
@@ -299,7 +299,7 @@ declare global {
   }
 }
 
-export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
+const useGameProviderElement = ({ children }: GameProviderProps) => {
   const { socket } = useSocket();
   const [room, setRoom] = useState<Room | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
@@ -352,8 +352,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     writeLastPlayerEmoji(player.emoji);
   }, [player?.emoji]);
 
-  useEffect(() => {
-    if (!socket) return;
+  const registerSocketStateListeners = useCallback((socketInstance: NonNullable<typeof socket>) => {
+    const socket = socketInstance;
 
     // Room created
     socket.on("ROOM_CREATED", (data) => {
@@ -990,10 +990,15 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("CHAT_MESSAGE_ADDED");
       socket.off("ERROR");
     };
-  }, [socket]);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
+    return registerSocketStateListeners(socket);
+  }, [registerSocketStateListeners, socket]);
+
+  const bindReconnectLifecycleListeners = useCallback((socketInstance: NonNullable<typeof socket>) => {
+    const socket = socketInstance;
 
     const attemptSessionRecovery = () => {
       if (reconnectInFlightRef.current) return;
@@ -1056,7 +1061,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
     };
-  }, [socket]);
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    return bindReconnectLifecycleListeners(socket);
+  }, [bindReconnectLifecycleListeners, socket]);
 
   const createRoom = useCallback(
     (
@@ -1472,3 +1482,6 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     </GameContext.Provider>
   );
 };
+
+export const GameProvider: React.FC<GameProviderProps> = (props) =>
+  useGameProviderElement(props);
