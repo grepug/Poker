@@ -907,12 +907,41 @@ async function waitForHandCompleteWithTerminalAutoProgress(
       }
     } else if (state.bettingRound === 'SHOWDOWN') {
       const showdownActorId = state.showdownDecisionPlayerId;
+      let showdownActionSucceeded = false;
       if (showdownActorId) {
         const decisionPage = pageByPlayerId.get(showdownActorId);
         if (decisionPage) {
           const response = await emitSocketEventAck(decisionPage, 'SHOW_MY_HAND');
           if (response.success || response.duplicate) {
             progressed = true;
+            showdownActionSucceeded = true;
+          }
+        }
+      }
+
+      if (!showdownActionSucceeded) {
+        for (const page of uniquePages) {
+          if (page.isClosed()) {
+            continue;
+          }
+          const response = await emitSocketEventAck(page, 'SHOW_MY_HAND');
+          if (response.success || response.duplicate) {
+            progressed = true;
+            showdownActionSucceeded = true;
+            break;
+          }
+        }
+      }
+
+      if (!showdownActionSucceeded) {
+        for (const page of uniquePages) {
+          if (page.isClosed()) {
+            continue;
+          }
+          const response = await emitSocketEventAck(page, 'REVEAL_NEXT_STREET');
+          if (response.success || response.duplicate) {
+            progressed = true;
+            break;
           }
         }
       }
@@ -1067,6 +1096,40 @@ async function completeCurrentHandWithPassiveActions(
           await anchorPage.waitForTimeout(120);
           continue;
         }
+      }
+    }
+
+    if (state.bettingRound === 'SHOWDOWN') {
+      let showdownActionSucceeded = false;
+      for (const revealPage of Object.values(pageByName)) {
+        if (revealPage.isClosed()) {
+          continue;
+        }
+        const response = await emitSocketEventAck(revealPage, 'SHOW_MY_HAND');
+        if (response.success || response.duplicate) {
+          showdownActionSucceeded = true;
+          break;
+        }
+      }
+      if (showdownActionSucceeded) {
+        await anchorPage.waitForTimeout(120);
+        continue;
+      }
+
+      let revealTriggered = false;
+      for (const revealPage of Object.values(pageByName)) {
+        if (revealPage.isClosed()) {
+          continue;
+        }
+        const response = await emitSocketEventAck(revealPage, 'REVEAL_NEXT_STREET');
+        if (response.success || response.duplicate) {
+          revealTriggered = true;
+          break;
+        }
+      }
+      if (revealTriggered) {
+        await anchorPage.waitForTimeout(120);
+        continue;
       }
     }
 
@@ -2545,11 +2608,11 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextHandComplete(alicePage, 60000, [
+      const handCompletePromise = captureNextSocketEvent(
         alicePage,
-        bobPage,
-        charliePage,
-      ]);
+        'HAND_COMPLETE',
+        60000,
+      );
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -2591,7 +2654,34 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await waitForPlayerTurn(charliePage, 'Charlie');
       await charliePage.click('[data-testid="action-check"]');
 
-      const result = await handCompletePromise;
+      await waitForRound(alicePage, 'SHOWDOWN', 5);
+      const showdownStartedAt = Date.now();
+      while (Date.now() - showdownStartedAt < 30000) {
+        const revealVisible = await Promise.any(
+          [alicePage, bobPage, charliePage].map(async (page) => {
+            const area = page.locator('[data-testid="reveal-next-street-action-area"]');
+            return (await area.count()) > 0 && (await area.first().isVisible());
+          }),
+        ).catch(() => false);
+        if (revealVisible) {
+          break;
+        }
+
+        let acted = false;
+        for (const page of [bobPage, charliePage, alicePage]) {
+          const showButton = page.locator('[data-testid="show-my-hand-button"]');
+          if ((await showButton.count()) > 0 && (await showButton.first().isVisible())) {
+            await showButton.first().click();
+            acted = true;
+            break;
+          }
+        }
+        await alicePage.waitForTimeout(acted ? 120 : 200);
+      }
+
+      await clickRevealResultFromAnyPage([alicePage, bobPage, charliePage], 10000);
+      const handCompletePayload = await handCompletePromise;
+      const result = handCompletePayload?.result ?? handCompletePayload;
       expect(result.totalPot).toBe(4000);
       expect(result.winners).toHaveLength(2);
 
@@ -2657,11 +2747,11 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextHandComplete(alicePage, 60000, [
+      const handCompletePromise = captureNextSocketEvent(
         alicePage,
-        bobPage,
-        charliePage,
-      ]);
+        'HAND_COMPLETE',
+        60000,
+      );
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -2683,7 +2773,34 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await waitForPlayerTurn(bobPage, 'Bob');
       await bobPage.click('[data-testid="action-fold"]');
 
-      const result = await handCompletePromise;
+      await waitForRound(alicePage, 'SHOWDOWN', 5);
+      const showdownStartedAt = Date.now();
+      while (Date.now() - showdownStartedAt < 30000) {
+        const revealVisible = await Promise.any(
+          [alicePage, bobPage, charliePage].map(async (page) => {
+            const area = page.locator('[data-testid="reveal-next-street-action-area"]');
+            return (await area.count()) > 0 && (await area.first().isVisible());
+          }),
+        ).catch(() => false);
+        if (revealVisible) {
+          break;
+        }
+
+        let acted = false;
+        for (const page of [charliePage, alicePage, bobPage]) {
+          const showButton = page.locator('[data-testid="show-my-hand-button"]');
+          if ((await showButton.count()) > 0 && (await showButton.first().isVisible())) {
+            await showButton.first().click();
+            acted = true;
+            break;
+          }
+        }
+        await alicePage.waitForTimeout(acted ? 120 : 200);
+      }
+
+      await clickRevealResultFromAnyPage([alicePage, bobPage, charliePage], 10000);
+      const handCompletePayload = await handCompletePromise;
+      const result = handCompletePayload?.result ?? handCompletePayload;
       expect(result.totalPot).toBe(3500);
       expect(result.playerHands).toHaveLength(3);
 
