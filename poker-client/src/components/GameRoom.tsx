@@ -168,6 +168,22 @@ type RulesCopy = {
 };
 type RuleVariant = "standard" | "shortDeck";
 
+type HandScopedUiState = {
+  key: string;
+  showRankingsModal: boolean;
+  showRulesModal: boolean;
+  showEndGameConfirmModal: boolean;
+  isCardsFlyoutOpen: boolean;
+};
+
+const createDefaultHandScopedUiState = (key: string): HandScopedUiState => ({
+  key,
+  showRankingsModal: false,
+  showRulesModal: false,
+  showEndGameConfirmModal: false,
+  isCardsFlyoutOpen: true,
+});
+
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
   pointerId: null,
@@ -1526,7 +1542,7 @@ const toActionCenterAlert = (
   }
 };
 
-export const GameRoom: React.FC = () => {
+const useGameRoomElement = () => {
   const navigate = useNavigate();
   const {
     room,
@@ -1562,10 +1578,7 @@ export const GameRoom: React.FC = () => {
   );
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
-  const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showRulesModal, setShowRulesModal] = useState(false);
-  const [showEndGameConfirmModal, setShowEndGameConfirmModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -1573,7 +1586,6 @@ export const GameRoom: React.FC = () => {
   const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
-  const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
   const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
   const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [tableObstacleRects, setTableObstacleRects] = useState<RectBounds[]>([]);
@@ -1661,6 +1673,75 @@ export const GameRoom: React.FC = () => {
   );
   const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
+  const handScopedUiStateKey = `${room?.id ?? "no-room"}:${currentHandNumber ?? "no-hand"}`;
+  const [handScopedUiState, setHandScopedUiState] = useState<HandScopedUiState>(() =>
+    createDefaultHandScopedUiState(handScopedUiStateKey),
+  );
+  const resolvedHandScopedUiState =
+    handScopedUiState.key === handScopedUiStateKey
+      ? handScopedUiState
+      : createDefaultHandScopedUiState(handScopedUiStateKey);
+
+  const updateHandScopedUiState = useCallback(
+    (updater: (state: HandScopedUiState) => HandScopedUiState) => {
+      setHandScopedUiState((previous) => {
+        const baseState =
+          previous.key === handScopedUiStateKey
+            ? previous
+            : createDefaultHandScopedUiState(handScopedUiStateKey);
+        return updater(baseState);
+      });
+    },
+    [handScopedUiStateKey],
+  );
+
+  const showRankingsModal = resolvedHandScopedUiState.showRankingsModal;
+  const showRulesModal = resolvedHandScopedUiState.showRulesModal;
+  const showEndGameConfirmModal = resolvedHandScopedUiState.showEndGameConfirmModal;
+  const isCardsFlyoutOpen = resolvedHandScopedUiState.isCardsFlyoutOpen;
+
+  const setShowRankingsModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showRankingsModal:
+          typeof nextValue === "function" ? nextValue(state.showRankingsModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setShowRulesModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showRulesModal: typeof nextValue === "function" ? nextValue(state.showRulesModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setShowEndGameConfirmModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showEndGameConfirmModal:
+          typeof nextValue === "function" ? nextValue(state.showEndGameConfirmModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setIsCardsFlyoutOpen = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        isCardsFlyoutOpen:
+          typeof nextValue === "function" ? nextValue(state.isCardsFlyoutOpen) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
 
   const latestUnreadIncomingChatMessage = useMemo(() => {
     if (chatUnreadCount <= 0) {
@@ -1805,10 +1886,7 @@ export const GameRoom: React.FC = () => {
     [lastHandResult],
   );
   const netByPlayerId = useMemo(() => lastHandResult?.netByPlayerId ?? {}, [lastHandResult]);
-  const hasNetByPlayerId = useMemo(
-    () => Object.keys(netByPlayerId).length > 0,
-    [netByPlayerId],
-  );
+  const hasNetByPlayerId = Object.keys(netByPlayerId).length > 0;
   const myHandNetChange = useMemo(() => {
     if (!player?.id || !lastHandResult || !hasNetByPlayerId) return null;
     if (!Object.prototype.hasOwnProperty.call(netByPlayerId, player.id)) {
@@ -1910,10 +1988,7 @@ export const GameRoom: React.FC = () => {
       viewportWidth,
     });
   }, [seatSlotWidth, feltSize.width]);
-  const seatSlotHeightPx = useMemo(
-    () => seatSlotWidthPx / SEAT_POD_WIDTH_TO_HEIGHT_RATIO,
-    [seatSlotWidthPx],
-  );
+  const seatSlotHeightPx = seatSlotWidthPx / SEAT_POD_WIDTH_TO_HEIGHT_RATIO;
 
   const tableCornerRadiusPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -2520,13 +2595,17 @@ export const GameRoom: React.FC = () => {
     });
   }, [maxStack]);
 
+  const resetTurnInteractionState = useCallback(() => {
+    setTrayAmount(0);
+    setQuickConfirmAction(null);
+    setDragState(EMPTY_DRAG_STATE);
+  }, []);
+
   useEffect(() => {
     if (!isYourTurn) {
-      setTrayAmount(0);
-      setQuickConfirmAction(null);
-      setDragState(EMPTY_DRAG_STATE);
+      resetTurnInteractionState();
     }
-  }, [isYourTurn]);
+  }, [isYourTurn, resetTurnInteractionState]);
 
   useEffect(() => {
     if (!shouldAnchorCardsFlyoutToTurnDock) {
@@ -2574,7 +2653,7 @@ export const GameRoom: React.FC = () => {
     animatedPotRef.current = animatedPotValue;
   }, [animatedPotValue]);
 
-  useEffect(() => {
+  const runPotAnimationToDisplayPot = useCallback(() => {
     if (displayPot === animatedPotRef.current) {
       return;
     }
@@ -2616,6 +2695,10 @@ export const GameRoom: React.FC = () => {
   }, [displayPot]);
 
   useEffect(() => {
+    runPotAnimationToDisplayPot();
+  }, [runPotAnimationToDisplayPot]);
+
+  useEffect(() => {
     if (turnAlertTimeoutRef.current) {
       window.clearTimeout(turnAlertTimeoutRef.current);
       turnAlertTimeoutRef.current = null;
@@ -2623,14 +2706,6 @@ export const GameRoom: React.FC = () => {
 
     previousIsYourTurnRef.current = null;
     setTurnAlertToken(null);
-  }, [room?.id, currentHandNumber]);
-
-  useEffect(() => {
-    // Reset hand-level UI state for each new hand.
-    setShowRankingsModal(false);
-    setShowRulesModal(false);
-    setIsCardsFlyoutOpen(true);
-    setShowEndGameConfirmModal(false);
   }, [room?.id, currentHandNumber]);
 
   useEffect(() => {
@@ -2660,7 +2735,7 @@ export const GameRoom: React.FC = () => {
     previousIsYourTurnRef.current = isYourTurn;
   }, [isYourTurn, triggerTurnAlert]);
 
-  useEffect(() => {
+  const syncActionCenterAlertWithLatestAction = useCallback(() => {
     if (!lastPlayerActionEvent) return;
 
     const alert = toActionCenterAlert(lastPlayerActionEvent, t);
@@ -2683,6 +2758,10 @@ export const GameRoom: React.FC = () => {
       clearActionAlertTimers();
     }, ACTION_ALERT_TOTAL_MS);
   }, [clearActionAlertTimers, lastPlayerActionEvent, t]);
+
+  useEffect(() => {
+    syncActionCenterAlertWithLatestAction();
+  }, [syncActionCenterAlertWithLatestAction]);
 
   useEffect(() => {
     if (!actionCenterAlert) {
@@ -2724,6 +2803,29 @@ export const GameRoom: React.FC = () => {
     [clearActionAlertTimers],
   );
 
+  const dismissTransientOverlays = useCallback(() => {
+    if (lastError) clearError();
+    if (showRankingsModal) setShowRankingsModal(false);
+    if (showRulesModal) setShowRulesModal(false);
+    if (showSettingsModal) setShowSettingsModal(false);
+    if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
+    if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
+    if (quickConfirmAction) setQuickConfirmAction(null);
+  }, [
+    clearError,
+    isGameEnded,
+    lastError,
+    quickConfirmAction,
+    setShowEndGameConfirmModal,
+    setShowRankingsModal,
+    setShowRulesModal,
+    showEndGameConfirmModal,
+    showFinalSummaryModal,
+    showRankingsModal,
+    showRulesModal,
+    showSettingsModal,
+  ]);
+
   useEffect(() => {
     if (
       !lastError &&
@@ -2739,24 +2841,16 @@ export const GameRoom: React.FC = () => {
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (lastError) clearError();
-      if (showRankingsModal) setShowRankingsModal(false);
-      if (showRulesModal) setShowRulesModal(false);
-      if (showSettingsModal) setShowSettingsModal(false);
-      if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
-      if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
-      if (quickConfirmAction) setQuickConfirmAction(null);
+      dismissTransientOverlays();
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [
-    clearError,
+    dismissTransientOverlays,
     lastError,
-    quickConfirmAction,
     showEndGameConfirmModal,
     showFinalSummaryModal,
-    isGameEnded,
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
@@ -3482,3 +3576,5 @@ export const GameRoom: React.FC = () => {
     </TableShell>
   );
 };
+
+export const GameRoom: React.FC = () => useGameRoomElement();

@@ -51,7 +51,12 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
         {isOpen && hasHoleCards ? (
           <div className="your-cards-flyout__cards">
             {cards.map((card, idx) => (
-              <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+              <Card
+                key={`your-card-${card.suit}-${card.rank}`}
+                card={card}
+                size="small"
+                dataTestId={`your-card-${idx}`}
+              />
             ))}
           </div>
         ) : (

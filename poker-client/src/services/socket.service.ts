@@ -84,9 +84,6 @@ const resolveSocketUrl = (explicitUrl?: string) => {
   return `${protocol}://${host}:${port}`;
 };
 
-export const resolveServerBaseUrl = (explicitUrl?: string) =>
-  resolveSocketUrl(explicitUrl);
-
 export const resolveServerResourceUrl = (
   resourcePath: string,
   explicitUrl?: string,
@@ -99,7 +96,7 @@ export const resolveServerResourceUrl = (
     ? resourcePath
     : `/${resourcePath}`;
 
-  const baseUrl = resolveServerBaseUrl(explicitUrl).trim();
+  const baseUrl = resolveSocketUrl(explicitUrl).trim();
   if (!baseUrl || baseUrl === "/") {
     return normalizedPath;
   }

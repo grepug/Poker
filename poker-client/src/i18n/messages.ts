@@ -285,7 +285,7 @@ export const EN_MESSAGES = {
 
 export type MessageKey = keyof typeof EN_MESSAGES;
 
-export const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
+const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "common.back": "返回",
   "common.cancel": "取消",
   "common.check": "过牌",

@@ -38,7 +38,7 @@ type ChatPanelBindings = {
   setChatPanelOpen: (open: boolean) => void;
 };
 
-export type ChatPanelViewProps = ChatPanelBindings & ChatPanelProps;
+type ChatPanelViewProps = ChatPanelBindings & ChatPanelProps;
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -113,7 +113,7 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
   );
 };
 
-export const ChatPanelView: React.FC<ChatPanelViewProps> = ({
+const useChatPanelViewElement = ({
   onClose,
   locale,
   t,
@@ -126,7 +126,7 @@ export const ChatPanelView: React.FC<ChatPanelViewProps> = ({
   sendChatText,
   sendChatVoice,
   setChatPanelOpen,
-}) => {
+}: ChatPanelViewProps) => {
   const [draft, setDraft] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -632,6 +632,9 @@ export const ChatPanelView: React.FC<ChatPanelViewProps> = ({
     </section>
   );
 };
+
+export const ChatPanelView: React.FC<ChatPanelViewProps> = (props) =>
+  useChatPanelViewElement(props);
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   const { locale, t } = useLocalization();
