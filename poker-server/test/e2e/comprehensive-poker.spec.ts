@@ -5656,6 +5656,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         'reveal-next-street-action-area',
       );
 
+      await alicePage.click('[data-testid="open-chat-button"]');
+      await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-button"]'),
+      ).toBeEnabled();
+
       // Only one player click should be enough to proceed.
       await alicePage.click('[data-testid="reveal-next-street-button"]');
 

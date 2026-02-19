@@ -1870,6 +1870,10 @@ const useGameRoomElement = () => {
     () => new Set(showdownDecisionState?.forcedRevealPlayerIds ?? []),
     [showdownDecisionState?.forcedRevealPlayerIds],
   );
+  const showdownOrderedPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.orderedPlayerIds ?? []),
+    [showdownDecisionState?.orderedPlayerIds],
+  );
   const revealedShowdownHands = useMemo(
     () =>
       Object.values(revealedShowdownHandsByPlayerId).sort((left, right) => {
@@ -1894,10 +1898,18 @@ const useGameRoomElement = () => {
   const isShowdownForcedRevealTurn = Boolean(
     player?.id && showdownForcedRevealPlayerIdSet.has(player.id),
   );
+  const showdownActivePlayerIds = room?.currentHand?.activePlayers;
   const isShowdownContender = Boolean(
     player?.id &&
-      Array.isArray(room?.currentHand?.activePlayers) &&
-      room.currentHand.activePlayers.includes(player.id),
+      (showdownOrderedPlayerIdSet.has(player.id) ||
+        (Array.isArray(showdownActivePlayerIds) &&
+          showdownActivePlayerIds.includes(player.id)) ||
+        (!Array.isArray(showdownActivePlayerIds) &&
+          hasHoleCards &&
+          player.status !== "folded" &&
+          player.status !== "left" &&
+          player.status !== "waiting" &&
+          player.status !== "disconnected")),
   );
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
@@ -3267,6 +3279,8 @@ const useGameRoomElement = () => {
   return (
     <TableShell
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
+      showDesktopOperationDock={showOperationBar && isDesktopSideDock}
+      desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
       <TableTopBar

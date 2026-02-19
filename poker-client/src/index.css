@@ -2240,6 +2240,12 @@ body {
     width: clamp(18rem, 22vw, 23rem);
   }
 
+  .table-shell--desktop-operation-dock.table-shell--chat-open .chat-panel-shell {
+    bottom: calc(
+      var(--desktop-active-bottom-bar-height, 0px) + 0.85rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
 
   .table-shell {
     padding-bottom: 1rem;
