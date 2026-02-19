@@ -1926,16 +1926,23 @@ const useGameRoomElement = () => {
   );
   const showShowdownDecisionArea = isShowdownDecisionStep;
   const canMuckMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
+  const showNextHandActionArea = canReadyNextHand;
   const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
   const operationBarMode = showShowdownDecisionArea
     ? "showdown"
     : showNextStreetActionArea
       ? "streetReveal"
       : null;
-  const showTurnActionDock = isYourTurn && !showOperationBar;
+  const showTurnActionDock = isYourTurn && !showOperationBar && !showNextHandActionArea;
   const shouldAnchorCardsFlyoutToBottomBar =
-    showOperationBar || (showTurnActionDock && !isDesktopSideDock);
-  const activeBottomBarMode = showOperationBar ? "operation" : showTurnActionDock ? "turn" : null;
+    showOperationBar || showNextHandActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const activeBottomBarMode = showOperationBar
+    ? "operation"
+    : showNextHandActionArea
+      ? "nextHand"
+      : showTurnActionDock
+        ? "turn"
+        : null;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -3279,7 +3286,7 @@ const useGameRoomElement = () => {
   return (
     <TableShell
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
-      showDesktopOperationDock={showOperationBar && isDesktopSideDock}
+      showDesktopOperationDock={(showOperationBar || showNextHandActionArea) && isDesktopSideDock}
       desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
@@ -3439,18 +3446,6 @@ const useGameRoomElement = () => {
         </HandResultsPanel>
       )}
 
-      <NextHandActionArea
-        canReadyNextHand={canReadyNextHand}
-        hasReadiedNextHand={hasReadiedCurrentPhase}
-        canEndGame={canHostEndGame}
-        onReadyNextHand={markReady}
-        onOpenEndGameConfirm={() => {
-          if (!canHostEndGame) return;
-          setShowEndGameConfirmModal(true);
-        }}
-        t={t}
-      />
-
       {operationBarMode !== null && (
         <ChipComposerDock
           ref={bottomBarOverlayRef}
@@ -3487,6 +3482,7 @@ const useGameRoomElement = () => {
           )}
           <OperationActionBar
             mode={operationBarMode}
+            isAutomationMode={isAutomationMode}
             isResultRevealStep={isResultRevealStep}
             canRevealNextStreet={canRevealNextStreet}
             hasRevealedNextStreet={hasRevealedNextStreet}
@@ -3499,11 +3495,26 @@ const useGameRoomElement = () => {
             showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
             onRevealNextStreet={revealNextStreet}
             onShowMyHand={showMyHand}
-            onMuckMyHand={() => {
-              if (typeof window !== "undefined" && !window.confirm(t("game.showdown.muckConfirm"))) {
-                return;
-              }
-              muckMyHand();
+            onMuckMyHand={muckMyHand}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showNextHandActionArea && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <NextHandActionArea
+            canReadyNextHand={canReadyNextHand}
+            hasReadiedNextHand={hasReadiedCurrentPhase}
+            canEndGame={canHostEndGame}
+            onReadyNextHand={markReady}
+            onOpenEndGameConfirm={() => {
+              if (!canHostEndGame) return;
+              setShowEndGameConfirmModal(true);
             }}
             t={t}
           />

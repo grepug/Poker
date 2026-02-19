@@ -5595,6 +5595,22 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
       await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await expect(alicePage.locator('[data-testid="showdown-action-area"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="showdown-action-area"]')).toBeVisible();
+
+      const bobCanActFirst = await bobPage
+        .locator('[data-testid="show-my-hand-button"]')
+        .count();
+      if (bobCanActFirst > 0) {
+        await bobPage.click('[data-testid="show-my-hand-button"]');
+        await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
+        await alicePage.click('[data-testid="show-my-hand-button"]');
+      } else {
+        await alicePage.click('[data-testid="show-my-hand-button"]');
+        await expect(bobPage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
+        await bobPage.click('[data-testid="show-my-hand-button"]');
+      }
       await handCompletePromise;
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
@@ -5606,6 +5622,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="start-next-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="next-hand-action-area"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="operation-overlay"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="next-hand-action-area"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expect(
@@ -5854,7 +5874,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="show-my-hand-button"]'),
-      ).toBeDisabled();
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="muck-my-hand-button"]'),
+      ).toHaveCount(0);
       await expect(alicePage.locator('[data-testid="showdown-waiting-hint"]')).toContainText(
         'Bob',
       );
@@ -5895,7 +5918,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expectYourCardsFlyoutAboveActionArea(bobPage, 'showdown-action-area');
 
-      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeDisabled();
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="muck-my-hand-button"]')).toHaveCount(0);
       await expect(alicePage.locator('[data-testid="showdown-waiting-hint"]')).toContainText(
         'Bob',
       );

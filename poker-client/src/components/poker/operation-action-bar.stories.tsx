@@ -12,6 +12,7 @@ const meta = {
   tags: ["autodocs"],
   args: {
     mode: "showdown",
+    isAutomationMode: false,
     isResultRevealStep: false,
     canRevealNextStreet: true,
     hasRevealedNextStreet: false,
