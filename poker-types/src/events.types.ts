@@ -200,13 +200,23 @@ export interface HandCompleteData {
 export interface PlayerHandRevealedData {
   playerId: string;
   playerName: string;
+  cards: Card[];
   handNumber: number;
+  showdownOrderIndex: number;
 }
 
 export interface PlayerHandMuckedData {
   playerId: string;
   playerName: string;
   handNumber: number;
+}
+
+export interface ShowdownDecisionStateData {
+  handNumber: number;
+  orderedPlayerIds: string[];
+  currentPlayerId: string | null;
+  currentPlayerName: string | null;
+  forcedRevealPlayerIds: string[];
 }
 
 export interface NextStreetRevealStateData {
@@ -317,6 +327,7 @@ export interface ServerToClientEvents {
   BETTING_ROUND_COMPLETE: (data: BettingRoundCompleteData) => void;
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
+  SHOWDOWN_DECISION_STATE: (data: ShowdownDecisionStateData) => void;
   PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
   PLAYER_HAND_MUCKED: (data: PlayerHandMuckedData) => void;
   NEXT_STREET_REVEAL_STATE: (data: NextStreetRevealStateData) => void;

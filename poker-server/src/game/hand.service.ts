@@ -134,6 +134,7 @@ export class HandService {
       sidePots: [],
       potContributions,
       vpipPlayerIds: [],
+      showdownLastAggressorPlayerId: null,
       startedAt: Date.now(),
     };
 
@@ -273,6 +274,9 @@ export class HandService {
     hand.currentBet = 0;
     hand.lastRaiseSize = room.config.bigBlind; // Reset to big blind for new round
     hand.roundActions = {};
+    if (hand.bettingRound !== 'SHOWDOWN') {
+      hand.showdownLastAggressorPlayerId = null;
+    }
 
     for (const player of room.players) {
       player.currentBet = 0;

@@ -1397,6 +1397,55 @@ body {
   padding: 0.75rem;
 }
 
+.showdown-revealed-hands {
+  margin-bottom: 0.55rem;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 0.84rem;
+  background: rgba(3, 45, 31, 0.72);
+  padding: 0.6rem;
+}
+
+.showdown-revealed-hands__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.38rem;
+}
+
+.showdown-revealed-hands__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(236, 253, 245, 0.95);
+  letter-spacing: 0.02em;
+}
+
+.showdown-revealed-hands__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.showdown-revealed-hands__item {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid rgba(167, 243, 208, 0.25);
+  border-radius: 0.68rem;
+  padding: 0.32rem 0.44rem;
+  background: rgba(2, 33, 24, 0.6);
+}
+
+.showdown-revealed-hands__name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(236, 253, 245, 0.95);
+}
+
+.showdown-revealed-hands__cards {
+  display: flex;
+  gap: 0.22rem;
+}
+
 .chip-composer-dock__action-area {
   margin-top: 0;
   border-top: none;

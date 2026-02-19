@@ -14,6 +14,9 @@ type OperationActionBarProps = {
   hasShownMyHand: boolean;
   canMuckMyHand: boolean;
   hasMuckedMyHand: boolean;
+  showdownIsDecisionTurn: boolean;
+  showdownWaitingPlayerName: string | null;
+  showdownIsForcedRevealTurn: boolean;
   onRevealNextStreet: () => void;
   onShowMyHand: () => void;
   onMuckMyHand: () => void;
@@ -29,6 +32,9 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
   hasShownMyHand,
   canMuckMyHand,
   hasMuckedMyHand,
+  showdownIsDecisionTurn,
+  showdownWaitingPlayerName,
+  showdownIsForcedRevealTurn,
   onRevealNextStreet,
   onShowMyHand,
   onMuckMyHand,
@@ -40,12 +46,25 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-emerald-100">{t("game.showdown.actionTitle")}</h3>
-            <p className="text-xs text-emerald-100/70">{t("game.showdown.actionHint")}</p>
+            <p className="text-xs text-emerald-100/70">
+              {showdownIsDecisionTurn
+                ? showdownIsForcedRevealTurn
+                  ? t("game.showdown.forcedRevealHint")
+                  : t("game.showdown.actionHint")
+                : showdownWaitingPlayerName
+                  ? t("game.showdown.waitingHint", { name: showdownWaitingPlayerName })
+                  : t("game.showdown.waitingHintUnknown")}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={onShowMyHand}
-              disabled={!canShowMyHand || hasShownMyHand || hasMuckedMyHand}
+              disabled={
+                !showdownIsDecisionTurn ||
+                !canShowMyHand ||
+                hasShownMyHand ||
+                hasMuckedMyHand
+              }
               data-testid="show-my-hand-button"
               className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -53,7 +72,12 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
             </button>
             <button
               onClick={onMuckMyHand}
-              disabled={!canMuckMyHand || hasMuckedMyHand || hasShownMyHand}
+              disabled={
+                !showdownIsDecisionTurn ||
+                !canMuckMyHand ||
+                hasMuckedMyHand ||
+                hasShownMyHand
+              }
               data-testid="muck-my-hand-button"
               className="rounded-xl border border-amber-300/70 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -61,6 +85,13 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
             </button>
           </div>
         </div>
+        {!showdownIsDecisionTurn && (
+          <p className="mt-2 text-xs text-emerald-100/70" data-testid="showdown-waiting-hint">
+            {showdownWaitingPlayerName
+              ? t("game.showdown.waitingHint", { name: showdownWaitingPlayerName })
+              : t("game.showdown.waitingHintUnknown")}
+          </p>
+        )}
       </section>
     );
   }

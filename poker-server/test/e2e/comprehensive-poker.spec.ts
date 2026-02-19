@@ -5846,9 +5846,16 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.locator('[data-testid="showdown-action-area"]'),
       ).toBeVisible();
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="show-my-hand-button"]'),
+      ).toBeDisabled();
+      await expect(alicePage.locator('[data-testid="showdown-waiting-hint"]')).toContainText(
+        'Bob',
+      );
       await expect(bobPage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
-      await alicePage.click('[data-testid="show-my-hand-button"]');
       await bobPage.click('[data-testid="show-my-hand-button"]');
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeEnabled();
+      await alicePage.click('[data-testid="show-my-hand-button"]');
       await handCompletePromise;
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
     } finally {
@@ -5882,8 +5889,38 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expectYourCardsFlyoutAboveActionArea(bobPage, 'showdown-action-area');
 
-      await alicePage.click('[data-testid="show-my-hand-button"]');
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeDisabled();
+      await expect(alicePage.locator('[data-testid="showdown-waiting-hint"]')).toContainText(
+        'Bob',
+      );
+      const bobPlayerId = await bobPage.evaluate(
+        () => (window as any).pokerDebug?.getPlayer?.()?.id,
+      );
+      if (!bobPlayerId) {
+        throw new Error('Missing bob player id for showdown order assertion');
+      }
+      const bobFlyoutCards = await bobPage
+        .locator('[data-testid^="your-card-"]')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            rank: node.getAttribute('data-rank'),
+            suit: node.getAttribute('data-suit'),
+          })),
+        );
+
       await bobPage.click('[data-testid="show-my-hand-button"]');
+      await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeEnabled();
+      const revealedCardsOnAlice = await alicePage
+        .locator(`[data-testid^="showdown-revealed-card-${bobPlayerId}-"]`)
+        .evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            rank: node.getAttribute('data-rank'),
+            suit: node.getAttribute('data-suit'),
+          })),
+        );
+      expect(revealedCardsOnAlice).toEqual(bobFlyoutCards);
+
+      await alicePage.click('[data-testid="show-my-hand-button"]');
       await handCompletePromise;
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();

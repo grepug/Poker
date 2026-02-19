@@ -35,6 +35,11 @@ export interface Hand {
   pendingStreetRevealRound?: BettingRound | null; // Runtime-only: next round waiting for player confirmation
   nextStreetReadyPlayerIds?: string[]; // Runtime-only: players who have confirmed revealing next street
   nextStreetRequiredPlayerIds?: string[]; // Runtime-only: players required to confirm revealing next street
+  showdownDecisionOrder?: string[]; // Runtime-only: showdown decision order by player id
+  showdownDecisionIndex?: number; // Runtime-only: index of current showdown decision player
+  showdownDecisionPlayerId?: string | null; // Runtime-only: current showdown decision player id
+  showdownForcedRevealPlayerIds?: string[]; // Runtime-only: players forced to reveal (e.g. all-in)
+  showdownLastAggressorPlayerId?: string | null; // Runtime-only: last aggressor during river action
   startedAt: number;
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }

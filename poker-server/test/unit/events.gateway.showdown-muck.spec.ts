@@ -4,6 +4,7 @@ const deepClone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe('EventsGateway showdown reveal/muck flow', () => {
   let gateway: EventsGateway;
+  let gameService: any;
   let roomState: any;
   let storageService: any;
   let handService: any;
@@ -91,9 +92,18 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         nextStreetReadyPlayerIds: [],
         nextStreetRequiredPlayerIds: [],
         revealedPlayerIds: [],
+        showdownDecisionOrder: [],
+        showdownDecisionIndex: undefined,
+        showdownDecisionPlayerId: null,
+        showdownForcedRevealPlayerIds: [],
+        showdownLastAggressorPlayerId: 'p-alice',
       },
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+    };
+
+    gameService = {
+      markPlayerDisconnected: jest.fn(async () => deepClone(roomState)),
     };
 
     storageService = {
@@ -171,7 +181,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     roomEmitter = { emit: jest.fn() };
 
     gateway = new EventsGateway(
-      {} as any,
+      gameService,
       handService,
       {
         calculateMinRaise: jest.fn().mockReturnValue(10),
@@ -220,15 +230,38 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     expect(response).toEqual(expect.objectContaining({ success: true }));
     expect(handService.determineWinner).not.toHaveBeenCalled();
     expect(roomState.currentHand.revealedPlayerIds).toEqual(['p-alice']);
+    expect(roomState.currentHand.showdownDecisionPlayerId).toBe('p-bob');
     expect(roomEmitter.emit).toHaveBeenCalledWith(
       'PLAYER_HAND_REVEALED',
-      expect.objectContaining({ playerId: 'p-alice' }),
+      expect.objectContaining({
+        playerId: 'p-alice',
+        cards: [
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'clubs', rank: 'K' },
+        ],
+        showdownOrderIndex: 0,
+      }),
     );
     expect(
       roomEmitter.emit.mock.calls.some(
         ([eventName]) => eventName === 'HAND_COMPLETE',
       ),
     ).toBe(false);
+  });
+
+  it('rejects reveal when player is not current showdown decision player', async () => {
+    const bobClient = { id: 'socket-bob', emit: jest.fn() } as any;
+
+    const response = await gateway.handleShowMyHand(bobClient, {} as any);
+
+    expect(response).toEqual(expect.objectContaining({ success: false }));
+    expect(handService.determineWinner).not.toHaveBeenCalled();
+    expect(bobClient.emit).toHaveBeenCalledWith(
+      'ERROR',
+      expect.objectContaining({
+        message: 'It is not your showdown decision turn',
+      }),
+    );
   });
 
   it('lets a player muck and immediately settles when one contender remains', async () => {
@@ -249,5 +282,50 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         ([eventName]) => eventName === 'HAND_COMPLETE',
       ),
     ).toBe(true);
+  });
+
+  it('auto-reveals forced all-in contender and settles hand', async () => {
+    roomState.players = roomState.players.map((player: any) =>
+      player.id === 'p-bob' ? { ...player, status: 'all-in' } : player,
+    );
+    const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
+
+    const response = await gateway.handleShowMyHand(aliceClient, {} as any);
+
+    expect(response).toEqual(expect.objectContaining({ success: true }));
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    expect(
+      roomEmitter.emit.mock.calls.filter(
+        ([eventName]) => eventName === 'PLAYER_HAND_REVEALED',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        [
+          'PLAYER_HAND_REVEALED',
+          expect.objectContaining({ playerId: 'p-alice', showdownOrderIndex: 0 }),
+        ],
+        [
+          'PLAYER_HAND_REVEALED',
+          expect.objectContaining({ playerId: 'p-bob', showdownOrderIndex: 1 }),
+        ],
+      ]),
+    );
+  });
+
+  it('auto-mucks disconnected showdown decision player on disconnect timeout', async () => {
+    roomState.players = roomState.players.map((player: any) =>
+      player.id === 'p-alice' ? { ...player, status: 'disconnected' } : player,
+    );
+    roomState.currentHand.showdownDecisionOrder = ['p-alice', 'p-bob'];
+    roomState.currentHand.showdownDecisionIndex = 0;
+    roomState.currentHand.showdownDecisionPlayerId = 'p-alice';
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-alice');
+
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      'PLAYER_HAND_MUCKED',
+      expect.objectContaining({ playerId: 'p-alice' }),
+    );
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,6 +8,7 @@ import type { Locale, MessageKey } from "../i18n/messages";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
+import { Card } from "@/components/Card";
 import {
   ActionCenterAlertOverlay,
   ChatPanel,
@@ -1553,6 +1554,8 @@ const useGameRoomElement = () => {
     finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
+    showdownDecisionState,
+    revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     isHost,
     lastError,
@@ -1863,27 +1866,54 @@ const useGameRoomElement = () => {
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
   );
+  const showdownForcedRevealPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.forcedRevealPlayerIds ?? []),
+    [showdownDecisionState?.forcedRevealPlayerIds],
+  );
+  const revealedShowdownHands = useMemo(
+    () =>
+      Object.values(revealedShowdownHandsByPlayerId).sort((left, right) => {
+        if (left.showdownOrderIndex !== right.showdownOrderIndex) {
+          return left.showdownOrderIndex - right.showdownOrderIndex;
+        }
+        return left.playerName.localeCompare(right.playerName);
+      }),
+    [revealedShowdownHandsByPlayerId],
+  );
   const isShowdownDecisionStep = Boolean(
     !lastHandResult && room?.currentHand?.bettingRound === "SHOWDOWN",
+  );
+  const isMyShowdownDecisionTurn = Boolean(
+    player?.id &&
+      showdownDecisionState?.currentPlayerId &&
+      showdownDecisionState.currentPlayerId === player.id,
+  );
+  const showdownDecisionWaitingPlayerName = isMyShowdownDecisionTurn
+    ? null
+    : showdownDecisionState?.currentPlayerName ?? null;
+  const isShowdownForcedRevealTurn = Boolean(
+    player?.id && showdownForcedRevealPlayerIdSet.has(player.id),
+  );
+  const isShowdownContender = Boolean(
+    player?.id &&
+      Array.isArray(room?.currentHand?.activePlayers) &&
+      room.currentHand.activePlayers.includes(player.id),
   );
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
   );
   const hasMuckedMyHandAtShowdown = Boolean(
-    isShowdownDecisionStep && player?.status === "folded",
+    isShowdownDecisionStep && !hasShownMyHandAtShowdown && player?.status === "folded",
   );
   const canShowMyHandAtShowdown = Boolean(
     isShowdownDecisionStep &&
-      player?.status !== "folded" &&
-      player?.status !== "left" &&
-      player?.status !== "waiting" &&
-      player?.status !== "disconnected",
+      isShowdownContender &&
+      isMyShowdownDecisionTurn &&
+      !hasShownMyHandAtShowdown &&
+      !hasMuckedMyHandAtShowdown,
   );
-  const showShowdownDecisionArea = Boolean(
-    isShowdownDecisionStep &&
-      (canShowMyHandAtShowdown || hasShownMyHandAtShowdown || hasMuckedMyHandAtShowdown),
-  );
-  const canMuckMyHandAtShowdown = canShowMyHandAtShowdown;
+  const showShowdownDecisionArea = isShowdownDecisionStep;
+  const canMuckMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
   const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
   const operationBarMode = showShowdownDecisionArea
     ? "showdown"
@@ -3413,6 +3443,34 @@ const useGameRoomElement = () => {
           className="chip-composer-dock--operation"
           testId="operation-overlay"
         >
+          {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
+            <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
+              <div className="showdown-revealed-hands__header">
+                <h4 className="showdown-revealed-hands__title">{t("game.showdown.revealedHandsTitle")}</h4>
+              </div>
+              <div className="showdown-revealed-hands__list">
+                {revealedShowdownHands.map((entry) => (
+                  <div
+                    key={entry.playerId}
+                    className="showdown-revealed-hands__item"
+                    data-testid={`showdown-revealed-hand-${entry.playerId}`}
+                  >
+                    <span className="showdown-revealed-hands__name">{entry.playerName}</span>
+                    <div className="showdown-revealed-hands__cards">
+                      {entry.cards.map((card, cardIndex) => (
+                        <Card
+                          key={`${entry.playerId}-${card.suit}-${card.rank}-${cardIndex}`}
+                          card={card}
+                          size="small"
+                          dataTestId={`showdown-revealed-card-${entry.playerId}-${cardIndex}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           <OperationActionBar
             mode={operationBarMode}
             isResultRevealStep={isResultRevealStep}
@@ -3422,6 +3480,9 @@ const useGameRoomElement = () => {
             hasShownMyHand={hasShownMyHandAtShowdown}
             canMuckMyHand={canMuckMyHandAtShowdown}
             hasMuckedMyHand={hasMuckedMyHandAtShowdown}
+            showdownIsDecisionTurn={isMyShowdownDecisionTurn}
+            showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
+            showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
             onRevealNextStreet={revealNextStreet}
             onShowMyHand={showMyHand}
             onMuckMyHand={() => {
