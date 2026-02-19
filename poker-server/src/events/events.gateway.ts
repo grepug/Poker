@@ -1126,7 +1126,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
           const allReady = ready.size > 0;
           if (allReady) {
-            await this.advanceRoundAndBroadcast(room);
+            const shouldRevealShowdownResult =
+              nextRound === 'SHOWDOWN' && hand.bettingRound === 'SHOWDOWN';
+            if (shouldRevealShowdownResult) {
+              await this.completeAndBroadcastHand(room);
+            } else {
+              await this.advanceRoundAndBroadcast(room);
+            }
           }
 
           return { success: true };
@@ -2081,7 +2087,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         room.lastActivityAt = Date.now();
         await this.storageService.saveRoom(room);
         this.emitShowdownDecisionState(room);
-        await this.completeAndBroadcastHand(room);
+        const queuedResultReveal = await this.queueShowdownResultReveal(room);
+        if (!queuedResultReveal) {
+          await this.completeAndBroadcastHand(room);
+        }
         return;
       }
 
@@ -2094,7 +2103,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         room.lastActivityAt = Date.now();
         await this.storageService.saveRoom(room);
         this.emitShowdownDecisionState(room);
-        await this.completeAndBroadcastHand(room);
+        const queuedResultReveal = await this.queueShowdownResultReveal(room);
+        if (!queuedResultReveal) {
+          await this.completeAndBroadcastHand(room);
+        }
         return;
       }
 
@@ -2113,6 +2125,38 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     throw new Error('Showdown decision advance exceeded safety limit');
+  }
+
+  private async queueShowdownResultReveal(room: any): Promise<boolean> {
+    const hand = room?.currentHand;
+    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+      return false;
+    }
+
+    const allowPlayerStreetReveal =
+      room.config?.allowPlayerStreetReveal ?? true;
+    if (!allowPlayerStreetReveal) {
+      return false;
+    }
+
+    const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
+    if (requiredPlayerIds.length === 0) {
+      return false;
+    }
+
+    hand.pendingStreetRevealRound = 'SHOWDOWN';
+    hand.nextStreetReadyPlayerIds = [];
+    hand.nextStreetRequiredPlayerIds = requiredPlayerIds;
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+
+    this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
+      nextRound: 'SHOWDOWN',
+      readyPlayerIds: [],
+      requiredPlayerIds,
+    } as NextStreetRevealStateData);
+
+    return true;
   }
 
   private async completeAndBroadcastHand(room: any) {

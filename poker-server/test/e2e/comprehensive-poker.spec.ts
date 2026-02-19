@@ -5611,6 +5611,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         await expect(bobPage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
         await bobPage.click('[data-testid="show-my-hand-button"]');
       }
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
       await handCompletePromise;
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
@@ -5885,6 +5889,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.click('[data-testid="show-my-hand-button"]');
       await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toBeEnabled();
       await alicePage.click('[data-testid="show-my-hand-button"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
       await handCompletePromise;
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
     } finally {

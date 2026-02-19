@@ -1885,7 +1885,9 @@ const useGameRoomElement = () => {
     [revealedShowdownHandsByPlayerId],
   );
   const isShowdownDecisionStep = Boolean(
-    !lastHandResult && room?.currentHand?.bettingRound === "SHOWDOWN",
+    !lastHandResult &&
+      room?.currentHand?.bettingRound === "SHOWDOWN" &&
+      showdownDecisionState?.currentPlayerId,
   );
   const isMyShowdownDecisionTurn = Boolean(
     player?.id &&

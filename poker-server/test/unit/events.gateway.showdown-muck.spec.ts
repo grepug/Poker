@@ -264,19 +264,44 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     );
   });
 
-  it('lets a player muck and immediately settles when one contender remains', async () => {
+  it('queues result reveal after muck and settles after reveal action', async () => {
     const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
+    const bobClient = { id: 'socket-bob', emit: jest.fn() } as any;
 
     const response = await gateway.handleMuckMyHand(aliceClient, {} as any);
 
     expect(response).toEqual(expect.objectContaining({ success: true }));
-    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
-    const roomPassedToWinner = handService.determineWinner.mock.calls[0][0];
-    expect(roomPassedToWinner.currentHand.activePlayers).toEqual(['p-bob']);
+    expect(handService.determineWinner).not.toHaveBeenCalled();
+    expect(roomState.currentHand.activePlayers).toEqual(['p-bob']);
+    expect(roomState.currentHand.pendingStreetRevealRound).toBe('SHOWDOWN');
+    expect(roomState.currentHand.nextStreetRequiredPlayerIds).toEqual(['p-bob']);
     expect(roomEmitter.emit).toHaveBeenCalledWith(
       'PLAYER_HAND_MUCKED',
       expect.objectContaining({ playerId: 'p-alice' }),
     );
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      'NEXT_STREET_REVEAL_STATE',
+      expect.objectContaining({
+        nextRound: 'SHOWDOWN',
+        readyPlayerIds: [],
+        requiredPlayerIds: ['p-bob'],
+      }),
+    );
+    expect(
+      roomEmitter.emit.mock.calls.some(
+        ([eventName]) => eventName === 'HAND_COMPLETE',
+      ),
+    ).toBe(false);
+
+    const revealResponse = await gateway.handleRevealNextStreet(
+      bobClient,
+      {} as any,
+    );
+
+    expect(revealResponse).toEqual(expect.objectContaining({ success: true }));
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    const roomPassedToWinner = handService.determineWinner.mock.calls[0][0];
+    expect(roomPassedToWinner.currentHand.activePlayers).toEqual(['p-bob']);
     expect(
       roomEmitter.emit.mock.calls.some(
         ([eventName]) => eventName === 'HAND_COMPLETE',
@@ -284,7 +309,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     ).toBe(true);
   });
 
-  it('auto-reveals forced all-in contender and settles hand', async () => {
+  it('auto-reveals forced all-in contender, then waits for reveal-result action', async () => {
     roomState.players = roomState.players.map((player: any) =>
       player.id === 'p-bob' ? { ...player, status: 'all-in' } : player,
     );
@@ -293,7 +318,8 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     const response = await gateway.handleShowMyHand(aliceClient, {} as any);
 
     expect(response).toEqual(expect.objectContaining({ success: true }));
-    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    expect(handService.determineWinner).not.toHaveBeenCalled();
+    expect(roomState.currentHand.pendingStreetRevealRound).toBe('SHOWDOWN');
     expect(
       roomEmitter.emit.mock.calls.filter(
         ([eventName]) => eventName === 'PLAYER_HAND_REVEALED',
@@ -310,6 +336,13 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         ],
       ]),
     );
+
+    const revealResponse = await gateway.handleRevealNextStreet(
+      aliceClient,
+      {} as any,
+    );
+    expect(revealResponse).toEqual(expect.objectContaining({ success: true }));
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
   });
 
   it('auto-mucks disconnected showdown decision player on disconnect timeout', async () => {
@@ -326,6 +359,15 @@ describe('EventsGateway showdown reveal/muck flow', () => {
       'PLAYER_HAND_MUCKED',
       expect.objectContaining({ playerId: 'p-alice' }),
     );
+    expect(handService.determineWinner).not.toHaveBeenCalled();
+    expect(roomState.currentHand.pendingStreetRevealRound).toBe('SHOWDOWN');
+
+    const bobClient = { id: 'socket-bob', emit: jest.fn() } as any;
+    const revealResponse = await gateway.handleRevealNextStreet(
+      bobClient,
+      {} as any,
+    );
+    expect(revealResponse).toEqual(expect.objectContaining({ success: true }));
     expect(handService.determineWinner).toHaveBeenCalledTimes(1);
   });
 });

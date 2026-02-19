@@ -56,15 +56,13 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-emerald-100">{t("game.showdown.actionTitle")}</h3>
-            <p className="text-xs text-emerald-100/70">
-              {showdownIsDecisionTurn
-                ? showdownIsForcedRevealTurn
+            {showdownIsDecisionTurn && (
+              <p className="text-xs text-emerald-100/70">
+                {showdownIsForcedRevealTurn
                   ? t("game.showdown.forcedRevealHint")
-                  : t("game.showdown.actionHint")
-                : showdownWaitingPlayerName
-                  ? t("game.showdown.waitingHint", { name: showdownWaitingPlayerName })
-                  : t("game.showdown.waitingHintUnknown")}
-            </p>
+                  : t("game.showdown.actionHint")}
+              </p>
+            )}
           </div>
           {showdownIsDecisionTurn && (
             <div className="relative flex flex-wrap items-center gap-2">
