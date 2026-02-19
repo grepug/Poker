@@ -1682,6 +1682,14 @@ const useGameRoomElement = () => {
       ? handScopedUiState
       : createDefaultHandScopedUiState(handScopedUiStateKey);
 
+  useEffect(() => {
+    setHandScopedUiState((previous) =>
+      previous.key === handScopedUiStateKey
+        ? previous
+        : createDefaultHandScopedUiState(handScopedUiStateKey),
+    );
+  }, [handScopedUiStateKey]);
+
   const updateHandScopedUiState = useCallback(
     (updater: (state: HandScopedUiState) => HandScopedUiState) => {
       setHandScopedUiState((previous) => {
