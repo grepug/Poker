@@ -1542,6 +1542,8 @@ export const GameRoom: React.FC = () => {
     clearError,
     markReady,
     endGame,
+    showMyHand,
+    muckMyHand,
     revealNextStreet,
     performAction,
     leaveRoom,
@@ -1769,6 +1771,31 @@ export const GameRoom: React.FC = () => {
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
   const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
   const isAwaitingStreetReveal = showNextStreetActionArea;
+  const revealedHandPlayerIdSet = useMemo(
+    () => new Set(revealedHandPlayerIds),
+    [revealedHandPlayerIds],
+  );
+  const isShowdownDecisionStep = Boolean(
+    !lastHandResult && room?.currentHand?.bettingRound === "SHOWDOWN",
+  );
+  const hasShownMyHandAtShowdown = Boolean(
+    player?.id && revealedHandPlayerIdSet.has(player.id),
+  );
+  const hasMuckedMyHandAtShowdown = Boolean(
+    isShowdownDecisionStep && player?.status === "folded",
+  );
+  const canShowMyHandAtShowdown = Boolean(
+    isShowdownDecisionStep &&
+      player?.status !== "folded" &&
+      player?.status !== "left" &&
+      player?.status !== "waiting" &&
+      player?.status !== "disconnected",
+  );
+  const showShowdownDecisionArea = Boolean(
+    isShowdownDecisionStep &&
+      (canShowMyHandAtShowdown || hasShownMyHandAtShowdown || hasMuckedMyHandAtShowdown),
+  );
+  const canMuckMyHandAtShowdown = canShowMyHandAtShowdown;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -1781,10 +1808,6 @@ export const GameRoom: React.FC = () => {
   const hasNetByPlayerId = useMemo(
     () => Object.keys(netByPlayerId).length > 0,
     [netByPlayerId],
-  );
-  const revealedHandPlayerIdSet = useMemo(
-    () => new Set(revealedHandPlayerIds),
-    [revealedHandPlayerIds],
   );
   const myHandNetChange = useMemo(() => {
     if (!player?.id || !lastHandResult || !hasNetByPlayerId) return null;
@@ -3270,12 +3293,24 @@ export const GameRoom: React.FC = () => {
         isResultRevealStep={isResultRevealStep}
         canRevealNextStreet={canRevealNextStreet}
         hasRevealedNextStreet={hasRevealedNextStreet}
+        showShowdownDecisionArea={showShowdownDecisionArea}
+        canShowMyHand={canShowMyHandAtShowdown}
+        hasShownMyHand={hasShownMyHandAtShowdown}
+        canMuckMyHand={canMuckMyHandAtShowdown}
+        hasMuckedMyHand={hasMuckedMyHandAtShowdown}
         onReadyNextHand={markReady}
         onOpenEndGameConfirm={() => {
           if (!canHostEndGame) return;
           setShowEndGameConfirmModal(true);
         }}
         onRevealNextStreet={revealNextStreet}
+        onShowMyHand={showMyHand}
+        onMuckMyHand={() => {
+          if (typeof window !== "undefined" && !window.confirm(t("game.showdown.muckConfirm"))) {
+            return;
+          }
+          muckMyHand();
+        }}
         t={t}
       />
 

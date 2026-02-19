@@ -3855,10 +3855,12 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
+      await waitForRound(alicePage, 'SHOWDOWN', 5);
+      await bobPage.evaluate(() => (window as any).pokerDebug.showMyHand());
+      await alicePage.evaluate(() => (window as any).pokerDebug.showMyHand());
 
       const result = await handCompletePromise;
       expect(result.totalPot).toBe(expectedFinalPot);
-      await waitForRound(alicePage, 'SHOWDOWN', 5);
     } finally {
       await teardownTwoPlayerSession(session);
     }
