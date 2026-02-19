@@ -397,6 +397,38 @@ async function waitForRound(
   );
 }
 
+async function expectYourCardsFlyoutAboveActionArea(
+  page: Page,
+  actionAreaTestId: string,
+) {
+  await expect(page.locator('[data-testid="your-cards-section"]')).toBeVisible();
+  await expect(page.locator(`[data-testid="${actionAreaTestId}"]`)).toBeVisible();
+
+  const layout = await page.evaluate((targetActionAreaTestId) => {
+    const cardsPanel = document.querySelector<HTMLElement>(
+      '[data-testid="your-cards-section"]',
+    );
+    const actionArea = document.querySelector<HTMLElement>(
+      `[data-testid="${targetActionAreaTestId}"]`,
+    );
+    if (!cardsPanel || !actionArea) {
+      return null;
+    }
+
+    const cardsRect = cardsPanel.getBoundingClientRect();
+    const actionRect = actionArea.getBoundingClientRect();
+    return {
+      cardsBottom: cardsRect.bottom,
+      actionTop: actionRect.top,
+    };
+  }, actionAreaTestId);
+
+  expect(layout).not.toBeNull();
+  expect(layout?.cardsBottom ?? Infinity).toBeLessThanOrEqual(
+    layout?.actionTop ?? -Infinity,
+  );
+}
+
 async function getRoomSnapshot(page: Page) {
   return page.evaluate(() => {
     const room = (window as any).pokerDebug?.getRoom();
@@ -5604,7 +5636,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
       ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(
+        alicePage,
+        'reveal-next-street-action-area',
+      );
       await expect(
         alicePage.locator('[data-testid="reveal-next-street-button"]'),
       ).toContainText('Reveal Next Street');
@@ -5612,7 +5649,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
       ).toBeVisible();
+      await expect(bobPage.locator('[data-testid="operation-overlay"]')).toBeVisible();
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(
+        bobPage,
+        'reveal-next-street-action-area',
+      );
 
       // Only one player click should be enough to proceed.
       await alicePage.click('[data-testid="reveal-next-street-button"]');
@@ -5717,6 +5759,42 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.13c: Mobile Reveal Uses Operation Bar And Keeps Cards Above Actions', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
+      await startGameFromLobby(alicePage, bobPage, { enableStreetReveal: true });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(
+        alicePage,
+        'reveal-next-street-action-area',
+      );
+      await expectYourCardsFlyoutAboveActionArea(
+        bobPage,
+        'reveal-next-street-action-area',
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.14: Final Reveal Step Uses Result Copy Before Hand Complete', async ({
     browser,
   }) => {
@@ -5753,14 +5831,62 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
       ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(
+        alicePage,
+        'reveal-next-street-action-area',
+      );
       await expect(
         alicePage.locator('[data-testid="reveal-next-street-button"]'),
       ).toContainText('Reveal Result');
 
       await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await expect(
+        alicePage.locator('[data-testid="showdown-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="show-my-hand-button"]')).toBeVisible();
+      await alicePage.click('[data-testid="show-my-hand-button"]');
+      await bobPage.click('[data-testid="show-my-hand-button"]');
       await handCompletePromise;
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.14a: Showdown Decision Uses Operation Bar And Hides Turn Dock', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      const handCompletePromise = captureNextHandComplete(alicePage);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+      await waitForRound(alicePage, 'SHOWDOWN', 5);
+
+      await expect(
+        alicePage.locator('[data-testid="showdown-action-area"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(alicePage, 'showdown-action-area');
+
+      await expect(
+        bobPage.locator('[data-testid="showdown-action-area"]'),
+      ).toBeVisible();
+      await expect(bobPage.locator('[data-testid="operation-overlay"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
+      await expectYourCardsFlyoutAboveActionArea(bobPage, 'showdown-action-area');
+
+      await alicePage.click('[data-testid="show-my-hand-button"]');
+      await bobPage.click('[data-testid="show-my-hand-button"]');
+      await handCompletePromise;
+      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
     }

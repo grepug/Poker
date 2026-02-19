@@ -1379,6 +1379,24 @@ body {
   overflow: visible;
 }
 
+.chip-composer-dock--operation {
+  left: 0.55rem;
+  right: 0.55rem;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.operation-action-bar {
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  border-radius: 0.84rem;
+  background:
+    radial-gradient(circle at 16% 4%, rgba(52, 211, 153, 0.16), transparent 34%),
+    rgba(3, 45, 31, 0.85);
+  padding: 0.75rem;
+}
+
 .chip-composer-dock__action-area {
   margin-top: 0;
   border-top: none;
@@ -2190,6 +2208,18 @@ body {
     transform: none;
     width: var(--desktop-turn-dock-width);
     max-width: calc(100vw - 1.7rem - env(safe-area-inset-right, 0px));
+    max-height: calc(100vh - 1.7rem - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
+
+  .chip-composer-dock--operation {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(96vw, 54rem);
+    max-width: calc(
+      100vw - 1.7rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
     max-height: calc(100vh - 1.7rem - env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
   }

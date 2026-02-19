@@ -13,20 +13,8 @@ const meta = {
     canReadyNextHand: true,
     hasReadiedNextHand: false,
     canEndGame: true,
-    showNextStreetActionArea: false,
-    isResultRevealStep: false,
-    canRevealNextStreet: true,
-    hasRevealedNextStreet: false,
-    showShowdownDecisionArea: false,
-    canShowMyHand: true,
-    hasShownMyHand: false,
-    canMuckMyHand: true,
-    hasMuckedMyHand: false,
     onReadyNextHand: () => {},
     onOpenEndGameConfirm: () => {},
-    onRevealNextStreet: () => {},
-    onShowMyHand: () => {},
-    onMuckMyHand: () => {},
     t: storyTranslate,
   },
   decorators: [
@@ -48,24 +36,5 @@ export const WaitingForOthers: Story = {
     canReadyNextHand: true,
     hasReadiedNextHand: true,
     canEndGame: false,
-  },
-};
-
-export const RevealNextStreet: Story = {
-  args: {
-    canReadyNextHand: false,
-    canEndGame: false,
-    showNextStreetActionArea: true,
-    isResultRevealStep: false,
-  },
-};
-
-export const ShowdownDecision: Story = {
-  args: {
-    canReadyNextHand: false,
-    canEndGame: false,
-    showShowdownDecisionArea: true,
-    hasShownMyHand: false,
-    hasMuckedMyHand: false,
   },
 };

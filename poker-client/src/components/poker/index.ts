@@ -6,6 +6,7 @@ export { FinalSummaryModal } from "./final-summary-modal";
 export { HandResultsContent } from "./hand-results-content";
 export { HandResultsPanel } from "./hand-results-panel";
 export { NextHandActionArea } from "./next-hand-action-area";
+export { OperationActionBar } from "./operation-action-bar";
 export { RankingsModal } from "./rankings-modal";
 export { RulesModal } from "./rules-modal";
 export { SettingsModal } from "./settings-modal";

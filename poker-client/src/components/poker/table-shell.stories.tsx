@@ -9,8 +9,7 @@ const meta = {
   },
   tags: ["autodocs"],
   args: {
-    isYourTurn: true,
-    isDesktopSideDock: true,
+    showDesktopTurnDock: true,
     isChatPanelOpen: false,
     children: (
       <div className="mx-auto max-w-5xl p-6">
@@ -38,10 +37,9 @@ export const ChatOpen: Story = {
 
 export const Mobile: Story = {
   args: {
-    isDesktopSideDock: false,
+    showDesktopTurnDock: false,
   },
   parameters: {
     viewport: { defaultViewport: "mobile1" },
   },
 };
-

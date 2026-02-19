@@ -17,6 +17,7 @@ import {
   HandResultsContent,
   HandResultsPanel,
   NextHandActionArea,
+  OperationActionBar,
   RankingsModal,
   RulesModal,
   SettingsModal,
@@ -1586,7 +1587,7 @@ const useGameRoomElement = () => {
   const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
-  const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
   const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [tableObstacleRects, setTableObstacleRects] = useState<RectBounds[]>([]);
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
@@ -1602,7 +1603,7 @@ const useGameRoomElement = () => {
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
-  const turnOverlayRef = useRef<HTMLElement | null>(null);
+  const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const boardCenterStackRef = useRef<HTMLDivElement | null>(null);
@@ -1671,7 +1672,6 @@ const useGameRoomElement = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
-  const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
   const handScopedUiStateKey = `${room?.id ?? "no-room"}:${currentHandNumber ?? "no-hand"}`;
   const [handScopedUiState, setHandScopedUiState] = useState<HandScopedUiState>(() =>
@@ -1859,7 +1859,6 @@ const useGameRoomElement = () => {
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
   const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
-  const isAwaitingStreetReveal = showNextStreetActionArea;
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
@@ -1885,6 +1884,16 @@ const useGameRoomElement = () => {
       (canShowMyHandAtShowdown || hasShownMyHandAtShowdown || hasMuckedMyHandAtShowdown),
   );
   const canMuckMyHandAtShowdown = canShowMyHandAtShowdown;
+  const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
+  const operationBarMode = showShowdownDecisionArea
+    ? "showdown"
+    : showNextStreetActionArea
+      ? "streetReveal"
+      : null;
+  const showTurnActionDock = isYourTurn && !showOperationBar;
+  const shouldAnchorCardsFlyoutToBottomBar =
+    showOperationBar || (showTurnActionDock && !isDesktopSideDock);
+  const activeBottomBarMode = showOperationBar ? "operation" : showTurnActionDock ? "turn" : null;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -2610,25 +2619,25 @@ const useGameRoomElement = () => {
   }, []);
 
   useEffect(() => {
-    if (!isYourTurn) {
+    if (!showTurnActionDock) {
       resetTurnInteractionState();
     }
-  }, [isYourTurn, resetTurnInteractionState]);
+  }, [resetTurnInteractionState, showTurnActionDock]);
 
   useEffect(() => {
-    if (!shouldAnchorCardsFlyoutToTurnDock) {
-      setTurnOverlayHeight(0);
+    if (!shouldAnchorCardsFlyoutToBottomBar) {
+      setBottomBarHeight(0);
       return;
     }
 
-    const overlayNode = turnOverlayRef.current;
+    const overlayNode = bottomBarOverlayRef.current;
     if (!overlayNode) {
       return;
     }
 
     const updateOverlayHeight = () => {
       const nextHeight = Math.ceil(overlayNode.getBoundingClientRect().height);
-      setTurnOverlayHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      setBottomBarHeight((prev) => (prev === nextHeight ? prev : nextHeight));
     };
 
     updateOverlayHeight();
@@ -2645,7 +2654,7 @@ const useGameRoomElement = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateOverlayHeight);
     };
-  }, [shouldAnchorCardsFlyoutToTurnDock]);
+  }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
 
   useEffect(() => {
     if (!quickConfirmAction || isAutomationMode) return;
@@ -3227,8 +3236,7 @@ const useGameRoomElement = () => {
 
   return (
     <TableShell
-      isYourTurn={isYourTurn}
-      isDesktopSideDock={isDesktopSideDock}
+      showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
       isChatPanelOpen={isChatPanelOpen}
     >
       <TableTopBar
@@ -3317,8 +3325,8 @@ const useGameRoomElement = () => {
           isOpen={isCardsFlyoutOpen}
           hasHoleCards={hasHoleCards}
           cards={displayHoleCards ?? []}
-          shouldAnchorToTurnDock={shouldAnchorCardsFlyoutToTurnDock}
-          turnOverlayHeight={turnOverlayHeight}
+          shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
+          bottomBarHeight={bottomBarHeight}
           title={t("game.yourCards")}
           emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
           emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
@@ -3391,33 +3399,44 @@ const useGameRoomElement = () => {
         canReadyNextHand={canReadyNextHand}
         hasReadiedNextHand={hasReadiedCurrentPhase}
         canEndGame={canHostEndGame}
-        showNextStreetActionArea={showNextStreetActionArea}
-        isResultRevealStep={isResultRevealStep}
-        canRevealNextStreet={canRevealNextStreet}
-        hasRevealedNextStreet={hasRevealedNextStreet}
-        showShowdownDecisionArea={showShowdownDecisionArea}
-        canShowMyHand={canShowMyHandAtShowdown}
-        hasShownMyHand={hasShownMyHandAtShowdown}
-        canMuckMyHand={canMuckMyHandAtShowdown}
-        hasMuckedMyHand={hasMuckedMyHandAtShowdown}
         onReadyNextHand={markReady}
         onOpenEndGameConfirm={() => {
           if (!canHostEndGame) return;
           setShowEndGameConfirmModal(true);
         }}
-        onRevealNextStreet={revealNextStreet}
-        onShowMyHand={showMyHand}
-        onMuckMyHand={() => {
-          if (typeof window !== "undefined" && !window.confirm(t("game.showdown.muckConfirm"))) {
-            return;
-          }
-          muckMyHand();
-        }}
         t={t}
       />
 
-      {isYourTurn && !isAwaitingStreetReveal && (
-        <ChipComposerDock ref={turnOverlayRef}>
+      {operationBarMode !== null && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <OperationActionBar
+            mode={operationBarMode}
+            isResultRevealStep={isResultRevealStep}
+            canRevealNextStreet={canRevealNextStreet}
+            hasRevealedNextStreet={hasRevealedNextStreet}
+            canShowMyHand={canShowMyHandAtShowdown}
+            hasShownMyHand={hasShownMyHandAtShowdown}
+            canMuckMyHand={canMuckMyHandAtShowdown}
+            hasMuckedMyHand={hasMuckedMyHandAtShowdown}
+            onRevealNextStreet={revealNextStreet}
+            onShowMyHand={showMyHand}
+            onMuckMyHand={() => {
+              if (typeof window !== "undefined" && !window.confirm(t("game.showdown.muckConfirm"))) {
+                return;
+              }
+              muckMyHand();
+            }}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showTurnActionDock && (
+        <ChipComposerDock ref={bottomBarOverlayRef}>
           <TurnActionDock
             callAmount={callAmount}
             minRaise={minRaise}

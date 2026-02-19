@@ -7,20 +7,8 @@ type NextHandActionAreaProps = {
   canReadyNextHand: boolean;
   hasReadiedNextHand: boolean;
   canEndGame: boolean;
-  showNextStreetActionArea: boolean;
-  isResultRevealStep: boolean;
-  canRevealNextStreet: boolean;
-  hasRevealedNextStreet: boolean;
-  showShowdownDecisionArea: boolean;
-  canShowMyHand: boolean;
-  hasShownMyHand: boolean;
-  canMuckMyHand: boolean;
-  hasMuckedMyHand: boolean;
   onReadyNextHand: () => void;
   onOpenEndGameConfirm: () => void;
-  onRevealNextStreet: () => void;
-  onShowMyHand: () => void;
-  onMuckMyHand: () => void;
   t: Translate;
 };
 
@@ -28,53 +16,12 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
   canReadyNextHand,
   hasReadiedNextHand,
   canEndGame,
-  showNextStreetActionArea,
-  isResultRevealStep,
-  canRevealNextStreet,
-  hasRevealedNextStreet,
-  showShowdownDecisionArea,
-  canShowMyHand,
-  hasShownMyHand,
-  canMuckMyHand,
-  hasMuckedMyHand,
   onReadyNextHand,
   onOpenEndGameConfirm,
-  onRevealNextStreet,
-  onShowMyHand,
-  onMuckMyHand,
   t,
 }) => {
   return (
     <>
-      {showShowdownDecisionArea && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="showdown-action-area">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-100">{t("game.showdown.actionTitle")}</h3>
-              <p className="text-xs text-emerald-100/70">{t("game.showdown.actionHint")}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={onShowMyHand}
-                disabled={!canShowMyHand || hasShownMyHand || hasMuckedMyHand}
-                data-testid="show-my-hand-button"
-                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {hasShownMyHand ? t("game.showdown.shown") : t("game.showdown.show")}
-              </button>
-              <button
-                onClick={onMuckMyHand}
-                disabled={!canMuckMyHand || hasMuckedMyHand || hasShownMyHand}
-                data-testid="muck-my-hand-button"
-                className="rounded-xl border border-amber-300/70 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {hasMuckedMyHand ? t("game.showdown.mucked") : t("game.showdown.muck")}
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
       {canReadyNextHand && (
         <section className="surface-panel mx-3 mt-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -100,39 +47,6 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
                   {t("game.endGame")}
                 </button>
               )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {showNextStreetActionArea && (
-        <section className="surface-panel mx-3 mt-3 p-4" data-testid="reveal-next-street-action-area">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-100">
-                {isResultRevealStep
-                  ? t("game.streetReveal.resultActionTitle")
-                  : t("game.streetReveal.actionTitle")}
-              </h3>
-              <p className="text-xs text-emerald-100/70">
-                {isResultRevealStep
-                  ? t("game.streetReveal.resultActionHint")
-                  : t("game.streetReveal.actionHint")}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={onRevealNextStreet}
-                disabled={!canRevealNextStreet || hasRevealedNextStreet}
-                data-testid="reveal-next-street-button"
-                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {hasRevealedNextStreet
-                  ? t("game.streetReveal.revealed")
-                  : isResultRevealStep
-                    ? t("game.streetReveal.revealResult")
-                    : t("game.streetReveal.revealNextStreet")}
-              </button>
             </div>
           </div>
         </section>
