@@ -5594,7 +5594,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.click('[data-testid="action-check"]');
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
-      await alicePage.click('[data-testid="reveal-next-street-button"]');
 
       await expect(alicePage.locator('[data-testid="showdown-action-area"]')).toBeVisible();
       await expect(bobPage.locator('[data-testid="showdown-action-area"]')).toBeVisible();
@@ -5859,19 +5858,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await alicePage.click('[data-testid="action-check"]');
 
       await expect(
-        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+        alicePage.locator('[data-testid="showdown-action-area"]'),
       ).toBeVisible();
       await expect(alicePage.locator('[data-testid="operation-overlay"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="turn-overlay"]')).toHaveCount(0);
       await expectYourCardsFlyoutAboveActionArea(
         alicePage,
-        'reveal-next-street-action-area',
+        'showdown-action-area',
       );
-      await expect(
-        alicePage.locator('[data-testid="reveal-next-street-button"]'),
-      ).toContainText('Reveal Result');
-
-      await alicePage.click('[data-testid="reveal-next-street-button"]');
       await expect(
         alicePage.locator('[data-testid="showdown-action-area"]'),
       ).toBeVisible();

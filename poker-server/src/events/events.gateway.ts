@@ -1769,9 +1769,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const nextRound = this.getNextBettingRound(hand.bettingRound);
+    const isTransitioningToShowdown = nextRound === 'SHOWDOWN';
     const shouldWaitForPlayerReveal =
       allowPlayerStreetReveal &&
-      !this.shouldAutoDealRemainingCommunityCards(room);
+      !this.shouldAutoDealRemainingCommunityCards(room) &&
+      !isTransitioningToShowdown;
 
     if (shouldWaitForPlayerReveal) {
       const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
