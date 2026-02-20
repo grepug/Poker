@@ -1,5 +1,16 @@
 # Agent Notes
 
+## Manual QA Checklist (Always Do)
+
+Before asking for/starting manual browser testing:
+
+1. Verify PM2 `exec cwd` points to the current worktree for both frontend/backend.
+2. Confirm target URLs/ports are reachable (`frontend` + `backend` both respond).
+3. Run one happy-path scenario for the changed feature.
+4. Run at least one edge/guardrail scenario for the same area.
+5. If UI looks stale, hard refresh and clear Service Worker/site data.
+6. Run at least one targeted automated test (or explain why not possible).
+
 ## E2E Port/URL Configuration (No Hardcoded Ports)
 
 Use environment variables for Playwright frontend/backend targets. Do **not** hardcode `5174`/`3001` in new e2e code.
