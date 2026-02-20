@@ -2724,6 +2724,30 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await expect(alicePage.locator('[data-testid="payout-segment-1"]')).toContainText(
         'Side Pot #1',
       );
+      const resultRowPlayerIdsInOrder = await alicePage
+        .locator('[data-testid^="hand-result-row-"]')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => node.getAttribute('data-testid') ?? '')
+            .map((testId) => testId.replace('hand-result-row-', ''))
+            .filter(Boolean),
+        );
+      const winnerAmountsByPlayerId = new Map(
+        result.winners.map((winner: any) => [winner.playerId, winner.amountWon]),
+      );
+      const resultRowAwardsInOrder = resultRowPlayerIdsInOrder.map(
+        (playerId: string) => winnerAmountsByPlayerId.get(playerId) ?? 0,
+      );
+      expect(resultRowAwardsInOrder).toHaveLength(3);
+      for (let idx = 1; idx < resultRowAwardsInOrder.length; idx += 1) {
+        expect(resultRowAwardsInOrder[idx]).toBeLessThanOrEqual(
+          resultRowAwardsInOrder[idx - 1],
+        );
+      }
+      const highestAwardWinner = result.winners.reduce((best: any, winner: any) =>
+        !best || winner.amountWon > best.amountWon ? winner : best,
+      );
+      expect(resultRowPlayerIdsInOrder[0]).toBe(highestAwardWinner.playerId);
 
       await verifyChipConservation(alicePage, 5000);
     } finally {
