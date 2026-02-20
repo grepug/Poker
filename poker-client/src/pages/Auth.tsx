@@ -18,6 +18,7 @@ export const AuthPage: React.FC = () => {
   const [password, setPassword] = useState("test1234");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [requiresRegistrationProfile, setRequiresRegistrationProfile] = useState(false);
 
   const passkeyDisabled = useMemo(
     () => isSubmitting || !passkeySupported,
@@ -36,6 +37,17 @@ export const AuthPage: React.FC = () => {
     setIsSubmitting(true);
     setFeedback(null);
     try {
+      if (requiresRegistrationProfile) {
+        const name = displayName.trim();
+        if (!name) {
+          setFeedback(t("auth.error.displayNameRequired"));
+          return;
+        }
+
+        await registerWithPasskey(name, avatarEmoji);
+        return;
+      }
+
       await loginWithPasskey();
     } catch (error) {
       if (!shouldFallbackToRegister(error)) {
@@ -43,19 +55,8 @@ export const AuthPage: React.FC = () => {
         return;
       }
 
-      const name = displayName.trim();
-      if (!name) {
-        setFeedback(t("auth.error.displayNameRequired"));
-        return;
-      }
-
-      try {
-        await registerWithPasskey(name, avatarEmoji);
-      } catch (registerError) {
-        setFeedback(
-          registerError instanceof Error ? registerError.message : t("auth.error.registerFailed"),
-        );
-      }
+      setRequiresRegistrationProfile(true);
+      setFeedback(t("auth.passkeyNeedProfileInfo"));
     } finally {
       setIsSubmitting(false);
     }
@@ -97,31 +98,42 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <div className="space-y-4 rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-4">
-            <h2 className="text-sm font-semibold text-emerald-100">{t("auth.passkeyRegisterTitle")}</h2>
-            <p className="text-xs text-emerald-100/70">{t("auth.passkeySingleButtonHint")}</p>
-            <input
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder={t("auth.displayNamePlaceholder")}
-              className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-            />
+            <h2 className="text-sm font-semibold text-emerald-100">
+              {requiresRegistrationProfile ? t("auth.passkeyRegisterTitle") : t("auth.passkeyLoginTitle")}
+            </h2>
+            <p className="text-xs text-emerald-100/70">
+              {requiresRegistrationProfile
+                ? t("auth.passkeySingleButtonHint")
+                : t("auth.passkeyLoginHint")}
+            </p>
 
-            <div className="grid grid-cols-10 gap-1">
-              {PLAYER_EMOJI_OPTIONS.slice(0, 30).map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => setAvatarEmoji(emoji)}
-                  className={`h-9 rounded-lg text-xl transition ${
-                    avatarEmoji === emoji
-                      ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
-                      : "hover:bg-emerald-500/15"
-                  }`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
+            {requiresRegistrationProfile && (
+              <>
+                <input
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder={t("auth.displayNamePlaceholder")}
+                  className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+                />
+
+                <div className="grid grid-cols-10 gap-1">
+                  {PLAYER_EMOJI_OPTIONS.slice(0, 30).map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setAvatarEmoji(emoji)}
+                      className={`h-9 rounded-lg text-xl transition ${
+                        avatarEmoji === emoji
+                          ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
+                          : "hover:bg-emerald-500/15"
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <button
               type="button"
