@@ -65,6 +65,34 @@ Useful commands:
 - `pm2 stop poker-server-3025 poker-client-5199`
 - `pm2 delete poker-server-3025 poker-client-5199`
 
+### Manual QA Flow (Tray Presets / Action Buttons)
+
+When manually validating betting preset labels/behavior (for example `3-Bet` replacement, clamp/disable logic):
+
+1. Start/restart backend + frontend with explicit `--cwd` pointing to the **current worktree**.
+2. Confirm PM2 process paths before testing:
+   - `pm2 describe poker-client-<port> | rg "exec cwd"`
+   - `pm2 describe poker-server-<port> | rg "exec cwd"`
+3. Open the app and test both paths:
+   - **Facing a bet**: verify `Call`, `Raise`, `All-In` behavior and amounts.
+   - **No bet facing**: verify `Min Bet`, `Bet`, `All-In` behavior and amounts.
+4. Verify short-stack behavior:
+   - Non-all-in presets that clamp to stack and resolve as all-in must be disabled.
+   - Only the explicit all-in preset should remain enabled.
+5. Cross-check with targeted e2e on alternate ports if needed:
+   - `PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 npm run test:e2e:playwright -- --project comprehensive-e2e --workers=1 --grep "8.2c|8.2d" --reporter=line`
+
+### Manual QA Pitfalls (Seen in Real Debugging)
+
+- **PM2 running from old worktree**: restarting an existing PM2 process does not change its `exec cwd`. If UI looks stale, delete and recreate process with correct `--cwd`.
+- **Browser cache/PWA cache**: stale assets can keep old labels (e.g. still showing `3-Bet`).
+  - Hard refresh: `Cmd+Shift+R`
+  - If still stale: DevTools → Application → Service Workers `Unregister`, then `Clear site data`.
+- **Assuming port is enough**: matching ports (`5174/3001`) does not guarantee correct code version; always verify `exec cwd`.
+- **Quick source sanity check for label changes**:
+  - `curl -s http://localhost:5174/src/i18n/messages.ts | rg "threeBet|3-Bet|game\\.preset\\.raise|game\\.preset\\.bet"`
+  - If `threeBet`/`3-Bet` appears, frontend is not serving expected code.
+
 ## Guardrails
 
 - Keep tests and config env-driven.
@@ -78,4 +106,3 @@ Useful commands:
 - Unless the user explicitly asks otherwise, continue executing tasks end-to-end until the work is ready to be submitted as a PR; avoid pausing for intermediate check-ins/questions.
 - Default PR base branch is `codex/staging`.
 - Before creating a PR, first pull the latest target/base branch and check for conflicts. If conflicts exist, resolve them before opening the PR.
-
