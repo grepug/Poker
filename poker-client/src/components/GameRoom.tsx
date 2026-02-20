@@ -1969,14 +1969,45 @@ const useGameRoomElement = () => {
 
   const handResultRows = useMemo(() => {
     if (!lastHandResult) return [];
-    return lastHandResult.playerHands.map((entry, idx) => ({
+    const rows = lastHandResult.playerHands.map((entry, idx) => ({
       ...entry,
+      sourceOrder: idx,
       amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
       netChange:
         hasNetByPlayerId && Object.prototype.hasOwnProperty.call(netByPlayerId, entry.playerId)
           ? netByPlayerId[entry.playerId]
           : null,
       isWinner: winnersByPlayerId.has(entry.playerId),
+    }));
+
+    rows.sort((left, right) => {
+      if (right.amountWon !== left.amountWon) {
+        return right.amountWon - left.amountWon;
+      }
+
+      const leftNet = typeof left.netChange === "number" ? left.netChange : null;
+      const rightNet = typeof right.netChange === "number" ? right.netChange : null;
+      if (leftNet !== null && rightNet !== null && rightNet !== leftNet) {
+        return rightNet - leftNet;
+      }
+
+      if (left.isWinner !== right.isWinner) {
+        return left.isWinner ? -1 : 1;
+      }
+
+      const leftSeatPosition =
+        typeof left.seatPosition === "number" ? left.seatPosition : Number.MAX_SAFE_INTEGER;
+      const rightSeatPosition =
+        typeof right.seatPosition === "number" ? right.seatPosition : Number.MAX_SAFE_INTEGER;
+      if (leftSeatPosition !== rightSeatPosition) {
+        return leftSeatPosition - rightSeatPosition;
+      }
+
+      return left.sourceOrder - right.sourceOrder;
+    });
+
+    return rows.map(({ sourceOrder: _sourceOrder, ...entry }, idx) => ({
+      ...entry,
       rankOrder: idx + 1,
     }));
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
