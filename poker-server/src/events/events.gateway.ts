@@ -143,6 +143,7 @@ export class EventsGateway
     process.env.CHAT_PAGE_MAX_SIZE || '200',
   );
   private readonly chatRateWindows = new Map<string, number[]>();
+  private readonly profileUpdatedListenerKey = 'events-gateway-profile-updated';
   private readonly profileUpdatedListener = (
     payload: PlayerProfileUpdatedRealtimeEvent,
   ) => {
@@ -189,15 +190,17 @@ export class EventsGateway
     @Inject('IChatMediaStorageService')
     private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {
-    realtimeEventBus.onEvent(
+    realtimeEventBus.setSingletonListener(
       'PLAYER_PROFILE_UPDATED',
+      this.profileUpdatedListenerKey,
       this.profileUpdatedListener,
     );
   }
 
   onModuleDestroy() {
-    realtimeEventBus.offEvent(
+    realtimeEventBus.clearSingletonListener(
       'PLAYER_PROFILE_UPDATED',
+      this.profileUpdatedListenerKey,
       this.profileUpdatedListener,
     );
   }

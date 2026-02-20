@@ -59,7 +59,7 @@ const useHomeElement = ({
     }
     setPlayerName(user.displayName);
     setPlayerEmoji(user.avatarEmoji);
-  }, [user?.avatarEmoji, user?.displayName]);
+  }, [user]);
 
   useEffect(() => {
     if (!isEmojiPopoverOpen) {

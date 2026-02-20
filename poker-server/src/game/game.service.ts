@@ -90,6 +90,11 @@ export class GameService {
     playerEmoji?: string,
     userId?: string,
   ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
+    const normalizedPlayerName = playerName.trim();
+    if (!normalizedPlayerName) {
+      throw new Error('Player name cannot be empty');
+    }
+
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
@@ -103,7 +108,9 @@ export class GameService {
     const existingPlayerByUserId = userId
       ? room.players.find((player) => player.userId === userId)
       : undefined;
-    const existingPlayer = existingPlayerByUserId ?? room.players.find((p) => p.name === playerName);
+    const existingPlayer =
+      existingPlayerByUserId ??
+      room.players.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
       if (
         existingPlayer.status !== 'disconnected' &&
@@ -151,13 +158,13 @@ export class GameService {
       if (userId) {
         existingPlayer.userId = userId;
       }
-      if (playerName.trim()) {
-        existingPlayer.name = playerName;
-      }
+      existingPlayer.name = normalizedPlayerName;
       room.lastActivityAt = Date.now();
 
       await this.storageService.saveRoom(room);
-      this.logger.log(`Player ${playerName} reclaimed seat in room ${roomId}`);
+      this.logger.log(
+        `Player ${normalizedPlayerName} reclaimed seat in room ${roomId}`,
+      );
 
       return { room, player: existingPlayer, rejoined: true };
     }
@@ -181,7 +188,7 @@ export class GameService {
       id: playerId,
       userId,
       socketId,
-      name: playerName,
+      name: normalizedPlayerName,
       emoji: playerEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,
@@ -200,7 +207,7 @@ export class GameService {
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
-    this.logger.log(`Player ${playerName} joined room ${roomId}`);
+    this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
   }
@@ -281,6 +288,7 @@ export class GameService {
     playerId?: string,
     userId?: string,
   ): Promise<Player | null> {
+    const normalizedPlayerName = playerName.trim();
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
@@ -291,7 +299,7 @@ export class GameService {
       ? room.players.find((p) => p.id === playerId)
       : userId
         ? room.players.find((p) => p.userId === userId)
-        : room.players.find((p) => p.name === playerName);
+        : room.players.find((p) => p.name === normalizedPlayerName);
     if (!player) {
       return null;
     }

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  Ip,
   Patch,
   Post,
   UnauthorizedException,
@@ -22,10 +23,12 @@ export class AuthController {
   @Post('passkey/register/start')
   startPasskeyRegistration(
     @Body() body: { displayName?: string; avatarEmoji?: string },
+    @Ip() ip: string,
   ) {
     return this.authService.startPasskeyRegistration({
       displayName: body.displayName || '',
       avatarEmoji: body.avatarEmoji || '',
+      rateLimitKey: ip,
     });
   }
 
@@ -40,8 +43,10 @@ export class AuthController {
   }
 
   @Post('passkey/login/start')
-  startPasskeyLogin() {
-    return this.authService.startPasskeyLogin();
+  startPasskeyLogin(@Ip() ip: string) {
+    return this.authService.startPasskeyLogin({
+      rateLimitKey: ip,
+    });
   }
 
   @Post('passkey/login/finish')
@@ -55,6 +60,7 @@ export class AuthController {
   @Post('password/login')
   async loginWithPassword(
     @Body() body: { accountId?: string; password?: string },
+    @Ip() ip: string,
   ) {
     const modes = this.authService.getAuthModes();
     if (!modes.password) {
@@ -64,6 +70,7 @@ export class AuthController {
     return this.authService.loginWithPassword({
       accountId: body.accountId || '',
       password: body.password || '',
+      rateLimitKey: ip,
     });
   }
 

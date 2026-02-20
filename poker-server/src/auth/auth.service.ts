@@ -1,8 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
+  OnModuleDestroy,
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -55,8 +58,36 @@ type SessionUser = {
 const FLOW_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
   private readonly flows = new Map<string, PendingFlow>();
+  private readonly flowCleanupIntervalMs = Number(
+    process.env.AUTH_FLOW_CLEANUP_INTERVAL_MS || `${60 * 1000}`,
+  );
+  private readonly maxPendingFlows = Number(
+    process.env.AUTH_MAX_PENDING_FLOWS || '1000',
+  );
+  private readonly authRateWindows = new Map<string, number[]>();
+  private readonly passkeyRegisterStartRateLimitCount = Number(
+    process.env.AUTH_PASSKEY_REGISTER_START_RATE_LIMIT_COUNT || '20',
+  );
+  private readonly passkeyRegisterStartRateLimitWindowMs = Number(
+    process.env.AUTH_PASSKEY_REGISTER_START_RATE_LIMIT_WINDOW_MS ||
+      `${10 * 60 * 1000}`,
+  );
+  private readonly passkeyLoginStartRateLimitCount = Number(
+    process.env.AUTH_PASSKEY_LOGIN_START_RATE_LIMIT_COUNT || '30',
+  );
+  private readonly passkeyLoginStartRateLimitWindowMs = Number(
+    process.env.AUTH_PASSKEY_LOGIN_START_RATE_LIMIT_WINDOW_MS ||
+      `${10 * 60 * 1000}`,
+  );
+  private readonly passwordLoginRateLimitCount = Number(
+    process.env.AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT || '10',
+  );
+  private readonly passwordLoginRateLimitWindowMs = Number(
+    process.env.AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS ||
+      `${10 * 60 * 1000}`,
+  );
   private readonly sessionTtlMs = 365 * 24 * 60 * 60 * 1000;
   private readonly passwordLoginEnabled =
     process.env.AUTH_PASSWORD_LOGIN_ENABLED?.trim() === 'true' ||
@@ -69,6 +100,8 @@ export class AuthService implements OnModuleInit {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  private flowCleanupTimer: NodeJS.Timeout | null = null;
+  private userMutationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     @Inject('IAuthStorageService')
@@ -79,6 +112,17 @@ export class AuthService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.ensureSeededPasswordUsers();
+    this.flowCleanupTimer = setInterval(() => {
+      this.cleanupExpiredFlows();
+    }, this.flowCleanupIntervalMs);
+    this.flowCleanupTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.flowCleanupTimer) {
+      clearInterval(this.flowCleanupTimer);
+      this.flowCleanupTimer = null;
+    }
   }
 
   getAuthModes() {
@@ -91,7 +135,14 @@ export class AuthService implements OnModuleInit {
   async startPasskeyRegistration(input: {
     displayName: string;
     avatarEmoji: string;
+    rateLimitKey?: string;
   }): Promise<{ flowId: string; options: unknown }> {
+    this.assertAuthRateLimit(
+      'passkey-register-start',
+      input.rateLimitKey,
+      this.passkeyRegisterStartRateLimitCount,
+      this.passkeyRegisterStartRateLimitWindowMs,
+    );
     const displayName = this.normalizeDisplayName(input.displayName);
     const avatarEmoji = this.normalizeAvatarEmoji(input.avatarEmoji);
     const users = await this.authStorageService.getUsers();
@@ -117,6 +168,8 @@ export class AuthService implements OnModuleInit {
       attestationType: 'none',
     });
 
+    this.cleanupExpiredFlows();
+    this.ensureFlowCapacity();
     const flowId = randomUUID();
     this.flows.set(flowId, {
       flowId,
@@ -170,37 +223,46 @@ export class AuthService implements OnModuleInit {
       ? registrationInfo.credential.transports
       : undefined;
 
-    const users = await this.authStorageService.getUsers();
-    this.assertDisplayNameAvailable(draftUser.displayName, users);
-    const credentialAlreadyUsed = users.some((user) =>
-      user.passkeys.some((passkey) => passkey.credentialId === credentialId),
-    );
-    if (credentialAlreadyUsed) {
-      throw new BadRequestException('Passkey is already registered');
-    }
+    const user = await this.runUserMutation(async () => {
+      const users = await this.authStorageService.getUsers();
+      this.assertDisplayNameAvailable(draftUser.displayName, users);
+      const credentialAlreadyUsed = users.some((entry) =>
+        entry.passkeys.some((passkey) => passkey.credentialId === credentialId),
+      );
+      if (credentialAlreadyUsed) {
+        throw new BadRequestException('Passkey is already registered');
+      }
 
-    const now = Date.now();
-    const user: AuthUserRecord = {
-      id: draftUser.id,
-      accountId: draftUser.accountId,
-      displayName: draftUser.displayName,
-      avatarEmoji: draftUser.avatarEmoji,
-      passkeys: [
-        {
-          credentialId,
-          publicKey,
-          counter,
-          transports,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      createdAt: now,
-      updatedAt: now,
-    };
+      const now = Date.now();
+      const accountIdInUse = users.some(
+        (entry) => entry.accountId === draftUser.accountId,
+      );
+      const accountId = accountIdInUse
+        ? this.generateUniquePasskeyAccountId(users)
+        : draftUser.accountId;
+      const nextUser: AuthUserRecord = {
+        id: draftUser.id,
+        accountId,
+        displayName: draftUser.displayName,
+        avatarEmoji: draftUser.avatarEmoji,
+        passkeys: [
+          {
+            credentialId,
+            publicKey,
+            counter,
+            transports,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    users.push(user);
-    await this.authStorageService.saveUsers(users);
+      users.push(nextUser);
+      await this.authStorageService.saveUsers(users);
+      return nextUser;
+    });
 
     const session = await this.createSessionForUser(user.id);
     return {
@@ -209,12 +271,22 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  async startPasskeyLogin(): Promise<{ flowId: string; options: unknown }> {
+  async startPasskeyLogin(input?: {
+    rateLimitKey?: string;
+  }): Promise<{ flowId: string; options: unknown }> {
+    this.assertAuthRateLimit(
+      'passkey-login-start',
+      input?.rateLimitKey,
+      this.passkeyLoginStartRateLimitCount,
+      this.passkeyLoginStartRateLimitWindowMs,
+    );
     const options = await generateAuthenticationOptions({
       rpID: this.rpId,
       userVerification: 'required',
     });
 
+    this.cleanupExpiredFlows();
+    this.ensureFlowCapacity();
     const flowId = randomUUID();
     this.flows.set(flowId, {
       flowId,
@@ -291,6 +363,7 @@ export class AuthService implements OnModuleInit {
   async loginWithPassword(input: {
     accountId: string;
     password: string;
+    rateLimitKey?: string;
   }): Promise<{ sessionToken: string; user: PublicAuthUser }> {
     if (!this.passwordLoginEnabled) {
       throw new ForbiddenException('Password login is disabled');
@@ -300,6 +373,15 @@ export class AuthService implements OnModuleInit {
     if (!accountId) {
       throw new BadRequestException('Account is required');
     }
+    const rateLimitPrincipal = `${this.normalizeRateLimitKey(
+      input.rateLimitKey,
+    ) || 'unknown'}:${accountId.toLowerCase()}`;
+    this.assertAuthRateLimit(
+      'password-login',
+      rateLimitPrincipal,
+      this.passwordLoginRateLimitCount,
+      this.passwordLoginRateLimitWindowMs,
+    );
 
     const users = await this.authStorageService.getUsers();
     const user = users.find((entry) => entry.accountId === accountId);
@@ -381,24 +463,27 @@ export class AuthService implements OnModuleInit {
   }): Promise<PublicAuthUser> {
     const displayName = this.normalizeDisplayName(input.displayName);
     const avatarEmoji = this.normalizeAvatarEmoji(input.avatarEmoji);
-    const users = await this.authStorageService.getUsers();
-    const user = users.find((entry) => entry.id === input.userId);
+    const user = await this.runUserMutation(async () => {
+      const users = await this.authStorageService.getUsers();
+      const foundUser = users.find((entry) => entry.id === input.userId);
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
+      if (!foundUser) {
+        throw new UnauthorizedException('User not found');
+      }
 
-    const duplicated = users.find(
-      (entry) => entry.displayName === displayName && entry.id !== input.userId,
-    );
-    if (duplicated) {
-      throw new BadRequestException('Display name is already taken');
-    }
+      const duplicated = users.find(
+        (entry) => entry.displayName === displayName && entry.id !== input.userId,
+      );
+      if (duplicated) {
+        throw new BadRequestException('Display name is already taken');
+      }
 
-    user.displayName = displayName;
-    user.avatarEmoji = avatarEmoji;
-    user.updatedAt = Date.now();
-    await this.authStorageService.saveUsers(users);
+      foundUser.displayName = displayName;
+      foundUser.avatarEmoji = avatarEmoji;
+      foundUser.updatedAt = Date.now();
+      await this.authStorageService.saveUsers(users);
+      return foundUser;
+    });
     await this.applyProfileToRooms(user);
     return this.toPublicUser(user);
   }
@@ -437,38 +522,40 @@ export class AuthService implements OnModuleInit {
       return;
     }
 
-    const users = await this.authStorageService.getUsers();
-    const now = Date.now();
-    const seeds = [
-      { accountId: 'test1', displayName: 'test1', avatarEmoji: '🧪' },
-      { accountId: 'test2', displayName: 'test2', avatarEmoji: '🛠️' },
-      { accountId: 'test3', displayName: 'test3', avatarEmoji: '🎯' },
-    ];
+    await this.runUserMutation(async () => {
+      const users = await this.authStorageService.getUsers();
+      const now = Date.now();
+      const seeds = [
+        { accountId: 'test1', displayName: 'test1', avatarEmoji: '🧪' },
+        { accountId: 'test2', displayName: 'test2', avatarEmoji: '🛠️' },
+        { accountId: 'test3', displayName: 'test3', avatarEmoji: '🎯' },
+      ];
 
-    let changed = false;
-    for (const seed of seeds) {
-      if (users.some((user) => user.accountId === seed.accountId)) {
-        continue;
+      let changed = false;
+      for (const seed of seeds) {
+        if (users.some((user) => user.accountId === seed.accountId)) {
+          continue;
+        }
+
+        const user: AuthUserRecord = {
+          id: randomUUID(),
+          accountId: seed.accountId,
+          displayName: seed.displayName,
+          avatarEmoji: seed.avatarEmoji,
+          passwordHash: this.hashPassword('test1234'),
+          passkeys: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        users.push(user);
+        changed = true;
       }
 
-      const user: AuthUserRecord = {
-        id: randomUUID(),
-        accountId: seed.accountId,
-        displayName: seed.displayName,
-        avatarEmoji: seed.avatarEmoji,
-        passwordHash: this.hashPassword('test1234'),
-        passkeys: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      users.push(user);
-      changed = true;
-    }
-
-    if (changed) {
-      await this.authStorageService.saveUsers(users);
-    }
+      if (changed) {
+        await this.authStorageService.saveUsers(users);
+      }
+    });
   }
 
   private toPublicUser(user: AuthUserRecord): PublicAuthUser {
@@ -520,6 +607,39 @@ export class AuthService implements OnModuleInit {
     return `pk_${Date.now().toString(36)}`;
   }
 
+  private normalizeRateLimitKey(raw?: string): string | null {
+    const value = raw?.trim() || '';
+    return value || null;
+  }
+
+  private assertAuthRateLimit(
+    scope: string,
+    rawKey: string | undefined,
+    limit: number,
+    windowMs: number,
+  ): void {
+    const key = this.normalizeRateLimitKey(rawKey);
+    if (!key || limit <= 0 || windowMs <= 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const windowKey = `${scope}:${key}`;
+    const recent = (this.authRateWindows.get(windowKey) || []).filter(
+      (timestamp) => timestamp > now - windowMs,
+    );
+
+    if (recent.length >= limit) {
+      throw new HttpException(
+        'Too many requests, please try again later',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    recent.push(now);
+    this.authRateWindows.set(windowKey, recent);
+  }
+
   private hashPassword(password: string): string {
     const salt = randomBytes(16).toString('hex');
     const hash = scryptSync(password, salt, 64).toString('hex');
@@ -551,6 +671,21 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  private ensureFlowCapacity(): void {
+    if (this.maxPendingFlows <= 0 || this.flows.size < this.maxPendingFlows) {
+      return;
+    }
+
+    const overflowCount = this.flows.size - this.maxPendingFlows + 1;
+    const evictionOrder = [...this.flows.values()]
+      .sort((left, right) => left.expiresAt - right.expiresAt)
+      .slice(0, overflowCount);
+
+    evictionOrder.forEach((flow) => {
+      this.flows.delete(flow.flowId);
+    });
+  }
+
   private consumeFlow(flowId: string, kind: FlowKind): PendingFlow {
     this.cleanupExpiredFlows();
     const flow = this.flows.get(flowId);
@@ -563,6 +698,21 @@ export class AuthService implements OnModuleInit {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async runUserMutation<T>(task: () => Promise<T>): Promise<T> {
+    let releaseCurrent: (() => void) | null = null;
+    const previous = this.userMutationQueue;
+    this.userMutationQueue = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+
+    await previous;
+    try {
+      return await task();
+    } finally {
+      releaseCurrent?.();
+    }
   }
 
   private async createSessionForUser(userId: string): Promise<{

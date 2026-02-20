@@ -1676,7 +1676,7 @@ const useGameRoomElement = () => {
     }
     setProfileDisplayNameDraft(user.displayName);
     setProfileAvatarEmojiDraft(user.avatarEmoji);
-  }, [user?.avatarEmoji, user?.displayName]);
+  }, [user]);
 
   const currentHand = room?.currentHand ?? null;
   const tablePlayers = useMemo(
