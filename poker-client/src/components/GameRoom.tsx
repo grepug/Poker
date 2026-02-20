@@ -630,7 +630,30 @@ const SEAT_OUTER_SIDE_OVERHANG_PX = 2;
 const SEAT_OUTER_BOTTOM_OVERHANG_PX = 2;
 const SEAT_PERIMETER_CLEARANCE_PX = 10;
 const SEAT_CENTER_EXCLUSION_PADDING_PX = 8;
+const SEAT_CENTER_EXCLUSION_PADDING_COMPACT_TABLE_PX = 20;
+const SEAT_CENTER_EXCLUSION_PADDING_TWO_HANDED_COMPACT_TABLE_PX = 52;
+const COMPACT_TABLE_WIDTH_MAX_PX = 560;
+const COMPACT_TABLE_WIDTH_MIN_PX = 431;
 const SEAT_POD_WIDTH_TO_HEIGHT_RATIO = 1.26;
+
+const resolveSeatCenterExclusionPaddingPx = ({
+  tableWidth,
+  occupiedSeatCount,
+}: {
+  tableWidth: number;
+  occupiedSeatCount: number;
+}) => {
+  if (tableWidth >= COMPACT_TABLE_WIDTH_MIN_PX && tableWidth <= COMPACT_TABLE_WIDTH_MAX_PX) {
+    if (occupiedSeatCount <= 2) {
+      return SEAT_CENTER_EXCLUSION_PADDING_TWO_HANDED_COMPACT_TABLE_PX;
+    }
+    if (occupiedSeatCount <= 4) {
+      return SEAT_CENTER_EXCLUSION_PADDING_COMPACT_TABLE_PX;
+    }
+  }
+
+  return SEAT_CENTER_EXCLUSION_PADDING_PX;
+};
 
 const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
@@ -798,13 +821,9 @@ const solveSeatDistanceToEdge = ({
   }
 
   const maxDistance = Math.hypot(halfTableWidth, halfTableHeight);
-  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
-  let farthestSampleFit = -1;
-
-  for (let index = 0; index <= sampleCount; index += 1) {
-    const sampleDistance = (maxDistance * index) / sampleCount;
-    const canFitAtSample = canFitSeatAtDistance({
-      distance: sampleDistance,
+  const canFitDistance = (distance: number) =>
+    canFitSeatAtDistance({
+      distance,
       cosine,
       sine,
       leftExtent,
@@ -817,6 +836,54 @@ const solveSeatDistanceToEdge = ({
       cornerRadiusY,
       obstacleRects,
     });
+
+  if (obstacleRects.length > 0) {
+    const obstacleSampleCount = Math.max(
+      DISTANCE_SOLVER_SAMPLE_COUNT * DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER,
+      Math.ceil(maxDistance),
+    );
+
+    for (let index = 0; index <= obstacleSampleCount; index += 1) {
+      const sampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * index) / obstacleSampleCount,
+      );
+      if (!canFitDistance(sampleDistance)) {
+        continue;
+      }
+
+      if (index === 0) {
+        return sampleDistance;
+      }
+
+      const previousSampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * (index - 1)) / obstacleSampleCount,
+      );
+      let low = sampleDistance;
+      let high = previousSampleDistance;
+
+      for (let refineIndex = 0; refineIndex < DISTANCE_SOLVER_REFINE_STEPS; refineIndex += 1) {
+        const mid = (low + high) / 2;
+        if (canFitDistance(mid)) {
+          low = mid;
+          continue;
+        }
+        high = mid;
+      }
+
+      return low;
+    }
+
+    return 0;
+  }
+
+  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
+  let farthestSampleFit = -1;
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const sampleDistance = (maxDistance * index) / sampleCount;
+    const canFitAtSample = canFitDistance(sampleDistance);
     if (canFitAtSample) {
       farthestSampleFit = sampleDistance;
     }
@@ -836,20 +903,7 @@ const solveSeatDistanceToEdge = ({
       continue;
     }
 
-    const canFitAtCandidate = canFitSeatAtDistance({
-      distance: candidateDistance,
-      cosine,
-      sine,
-      leftExtent,
-      rightExtent,
-      topExtent,
-      bottomExtent,
-      halfTableWidth,
-      halfTableHeight,
-      cornerRadiusX,
-      cornerRadiusY,
-      obstacleRects,
-    });
+    const canFitAtCandidate = canFitDistance(candidateDistance);
 
     if (canFitAtCandidate) {
       bestDistance = candidateDistance;
@@ -867,6 +921,7 @@ const MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX = 700;
 const MOBILE_BALANCED_ORBIT_SAMPLE_COUNT = 960;
 const DISTANCE_SOLVER_SAMPLE_COUNT = 72;
 const DISTANCE_SOLVER_REFINE_STEPS = 16;
+const DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER = 4;
 
 const getOrbitAnchors = ({
   totalSeats,
@@ -1282,7 +1337,20 @@ const resolveSeatSlotWidthPixels = ({
   return Math.max(minValue, Math.min(maxValue, preferredValue));
 };
 
-const getSeatSlotWidth = (occupiedSeats: number) => {
+const getSeatSlotWidth = ({
+  occupiedSeats,
+  tableWidth,
+}: {
+  occupiedSeats: number;
+  tableWidth: number;
+}) => {
+  if (
+    occupiedSeats <= 2 &&
+    tableWidth >= COMPACT_TABLE_WIDTH_MIN_PX &&
+    tableWidth <= COMPACT_TABLE_WIDTH_MAX_PX
+  ) {
+    return "clamp(3.4rem, 12.2vw, 4.2rem)";
+  }
   if (occupiedSeats <= 2) return "clamp(4.7rem, 18.8vw, 6.2rem)";
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
@@ -2080,8 +2148,12 @@ const useGameRoomElement = () => {
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () => getSeatSlotWidth(tablePlayers.length),
-    [tablePlayers.length],
+    () =>
+      getSeatSlotWidth({
+        occupiedSeats: tablePlayers.length,
+        tableWidth: feltSize.width,
+      }),
+    [feltSize.width, tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -2188,10 +2260,14 @@ const useGameRoomElement = () => {
       }
 
       frameHandle = window.requestAnimationFrame(() => {
+        const centerExclusionPaddingPx = resolveSeatCenterExclusionPaddingPx({
+          tableWidth: feltSize.width,
+          occupiedSeatCount: tablePlayers.length,
+        });
         const nextObstacleRects = resolveObstacleRectsWithinTable({
           feltNode,
           obstacleNodes: [communityNode, potNode],
-          paddingPx: SEAT_CENTER_EXCLUSION_PADDING_PX,
+          paddingPx: centerExclusionPaddingPx,
         });
         setTableObstacleRects((previous) =>
           areRectBoundSetsEqual(previous, nextObstacleRects) ? previous : nextObstacleRects,
@@ -2224,7 +2300,7 @@ const useGameRoomElement = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleRectRefresh);
     };
-  }, [feltSize.height, feltSize.width]);
+  }, [feltSize.height, feltSize.width, tablePlayers.length]);
 
   const playerRankings = useMemo(
     () => {
