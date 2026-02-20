@@ -6590,7 +6590,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await waitForPlayerTurn(bobPage, 'Bob');
       await bobPage.click('[data-testid="action-fold"]');
-      await handCompletePromise;
+      const result = await handCompletePromise;
 
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
@@ -6610,6 +6610,23 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(alicePage.locator('[data-testid="show-my-hand-button"]')).toHaveCount(0);
       await expect(bobPage.locator('[data-testid^="hand-result-hidden-card-"]')).toHaveCount(4);
       await expect(bobPage.locator('[data-testid^="hand-result-card-"]')).toHaveCount(0);
+
+      const rowPlayerIdsInOrder = await alicePage
+        .locator('[data-testid^="hand-result-row-"]')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => node.getAttribute('data-testid') ?? '')
+            .map((testId) => testId.replace('hand-result-row-', ''))
+            .filter(Boolean),
+        );
+      const winnerAmountsByPlayerId = new Map(
+        result.winners.map((winner: any) => [winner.playerId, winner.amountWon]),
+      );
+      const rowAwardsInOrder = rowPlayerIdsInOrder.map(
+        (playerId: string) => winnerAmountsByPlayerId.get(playerId) ?? 0,
+      );
+      expect(rowAwardsInOrder).toEqual([DEFAULT_OPENING_POT, 0]);
+      expect(rowPlayerIdsInOrder[0]).toBe(result.winners[0].playerId);
     } finally {
       await teardownTwoPlayerSession(session);
     }
