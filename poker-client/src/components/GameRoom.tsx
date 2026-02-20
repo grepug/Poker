@@ -630,30 +630,7 @@ const SEAT_OUTER_SIDE_OVERHANG_PX = 2;
 const SEAT_OUTER_BOTTOM_OVERHANG_PX = 2;
 const SEAT_PERIMETER_CLEARANCE_PX = 10;
 const SEAT_CENTER_EXCLUSION_PADDING_PX = 8;
-const SEAT_CENTER_EXCLUSION_PADDING_COMPACT_TABLE_PX = 20;
-const SEAT_CENTER_EXCLUSION_PADDING_TWO_HANDED_COMPACT_TABLE_PX = 52;
-const COMPACT_TABLE_WIDTH_MAX_PX = 560;
-const COMPACT_TABLE_WIDTH_MIN_PX = 431;
 const SEAT_POD_WIDTH_TO_HEIGHT_RATIO = 1.26;
-
-const resolveSeatCenterExclusionPaddingPx = ({
-  tableWidth,
-  occupiedSeatCount,
-}: {
-  tableWidth: number;
-  occupiedSeatCount: number;
-}) => {
-  if (tableWidth >= COMPACT_TABLE_WIDTH_MIN_PX && tableWidth <= COMPACT_TABLE_WIDTH_MAX_PX) {
-    if (occupiedSeatCount <= 2) {
-      return SEAT_CENTER_EXCLUSION_PADDING_TWO_HANDED_COMPACT_TABLE_PX;
-    }
-    if (occupiedSeatCount <= 4) {
-      return SEAT_CENTER_EXCLUSION_PADDING_COMPACT_TABLE_PX;
-    }
-  }
-
-  return SEAT_CENTER_EXCLUSION_PADDING_PX;
-};
 
 const getFallbackOrbitAnchor = (slotIndex: number, totalSeats: number): SeatAnchor => {
   const safeTotal = Math.max(1, totalSeats);
@@ -1339,18 +1316,9 @@ const resolveSeatSlotWidthPixels = ({
 
 const getSeatSlotWidth = ({
   occupiedSeats,
-  tableWidth,
 }: {
   occupiedSeats: number;
-  tableWidth: number;
 }) => {
-  if (
-    occupiedSeats <= 2 &&
-    tableWidth >= COMPACT_TABLE_WIDTH_MIN_PX &&
-    tableWidth <= COMPACT_TABLE_WIDTH_MAX_PX
-  ) {
-    return "clamp(3.4rem, 12.2vw, 4.2rem)";
-  }
   if (occupiedSeats <= 2) return "clamp(4.7rem, 18.8vw, 6.2rem)";
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
@@ -2148,12 +2116,8 @@ const useGameRoomElement = () => {
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () =>
-      getSeatSlotWidth({
-        occupiedSeats: tablePlayers.length,
-        tableWidth: feltSize.width,
-      }),
-    [feltSize.width, tablePlayers.length],
+    () => getSeatSlotWidth({ occupiedSeats: tablePlayers.length }),
+    [tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -2260,14 +2224,10 @@ const useGameRoomElement = () => {
       }
 
       frameHandle = window.requestAnimationFrame(() => {
-        const centerExclusionPaddingPx = resolveSeatCenterExclusionPaddingPx({
-          tableWidth: feltSize.width,
-          occupiedSeatCount: tablePlayers.length,
-        });
         const nextObstacleRects = resolveObstacleRectsWithinTable({
           feltNode,
           obstacleNodes: [communityNode, potNode],
-          paddingPx: centerExclusionPaddingPx,
+          paddingPx: SEAT_CENTER_EXCLUSION_PADDING_PX,
         });
         setTableObstacleRects((previous) =>
           areRectBoundSetsEqual(previous, nextObstacleRects) ? previous : nextObstacleRects,
@@ -2300,7 +2260,7 @@ const useGameRoomElement = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleRectRefresh);
     };
-  }, [feltSize.height, feltSize.width, tablePlayers.length]);
+  }, [feltSize.height, feltSize.width]);
 
   const playerRankings = useMemo(
     () => {
