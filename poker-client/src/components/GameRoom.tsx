@@ -1660,9 +1660,6 @@ const useGameRoomElement = () => {
   const [potAnimationTick, setPotAnimationTick] = useState(0);
   const animatedPotRef = useRef(displayPot);
   const potAnimationFrameRef = useRef<number | null>(null);
-  const currentTableBet = currentHand?.currentBet ?? 0;
-  const myCommittedBet = currentPlayer?.currentBet ?? 0;
-
   const maxStack = currentPlayer?.chips ?? 0;
   const clampTrayAmount = useCallback(
     (value: number) => Math.max(0, Math.min(maxStack, Math.round(value))),
@@ -2503,20 +2500,10 @@ const useGameRoomElement = () => {
 
   const trayPresetButtons = useMemo<TrayPresetButton[]>(() => {
     const clampToStack = (value: number) => clampTrayAmount(value);
-    const commitToTargetTotalBet = (targetTotalBet: number) =>
-      clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
     const continueCommit = clampToStack(callAmount > 0 ? callAmount : minRaise);
     const continueLabel = callAmount > 0 ? t("game.preset.call") : t("game.preset.minBet");
-    const frequentRaiseCommit = (() => {
-      const baseline =
-        callAmount > 0 ? commitToTargetTotalBet(currentTableBet * 3) : clampToStack(minRaise * 3);
-      if (baseline > continueCommit && baseline < maxStack) return baseline;
-
-      const steppedUp = clampToStack(continueCommit + Math.max(minRaise, 1));
-      if (steppedUp > continueCommit && steppedUp < maxStack) return steppedUp;
-
-      return maxStack;
-    })();
+    const raiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise * 2);
+    const raiseLabel = callAmount > 0 ? t("game.preset.raise") : t("game.preset.bet");
 
     const presets: TrayPresetButton[] = [
       {
@@ -2528,10 +2515,10 @@ const useGameRoomElement = () => {
         enabled: false,
       },
       {
-        key: "frequent-raise",
-        label: t("game.preset.threeBet"),
-        amount: frequentRaiseCommit,
-        testId: "chip-load-3bet",
+        key: "raise",
+        label: raiseLabel,
+        amount: raiseCommit,
+        testId: "chip-load-raise",
         tone: "raise",
         enabled: false,
       },
@@ -2553,19 +2540,24 @@ const useGameRoomElement = () => {
         stack: maxStack,
         t,
       });
+      const resolvedIntent = resolution.intent;
+      const resolvesToAllIn = resolvedIntent?.action === "all-in";
+      const isAllInPreset = preset.key === "all-in";
       return {
         ...preset,
-        enabled: isYourTurn && preset.amount > 0 && Boolean(resolution.intent),
+        enabled:
+          isYourTurn &&
+          preset.amount > 0 &&
+          Boolean(resolvedIntent) &&
+          (isAllInPreset || !resolvesToAllIn),
       };
     });
   }, [
     callAmount,
     clampTrayAmount,
-    currentTableBet,
     isYourTurn,
     maxStack,
     minRaise,
-    myCommittedBet,
     t,
   ]);
 

@@ -4785,6 +4785,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(continueAmountMatch).not.toBeNull();
       const continueAmount = continueAmountMatch?.[1] ?? '0';
 
+      const raiseButton = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(raiseButton).toBeVisible();
+      await expect(raiseButton).toBeEnabled();
+      const raiseButtonText = (await raiseButton.textContent()) ?? '';
+      const raiseAmountMatch = raiseButtonText.match(/\$([0-9]+)/);
+      expect(raiseAmountMatch).not.toBeNull();
+      expect(await bobPage.locator('[data-testid="chip-load-3bet"]').count()).toBe(0);
+
       await continueButton.click();
       await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText(
         `$${continueAmount}`,
@@ -4815,6 +4823,50 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.click('[data-testid="chip-clear"]');
       await expect(bobPage.locator('[data-testid="tray-amount-value"]')).toContainText('$0');
       await expect(bobPage.locator('[data-testid="chip-custom-input"]')).toHaveValue('0');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.2d: Tray Composer Disables Non-All-In Presets When Clamped To Stack', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: {
+        startingChips: 7,
+        smallBlind: 5,
+        bigBlind: 10,
+      },
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const snapshot = await getRoomSnapshot(bobPage);
+      const bobStack = snapshot.bobChips;
+      const callAmount = snapshot.currentBet - snapshot.bobCurrentBet;
+      expect(bobStack).toBeGreaterThan(0);
+      expect(callAmount).toBeGreaterThan(0);
+      expect(bobStack).toBeLessThanOrEqual(callAmount);
+
+      const continueButton = bobPage.locator('[data-testid="chip-load-continue"]');
+      await expect(continueButton).toContainText(`$${bobStack}`);
+      await expect(continueButton).toBeDisabled();
+
+      const raiseButton = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(raiseButton).toContainText(`$${bobStack}`);
+      await expect(raiseButton).toBeDisabled();
+
+      const allInButton = bobPage.locator('[data-testid="chip-load-all-in"]');
+      await expect(allInButton).toContainText(`$${bobStack}`);
+      await expect(allInButton).toBeEnabled();
+
+      const enabledPresetCount = await bobPage
+        .locator('[data-testid="action-dock"] [data-tray-preset]:not([disabled])')
+        .count();
+      expect(enabledPresetCount).toBe(1);
     } finally {
       await teardownTwoPlayerSession(session);
     }
