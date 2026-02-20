@@ -43,6 +43,7 @@ import {
   NextStreetRevealStateData,
   PlayerHandMuckedData,
   PlayerHandRevealedData,
+  ShowdownDecisionStateData,
   RoomConfigUpdatedData,
   ReadyStateUpdatedData,
   ReadyPhase,
@@ -948,31 +949,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const isPendingShowdown =
             hand.bettingRound === 'SHOWDOWN' && !hand.lastResult;
           if (isPendingShowdown) {
+            if ((hand.showdownDecisionOrder ?? []).length === 0) {
+              await this.initializeShowdownDecisionState(room);
+            }
+
             if (!hand.activePlayers.includes(playerInfo.playerId)) {
               throw new Error('You cannot reveal cards for this hand');
             }
 
-            const currentReveals = new Set(hand.revealedPlayerIds ?? []);
-            if (currentReveals.has(playerInfo.playerId)) {
+            if (hand.showdownDecisionPlayerId !== playerInfo.playerId) {
+              throw new Error('It is not your showdown decision turn');
+            }
+
+            const didReveal = await this.applyShowdownReveal(
+              room,
+              playerInfo.playerId,
+            );
+            if (!didReveal) {
               return { success: true };
             }
 
-            currentReveals.add(playerInfo.playerId);
-            hand.revealedPlayerIds = [...currentReveals];
-            room.lastActivityAt = Date.now();
-            await this.storageService.saveRoom(room);
-
-            const player = room.players.find(
-              (p) => p.id === playerInfo.playerId,
-            );
-            const revealData: PlayerHandRevealedData = {
-              playerId: playerInfo.playerId,
-              playerName: player?.name ?? '',
-              handNumber: hand.handNumber,
-            };
-
-            this.server.to(room.id).emit('PLAYER_HAND_REVEALED', revealData);
-            await this.resolvePendingShowdown(room);
+            await this.advanceShowdownDecision(room);
             return { success: true };
           }
 
@@ -1002,7 +999,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const revealData: PlayerHandRevealedData = {
             playerId: playerInfo.playerId,
             playerName: player?.name ?? '',
+            cards: playerHand.cards,
             handNumber: hand.handNumber,
+            showdownOrderIndex: -1,
           };
 
           this.server.to(room.id).emit('PLAYER_HAND_REVEALED', revealData);
@@ -1040,44 +1039,40 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const isPendingShowdown =
             hand.bettingRound === 'SHOWDOWN' && !hand.lastResult;
           if (!isPendingShowdown) {
-            throw new Error('Muck is only available during showdown');
+            throw new Error('Fold is only available during showdown');
+          }
+
+          if ((hand.showdownDecisionOrder ?? []).length === 0) {
+            await this.initializeShowdownDecisionState(room);
           }
 
           if (!hand.activePlayers.includes(playerInfo.playerId)) {
-            throw new Error('You cannot muck for this hand');
+            throw new Error('You cannot fold for this hand');
           }
 
-          hand.activePlayers = hand.activePlayers.filter(
-            (playerId: string) => playerId !== playerInfo.playerId,
-          );
-          hand.revealedPlayerIds = (hand.revealedPlayerIds ?? []).filter(
-            (playerId: string) => playerId !== playerInfo.playerId,
-          );
-
-          const player = room.players.find(
-            (seatPlayer) => seatPlayer.id === playerInfo.playerId,
-          );
-          if (player) {
-            player.status = 'folded';
-            player.lastAction = 'fold';
+          if (hand.showdownDecisionPlayerId !== playerInfo.playerId) {
+            throw new Error('It is not your showdown decision turn');
           }
 
-          room.lastActivityAt = Date.now();
-          await this.storageService.saveRoom(room);
+          if (
+            (hand.showdownForcedRevealPlayerIds ?? []).includes(
+              playerInfo.playerId,
+            )
+          ) {
+            throw new Error('All-in players must reveal at showdown');
+          }
 
-          const muckData: PlayerHandMuckedData = {
-            playerId: playerInfo.playerId,
-            playerName: player?.name ?? '',
-            handNumber: hand.handNumber,
-          };
-          this.server.to(room.id).emit('PLAYER_HAND_MUCKED', muckData);
+          const didMuck = await this.applyShowdownMuck(room, playerInfo.playerId);
+          if (!didMuck) {
+            return { success: true };
+          }
 
-          await this.resolvePendingShowdown(room);
+          await this.advanceShowdownDecision(room);
           return { success: true };
         },
       );
     } catch (error) {
-      this.logger.error(`Muck hand error: ${error.message}`);
+      this.logger.error(`Fold hand error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false, error: error.message };
     }
@@ -1131,7 +1126,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
           const allReady = ready.size > 0;
           if (allReady) {
-            await this.advanceRoundAndBroadcast(room);
+            const shouldRevealHandResult =
+              nextRound === 'SHOWDOWN' &&
+              (hand.bettingRound === 'SHOWDOWN' ||
+                (typeof this.handService.isHandComplete === 'function' &&
+                  this.handService.isHandComplete(room)));
+            if (shouldRevealHandResult) {
+              await this.completeAndBroadcastHand(room);
+            } else {
+              await this.advanceRoundAndBroadcast(room);
+            }
           }
 
           return { success: true };
@@ -1433,7 +1437,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 room.currentHand.bettingRound === 'SHOWDOWN' &&
                 !room.currentHand.lastResult
               ) {
-                await this.resolvePendingShowdown(room);
+                await this.advanceShowdownDecision(room);
               } else if (room.currentHand.bettingRound !== 'SHOWDOWN') {
                 if (this.bettingService.isBettingRoundComplete(room)) {
                   await this.handleBettingRoundComplete(room);
@@ -1763,14 +1767,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Check if hand is over
     if (this.handService.isHandComplete(room)) {
-      await this.completeAndBroadcastHand(room);
+      const queuedResultReveal = await this.queueHandResultRevealGate(room);
+      if (!queuedResultReveal) {
+        await this.completeAndBroadcastHand(room);
+      }
       return;
     }
 
     const nextRound = this.getNextBettingRound(hand.bettingRound);
+    const isTransitioningToShowdown = nextRound === 'SHOWDOWN';
     const shouldWaitForPlayerReveal =
       allowPlayerStreetReveal &&
-      !this.shouldAutoDealRemainingCommunityCards(room);
+      !this.shouldAutoDealRemainingCommunityCards(room) &&
+      !isTransitioningToShowdown;
 
     if (shouldWaitForPlayerReveal) {
       const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
@@ -1849,7 +1858,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .map((player: any) => player.id);
   }
 
-  private getShowdownContendingPlayerIds(room: any): string[] {
+  private getShowdownContendingPlayers(room: any): any[] {
     const hand = room?.currentHand;
     if (!hand) {
       return [];
@@ -1861,46 +1870,316 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         (player: any) =>
           activeSet.has(player.id) &&
           player.status !== 'left' &&
-          player.status !== 'disconnected',
+          Boolean(player.cards),
       )
-      .map((player: any) => player.id);
+      .sort((left: any, right: any) => left.position - right.position);
   }
 
-  private async resolvePendingShowdown(room: any): Promise<void> {
+  private getShowdownContendingPlayerIds(room: any): string[] {
+    return this.getShowdownContendingPlayers(room).map(
+      (player: any) => player.id,
+    );
+  }
+
+  private getShowdownStartPlayerId(room: any, contenders: any[]): string | null {
+    const hand = room?.currentHand;
+    if (!hand || contenders.length === 0) {
+      return null;
+    }
+
+    const contenderSet = new Set(contenders.map((player) => player.id));
+    const lastAggressorId = hand.showdownLastAggressorPlayerId;
+    if (lastAggressorId && contenderSet.has(lastAggressorId)) {
+      return lastAggressorId;
+    }
+
+    const dealerPosition = hand.dealerPosition;
+    return (
+      contenders.find((player) => player.position > dealerPosition)?.id ??
+      contenders[0].id
+    );
+  }
+
+  private buildShowdownDecisionOrder(room: any, contenders: any[]): string[] {
+    if (contenders.length === 0) {
+      return [];
+    }
+
+    const sortedContenders = [...contenders].sort(
+      (left, right) => left.position - right.position,
+    );
+    const startPlayerId = this.getShowdownStartPlayerId(room, sortedContenders);
+    if (!startPlayerId) {
+      return sortedContenders.map((player) => player.id);
+    }
+
+    const startIndex = sortedContenders.findIndex(
+      (player) => player.id === startPlayerId,
+    );
+    if (startIndex <= 0) {
+      return sortedContenders.map((player) => player.id);
+    }
+
+    return [
+      ...sortedContenders.slice(startIndex),
+      ...sortedContenders.slice(0, startIndex),
+    ].map((player) => player.id);
+  }
+
+  private clearShowdownDecisionState(hand: any): void {
+    hand.showdownDecisionOrder = [];
+    hand.showdownDecisionIndex = undefined;
+    hand.showdownDecisionPlayerId = null;
+    hand.showdownForcedRevealPlayerIds = [];
+  }
+
+  private emitShowdownDecisionState(room: any): void {
     const hand = room?.currentHand;
     if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
       return;
     }
 
-    const contendingPlayerIds = this.getShowdownContendingPlayerIds(room);
-    const contendingSet = new Set(contendingPlayerIds);
-    const revealedSet = new Set(
-      (hand.revealedPlayerIds ?? []).filter((playerId: string) =>
-        contendingSet.has(playerId),
-      ),
-    );
-    hand.revealedPlayerIds = [...revealedSet];
+    const currentPlayerId = hand.showdownDecisionPlayerId ?? null;
+    const currentPlayerName =
+      room.players.find((player: any) => player.id === currentPlayerId)?.name ??
+      null;
 
-    const allContendersRevealed =
-      contendingPlayerIds.length > 0 &&
-      contendingPlayerIds.every((playerId) => revealedSet.has(playerId));
-    if (contendingPlayerIds.length <= 1 || allContendersRevealed) {
-      await this.completeAndBroadcastHand(room);
+    const payload: ShowdownDecisionStateData = {
+      handNumber: hand.handNumber,
+      orderedPlayerIds: hand.showdownDecisionOrder ?? [],
+      currentPlayerId,
+      currentPlayerName,
+      forcedRevealPlayerIds: hand.showdownForcedRevealPlayerIds ?? [],
+    };
+
+    this.server.to(room.id).emit('SHOWDOWN_DECISION_STATE', payload);
+  }
+
+  private async applyShowdownReveal(
+    room: any,
+    playerId: string,
+  ): Promise<boolean> {
+    const hand = room?.currentHand;
+    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+      return false;
     }
+
+    const contenderSet = new Set(this.getShowdownContendingPlayerIds(room));
+    if (!contenderSet.has(playerId)) {
+      return false;
+    }
+
+    const revealedSet = new Set(hand.revealedPlayerIds ?? []);
+    if (revealedSet.has(playerId)) {
+      return false;
+    }
+
+    const player = room.players.find((seatPlayer: any) => seatPlayer.id === playerId);
+    if (!player?.cards) {
+      throw new Error('Cards are unavailable for showdown reveal');
+    }
+
+    revealedSet.add(playerId);
+    hand.revealedPlayerIds = [...revealedSet];
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+
+    const revealData: PlayerHandRevealedData = {
+      playerId,
+      playerName: player.name ?? '',
+      cards: player.cards,
+      handNumber: hand.handNumber,
+      showdownOrderIndex: (hand.showdownDecisionOrder ?? []).indexOf(playerId),
+    };
+    this.server.to(room.id).emit('PLAYER_HAND_REVEALED', revealData);
+    return true;
+  }
+
+  private async applyShowdownMuck(room: any, playerId: string): Promise<boolean> {
+    const hand = room?.currentHand;
+    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+      return false;
+    }
+
+    const contenderSet = new Set(this.getShowdownContendingPlayerIds(room));
+    if (!contenderSet.has(playerId)) {
+      return false;
+    }
+
+    hand.activePlayers = (hand.activePlayers ?? []).filter(
+      (id: string) => id !== playerId,
+    );
+    hand.revealedPlayerIds = (hand.revealedPlayerIds ?? []).filter(
+      (id: string) => id !== playerId,
+    );
+
+    const player = room.players.find((seatPlayer: any) => seatPlayer.id === playerId);
+    if (player) {
+      player.status = 'folded';
+      player.lastAction = 'fold';
+      player.cards = null;
+    }
+
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+
+    const muckData: PlayerHandMuckedData = {
+      playerId,
+      playerName: player?.name ?? '',
+      handNumber: hand.handNumber,
+    };
+    this.server.to(room.id).emit('PLAYER_HAND_MUCKED', muckData);
+    return true;
+  }
+
+  private async initializeShowdownDecisionState(room: any): Promise<void> {
+    const hand = room?.currentHand;
+    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+      return;
+    }
+
+    const contenders = this.getShowdownContendingPlayers(room);
+    hand.revealedPlayerIds = (hand.revealedPlayerIds ?? []).filter((playerId: string) =>
+      contenders.some((contender) => contender.id === playerId),
+    );
+    hand.showdownDecisionOrder = this.buildShowdownDecisionOrder(room, contenders);
+    hand.showdownForcedRevealPlayerIds = contenders
+      .filter((player) => player.status === 'all-in')
+      .map((player) => player.id);
+    hand.showdownDecisionIndex = undefined;
+    hand.showdownDecisionPlayerId = null;
+
+    await this.advanceShowdownDecision(room);
+  }
+
+  private async advanceShowdownDecision(room: any): Promise<void> {
+    const hand = room?.currentHand;
+    if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
+      return;
+    }
+
+    let guard = 0;
+    while (guard < 30) {
+      guard += 1;
+
+      const contenders = this.getShowdownContendingPlayers(room);
+      const contenderIds = contenders.map((player) => player.id);
+      const contenderSet = new Set(contenderIds);
+      const revealedSet = new Set(
+        (hand.revealedPlayerIds ?? []).filter((playerId: string) =>
+          contenderSet.has(playerId),
+        ),
+      );
+      hand.revealedPlayerIds = [...revealedSet];
+
+      const existingOrder = hand.showdownDecisionOrder ?? [];
+      const missingContenders = contenderIds.filter(
+        (playerId) => !existingOrder.includes(playerId),
+      );
+      const order =
+        existingOrder.length > 0
+          ? [...existingOrder, ...missingContenders]
+          : this.buildShowdownDecisionOrder(room, contenders);
+      hand.showdownDecisionOrder = order;
+
+      const forcedRevealSet = new Set(hand.showdownForcedRevealPlayerIds ?? []);
+      for (const contender of contenders) {
+        if (contender.status === 'all-in') {
+          forcedRevealSet.add(contender.id);
+        }
+      }
+      hand.showdownForcedRevealPlayerIds = [...forcedRevealSet];
+
+      if (contenderIds.length <= 1) {
+        this.clearShowdownDecisionState(hand);
+        room.lastActivityAt = Date.now();
+        await this.storageService.saveRoom(room);
+        this.emitShowdownDecisionState(room);
+        const queuedResultReveal = await this.queueHandResultRevealGate(room);
+        if (!queuedResultReveal) {
+          await this.completeAndBroadcastHand(room);
+        }
+        return;
+      }
+
+      const nextIndex = order.findIndex(
+        (playerId) => contenderSet.has(playerId) && !revealedSet.has(playerId),
+      );
+
+      if (nextIndex === -1) {
+        this.clearShowdownDecisionState(hand);
+        room.lastActivityAt = Date.now();
+        await this.storageService.saveRoom(room);
+        this.emitShowdownDecisionState(room);
+        const queuedResultReveal = await this.queueHandResultRevealGate(room);
+        if (!queuedResultReveal) {
+          await this.completeAndBroadcastHand(room);
+        }
+        return;
+      }
+
+      const nextPlayerId = order[nextIndex];
+      hand.showdownDecisionIndex = nextIndex;
+      hand.showdownDecisionPlayerId = nextPlayerId;
+      room.lastActivityAt = Date.now();
+      await this.storageService.saveRoom(room);
+      this.emitShowdownDecisionState(room);
+
+      if (!(hand.showdownForcedRevealPlayerIds ?? []).includes(nextPlayerId)) {
+        return;
+      }
+
+      await this.applyShowdownReveal(room, nextPlayerId);
+    }
+
+    throw new Error('Showdown decision advance exceeded safety limit');
+  }
+
+  private async queueHandResultRevealGate(room: any): Promise<boolean> {
+    const hand = room?.currentHand;
+    if (!hand || hand.lastResult) {
+      return false;
+    }
+
+    if (hand.pendingStreetRevealRound === 'SHOWDOWN') {
+      return true;
+    }
+
+    const requiredPlayerIds = this.getStreetRevealRequiredPlayerIds(room);
+    if (requiredPlayerIds.length === 0) {
+      return false;
+    }
+
+    hand.currentPlayerTurn = null;
+    hand.pendingStreetRevealRound = 'SHOWDOWN';
+    hand.nextStreetReadyPlayerIds = [];
+    hand.nextStreetRequiredPlayerIds = requiredPlayerIds;
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+
+    this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
+      nextRound: 'SHOWDOWN',
+      readyPlayerIds: [],
+      requiredPlayerIds,
+    } as NextStreetRevealStateData);
+
+    return true;
   }
 
   private async completeAndBroadcastHand(room: any) {
     const result = await this.handService.determineWinner(room);
     const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
-    const revealedPlayerIds = isShowdown
-      ? result.playerHands.map((entry) => entry.playerId)
-      : [];
+    const revealedPlayerIds = result.playerHands
+      .filter((entry) => entry.cardsVisibility === 'shown')
+      .map((entry) => entry.playerId);
     room.currentHand.lastResult = result;
     room.currentHand.revealedPlayerIds = revealedPlayerIds;
     room.currentHand.currentPlayerTurn = null;
     room.currentHand.pendingStreetRevealRound = null;
     room.currentHand.nextStreetReadyPlayerIds = [];
     room.currentHand.nextStreetRequiredPlayerIds = [];
+    this.clearShowdownDecisionState(room.currentHand);
+    room.currentHand.showdownLastAggressorPlayerId = null;
     room.readyPhase = 'NEXT_HAND';
     room.readyPlayerIds = [];
     await this.storageService.saveRoom(room);
@@ -1949,10 +2228,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (updatedRoom.currentHand) {
         updatedRoom.currentHand.currentPlayerTurn = null;
         updatedRoom.currentHand.revealedPlayerIds = [];
+        updatedRoom.currentHand.showdownDecisionOrder = [];
+        updatedRoom.currentHand.showdownDecisionIndex = undefined;
+        updatedRoom.currentHand.showdownDecisionPlayerId = null;
+        updatedRoom.currentHand.showdownForcedRevealPlayerIds = [];
         updatedRoom.lastActivityAt = Date.now();
         await this.storageService.saveRoom(updatedRoom);
       }
-      await this.resolvePendingShowdown(updatedRoom);
+      await this.initializeShowdownDecisionState(updatedRoom);
       return;
     }
 
@@ -2035,6 +2318,22 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (!player || player.status !== 'disconnected') {
           // Player already reconnected (or left); stale timeout should do nothing.
           return;
+        }
+
+        if (
+          room.currentHand?.bettingRound === 'SHOWDOWN' &&
+          !room.currentHand.lastResult &&
+          room.currentHand.showdownDecisionPlayerId === playerId
+        ) {
+          const forceReveal = (room.currentHand.showdownForcedRevealPlayerIds ?? []).includes(
+            playerId,
+          );
+          if (forceReveal) {
+            await this.applyShowdownReveal(room, playerId);
+          } else {
+            await this.applyShowdownMuck(room, playerId);
+          }
+          await this.advanceShowdownDecision(room);
         }
 
         // Auto-fold if it's their turn

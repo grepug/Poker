@@ -1379,6 +1379,90 @@ body {
   overflow: visible;
 }
 
+.chip-composer-dock--operation {
+  left: 0.55rem;
+  right: 0.55rem;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.operation-action-bar {
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  border-radius: 0.84rem;
+  background:
+    radial-gradient(circle at 16% 4%, rgba(52, 211, 153, 0.16), transparent 34%),
+    rgba(3, 45, 31, 0.85);
+  padding: 0.75rem;
+}
+
+.action-quick-confirm-popover {
+  min-width: min(14rem, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(16, 185, 129, 0.65);
+  background: rgba(6, 78, 59, 0.96);
+  box-shadow:
+    0 18px 34px rgba(2, 6, 23, 0.62),
+    0 0 0 1px rgba(4, 120, 87, 0.28);
+  backdrop-filter: blur(6px);
+  padding: 0.75rem;
+}
+
+.action-quick-confirm-popover--wide {
+  min-width: min(18rem, calc(100vw - 1rem));
+}
+
+.showdown-revealed-hands {
+  margin-bottom: 0.55rem;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 0.84rem;
+  background: rgba(3, 45, 31, 0.72);
+  padding: 0.6rem;
+}
+
+.showdown-revealed-hands__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.38rem;
+}
+
+.showdown-revealed-hands__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(236, 253, 245, 0.95);
+  letter-spacing: 0.02em;
+}
+
+.showdown-revealed-hands__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.showdown-revealed-hands__item {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid rgba(167, 243, 208, 0.25);
+  border-radius: 0.68rem;
+  padding: 0.32rem 0.44rem;
+  background: rgba(2, 33, 24, 0.6);
+}
+
+.showdown-revealed-hands__name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(236, 253, 245, 0.95);
+}
+
+.showdown-revealed-hands__cards {
+  display: flex;
+  gap: 0.22rem;
+}
+
 .chip-composer-dock__action-area {
   margin-top: 0;
   border-top: none;
@@ -2173,6 +2257,12 @@ body {
     width: clamp(18rem, 22vw, 23rem);
   }
 
+  .table-shell--desktop-operation-dock.table-shell--chat-open .chat-panel-shell {
+    bottom: calc(
+      var(--desktop-active-bottom-bar-height, 0px) + 0.85rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
 
   .table-shell {
     padding-bottom: 1rem;
@@ -2190,6 +2280,18 @@ body {
     transform: none;
     width: var(--desktop-turn-dock-width);
     max-width: calc(100vw - 1.7rem - env(safe-area-inset-right, 0px));
+    max-height: calc(100vh - 1.7rem - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
+
+  .chip-composer-dock--operation {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(96vw, 54rem);
+    max-width: calc(
+      100vw - 1.7rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
     max-height: calc(100vh - 1.7rem - env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
   }

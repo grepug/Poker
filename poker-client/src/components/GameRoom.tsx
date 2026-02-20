@@ -8,6 +8,7 @@ import type { Locale, MessageKey } from "../i18n/messages";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
+import { Card } from "@/components/Card";
 import {
   ActionCenterAlertOverlay,
   ChatPanel,
@@ -17,6 +18,7 @@ import {
   HandResultsContent,
   HandResultsPanel,
   NextHandActionArea,
+  OperationActionBar,
   RankingsModal,
   RulesModal,
   SettingsModal,
@@ -400,6 +402,11 @@ const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4) Showdown & Pots",
     showdownBullets: [
       "At showdown, always use the best 5-card combination out of 7 cards.",
+      "Showdown decisions are sequential, not simultaneous: only the current player can choose Show/Fold; other players wait.",
+      "Decision order starts from the last player who made the final aggressive action on the river (bet/raise, including an all-in that increased the bet). If no river aggression occurred, order starts from the first eligible player to the left of the dealer, then proceeds clockwise.",
+      "If a player shows, later players can see those revealed hole cards before making their own decision.",
+      "All-in players are forced to show and cannot fold at showdown.",
+      "Choosing Fold at showdown forfeits any claim to the pot.",
       "If multiple players tie exactly, the pot (or side pot) is split equally.",
       "Players can only win the pots they contributed to.",
     ],
@@ -440,6 +447,11 @@ const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4）摊牌与奖池",
     showdownBullets: [
       "摊牌时从 7 张牌中取最佳 5 张进行比较。",
+      "摊牌决策按顺序进行（不是同时进行）：只有当前轮到的玩家可以选择亮牌/弃牌，其他玩家需等待。",
+      "决策顺序从河牌最后一次主动进攻玩家开始（下注/加注；包括把当前下注抬高的全下）。若河牌无人主动进攻，则从庄家左手边第一位仍在争池的玩家开始，按顺时针进行。",
+      "前位玩家一旦亮牌，后位玩家在自己决策前可以看到其已亮出的手牌。",
+      "全下（All-in）玩家在摊牌阶段必须亮牌，不能选择弃牌。",
+      "在摊牌阶段选择弃牌，等同于放弃争夺底池。",
       "完全同牌则平分对应底池（主池/边池）。",
       "玩家只能赢取自己参与过的底池。",
     ],
@@ -1552,6 +1564,8 @@ const useGameRoomElement = () => {
     finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
+    showdownDecisionState,
+    revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     isHost,
     lastError,
@@ -1586,7 +1600,7 @@ const useGameRoomElement = () => {
   const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
-  const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
   const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [tableObstacleRects, setTableObstacleRects] = useState<RectBounds[]>([]);
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
@@ -1602,7 +1616,7 @@ const useGameRoomElement = () => {
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
   const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
-  const turnOverlayRef = useRef<HTMLElement | null>(null);
+  const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const boardCenterStackRef = useRef<HTMLDivElement | null>(null);
@@ -1671,7 +1685,6 @@ const useGameRoomElement = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
-  const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
   const handScopedUiStateKey = `${room?.id ?? "no-room"}:${currentHandNumber ?? "no-hand"}`;
   const [handScopedUiState, setHandScopedUiState] = useState<HandScopedUiState>(() =>
@@ -1847,44 +1860,101 @@ const useGameRoomElement = () => {
     () => new Set(nextStreetRevealState?.requiredPlayerIds ?? []),
     [nextStreetRevealState?.requiredPlayerIds],
   );
+  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
   const canRevealNextStreet = Boolean(
     !lastHandResult &&
       nextStreetRevealState &&
       player?.id &&
       nextStreetRequiredPlayerIdSet.has(player.id) &&
-      isPlayerStreetRevealEnabled,
+      (isResultRevealStep || isPlayerStreetRevealEnabled),
   );
   const hasRevealedNextStreet = player?.id
     ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
-  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
-  const isAwaitingStreetReveal = showNextStreetActionArea;
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
   );
+  const showdownForcedRevealPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.forcedRevealPlayerIds ?? []),
+    [showdownDecisionState?.forcedRevealPlayerIds],
+  );
+  const showdownOrderedPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.orderedPlayerIds ?? []),
+    [showdownDecisionState?.orderedPlayerIds],
+  );
+  const revealedShowdownHands = useMemo(
+    () =>
+      Object.values(revealedShowdownHandsByPlayerId).sort((left, right) => {
+        if (left.showdownOrderIndex !== right.showdownOrderIndex) {
+          return left.showdownOrderIndex - right.showdownOrderIndex;
+        }
+        return left.playerName.localeCompare(right.playerName);
+      }),
+    [revealedShowdownHandsByPlayerId],
+  );
   const isShowdownDecisionStep = Boolean(
-    !lastHandResult && room?.currentHand?.bettingRound === "SHOWDOWN",
+    !lastHandResult &&
+      room?.currentHand?.bettingRound === "SHOWDOWN" &&
+      showdownDecisionState?.currentPlayerId,
+  );
+  const isMyShowdownDecisionTurn = Boolean(
+    player?.id &&
+      showdownDecisionState?.currentPlayerId &&
+      showdownDecisionState.currentPlayerId === player.id,
+  );
+  const showdownDecisionWaitingPlayerName = isMyShowdownDecisionTurn
+    ? null
+    : showdownDecisionState?.currentPlayerName ?? null;
+  const isShowdownForcedRevealTurn = Boolean(
+    player?.id && showdownForcedRevealPlayerIdSet.has(player.id),
+  );
+  const showdownActivePlayerIds = room?.currentHand?.activePlayers;
+  const isShowdownContender = Boolean(
+    player?.id &&
+      (showdownOrderedPlayerIdSet.has(player.id) ||
+        (Array.isArray(showdownActivePlayerIds) &&
+          showdownActivePlayerIds.includes(player.id)) ||
+        (!Array.isArray(showdownActivePlayerIds) &&
+          hasHoleCards &&
+          player.status !== "folded" &&
+          player.status !== "left" &&
+          player.status !== "waiting" &&
+          player.status !== "disconnected")),
   );
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
   );
-  const hasMuckedMyHandAtShowdown = Boolean(
-    isShowdownDecisionStep && player?.status === "folded",
+  const hasFoldedMyHandAtShowdown = Boolean(
+    isShowdownDecisionStep && !hasShownMyHandAtShowdown && player?.status === "folded",
   );
   const canShowMyHandAtShowdown = Boolean(
     isShowdownDecisionStep &&
-      player?.status !== "folded" &&
-      player?.status !== "left" &&
-      player?.status !== "waiting" &&
-      player?.status !== "disconnected",
+      isShowdownContender &&
+      isMyShowdownDecisionTurn &&
+      !hasShownMyHandAtShowdown &&
+      !hasFoldedMyHandAtShowdown,
   );
-  const showShowdownDecisionArea = Boolean(
-    isShowdownDecisionStep &&
-      (canShowMyHandAtShowdown || hasShownMyHandAtShowdown || hasMuckedMyHandAtShowdown),
-  );
-  const canMuckMyHandAtShowdown = canShowMyHandAtShowdown;
+  const showShowdownDecisionArea = isShowdownDecisionStep;
+  const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
+  const showNextHandActionArea = canReadyNextHand;
+  const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
+  const operationBarMode = showShowdownDecisionArea
+    ? "showdown"
+    : showNextStreetActionArea
+      ? "streetReveal"
+      : null;
+  const showTurnActionDock = isYourTurn && !showOperationBar && !showNextHandActionArea;
+  const shouldAnchorCardsFlyoutToBottomBar =
+    showOperationBar || showNextHandActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const activeBottomBarMode = showOperationBar
+    ? "operation"
+    : showNextHandActionArea
+      ? "nextHand"
+      : showTurnActionDock
+        ? "turn"
+        : null;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -1909,14 +1979,45 @@ const useGameRoomElement = () => {
 
   const handResultRows = useMemo(() => {
     if (!lastHandResult) return [];
-    return lastHandResult.playerHands.map((entry, idx) => ({
+    const rows = lastHandResult.playerHands.map((entry, idx) => ({
       ...entry,
+      sourceOrder: idx,
       amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
       netChange:
         hasNetByPlayerId && Object.prototype.hasOwnProperty.call(netByPlayerId, entry.playerId)
           ? netByPlayerId[entry.playerId]
           : null,
       isWinner: winnersByPlayerId.has(entry.playerId),
+    }));
+
+    rows.sort((left, right) => {
+      if (right.amountWon !== left.amountWon) {
+        return right.amountWon - left.amountWon;
+      }
+
+      const leftNet = typeof left.netChange === "number" ? left.netChange : null;
+      const rightNet = typeof right.netChange === "number" ? right.netChange : null;
+      if (leftNet !== null && rightNet !== null && rightNet !== leftNet) {
+        return rightNet - leftNet;
+      }
+
+      if (left.isWinner !== right.isWinner) {
+        return left.isWinner ? -1 : 1;
+      }
+
+      const leftSeatPosition =
+        typeof left.seatPosition === "number" ? left.seatPosition : Number.MAX_SAFE_INTEGER;
+      const rightSeatPosition =
+        typeof right.seatPosition === "number" ? right.seatPosition : Number.MAX_SAFE_INTEGER;
+      if (leftSeatPosition !== rightSeatPosition) {
+        return leftSeatPosition - rightSeatPosition;
+      }
+
+      return left.sourceOrder - right.sourceOrder;
+    });
+
+    return rows.map(({ sourceOrder: _sourceOrder, ...entry }, idx) => ({
+      ...entry,
       rankOrder: idx + 1,
     }));
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
@@ -2610,25 +2711,25 @@ const useGameRoomElement = () => {
   }, []);
 
   useEffect(() => {
-    if (!isYourTurn) {
+    if (!showTurnActionDock) {
       resetTurnInteractionState();
     }
-  }, [isYourTurn, resetTurnInteractionState]);
+  }, [resetTurnInteractionState, showTurnActionDock]);
 
   useEffect(() => {
-    if (!shouldAnchorCardsFlyoutToTurnDock) {
-      setTurnOverlayHeight(0);
+    if (!shouldAnchorCardsFlyoutToBottomBar) {
+      setBottomBarHeight(0);
       return;
     }
 
-    const overlayNode = turnOverlayRef.current;
+    const overlayNode = bottomBarOverlayRef.current;
     if (!overlayNode) {
       return;
     }
 
     const updateOverlayHeight = () => {
       const nextHeight = Math.ceil(overlayNode.getBoundingClientRect().height);
-      setTurnOverlayHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      setBottomBarHeight((prev) => (prev === nextHeight ? prev : nextHeight));
     };
 
     updateOverlayHeight();
@@ -2645,13 +2746,7 @@ const useGameRoomElement = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateOverlayHeight);
     };
-  }, [shouldAnchorCardsFlyoutToTurnDock]);
-
-  useEffect(() => {
-    if (!quickConfirmAction || isAutomationMode) return;
-    const timer = window.setTimeout(() => setQuickConfirmAction(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [isAutomationMode, quickConfirmAction]);
+  }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
@@ -3227,8 +3322,9 @@ const useGameRoomElement = () => {
 
   return (
     <TableShell
-      isYourTurn={isYourTurn}
-      isDesktopSideDock={isDesktopSideDock}
+      showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
+      showDesktopOperationDock={(showOperationBar || showNextHandActionArea) && isDesktopSideDock}
+      desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
       <TableTopBar
@@ -3317,8 +3413,8 @@ const useGameRoomElement = () => {
           isOpen={isCardsFlyoutOpen}
           hasHoleCards={hasHoleCards}
           cards={displayHoleCards ?? []}
-          shouldAnchorToTurnDock={shouldAnchorCardsFlyoutToTurnDock}
-          turnOverlayHeight={turnOverlayHeight}
+          shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
+          bottomBarHeight={bottomBarHeight}
           title={t("game.yourCards")}
           emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
           emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
@@ -3387,37 +3483,83 @@ const useGameRoomElement = () => {
         </HandResultsPanel>
       )}
 
-      <NextHandActionArea
-        canReadyNextHand={canReadyNextHand}
-        hasReadiedNextHand={hasReadiedCurrentPhase}
-        canEndGame={canHostEndGame}
-        showNextStreetActionArea={showNextStreetActionArea}
-        isResultRevealStep={isResultRevealStep}
-        canRevealNextStreet={canRevealNextStreet}
-        hasRevealedNextStreet={hasRevealedNextStreet}
-        showShowdownDecisionArea={showShowdownDecisionArea}
-        canShowMyHand={canShowMyHandAtShowdown}
-        hasShownMyHand={hasShownMyHandAtShowdown}
-        canMuckMyHand={canMuckMyHandAtShowdown}
-        hasMuckedMyHand={hasMuckedMyHandAtShowdown}
-        onReadyNextHand={markReady}
-        onOpenEndGameConfirm={() => {
-          if (!canHostEndGame) return;
-          setShowEndGameConfirmModal(true);
-        }}
-        onRevealNextStreet={revealNextStreet}
-        onShowMyHand={showMyHand}
-        onMuckMyHand={() => {
-          if (typeof window !== "undefined" && !window.confirm(t("game.showdown.muckConfirm"))) {
-            return;
-          }
-          muckMyHand();
-        }}
-        t={t}
-      />
+      {operationBarMode !== null && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
+            <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
+              <div className="showdown-revealed-hands__header">
+                <h4 className="showdown-revealed-hands__title">{t("game.showdown.revealedHandsTitle")}</h4>
+              </div>
+              <div className="showdown-revealed-hands__list">
+                {revealedShowdownHands.map((entry) => (
+                  <div
+                    key={entry.playerId}
+                    className="showdown-revealed-hands__item"
+                    data-testid={`showdown-revealed-hand-${entry.playerId}`}
+                  >
+                    <span className="showdown-revealed-hands__name">{entry.playerName}</span>
+                    <div className="showdown-revealed-hands__cards">
+                      {entry.cards.map((card, cardIndex) => (
+                        <Card
+                          key={`${entry.playerId}-${card.suit}-${card.rank}-${cardIndex}`}
+                          card={card}
+                          size="small"
+                          dataTestId={`showdown-revealed-card-${entry.playerId}-${cardIndex}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          <OperationActionBar
+            mode={operationBarMode}
+            isAutomationMode={isAutomationMode}
+            isResultRevealStep={isResultRevealStep}
+            canRevealNextStreet={canRevealNextStreet}
+            hasRevealedNextStreet={hasRevealedNextStreet}
+            canShowMyHand={canShowMyHandAtShowdown}
+            hasShownMyHand={hasShownMyHandAtShowdown}
+            canFoldMyHand={canFoldMyHandAtShowdown}
+            hasFoldedMyHand={hasFoldedMyHandAtShowdown}
+            showdownIsDecisionTurn={isMyShowdownDecisionTurn}
+            showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
+            showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
+            onRevealNextStreet={revealNextStreet}
+            onShowMyHand={showMyHand}
+            onFoldMyHand={muckMyHand}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
 
-      {isYourTurn && !isAwaitingStreetReveal && (
-        <ChipComposerDock ref={turnOverlayRef}>
+      {showNextHandActionArea && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <NextHandActionArea
+            canReadyNextHand={canReadyNextHand}
+            hasReadiedNextHand={hasReadiedCurrentPhase}
+            canEndGame={canHostEndGame}
+            onReadyNextHand={markReady}
+            onOpenEndGameConfirm={() => {
+              if (!canHostEndGame) return;
+              setShowEndGameConfirmModal(true);
+            }}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showTurnActionDock && (
+        <ChipComposerDock ref={bottomBarOverlayRef}>
           <TurnActionDock
             callAmount={callAmount}
             minRaise={minRaise}

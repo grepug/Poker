@@ -20,6 +20,7 @@ import type {
   Hand,
   HandResult,
   GameEndedData,
+  ShowdownDecisionStateData,
   ClientToServerEvents,
   ChatHistorySyncData,
   ChatMessage,
@@ -72,6 +73,13 @@ interface NextStreetRevealState {
   requiredPlayerIds: string[];
 }
 
+export interface RevealedShowdownHand {
+  playerId: string;
+  playerName: string;
+  cards: Card[];
+  showdownOrderIndex: number;
+}
+
 interface CreateRoomOptions {
   useShortDeckRules?: boolean;
 }
@@ -84,6 +92,8 @@ type DebugApi = {
   getFinalGameResult: () => GameEndedData | null;
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
+  getShowdownDecisionState: () => ShowdownDecisionStateData | null;
+  getRevealedShowdownHandsByPlayerId: () => Record<string, RevealedShowdownHand>;
   getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
   createRoom: (name: string, emoji?: string, options?: CreateRoomOptions) => void;
@@ -130,6 +140,8 @@ interface GameContextType {
   finalGameResult: GameEndedData | null;
   lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
+  showdownDecisionState: ShowdownDecisionStateData | null;
+  revealedShowdownHandsByPlayerId: Record<string, RevealedShowdownHand>;
   nextStreetRevealState: NextStreetRevealState | null;
   isHost: boolean;
   isRecoveringSession: boolean;
@@ -278,6 +290,36 @@ function deriveRevealedHandPlayerIdsFromRoom(roomState: Room | null | undefined)
   return roomState?.currentHand?.revealedPlayerIds ?? [];
 }
 
+function deriveShowdownDecisionStateFromRoom(
+  roomState: Room | null | undefined,
+): ShowdownDecisionStateData | null {
+  const currentHand = roomState?.currentHand;
+  if (
+    !currentHand ||
+    currentHand.bettingRound !== "SHOWDOWN" ||
+    currentHand.lastResult
+  ) {
+    return null;
+  }
+
+  const orderedPlayerIds = currentHand.showdownDecisionOrder ?? [];
+  if (orderedPlayerIds.length === 0) {
+    return null;
+  }
+
+  const currentPlayerId = currentHand.showdownDecisionPlayerId ?? null;
+  const currentPlayerName =
+    roomState?.players.find((seatPlayer) => seatPlayer.id === currentPlayerId)?.name ?? null;
+
+  return {
+    handNumber: currentHand.handNumber,
+    orderedPlayerIds,
+    currentPlayerId,
+    currentPlayerName,
+    forcedRevealPlayerIds: currentHand.showdownForcedRevealPlayerIds ?? [],
+  };
+}
+
 const CHAT_HISTORY_PAGE_LIMIT = 50;
 
 function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -309,6 +351,10 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   const [lastPlayerActionEvent, setLastPlayerActionEvent] =
     useState<PlayerActionFlashEvent | null>(null);
   const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
+  const [showdownDecisionState, setShowdownDecisionState] =
+    useState<ShowdownDecisionStateData | null>(null);
+  const [revealedShowdownHandsByPlayerId, setRevealedShowdownHandsByPlayerId] =
+    useState<Record<string, RevealedShowdownHand>>({});
   const [nextStreetRevealState, setNextStreetRevealState] =
     useState<NextStreetRevealState | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
@@ -364,6 +410,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       setYourCards(null);
       setLastHandResult(deriveLastHandResultFromRoom(roomState));
       setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
+      setRevealedShowdownHandsByPlayerId({});
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
@@ -385,6 +433,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       setYourCards(data.player?.cards ?? null);
       setLastHandResult(deriveLastHandResultFromRoom(roomState));
       setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
+      setRevealedShowdownHandsByPlayerId({});
       setLastPlayerActionEvent(null);
       const restoredFinalResult =
         roomState.gameState === "ENDED" && roomState.id
@@ -409,6 +459,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       setYourCards(data.yourCards ?? null);
       setLastHandResult(deriveLastHandResultFromRoom(roomState));
       setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
+      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
+      setRevealedShowdownHandsByPlayerId({});
       setLastPlayerActionEvent(null);
       const restoredFinalResult =
         roomState.gameState === "ENDED" && roomState.id
@@ -431,6 +483,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       const reason = data.reason || "Reconnect failed";
       reconnectInFlightRef.current = false;
       setIsRecoveringSession(false);
+      setShowdownDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
       if (isInvalidReconnectReason(reason)) {
         clearStoredSession();
         setRoom(null);
@@ -573,6 +627,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       }
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      setShowdownDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
       setNextStreetRevealState(null);
       // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
       // If this player is not dealt in, clear cards immediately.
@@ -640,6 +696,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       console.log("Hand complete:", data.result);
       setLastHandResult(data.result);
       setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
+      setShowdownDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
       setNextStreetRevealState(null);
       setYourCards((prevCards) => {
         const currentPlayerId = playerRef.current?.id;
@@ -647,7 +705,13 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         const myHand = data.result.playerHands.find(
           (entry) => entry.playerId === currentPlayerId,
         );
-        return myHand?.cards ?? prevCards;
+        if (!myHand) {
+          return prevCards;
+        }
+        if (myHand.cardsVisibility === "shown" && myHand.cards.length > 0) {
+          return myHand.cards;
+        }
+        return prevCards;
       });
       // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
       setRoom((prev) => {
@@ -683,14 +747,36 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       });
     });
 
+    socket.on("SHOWDOWN_DECISION_STATE", (data) => {
+      setShowdownDecisionState(data);
+    });
+
     socket.on("PLAYER_HAND_REVEALED", (data) => {
       setRevealedHandPlayerIds((prev) =>
         prev.includes(data.playerId) ? prev : [...prev, data.playerId],
       );
+      setRevealedShowdownHandsByPlayerId((prev) => ({
+        ...prev,
+        [data.playerId]: {
+          playerId: data.playerId,
+          playerName: data.playerName,
+          cards: data.cards ?? [],
+          showdownOrderIndex: data.showdownOrderIndex ?? -1,
+        },
+      }));
     });
 
     socket.on("PLAYER_HAND_MUCKED", (data) => {
       setRevealedHandPlayerIds((prev) => prev.filter((playerId) => playerId !== data.playerId));
+      setRevealedShowdownHandsByPlayerId((prev) => {
+        if (!prev[data.playerId]) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        delete next[data.playerId];
+        return next;
+      });
       setRoom((prev) => {
         if (!prev) return prev;
         return {
@@ -718,6 +804,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       setLastHandResult(null);
       setLastPlayerActionEvent(null);
       setRevealedHandPlayerIds([]);
+      setShowdownDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
       setNextStreetRevealState(null);
       setYourCards(null);
 
@@ -763,6 +851,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     // New hand starting
     socket.on("NEW_HAND_STARTING", () => {
       console.log("New hand starting, waiting for GAME_STARTED event...");
+      setShowdownDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
       setNextStreetRevealState(null);
     });
 
@@ -771,6 +861,17 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         nextRound: data.nextRound,
         readyPlayerIds: data.readyPlayerIds ?? [],
         requiredPlayerIds: data.requiredPlayerIds ?? [],
+      });
+      setRoom((prev) => {
+        if (!prev || !prev.currentHand) return prev;
+        return {
+          ...prev,
+          currentHand: {
+            ...prev.currentHand,
+            currentPlayerTurn: null,
+            pendingStreetRevealRound: data.nextRound,
+          },
+        };
       });
     });
 
@@ -906,6 +1007,10 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       } else {
         setNextStreetRevealState(null);
       }
+      if (data.nextRound !== "SHOWDOWN") {
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+      }
 
       // Reset all players' currentBet to 0 for the new betting round
       setRoom((prev) => {
@@ -980,6 +1085,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       socket.off("PLAYER_ACTED");
       socket.off("COMMUNITY_CARDS_DEALT");
       socket.off("HAND_COMPLETE");
+      socket.off("SHOWDOWN_DECISION_STATE");
       socket.off("PLAYER_HAND_REVEALED");
       socket.off("PLAYER_HAND_MUCKED");
       socket.off("GAME_ENDED");
@@ -1167,7 +1273,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setLastError(null);
     socket.emit("MUCK_MY_HAND", {}, (response) => {
       if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Failed to muck hand");
+        setLastError(response.error || "Failed to fold hand");
       }
     });
   }, [socket]);
@@ -1210,6 +1316,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setFinalGameResult(null);
     setLastPlayerActionEvent(null);
     setRevealedHandPlayerIds([]);
+    setShowdownDecisionState(null);
+    setRevealedShowdownHandsByPlayerId({});
     setNextStreetRevealState(null);
     setIsRecoveringSession(false);
     setLastError(null);
@@ -1361,6 +1469,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         getFinalGameResult: () => finalGameResult,
         getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
+        getShowdownDecisionState: () => showdownDecisionState,
+        getRevealedShowdownHandsByPlayerId: () => revealedShowdownHandsByPlayerId,
         getNextStreetRevealState: () => nextStreetRevealState,
         getSocket: () => socket,
         createRoom,
@@ -1412,6 +1522,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
+    showdownDecisionState,
+    revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     socket,
     isHost,
@@ -1448,6 +1560,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         finalGameResult,
         lastPlayerActionEvent,
         revealedHandPlayerIds,
+        showdownDecisionState,
+        revealedShowdownHandsByPlayerId,
         nextStreetRevealState,
         isHost,
         isRecoveringSession,

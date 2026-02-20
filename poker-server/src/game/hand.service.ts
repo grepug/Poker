@@ -133,7 +133,9 @@ export class HandService {
       roundActions: {},
       sidePots: [],
       potContributions,
+      dealtPlayerIds: [...activePlayerIds],
       vpipPlayerIds: [],
+      showdownLastAggressorPlayerId: null,
       startedAt: Date.now(),
     };
 
@@ -273,6 +275,9 @@ export class HandService {
     hand.currentBet = 0;
     hand.lastRaiseSize = room.config.bigBlind; // Reset to big blind for new round
     hand.roundActions = {};
+    if (hand.bettingRound !== 'SHOWDOWN') {
+      hand.showdownLastAggressorPlayerId = null;
+    }
 
     for (const player of room.players) {
       player.currentBet = 0;
@@ -323,13 +328,17 @@ export class HandService {
       winner.chips += hand.pot;
 
       // Don't evaluate hand if won by fold (may not have enough community cards)
-      const hasEnoughCards =
-        winner.cards!.length + hand.communityCards.length >= 5;
+      const winnerCards = winner.cards ?? [];
+      const hasEnoughCards = winnerCards.length + hand.communityCards.length >= 5;
       const winnerHand = hasEnoughCards
-        ? evaluateHand(winner.cards!.concat(hand.communityCards), {
+        ? evaluateHand(winnerCards.concat(hand.communityCards), {
             useShortDeckRules: Boolean(room.config.useShortDeckRules),
           })
         : null;
+      const evaluationsByPlayerId = new Map<
+        string,
+        { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
+      >([[winner.id, { player: winner, evaluation: winnerHand }]]);
 
       winner.handsWonCount = (winner.handsWonCount ?? 0) + 1;
       const result: HandResult = {
@@ -342,12 +351,7 @@ export class HandService {
           },
         ],
         playerHands: [
-          {
-            playerId: winner.id,
-            playerName: winner.name,
-            cards: winner.cards!,
-            hand: winnerHand,
-          },
+          ...this.buildResultPlayerHands(room, evaluationsByPlayerId),
         ],
         totalPot: hand.pot,
         payouts: [
@@ -375,14 +379,15 @@ export class HandService {
     // Evaluate all hands
     const evaluations = activePlayers.map((player) => ({
       player,
-      evaluation: evaluateHand(player.cards!.concat(hand.communityCards), {
+      evaluation: evaluateHand((player.cards ?? []).concat(hand.communityCards), {
         useShortDeckRules: Boolean(room.config.useShortDeckRules),
       }),
     }));
 
-    const evaluationsByPlayerId = new Map(
-      evaluations.map((entry) => [entry.player.id, entry]),
-    );
+    const evaluationsByPlayerId = new Map<
+      string,
+      { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
+    >(evaluations.map((entry) => [entry.player.id, entry]));
     const sidePotSegments = this.buildPotSegments(
       contributions,
       hand.activePlayers,
@@ -518,15 +523,7 @@ export class HandService {
 
     const result: HandResult = {
       winners,
-      playerHands: evaluations
-        .slice()
-        .sort((a, b) => compareHands(b.evaluation, a.evaluation))
-        .map(({ player, evaluation }) => ({
-          playerId: player.id,
-          playerName: player.name,
-          cards: player.cards!,
-          hand: evaluation,
-        })),
+      playerHands: this.buildResultPlayerHands(room, evaluationsByPlayerId),
       totalPot: hand.pot,
       payouts,
       netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
@@ -534,6 +531,65 @@ export class HandService {
 
     await this.cleanupHand(room, winners[0]?.playerId);
     return result;
+  }
+
+  private buildResultPlayerHands(
+    room: Room,
+    evaluationsByPlayerId: Map<
+      string,
+      { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
+    >,
+  ): HandResult['playerHands'] {
+    const hand = room.currentHand!;
+    const dealtPlayerIds =
+      hand.dealtPlayerIds && hand.dealtPlayerIds.length > 0
+        ? hand.dealtPlayerIds
+        : room.players
+            .filter(
+              (player) =>
+                Boolean(player.cards) &&
+                player.status !== 'waiting' &&
+                player.status !== 'left',
+            )
+            .map((player) => player.id);
+    const dealtPlayerIdSet = new Set(dealtPlayerIds);
+    const seatPlayers = room.players
+      .filter((player) => dealtPlayerIdSet.has(player.id))
+      .sort((left, right) => left.position - right.position);
+
+    const revealedPlayerIdSet = new Set(hand.revealedPlayerIds ?? []);
+    const showdownContenderIdSet = new Set(hand.showdownDecisionOrder ?? []);
+    const activePlayerIdSet = new Set(hand.activePlayers ?? []);
+
+    return seatPlayers.map((player) => {
+      const isShown = revealedPlayerIdSet.has(player.id);
+      const isShowdownContender = showdownContenderIdSet.has(player.id);
+      const isActiveAtSettlement = activePlayerIdSet.has(player.id);
+
+      const resultStatus: HandResult['playerHands'][number]['resultStatus'] = isShown
+        ? 'shown'
+        : isShowdownContender
+          ? isActiveAtSettlement
+            ? 'hidden_contender'
+            : 'folded_at_showdown'
+          : isActiveAtSettlement
+            ? 'hidden_contender'
+            : 'folded_pre_showdown';
+      const cardsVisibility: HandResult['playerHands'][number]['cardsVisibility'] = isShown
+        ? 'shown'
+        : 'hidden';
+      const evaluation = evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
+
+      return {
+        playerId: player.id,
+        playerName: player.name,
+        cards: player.cards ?? [],
+        hand: cardsVisibility === 'shown' ? evaluation : null,
+        resultStatus,
+        cardsVisibility,
+        seatPosition: player.position,
+      };
+    });
   }
 
   private getHandContributions(room: Room): Record<string, number> {
