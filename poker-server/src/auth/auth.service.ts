@@ -529,17 +529,26 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         }[];
       } => Boolean(entry));
 
+    const allPendingEvents: {
+      roomId: string;
+      playerId: string;
+      playerName: string;
+      playerEmoji: string;
+    }[] = [];
+
     for (const { room, pendingEvents } of changedRooms) {
       await this.storageService.saveRoom(room);
-      pendingEvents.forEach((eventPayload) => {
-        realtimeEventBus.emitEvent('PLAYER_PROFILE_UPDATED', {
-          roomId: eventPayload.roomId,
-          playerId: eventPayload.playerId,
-          playerName: eventPayload.playerName,
-          playerEmoji: eventPayload.playerEmoji,
-        });
-      });
+      allPendingEvents.push(...pendingEvents);
     }
+
+    allPendingEvents.forEach((eventPayload) => {
+      realtimeEventBus.emitEvent('PLAYER_PROFILE_UPDATED', {
+        roomId: eventPayload.roomId,
+        playerId: eventPayload.playerId,
+        playerName: eventPayload.playerName,
+        playerEmoji: eventPayload.playerEmoji,
+      });
+    });
   }
  
   private async ensureSeededPasswordUsers(): Promise<void> {

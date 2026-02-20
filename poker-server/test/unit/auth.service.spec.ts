@@ -5,6 +5,7 @@ import {
   IAuthStorageService,
 } from '../../src/common/interfaces/auth-storage.interface';
 import { IStorageService } from '../../src/common/interfaces/storage.interface';
+import { realtimeEventBus } from '../../src/common/realtime-events';
 import { AuthService } from '../../src/auth/auth.service';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -40,6 +41,10 @@ describe('AuthService', () => {
     };
 
     service = new AuthService(authStorageService, storageService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('seeds three password test users in non-production mode', async () => {
@@ -202,6 +207,87 @@ describe('AuthService', () => {
     const savedRoom = storageService.saveRoom.mock.calls[0][0] as any;
     expect(savedRoom.players[0].name).toBe('new-name');
     expect(savedRoom.players[0].emoji).toBe('😎');
+  });
+
+  it('does not emit profile update events when room persistence fails', async () => {
+    const userId = 'user-1';
+    users = [
+      {
+        id: userId,
+        accountId: 'test1',
+        displayName: 'test1',
+        avatarEmoji: '🧪',
+        passwordHash: 'scrypt$abc$123',
+        passkeys: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+
+    const roomBase = {
+      hostId: 'player-1',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        {
+          userId,
+          socketId: 'socket-1',
+          name: 'test1',
+          emoji: '🧪',
+          chips: 0,
+          totalBuyIn: 0,
+          handsPlayedCount: 0,
+          handsWonCount: 0,
+          vpipHandsCount: 0,
+          position: 0,
+          status: 'waiting',
+          cards: null,
+          currentBet: 0,
+          lastAction: null,
+          lastConnectedAt: Date.now(),
+        },
+      ],
+      gameState: 'WAITING' as const,
+      currentHand: null,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const firstRoom = {
+      ...roomBase,
+      id: 'ROOM1',
+      players: [{ ...roomBase.players[0], id: 'player-1' }],
+    };
+    const secondRoom = {
+      ...roomBase,
+      id: 'ROOM2',
+      players: [{ ...roomBase.players[0], id: 'player-2' }],
+    };
+
+    storageService.getAllRooms.mockResolvedValue(
+      [clone(firstRoom), clone(secondRoom)] as any,
+    );
+    storageService.saveRoom
+      .mockResolvedValueOnce(undefined as any)
+      .mockRejectedValueOnce(new Error('failed to persist room'));
+
+    const emitSpy = jest.spyOn(realtimeEventBus, 'emitEvent');
+
+    await expect(
+      service.updateProfileByUserId({
+        userId,
+        displayName: 'new-name',
+        avatarEmoji: '😎',
+      }),
+    ).rejects.toThrow('failed to persist room');
+    expect(storageService.saveRoom).toHaveBeenCalledTimes(2);
+    expect(emitSpy).not.toHaveBeenCalled();
   });
 
   it('rejects profile update when display name is already taken', async () => {
