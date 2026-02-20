@@ -10,6 +10,8 @@ import {
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
 
+type ServerPlayer = Player & { userId?: string };
+
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
@@ -42,7 +44,7 @@ export class GameService {
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
 
-    const host: Player = {
+    const host: ServerPlayer = {
       id: hostId,
       userId: hostUserId,
       socketId: hostSocketId,
@@ -105,12 +107,13 @@ export class GameService {
       throw new Error('Cannot join room - game has ended');
     }
 
+    const playersWithUserId = room.players as ServerPlayer[];
     const existingPlayerByUserId = userId
-      ? room.players.find((player) => player.userId === userId)
+      ? playersWithUserId.find((player) => player.userId === userId)
       : undefined;
     const existingPlayer =
       existingPlayerByUserId ??
-      room.players.find((p) => p.name === normalizedPlayerName);
+      playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
       if (
         existingPlayer.status !== 'disconnected' &&
@@ -184,7 +187,7 @@ export class GameService {
     const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
     const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
-    const player: Player = {
+    const player: ServerPlayer = {
       id: playerId,
       userId,
       socketId,
@@ -295,11 +298,12 @@ export class GameService {
       return null;
     }
 
+    const playersWithUserId = room.players as ServerPlayer[];
     const player = playerId
-      ? room.players.find((p) => p.id === playerId)
+      ? playersWithUserId.find((p) => p.id === playerId)
       : userId
-        ? room.players.find((p) => p.userId === userId)
-        : room.players.find((p) => p.name === normalizedPlayerName);
+        ? playersWithUserId.find((p) => p.userId === userId)
+        : playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (!player) {
       return null;
     }

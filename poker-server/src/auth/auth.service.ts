@@ -66,7 +66,13 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   private readonly maxPendingFlows = Number(
     process.env.AUTH_MAX_PENDING_FLOWS || '1000',
   );
-  private readonly authRateWindows = new Map<string, number[]>();
+  private readonly authRateWindows = new Map<
+    string,
+    { timestamps: number[]; windowMs: number }
+  >();
+  private readonly maxAuthRateWindows = Number(
+    process.env.AUTH_RATE_LIMIT_MAX_WINDOWS || '5000',
+  );
   private readonly passkeyRegisterStartRateLimitCount = Number(
     process.env.AUTH_PASSKEY_REGISTER_START_RATE_LIMIT_COUNT || '20',
   );
@@ -102,6 +108,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     .filter(Boolean);
   private flowCleanupTimer: NodeJS.Timeout | null = null;
   private userMutationQueue: Promise<void> = Promise.resolve();
+  private sessionMutationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     @Inject('IAuthStorageService')
@@ -123,6 +130,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.flowCleanupTimer);
       this.flowCleanupTimer = null;
     }
+    this.authRateWindows.clear();
   }
 
   getAuthModes() {
@@ -426,17 +434,21 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async logout(token: string): Promise<void> {
-    const normalizedToken = token.trim();
-    if (!normalizedToken) {
-      return;
-    }
+    await this.runSessionMutation(async () => {
+      const normalizedToken = token.trim();
+      if (!normalizedToken) {
+        return;
+      }
 
-    const tokenHash = this.hashToken(normalizedToken);
-    const sessions = await this.authStorageService.getSessions();
-    const nextSessions = sessions.filter((session) => session.tokenHash !== tokenHash);
-    if (nextSessions.length !== sessions.length) {
-      await this.authStorageService.saveSessions(nextSessions);
-    }
+      const tokenHash = this.hashToken(normalizedToken);
+      const sessions = await this.authStorageService.getSessions();
+      const nextSessions = sessions.filter(
+        (session) => session.tokenHash !== tokenHash,
+      );
+      if (nextSessions.length !== sessions.length) {
+        await this.authStorageService.saveSessions(nextSessions);
+      }
+    });
   }
 
   async updateProfileByToken(input: {
@@ -500,7 +512,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           playerEmoji: string;
         }[] = [];
         let changed = false;
-        room.players.forEach((player) => {
+        room.players.forEach(
+          (player: { id: string; userId?: string; name: string; emoji?: string }) => {
           if (player.userId === user.id) {
             player.name = user.displayName;
             player.emoji = user.avatarEmoji;
@@ -512,7 +525,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
               playerEmoji: user.avatarEmoji,
             });
           }
-        });
+          },
+        );
         if (!changed) {
           return null;
         }
@@ -663,7 +677,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     const now = Date.now();
     const windowKey = `${scope}:${key}`;
-    const recent = (this.authRateWindows.get(windowKey) || []).filter(
+    const existing = this.authRateWindows.get(windowKey);
+    const recent = (existing?.timestamps || []).filter(
       (timestamp) => timestamp > now - windowMs,
     );
 
@@ -675,7 +690,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     recent.push(now);
-    this.authRateWindows.set(windowKey, recent);
+    this.authRateWindows.set(windowKey, { timestamps: recent, windowMs });
+    this.enforceAuthRateWindowCapacity();
   }
 
   private hashPassword(password: string): string {
@@ -753,71 +769,103 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async runSessionMutation<T>(task: () => Promise<T>): Promise<T> {
+    let releaseCurrent: (() => void) | null = null;
+    const previous = this.sessionMutationQueue;
+    this.sessionMutationQueue = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+
+    await previous;
+    try {
+      return await task();
+    } finally {
+      releaseCurrent?.();
+    }
+  }
+
   private async createSessionForUser(userId: string): Promise<{
     token: string;
     record: AuthSessionRecord;
   }> {
-    const now = Date.now();
-    const sessions = await this.authStorageService.getSessions();
-    const activeSessions = sessions.filter((session) => session.expiresAt > now);
-    const token = randomBytes(32).toString('base64url');
-    const record: AuthSessionRecord = {
-      tokenHash: this.hashToken(token),
-      userId,
-      createdAt: now,
-      lastUsedAt: now,
-      expiresAt: now + this.sessionTtlMs,
-    };
+    return this.runSessionMutation(async () => {
+      const now = Date.now();
+      const sessions = await this.authStorageService.getSessions();
+      const activeSessions = sessions.filter((session) => session.expiresAt > now);
+      const token = randomBytes(32).toString('base64url');
+      const record: AuthSessionRecord = {
+        tokenHash: this.hashToken(token),
+        userId,
+        createdAt: now,
+        lastUsedAt: now,
+        expiresAt: now + this.sessionTtlMs,
+      };
 
-    activeSessions.push(record);
-    await this.authStorageService.saveSessions(activeSessions);
-    return { token, record };
+      activeSessions.push(record);
+      await this.authStorageService.saveSessions(activeSessions);
+      return { token, record };
+    });
   }
 
   private async resolveSessionUser(
     token: string,
     touchSession: boolean,
   ): Promise<SessionUser | null> {
-    const normalizedToken = token.trim();
-    if (!normalizedToken) {
-      return null;
-    }
+    return this.runSessionMutation(async () => {
+      const normalizedToken = token.trim();
+      if (!normalizedToken) {
+        return null;
+      }
 
-    const tokenHash = this.hashToken(normalizedToken);
-    const sessions = await this.authStorageService.getSessions();
-    const now = Date.now();
-    const activeSessions = sessions.filter((session) => session.expiresAt > now);
-    const expiredSessionsRemoved = activeSessions.length !== sessions.length;
-    let changed = expiredSessionsRemoved;
+      const tokenHash = this.hashToken(normalizedToken);
+      const sessions = await this.authStorageService.getSessions();
+      const now = Date.now();
+      const activeSessions = sessions.filter((session) => session.expiresAt > now);
+      const expiredSessionsRemoved = activeSessions.length !== sessions.length;
+      let changed = expiredSessionsRemoved;
 
-    const session = activeSessions.find((entry) => entry.tokenHash === tokenHash);
-    if (!session) {
+      const session = activeSessions.find((entry) => entry.tokenHash === tokenHash);
+      if (!session) {
+        if (changed) {
+          await this.authStorageService.saveSessions(activeSessions);
+        }
+        return null;
+      }
+
+      const users = await this.authStorageService.getUsers();
+      const user = users.find((entry) => entry.id === session.userId);
+      if (!user) {
+        const filteredSessions = activeSessions.filter(
+          (entry) => entry.tokenHash !== tokenHash,
+        );
+        await this.authStorageService.saveSessions(filteredSessions);
+        return null;
+      }
+
+      if (touchSession) {
+        session.lastUsedAt = now;
+        session.expiresAt = now + this.sessionTtlMs;
+        changed = true;
+      }
+
       if (changed) {
         await this.authStorageService.saveSessions(activeSessions);
       }
-      return null;
+
+      return { user, session };
+    });
+  }
+
+  private enforceAuthRateWindowCapacity(): void {
+    if (
+      this.maxAuthRateWindows <= 0 ||
+      this.authRateWindows.size <= this.maxAuthRateWindows
+    ) {
+      return;
     }
 
-    const users = await this.authStorageService.getUsers();
-    const user = users.find((entry) => entry.id === session.userId);
-    if (!user) {
-      const filteredSessions = activeSessions.filter(
-        (entry) => entry.tokenHash !== tokenHash,
-      );
-      await this.authStorageService.saveSessions(filteredSessions);
-      return null;
-    }
-
-    if (touchSession) {
-      session.lastUsedAt = now;
-      session.expiresAt = now + this.sessionTtlMs;
-      changed = true;
-    }
-
-    if (changed) {
-      await this.authStorageService.saveSessions(activeSessions);
-    }
-
-    return { user, session };
+    const overflow = this.authRateWindows.size - this.maxAuthRateWindows;
+    const keysToDelete = [...this.authRateWindows.keys()].slice(0, overflow);
+    keysToDelete.forEach((key) => this.authRateWindows.delete(key));
   }
 }

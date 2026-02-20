@@ -554,7 +554,7 @@ export class EventsGateway
         }
 
         client.emit('ROOM_JOINED', {
-          player,
+          player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
         });
         await this.emitInitialChatHistory(client, room.id);
@@ -619,7 +619,7 @@ export class EventsGateway
         this.syncRoomReadyState(room);
         await this.storageService.saveRoom(room);
         client.emit('RECONNECT_SUCCESS', {
-          player,
+          player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
           yourCards: player.cards,
         });
@@ -2591,8 +2591,11 @@ export class EventsGateway
   }
 
   private sanitizePlayer(player: any): any {
+    const { userId: _userId, cards: _cards, ...safePlayer } = player;
+    void _userId;
+    void _cards;
     return {
-      ...player,
+      ...safePlayer,
       cards: undefined, // Don't send cards in general updates
     };
   }

@@ -130,6 +130,27 @@ describe('AuthService', () => {
     expect(afterLogout).toBeNull();
   });
 
+  it('serializes concurrent session mutations', async () => {
+    let concurrentReads = 0;
+    let maxConcurrentReads = 0;
+    authStorageService.getSessions.mockImplementation(async () => {
+      concurrentReads += 1;
+      maxConcurrentReads = Math.max(maxConcurrentReads, concurrentReads);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const snapshot = clone(sessions);
+      concurrentReads -= 1;
+      return snapshot;
+    });
+
+    await Promise.all([
+      (service as any).createSessionForUser('user-1'),
+      (service as any).createSessionForUser('user-1'),
+    ]);
+
+    expect(maxConcurrentReads).toBe(1);
+    expect(sessions).toHaveLength(2);
+  });
+
   it('rejects updateProfileByToken when token is invalid', async () => {
     await expect(
       service.updateProfileByToken({
