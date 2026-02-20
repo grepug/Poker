@@ -224,8 +224,8 @@ export class EventsGateway
     return '';
   }
 
-  private async requireAuthenticatedUser(client: Socket) {
-    const token = this.extractSocketToken(client);
+  private async requireAuthenticatedUser(client: Socket, tokenOverride?: string) {
+    const token = tokenOverride?.trim() || this.extractSocketToken(client);
     if (!token) {
       throw new Error('Authentication required');
     }
@@ -580,7 +580,10 @@ export class EventsGateway
     @MessageBody() data: ReconnectData,
   ) {
     try {
-      const authenticatedUser = await this.requireAuthenticatedUser(client);
+      const authenticatedUser = await this.requireAuthenticatedUser(
+        client,
+        data.sessionToken,
+      );
       return await this.runRoomActionSequentially(data.roomId, async () => {
         const player = await this.gameService.updatePlayerSocket(
           data.roomId,

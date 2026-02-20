@@ -121,21 +121,25 @@ class SocketService {
   private currentToken: string | null = null;
 
   connect(url?: string, token?: string | null) {
-    if (this.socket?.connected && this.currentToken === (token || null)) {
-      return this.socket;
-    }
-
-    if (this.socket && this.currentToken !== (token || null)) {
+    const nextToken = token || null;
+    if (this.socket) {
+      if (this.currentToken === nextToken) {
+        if (!this.socket.connected) {
+          this.socket.auth = nextToken ? { token: nextToken } : {};
+          this.socket.connect();
+        }
+        return this.socket;
+      }
       this.disconnect();
     }
 
     const socketUrl = resolveSocketUrl(url);
-    this.currentToken = token || null;
+    this.currentToken = nextToken;
 
     this.socket = io(socketUrl, {
       transports: ["websocket"],
       autoConnect: true,
-      auth: token ? { token } : undefined,
+      auth: nextToken ? { token: nextToken } : {},
     });
 
     this.socket.on("connect", () => {

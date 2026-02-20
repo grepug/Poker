@@ -3263,9 +3263,11 @@ const useGameRoomElement = () => {
     setProfileFeedback(null);
     try {
       await updateProfile(profileDisplayNameDraft, profileAvatarEmojiDraft);
-      setProfileFeedback("Profile updated");
+      setProfileFeedback(t("game.profile.updateSuccess"));
     } catch (error) {
-      setProfileFeedback(error instanceof Error ? error.message : "Failed to update profile");
+      setProfileFeedback(
+        error instanceof Error ? error.message : t("game.profile.updateFailure"),
+      );
     } finally {
       setIsSavingProfile(false);
     }

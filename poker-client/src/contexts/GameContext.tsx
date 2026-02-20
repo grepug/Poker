@@ -1155,9 +1155,17 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         return;
       }
 
+      const sessionToken =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("poker.authToken")
+          : null;
+      const reconnectPayload = sessionToken
+        ? { ...payload, sessionToken }
+        : payload;
+
       reconnectInFlightRef.current = true;
       setIsRecoveringSession(true);
-      socket.emit("RECONNECT", payload, (response) => {
+      socket.emit("RECONNECT", reconnectPayload, (response) => {
         reconnectInFlightRef.current = false;
         if (response && "success" in response && !response.success) {
           const reason = response.error || "Reconnect failed";

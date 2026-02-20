@@ -173,7 +173,7 @@ const useHomeElement = ({
               onClick={() => navigate("/settings")}
               className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
             >
-              账户设置
+              {t("home.accountSettings")}
             </button>
             <button
               type="button"
@@ -183,7 +183,7 @@ const useHomeElement = ({
               }}
               className="rounded-lg border border-rose-500/60 bg-rose-900/35 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-800/45"
             >
-              退出登录
+              {t("home.logout")}
             </button>
           </div>
           <HomePanel

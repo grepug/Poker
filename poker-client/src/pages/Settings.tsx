@@ -2,10 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLocalization } from "@/contexts/LocalizationContext";
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateProfile, logout } = useAuth();
+  const { t } = useLocalization();
   const [displayName, setDisplayName] = useState("");
   const [avatarEmoji, setAvatarEmoji] = useState("🙂");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -24,9 +26,9 @@ export const SettingsPage: React.FC = () => {
     setFeedback(null);
     try {
       await updateProfile(displayName, avatarEmoji);
-      setFeedback("设置已保存");
+      setFeedback(t("settings.saved"));
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "保存失败");
+      setFeedback(error instanceof Error ? error.message : t("settings.saveFailed"));
     } finally {
       setIsSaving(false);
     }
@@ -42,14 +44,14 @@ export const SettingsPage: React.FC = () => {
       <div className="relative mx-auto flex min-h-[85vh] w-full max-w-4xl items-center justify-center">
         <section className="surface-panel w-full max-w-lg space-y-6 p-6 md:p-8" data-testid="settings-page">
           <header className="space-y-2">
-            <h1 className="text-3xl font-black tracking-tight text-white">用户设置</h1>
+            <h1 className="text-3xl font-black tracking-tight text-white">{t("settings.title")}</h1>
             <p className="text-sm text-emerald-100/75">
-              编辑你的显示用户名和头像 emoji。保存后会同步到当前牌桌。
+              {t("settings.subtitle")}
             </p>
           </header>
 
           <div className="space-y-3">
-            <label className="text-sm font-semibold text-emerald-100">显示用户名</label>
+            <label className="text-sm font-semibold text-emerald-100">{t("settings.displayName")}</label>
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -59,7 +61,7 @@ export const SettingsPage: React.FC = () => {
 
           <div className="space-y-3">
             <label className="text-sm font-semibold text-emerald-100">
-              头像 emoji（当前：{avatarEmoji}）
+              {t("settings.avatarLabel", { emoji: avatarEmoji })}
             </label>
             <div className="grid max-h-52 grid-cols-10 gap-1 overflow-y-auto rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-2">
               {PLAYER_EMOJI_OPTIONS.map((emoji) => (
@@ -92,21 +94,21 @@ export const SettingsPage: React.FC = () => {
               disabled={isSaving}
               className="rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              保存设置
+              {t("settings.save")}
             </button>
             <button
               type="button"
               onClick={() => navigate("/", { replace: true })}
               className="rounded-xl border border-emerald-500/70 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
             >
-              返回大厅
+              {t("settings.backToLobby")}
             </button>
             <button
               type="button"
               onClick={handleLogout}
               className="rounded-xl border border-rose-500/70 px-4 py-3 font-semibold text-rose-200 transition hover:bg-rose-500/15"
             >
-              退出登录
+              {t("settings.logout")}
             </button>
           </div>
         </section>
