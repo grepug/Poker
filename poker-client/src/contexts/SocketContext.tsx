@@ -51,11 +51,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, authTo
     const nextSocket = socketService.connect(undefined, authToken);
     setSocket(nextSocket);
     setConnected(socketService.isConnected());
+  }, [authToken]);
 
+  useEffect(() => {
     return () => {
       socketService.disconnect();
     };
-  }, [authToken]);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;

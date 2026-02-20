@@ -28,7 +28,7 @@ export interface JoinRoomData {
 
 export interface ReconnectData {
   roomId: string;
-  playerName: string;
+  playerName?: string;
   playerId?: string;
   sessionToken?: string;
 }

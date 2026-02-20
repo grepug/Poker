@@ -96,8 +96,8 @@ type DebugApi = {
   getRevealedShowdownHandsByPlayerId: () => Record<string, RevealedShowdownHand>;
   getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
-  createRoom: (name: string, emoji?: string, options?: CreateRoomOptions) => void;
-  joinRoom: (roomId: string, name: string, emoji?: string) => void;
+  createRoom: (name?: string, emoji?: string, options?: CreateRoomOptions) => void;
+  joinRoom: (roomId: string, name?: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
@@ -152,11 +152,11 @@ interface GameContextType {
   chatUnreadCount: number;
   isChatPanelOpen: boolean;
   createRoom: (
-    playerName: string,
+    playerName?: string,
     playerEmoji?: string,
     options?: CreateRoomOptions,
   ) => void;
-  joinRoom: (roomId: string, playerName: string, playerEmoji?: string) => void;
+  joinRoom: (roomId: string, playerName?: string, playerEmoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
@@ -1212,21 +1212,30 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
 
   const createRoom = useCallback(
     (
-      playerName: string,
+      playerName?: string,
       playerEmoji?: string,
       options: CreateRoomOptions = {},
     ) => {
       if (!socket) return;
       setLastError(null);
+      const payload: {
+        playerName?: string;
+        playerEmoji?: string;
+        config: { useShortDeckRules: boolean };
+      } = {
+        config: {
+          useShortDeckRules: Boolean(options.useShortDeckRules),
+        },
+      };
+      if (playerName) {
+        payload.playerName = playerName;
+      }
+      if (playerEmoji) {
+        payload.playerEmoji = playerEmoji;
+      }
       socket.emit(
         "CREATE_ROOM",
-        {
-          playerName,
-          playerEmoji,
-          config: {
-            useShortDeckRules: Boolean(options.useShortDeckRules),
-          },
-        },
+        payload,
         (response) => {
           console.log("Create room response:", response);
           if (response && "success" in response && !response.success) {
@@ -1238,10 +1247,17 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     [socket],
   );
 
-  const joinRoom = useCallback((roomId: string, playerName: string, playerEmoji?: string) => {
+  const joinRoom = useCallback((roomId: string, playerName?: string, playerEmoji?: string) => {
     if (!socket) return;
     setLastError(null);
-    socket.emit("JOIN_ROOM", { roomId, playerName, playerEmoji }, (response) => {
+    const payload: { roomId: string; playerName?: string; playerEmoji?: string } = { roomId };
+    if (playerName) {
+      payload.playerName = playerName;
+    }
+    if (playerEmoji) {
+      payload.playerEmoji = playerEmoji;
+    }
+    socket.emit("JOIN_ROOM", payload, (response) => {
       console.log("Join room response:", response);
       if (response && "success" in response && !response.success) {
         setLastError(response.error || "Failed to join room");

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import {
   AuthSessionRecord,
   AuthUserRecord,
@@ -62,6 +62,77 @@ describe('AuthService', () => {
     expect(session.sessionToken).toEqual(expect.any(String));
     expect(sessions).toHaveLength(1);
     expect(sessions[0].userId).toBe(users.find((entry) => entry.accountId === 'test1')?.id);
+  });
+
+  it('starts passkey registration with flow id and options', async () => {
+    const result = await service.startPasskeyRegistration({
+      displayName: 'alice',
+      avatarEmoji: '🦊',
+      rateLimitKey: '127.0.0.1',
+    });
+
+    expect(result.flowId).toEqual(expect.any(String));
+    expect(result.options).toEqual(
+      expect.objectContaining({
+        challenge: expect.any(String),
+      }),
+    );
+  });
+
+  it('starts passkey login with flow id and options', async () => {
+    const result = await service.startPasskeyLogin({
+      rateLimitKey: '127.0.0.1',
+    });
+
+    expect(result.flowId).toEqual(expect.any(String));
+    expect(result.options).toEqual(
+      expect.objectContaining({
+        challenge: expect.any(String),
+      }),
+    );
+  });
+
+  it('rejects finish passkey registration for invalid flow', async () => {
+    await expect(
+      service.finishPasskeyRegistration({
+        flowId: 'missing-flow',
+        response: {},
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects finish passkey login for invalid flow', async () => {
+    await expect(
+      service.finishPasskeyLogin({
+        flowId: 'missing-flow',
+        response: {},
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns current session and invalidates it on logout', async () => {
+    await service.onModuleInit();
+    const login = await service.loginWithPassword({
+      accountId: 'test2',
+      password: 'test1234',
+    });
+
+    const current = await service.getCurrentSession(login.sessionToken);
+    expect(current?.user.accountId).toBe('test2');
+
+    await service.logout(login.sessionToken);
+    const afterLogout = await service.getCurrentSession(login.sessionToken);
+    expect(afterLogout).toBeNull();
+  });
+
+  it('rejects updateProfileByToken when token is invalid', async () => {
+    await expect(
+      service.updateProfileByToken({
+        token: 'invalid-token',
+        displayName: 'alice',
+        avatarEmoji: '🦊',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('updates profile and propagates to active room players by userId', async () => {

@@ -124,7 +124,7 @@ const useHomeElement = ({
         if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
           await updateProfile(trimmedName, playerEmoji);
         }
-        createRoom(trimmedName, playerEmoji, { useShortDeckRules });
+        createRoom(undefined, undefined, { useShortDeckRules });
       } catch (error) {
         setFeedback(error instanceof Error ? error.message : t("home.nameRequired"));
       }
@@ -151,7 +151,7 @@ const useHomeElement = ({
         if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
           await updateProfile(trimmedName, playerEmoji);
         }
-        joinRoom(normalizedRoomId, trimmedName, playerEmoji);
+        joinRoom(normalizedRoomId);
       } catch (error) {
         setFeedback(error instanceof Error ? error.message : t("home.nameAndRoomRequired"));
       }
