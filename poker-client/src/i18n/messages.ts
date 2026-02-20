@@ -31,6 +31,8 @@ export const EN_MESSAGES = {
   "auth.passkeySingleButtonHint":
     "One button for both login and registration. If no passkey exists yet, we'll register with your display name.",
   "auth.passkeyContinueButton": "Sign in with Passkey",
+  "auth.passkeySwitchToRegister": "No passkey yet? Register first",
+  "auth.passkeySwitchToLogin": "I already have a passkey",
   "auth.passkeyRegisterButton": "Register and sign in with Passkey",
   "auth.passkeyLoginButton": "Sign in with existing Passkey",
   "auth.passkeyUnsupported":
@@ -368,6 +370,8 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "auth.passkeyLoginHint": "点击一次即可使用你已有的 Passkey 登录。",
   "auth.passkeySingleButtonHint": "一个按钮完成登录/注册。若还没有 Passkey，会使用你填写的显示用户名自动注册。",
   "auth.passkeyContinueButton": "用 Passkey 登录",
+  "auth.passkeySwitchToRegister": "还没有 Passkey？先注册",
+  "auth.passkeySwitchToLogin": "我已有 Passkey，返回登录",
   "auth.passkeyRegisterButton": "用 Passkey 注册并登录",
   "auth.passkeyLoginButton": "我已有 Passkey，直接登录",
   "auth.passkeyUnsupported": "当前浏览器不支持 Passkey，请升级浏览器或使用系统浏览器。",

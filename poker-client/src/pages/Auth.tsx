@@ -144,6 +144,34 @@ export const AuthPage: React.FC = () => {
               {t("auth.passkeyContinueButton")}
             </button>
 
+            {!requiresRegistrationProfile && (
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setRequiresRegistrationProfile(true);
+                  setFeedback(null);
+                }}
+                className="w-full rounded-xl border border-emerald-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("auth.passkeySwitchToRegister")}
+              </button>
+            )}
+
+            {requiresRegistrationProfile && (
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setRequiresRegistrationProfile(false);
+                  setFeedback(null);
+                }}
+                className="w-full rounded-xl border border-emerald-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("auth.passkeySwitchToLogin")}
+              </button>
+            )}
+
             {!passkeySupported && (
               <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                 {t("auth.passkeyUnsupported")}
