@@ -798,13 +798,9 @@ const solveSeatDistanceToEdge = ({
   }
 
   const maxDistance = Math.hypot(halfTableWidth, halfTableHeight);
-  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
-  let farthestSampleFit = -1;
-
-  for (let index = 0; index <= sampleCount; index += 1) {
-    const sampleDistance = (maxDistance * index) / sampleCount;
-    const canFitAtSample = canFitSeatAtDistance({
-      distance: sampleDistance,
+  const canFitDistance = (distance: number) =>
+    canFitSeatAtDistance({
+      distance,
       cosine,
       sine,
       leftExtent,
@@ -817,6 +813,54 @@ const solveSeatDistanceToEdge = ({
       cornerRadiusY,
       obstacleRects,
     });
+
+  if (obstacleRects.length > 0) {
+    const obstacleSampleCount = Math.max(
+      DISTANCE_SOLVER_SAMPLE_COUNT * DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER,
+      Math.ceil(maxDistance),
+    );
+
+    for (let index = 0; index <= obstacleSampleCount; index += 1) {
+      const sampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * index) / obstacleSampleCount,
+      );
+      if (!canFitDistance(sampleDistance)) {
+        continue;
+      }
+
+      if (index === 0) {
+        return sampleDistance;
+      }
+
+      const previousSampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * (index - 1)) / obstacleSampleCount,
+      );
+      let low = sampleDistance;
+      let high = previousSampleDistance;
+
+      for (let refineIndex = 0; refineIndex < DISTANCE_SOLVER_REFINE_STEPS; refineIndex += 1) {
+        const mid = (low + high) / 2;
+        if (canFitDistance(mid)) {
+          low = mid;
+          continue;
+        }
+        high = mid;
+      }
+
+      return low;
+    }
+
+    return 0;
+  }
+
+  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
+  let farthestSampleFit = -1;
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const sampleDistance = (maxDistance * index) / sampleCount;
+    const canFitAtSample = canFitDistance(sampleDistance);
     if (canFitAtSample) {
       farthestSampleFit = sampleDistance;
     }
@@ -836,20 +880,7 @@ const solveSeatDistanceToEdge = ({
       continue;
     }
 
-    const canFitAtCandidate = canFitSeatAtDistance({
-      distance: candidateDistance,
-      cosine,
-      sine,
-      leftExtent,
-      rightExtent,
-      topExtent,
-      bottomExtent,
-      halfTableWidth,
-      halfTableHeight,
-      cornerRadiusX,
-      cornerRadiusY,
-      obstacleRects,
-    });
+    const canFitAtCandidate = canFitDistance(candidateDistance);
 
     if (canFitAtCandidate) {
       bestDistance = candidateDistance;
@@ -867,6 +898,7 @@ const MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX = 700;
 const MOBILE_BALANCED_ORBIT_SAMPLE_COUNT = 960;
 const DISTANCE_SOLVER_SAMPLE_COUNT = 72;
 const DISTANCE_SOLVER_REFINE_STEPS = 16;
+const DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER = 4;
 
 const getOrbitAnchors = ({
   totalSeats,
@@ -1282,7 +1314,11 @@ const resolveSeatSlotWidthPixels = ({
   return Math.max(minValue, Math.min(maxValue, preferredValue));
 };
 
-const getSeatSlotWidth = (occupiedSeats: number) => {
+const getSeatSlotWidth = ({
+  occupiedSeats,
+}: {
+  occupiedSeats: number;
+}) => {
   if (occupiedSeats <= 2) return "clamp(4.7rem, 18.8vw, 6.2rem)";
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
@@ -2077,7 +2113,7 @@ const useGameRoomElement = () => {
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () => getSeatSlotWidth(tablePlayers.length),
+    () => getSeatSlotWidth({ occupiedSeats: tablePlayers.length }),
     [tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {

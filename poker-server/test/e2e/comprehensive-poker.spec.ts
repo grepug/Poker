@@ -5582,6 +5582,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         { label: 'desktop-wide', width: 1536, height: 864 },
         { label: 'tablet-landscape', width: 1024, height: 768 },
         { label: 'tablet-portrait', width: 768, height: 1024 },
+        { label: 'mobile-breakpoint-470', width: 470, height: 915 },
         { label: 'mobile-large-portrait', width: 412, height: 915 },
         { label: 'mobile-medium-portrait', width: 390, height: 844 },
         { label: 'mobile-small-portrait', width: 360, height: 640 },
