@@ -402,6 +402,11 @@ const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4) Showdown & Pots",
     showdownBullets: [
       "At showdown, always use the best 5-card combination out of 7 cards.",
+      "Showdown decisions are sequential, not simultaneous: only the current player can choose Show/Fold; other players wait.",
+      "If a player shows, later players can see those revealed hole cards before making their own decision.",
+      "All-in players are forced to show and cannot fold at showdown.",
+      "Choosing Fold at showdown forfeits any claim to the pot.",
+      "After all showdown decisions are complete, players still reveal the final result panel via the Result action.",
       "If multiple players tie exactly, the pot (or side pot) is split equally.",
       "Players can only win the pots they contributed to.",
     ],
@@ -442,6 +447,11 @@ const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4）摊牌与奖池",
     showdownBullets: [
       "摊牌时从 7 张牌中取最佳 5 张进行比较。",
+      "摊牌决策按顺序进行（不是同时进行）：只有当前轮到的玩家可以选择亮牌/弃牌，其他玩家需等待。",
+      "前位玩家一旦亮牌，后位玩家在自己决策前可以看到其已亮出的手牌。",
+      "全下（All-in）玩家在摊牌阶段必须亮牌，不能选择弃牌。",
+      "在摊牌阶段选择弃牌，等同于放弃争夺底池。",
+      "所有摊牌决策结束后，仍需通过“显示结果”操作进入最终结果展示。",
       "完全同牌则平分对应底池（主池/边池）。",
       "玩家只能赢取自己参与过的底池。",
     ],
