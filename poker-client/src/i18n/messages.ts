@@ -26,6 +26,9 @@ export const EN_MESSAGES = {
     "Passkey is recommended. Password login is enabled for test accounts (test1/test2/test3).",
   "auth.passkeyRegisterTitle": "Passkey registration",
   "auth.displayNamePlaceholder": "Display name (globally unique)",
+  "auth.passkeySingleButtonHint":
+    "One button for both login and registration. If no passkey exists yet, we'll register with your display name.",
+  "auth.passkeyContinueButton": "Continue with Passkey",
   "auth.passkeyRegisterButton": "Register and sign in with Passkey",
   "auth.passkeyLoginButton": "Sign in with existing Passkey",
   "auth.passkeyUnsupported":
@@ -358,6 +361,8 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "auth.subtitle": "默认推荐使用 Passkey。测试环境支持账号密码（test1/test2/test3）。",
   "auth.passkeyRegisterTitle": "Passkey 注册",
   "auth.displayNamePlaceholder": "显示用户名（全局唯一）",
+  "auth.passkeySingleButtonHint": "一个按钮完成登录/注册。若还没有 Passkey，会使用你填写的显示用户名自动注册。",
+  "auth.passkeyContinueButton": "继续使用 Passkey",
   "auth.passkeyRegisterButton": "用 Passkey 注册并登录",
   "auth.passkeyLoginButton": "我已有 Passkey，直接登录",
   "auth.passkeyUnsupported": "当前浏览器不支持 Passkey，请升级浏览器或使用系统浏览器。",

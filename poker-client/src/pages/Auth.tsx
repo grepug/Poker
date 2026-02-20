@@ -24,31 +24,38 @@ export const AuthPage: React.FC = () => {
     [isSubmitting, passkeySupported],
   );
 
-  const handlePasskeyRegister = async () => {
-    const name = displayName.trim();
-    if (!name) {
-      setFeedback(t("auth.error.displayNameRequired"));
-      return;
+  const shouldFallbackToRegister = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
     }
 
-    setIsSubmitting(true);
-    setFeedback(null);
-    try {
-      await registerWithPasskey(name, avatarEmoji);
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : t("auth.error.registerFailed"));
-    } finally {
-      setIsSubmitting(false);
-    }
+    return error.message.toLowerCase().includes("passkey not registered");
   };
 
-  const handlePasskeyLogin = async () => {
+  const handlePasskeyContinue = async () => {
     setIsSubmitting(true);
     setFeedback(null);
     try {
       await loginWithPasskey();
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : t("auth.error.passkeyLoginFailed"));
+      if (!shouldFallbackToRegister(error)) {
+        setFeedback(error instanceof Error ? error.message : t("auth.error.passkeyLoginFailed"));
+        return;
+      }
+
+      const name = displayName.trim();
+      if (!name) {
+        setFeedback(t("auth.error.displayNameRequired"));
+        return;
+      }
+
+      try {
+        await registerWithPasskey(name, avatarEmoji);
+      } catch (registerError) {
+        setFeedback(
+          registerError instanceof Error ? registerError.message : t("auth.error.registerFailed"),
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -91,6 +98,7 @@ export const AuthPage: React.FC = () => {
 
           <div className="space-y-4 rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-4">
             <h2 className="text-sm font-semibold text-emerald-100">{t("auth.passkeyRegisterTitle")}</h2>
+            <p className="text-xs text-emerald-100/70">{t("auth.passkeySingleButtonHint")}</p>
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -118,19 +126,10 @@ export const AuthPage: React.FC = () => {
             <button
               type="button"
               disabled={passkeyDisabled}
-              onClick={handlePasskeyRegister}
+              onClick={handlePasskeyContinue}
               className="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {t("auth.passkeyRegisterButton")}
-            </button>
-
-            <button
-              type="button"
-              disabled={passkeyDisabled}
-              onClick={handlePasskeyLogin}
-              className="w-full rounded-xl border border-emerald-500/70 bg-transparent px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t("auth.passkeyLoginButton")}
+              {t("auth.passkeyContinueButton")}
             </button>
 
             {!passkeySupported && (
