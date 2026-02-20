@@ -561,6 +561,33 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       );
     });
 
+    socket.on("PLAYER_PROFILE_UPDATED", (data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((playerEntry) =>
+            playerEntry.id === data.playerId
+              ? {
+                  ...playerEntry,
+                  name: data.playerName,
+                  emoji: data.playerEmoji ?? playerEntry.emoji,
+                }
+              : playerEntry,
+          ),
+        };
+      });
+      setPlayer((prev) =>
+        prev && prev.id === data.playerId
+          ? {
+              ...prev,
+              name: data.playerName,
+              emoji: data.playerEmoji ?? prev.emoji,
+            }
+          : prev,
+      );
+    });
+
     socket.on("PLAYER_AUTO_FOLDED", (data) => {
       setLastPlayerActionEvent({
         id: `${Date.now()}-${data.playerId}-auto-fold`,
@@ -1075,6 +1102,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       socket.off("PLAYER_LEFT");
       socket.off("PLAYER_DISCONNECTED");
       socket.off("PLAYER_RECONNECTED");
+      socket.off("PLAYER_PROFILE_UPDATED");
       socket.off("PLAYER_AUTO_FOLDED");
       socket.off("HOST_CHANGED");
       socket.off("ROOM_CONFIG_UPDATED");

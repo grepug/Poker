@@ -15,14 +15,14 @@ import {
 // ============================================
 
 export interface CreateRoomData {
-  playerName: string;
+  playerName?: string;
   playerEmoji?: string;
   config?: Partial<RoomConfig>;
 }
 
 export interface JoinRoomData {
   roomId: string;
-  playerName: string;
+  playerName?: string;
   playerEmoji?: string;
 }
 
@@ -51,6 +51,11 @@ export interface UpdateRoomConfigData {
 }
 
 export interface PlayerReadyData {}
+
+export interface UpdateProfileData {
+  displayName: string;
+  avatarEmoji: string;
+}
 
 export interface GetChatHistoryAck extends ChatHistorySyncData {
   success: boolean;
@@ -84,6 +89,10 @@ export interface ClientToServerEvents {
   ) => void;
   PLAYER_READY: (
     data: PlayerReadyData,
+    callback: (response: any) => void,
+  ) => void;
+  UPDATE_PROFILE: (
+    data: UpdateProfileData,
     callback: (response: any) => void,
   ) => void;
   PLAYER_ACTION: (
@@ -237,6 +246,12 @@ export interface PlayerReconnectedData {
   status?: PlayerStatus;
 }
 
+export interface PlayerProfileUpdatedData {
+  playerId: string;
+  playerName: string;
+  playerEmoji?: string;
+}
+
 export interface PlayerAutoFoldedData {
   playerId: string;
   playerName: string;
@@ -334,6 +349,7 @@ export interface ServerToClientEvents {
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
+  PLAYER_PROFILE_UPDATED: (data: PlayerProfileUpdatedData) => void;
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;
   ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;

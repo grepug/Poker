@@ -2,14 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { HomePanel } from "@/components/poker/home-panel";
 import { PLAYER_EMOJI_OPTIONS, getRandomPlayerEmoji } from "@/constants/player-emojis";
+import { useAuth } from "@/contexts/AuthContext";
 import { useGame } from "@/contexts/GameContext";
 import { useLocalization } from "@/contexts/LocalizationContext";
 import { useSocket } from "@/contexts/SocketContext";
-import {
-  readLastPlayerName,
-  writeLastPlayerEmoji,
-  writeLastPlayerName,
-} from "@/utils/player-name-storage";
 
 interface HomeProps {
   prefilledRoomId?: string;
@@ -22,6 +18,7 @@ const useHomeElement = ({
 }: HomeProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, updateProfile, logout } = useAuth();
   const { connected } = useSocket();
   const { createRoom, joinRoom, isRecoveringSession, lastError, clearError } = useGame();
   const { t } = useLocalization();
@@ -36,8 +33,8 @@ const useHomeElement = ({
   );
   const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
-  const [playerName, setPlayerName] = useState(() => readLastPlayerName());
-  const [playerEmoji, setPlayerEmoji] = useState(() => getRandomPlayerEmoji());
+  const [playerName, setPlayerName] = useState(() => user?.displayName ?? "");
+  const [playerEmoji, setPlayerEmoji] = useState(() => user?.avatarEmoji ?? getRandomPlayerEmoji());
   const [useShortDeckRules, setUseShortDeckRules] = useState(false);
   const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
@@ -55,6 +52,14 @@ const useHomeElement = ({
       clearError();
     }
   };
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    setPlayerName(user.displayName);
+    setPlayerEmoji(user.avatarEmoji);
+  }, [user?.avatarEmoji, user?.displayName]);
 
   useEffect(() => {
     if (!isEmojiPopoverOpen) {
@@ -113,10 +118,17 @@ const useHomeElement = ({
       return;
     }
 
-    clearFeedback();
-    writeLastPlayerName(trimmedName);
-    writeLastPlayerEmoji(playerEmoji);
-    createRoom(trimmedName, playerEmoji, { useShortDeckRules });
+    void (async () => {
+      try {
+        clearFeedback();
+        if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
+          await updateProfile(trimmedName, playerEmoji);
+        }
+        createRoom(trimmedName, playerEmoji, { useShortDeckRules });
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : t("home.nameRequired"));
+      }
+    })();
   };
 
   const handleJoinRoom = () => {
@@ -133,10 +145,17 @@ const useHomeElement = ({
       return;
     }
 
-    clearFeedback();
-    writeLastPlayerName(trimmedName);
-    writeLastPlayerEmoji(playerEmoji);
-    joinRoom(normalizedRoomId, trimmedName, playerEmoji);
+    void (async () => {
+      try {
+        clearFeedback();
+        if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
+          await updateProfile(trimmedName, playerEmoji);
+        }
+        joinRoom(normalizedRoomId, trimmedName, playerEmoji);
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : t("home.nameAndRoomRequired"));
+      }
+    })();
   };
 
   return (
@@ -147,52 +166,73 @@ const useHomeElement = ({
       </div>
 
       <div className="relative mx-auto flex min-h-[85vh] max-w-5xl items-center justify-center">
-        <HomePanel
-          connected={connected}
-          isRecoveringSession={isRecoveringSession}
-          isJoining={isJoining}
-          inferredRoomId={inferredRoomId}
-          effectiveRoomId={effectiveRoomId}
-          playerName={playerName}
-          playerEmoji={playerEmoji}
-          isEmojiPopoverOpen={isEmojiPopoverOpen}
-          feedback={feedback}
-          lastError={lastError}
-          useShortDeckRules={useShortDeckRules}
-          emojiOptions={PLAYER_EMOJI_OPTIONS}
-          emojiPickerRef={emojiPickerRef}
-          t={t}
-          onPlayerNameChange={(value) => {
-            setPlayerName(value);
-            clearFeedback();
-          }}
-          onToggleEmojiPopover={() => setIsEmojiPopoverOpen((open) => !open)}
-          onRandomEmoji={handleRandomEmoji}
-          onEmojiPick={handleEmojiPick}
-          onUseShortDeckRulesChange={(enabled) => {
-            setUseShortDeckRules(enabled);
-            clearFeedback();
-          }}
-          onCreateRoom={handleCreateRoom}
-          onEnableJoinMode={() => {
-            if (isRecoveringSession) {
-              return;
-            }
-            setJoinModeOverride(true);
-            clearFeedback();
-          }}
-          onRoomIdChange={(value) => {
-            setRoomId(value);
-            clearFeedback();
-          }}
-          onJoinRoom={handleJoinRoom}
-          onBack={() => {
-            setJoinModeOverride(false);
-            setRoomId("");
-            clearFeedback();
-            navigate("/", { replace: true });
-          }}
-        />
+        <div className="w-full max-w-md space-y-3">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => navigate("/settings")}
+              className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+            >
+              账户设置
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void logout();
+                navigate("/auth", { replace: true });
+              }}
+              className="rounded-lg border border-rose-500/60 bg-rose-900/35 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-800/45"
+            >
+              退出登录
+            </button>
+          </div>
+          <HomePanel
+            connected={connected}
+            isRecoveringSession={isRecoveringSession}
+            isJoining={isJoining}
+            inferredRoomId={inferredRoomId}
+            effectiveRoomId={effectiveRoomId}
+            playerName={playerName}
+            playerEmoji={playerEmoji}
+            isEmojiPopoverOpen={isEmojiPopoverOpen}
+            feedback={feedback}
+            lastError={lastError}
+            useShortDeckRules={useShortDeckRules}
+            emojiOptions={PLAYER_EMOJI_OPTIONS}
+            emojiPickerRef={emojiPickerRef}
+            t={t}
+            onPlayerNameChange={(value) => {
+              setPlayerName(value);
+              clearFeedback();
+            }}
+            onToggleEmojiPopover={() => setIsEmojiPopoverOpen((open) => !open)}
+            onRandomEmoji={handleRandomEmoji}
+            onEmojiPick={handleEmojiPick}
+            onUseShortDeckRulesChange={(enabled) => {
+              setUseShortDeckRules(enabled);
+              clearFeedback();
+            }}
+            onCreateRoom={handleCreateRoom}
+            onEnableJoinMode={() => {
+              if (isRecoveringSession) {
+                return;
+              }
+              setJoinModeOverride(true);
+              clearFeedback();
+            }}
+            onRoomIdChange={(value) => {
+              setRoomId(value);
+              clearFeedback();
+            }}
+            onJoinRoom={handleJoinRoom}
+            onBack={() => {
+              setJoinModeOverride(false);
+              setRoomId("");
+              clearFeedback();
+              navigate("/", { replace: true });
+            }}
+          />
+        </div>
       </div>
     </main>
   );

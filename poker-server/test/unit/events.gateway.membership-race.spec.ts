@@ -13,6 +13,7 @@ describe('EventsGateway membership mutation serialization', () => {
   let storageService: any;
   let chatStorageService: any;
   let chatMediaStorageService: any;
+  let authService: any;
 
   const createPlayer = (params: {
     id: string;
@@ -37,12 +38,12 @@ describe('EventsGateway membership mutation serialization', () => {
     lastConnectedAt: Date.now(),
   });
 
-  const createClient = (socketId: string) => ({
+  const createClient = (socketId: string, token: string) => ({
     id: socketId,
     join: jest.fn(),
     leave: jest.fn(),
     emit: jest.fn(),
-    handshake: { headers: {} },
+    handshake: { headers: {}, auth: { token } },
   });
 
   beforeEach(() => {
@@ -219,12 +220,34 @@ describe('EventsGateway membership mutation serialization', () => {
       deleteRoomMedia: jest.fn(),
       pruneOrphanMedia: jest.fn().mockResolvedValue({ deleted: 0 }),
     };
+    authService = {
+      getUserByToken: jest.fn(async (token: string) => {
+        if (token === 'token-alice') {
+          return {
+            id: 'user-alice',
+            accountId: 'alice',
+            displayName: 'Alice',
+            avatarEmoji: '🦊',
+          };
+        }
+        if (token === 'token-bob') {
+          return {
+            id: 'user-bob',
+            accountId: 'bob',
+            displayName: 'Bob',
+            avatarEmoji: '🐻',
+          };
+        }
+        return null;
+      }),
+    };
 
     gateway = new EventsGateway(
       gameService,
       handService,
       bettingService,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      authService,
       storageService,
       chatStorageService,
       chatMediaStorageService,
@@ -237,9 +260,13 @@ describe('EventsGateway membership mutation serialization', () => {
     } as any;
   });
 
+  afterEach(() => {
+    gateway.onModuleDestroy();
+  });
+
   it('does not drop players when JOIN_ROOM and RECONNECT happen concurrently', async () => {
-    const joinClient = createClient('socket-join');
-    const reconnectClient = createClient('socket-reconnect');
+    const joinClient = createClient('socket-join', 'token-alice');
+    const reconnectClient = createClient('socket-reconnect', 'token-bob');
 
     const [joinResult, reconnectResult] = await Promise.all([
       gateway.handleJoinRoom(joinClient as any, {
@@ -307,7 +334,7 @@ describe('EventsGateway membership mutation serialization', () => {
       .spyOn(gateway as any, 'handleBettingRoundComplete')
       .mockResolvedValue(undefined);
 
-    const leavingClient = createClient('socket-bob-old');
+    const leavingClient = createClient('socket-bob-old', 'token-bob');
     (gateway as any).socketToPlayer.set('socket-bob-old', {
       roomId: 'ROOM1',
       playerId: 'p-bob',

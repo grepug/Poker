@@ -14,6 +14,7 @@ export type PlayerAction = "fold" | "check" | "call" | "raise" | "all-in";
 
 export interface Player {
   id: string;
+  userId?: string;
   socketId: string;
   name: string;
   emoji?: string;

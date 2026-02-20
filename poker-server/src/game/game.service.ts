@@ -27,6 +27,7 @@ export class GameService {
     hostName: string,
     hostEmoji?: string,
     config?: Partial<RoomConfig>,
+    hostUserId?: string,
   ): Promise<Room> {
     const roomId = generateRoomId();
     const hostId = generatePlayerId();
@@ -43,6 +44,7 @@ export class GameService {
 
     const host: Player = {
       id: hostId,
+      userId: hostUserId,
       socketId: hostSocketId,
       name: hostName,
       emoji: hostEmoji,
@@ -86,6 +88,7 @@ export class GameService {
     socketId: string,
     playerName: string,
     playerEmoji?: string,
+    userId?: string,
   ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
     const room = await this.storageService.getRoom(roomId);
 
@@ -97,7 +100,10 @@ export class GameService {
       throw new Error('Cannot join room - game has ended');
     }
 
-    const existingPlayer = room.players.find((p) => p.name === playerName);
+    const existingPlayerByUserId = userId
+      ? room.players.find((player) => player.userId === userId)
+      : undefined;
+    const existingPlayer = existingPlayerByUserId ?? room.players.find((p) => p.name === playerName);
     if (existingPlayer) {
       if (
         existingPlayer.status !== 'disconnected' &&
@@ -142,6 +148,12 @@ export class GameService {
       if (playerEmoji !== undefined) {
         existingPlayer.emoji = playerEmoji;
       }
+      if (userId) {
+        existingPlayer.userId = userId;
+      }
+      if (playerName.trim()) {
+        existingPlayer.name = playerName;
+      }
       room.lastActivityAt = Date.now();
 
       await this.storageService.saveRoom(room);
@@ -167,6 +179,7 @@ export class GameService {
 
     const player: Player = {
       id: playerId,
+      userId,
       socketId,
       name: playerName,
       emoji: playerEmoji,
@@ -266,6 +279,7 @@ export class GameService {
     playerName: string,
     newSocketId: string,
     playerId?: string,
+    userId?: string,
   ): Promise<Player | null> {
     const room = await this.storageService.getRoom(roomId);
 
@@ -275,7 +289,9 @@ export class GameService {
 
     const player = playerId
       ? room.players.find((p) => p.id === playerId)
-      : room.players.find((p) => p.name === playerName);
+      : userId
+        ? room.players.find((p) => p.userId === userId)
+        : room.players.find((p) => p.name === playerName);
     if (!player) {
       return null;
     }

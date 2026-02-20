@@ -191,6 +191,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         calculateMinRaise: jest.fn().mockReturnValue(10),
       } as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      { getUserByToken: jest.fn() } as any,
       storageService,
       {
         getMessagePage: jest.fn().mockResolvedValue({
@@ -224,6 +225,10 @@ describe('EventsGateway showdown reveal/muck flow', () => {
       roomId: 'ROOM1',
       playerId: 'p-bob',
     });
+  });
+
+  afterEach(() => {
+    gateway.onModuleDestroy();
   });
 
   it('keeps showdown pending after only one reveal', async () => {

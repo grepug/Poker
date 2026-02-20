@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toPng } from "html-to-image";
+import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
+import { useAuth } from "@/contexts/AuthContext";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
@@ -1621,6 +1623,7 @@ const useGameRoomElement = () => {
     clearChatUnread,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
+  const { user, updateProfile } = useAuth();
 
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
@@ -1629,6 +1632,10 @@ const useGameRoomElement = () => {
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [profileDisplayNameDraft, setProfileDisplayNameDraft] = useState("");
+  const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
+  const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -1662,6 +1669,14 @@ const useGameRoomElement = () => {
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
   const previousIsYourTurnRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    setProfileDisplayNameDraft(user.displayName);
+    setProfileAvatarEmojiDraft(user.avatarEmoji);
+  }, [user?.avatarEmoji, user?.displayName]);
 
   const currentHand = room?.currentHand ?? null;
   const tablePlayers = useMemo(
@@ -3240,6 +3255,22 @@ const useGameRoomElement = () => {
     navigate("/");
   };
 
+  const handleSaveProfile = async () => {
+    if (!user) {
+      return;
+    }
+    setIsSavingProfile(true);
+    setProfileFeedback(null);
+    try {
+      await updateProfile(profileDisplayNameDraft, profileAvatarEmojiDraft);
+      setProfileFeedback("Profile updated");
+    } catch (error) {
+      setProfileFeedback(error instanceof Error ? error.message : "Failed to update profile");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const handleLegacyAction = (action: PlayerAction) => {
     if (action === "raise") {
       if (legacyRaiseAmount < minRaise) {
@@ -3405,7 +3436,14 @@ const useGameRoomElement = () => {
         showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
         onLeave={handleLeave}
-        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenSettings={() => {
+          if (user) {
+            setProfileDisplayNameDraft(user.displayName);
+            setProfileAvatarEmojiDraft(user.avatarEmoji);
+          }
+          setProfileFeedback(null);
+          setShowSettingsModal(true);
+        }}
         onOpenRules={() => setShowRulesModal(true)}
         onOpenRankings={() => setShowRankingsModal(true)}
         onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
@@ -3638,6 +3676,14 @@ const useGameRoomElement = () => {
         <SettingsModal
           locale={locale}
           onLocaleChange={setLocale}
+          profileDisplayName={profileDisplayNameDraft}
+          profileAvatarEmoji={profileAvatarEmojiDraft}
+          profileEmojiOptions={PLAYER_EMOJI_OPTIONS}
+          onProfileDisplayNameChange={setProfileDisplayNameDraft}
+          onProfileAvatarEmojiChange={setProfileAvatarEmojiDraft}
+          onSaveProfile={handleSaveProfile}
+          isSavingProfile={isSavingProfile}
+          profileFeedback={profileFeedback}
           isHost={isHost}
           isPlayerStreetRevealEnabled={isPlayerStreetRevealEnabled}
           onStreetRevealChange={(enabled) =>

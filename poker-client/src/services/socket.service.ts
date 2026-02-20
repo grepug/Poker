@@ -118,17 +118,24 @@ export const resolveServerResourceUrl = (
 class SocketService {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
     null;
+  private currentToken: string | null = null;
 
-  connect(url?: string) {
-    if (this.socket?.connected) {
+  connect(url?: string, token?: string | null) {
+    if (this.socket?.connected && this.currentToken === (token || null)) {
       return this.socket;
     }
 
+    if (this.socket && this.currentToken !== (token || null)) {
+      this.disconnect();
+    }
+
     const socketUrl = resolveSocketUrl(url);
+    this.currentToken = token || null;
 
     this.socket = io(socketUrl, {
       transports: ["websocket"],
       autoConnect: true,
+      auth: token ? { token } : undefined,
     });
 
     this.socket.on("connect", () => {
@@ -146,6 +153,7 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.currentToken = null;
     }
   }
 
