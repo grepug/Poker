@@ -35,13 +35,11 @@ export const useAnchoredPopover = ({
       return;
     }
 
-    const computePosition = () => {
-      const anchor = anchorRef.current;
-      const popover = popoverRef.current;
-      if (!anchor || !popover) {
-        return;
-      }
+    let rafId: number | null = null;
+    let retries = 0;
+    const maxRetries = 4;
 
+    const computePosition = () => {
       const viewport = window.visualViewport;
       const viewportLeft = viewport?.offsetLeft ?? 0;
       const viewportTop = viewport?.offsetTop ?? 0;
@@ -53,8 +51,44 @@ export const useAnchoredPopover = ({
       const maxLeft = viewportLeft + viewportWidth - viewportPadding;
       const maxTop = viewportTop + viewportHeight - viewportPadding;
 
-      const anchorRect = anchor.getBoundingClientRect();
+      const anchor = anchorRef.current;
+      const popover = popoverRef.current;
+      const offsetParentRect =
+        popover?.offsetParent instanceof HTMLElement
+          ? popover.offsetParent.getBoundingClientRect()
+          : ({ left: 0, top: 0 } as const);
+      if (!popover) {
+        if (retries < maxRetries) {
+          retries += 1;
+          rafId = window.requestAnimationFrame(computePosition);
+        }
+        return;
+      }
+
       const popoverRect = popover.getBoundingClientRect();
+      if (!anchor) {
+        const fallbackLeft = clamp(
+          viewportLeft + (viewportWidth - popoverRect.width) / 2,
+          minLeft,
+          Math.max(minLeft, maxLeft - popoverRect.width),
+        );
+        const fallbackTop = clamp(
+          viewportTop + viewportHeight - popoverRect.height - viewportPadding - 56,
+          minTop,
+          Math.max(minTop, maxTop - popoverRect.height),
+        );
+        setPosition({
+          left: Math.round(fallbackLeft - offsetParentRect.left),
+          top: Math.round(fallbackTop - offsetParentRect.top),
+        });
+        if (retries < maxRetries) {
+          retries += 1;
+          rafId = window.requestAnimationFrame(computePosition);
+        }
+        return;
+      }
+
+      const anchorRect = anchor.getBoundingClientRect();
 
       const alignStart = anchorRect.left;
       const alignCenter = anchorRect.left + (anchorRect.width - popoverRect.width) / 2;
@@ -73,8 +107,8 @@ export const useAnchoredPopover = ({
       const clampedTop = clamp(rawTop, minTop, Math.max(minTop, maxTop - popoverRect.height));
 
       setPosition({
-        left: Math.round(clampedLeft),
-        top: Math.round(clampedTop),
+        left: Math.round(clampedLeft - offsetParentRect.left),
+        top: Math.round(clampedTop - offsetParentRect.top),
       });
     };
 
@@ -89,6 +123,9 @@ export const useAnchoredPopover = ({
       window.removeEventListener("scroll", computePosition, true);
       window.visualViewport?.removeEventListener("resize", computePosition);
       window.visualViewport?.removeEventListener("scroll", computePosition);
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
     };
   }, [
     align,
@@ -104,8 +141,8 @@ export const useAnchoredPopover = ({
     () => ({
       left: `${position.left}px`,
       top: `${position.top}px`,
-      position: "fixed" as const,
-      zIndex: 75,
+      position: "absolute" as const,
+      zIndex: 120,
     }),
     [position.left, position.top],
   );

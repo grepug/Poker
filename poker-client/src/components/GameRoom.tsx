@@ -2708,12 +2708,6 @@ const useGameRoomElement = () => {
   }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
 
   useEffect(() => {
-    if (!quickConfirmAction || isAutomationMode) return;
-    const timer = window.setTimeout(() => setQuickConfirmAction(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [isAutomationMode, quickConfirmAction]);
-
-  useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
 
