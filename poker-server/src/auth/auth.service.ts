@@ -356,9 +356,27 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     const authenticationInfo: any = verification.authenticationInfo;
     if (typeof authenticationInfo?.newCounter === 'number') {
-      passkey.counter = authenticationInfo.newCounter;
-      passkey.updatedAt = Date.now();
-      await this.authStorageService.saveUsers(users);
+      const newCounter = authenticationInfo.newCounter;
+      await this.runUserMutation(async () => {
+        const latestUsers = await this.authStorageService.getUsers();
+        const latestUser = latestUsers.find((candidate) => candidate.id === user.id);
+        if (!latestUser) {
+          return;
+        }
+
+        const latestPasskey = latestUser.passkeys.find(
+          (entry) => entry.credentialId === credentialId,
+        );
+        if (!latestPasskey) {
+          return;
+        }
+
+        const storedCounter =
+          typeof latestPasskey.counter === 'number' ? latestPasskey.counter : 0;
+        latestPasskey.counter = Math.max(storedCounter, newCounter);
+        latestPasskey.updatedAt = Date.now();
+        await this.authStorageService.saveUsers(latestUsers);
+      });
     }
 
     const session = await this.createSessionForUser(user.id);

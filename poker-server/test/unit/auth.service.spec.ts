@@ -1,4 +1,5 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import * as webauthnServer from '@simplewebauthn/server';
 import {
   AuthSessionRecord,
   AuthUserRecord,
@@ -7,6 +8,17 @@ import {
 import { IStorageService } from '../../src/common/interfaces/storage.interface';
 import { realtimeEventBus } from '../../src/common/realtime-events';
 import { AuthService } from '../../src/auth/auth.service';
+
+jest.mock('@simplewebauthn/server', () => ({
+  generateAuthenticationOptions: jest.fn(async () => ({
+    challenge: 'mock-auth-challenge',
+  })),
+  generateRegistrationOptions: jest.fn(async () => ({
+    challenge: 'mock-register-challenge',
+  })),
+  verifyAuthenticationResponse: jest.fn(),
+  verifyRegistrationResponse: jest.fn(),
+}));
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -113,6 +125,50 @@ describe('AuthService', () => {
         response: {},
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('updates passkey counter via queued user mutation without downgrading', async () => {
+    users = [
+      {
+        id: 'user-1',
+        accountId: 'pk_test',
+        displayName: 'alice',
+        avatarEmoji: '🦊',
+        passkeys: [
+          {
+            credentialId: 'cred-1',
+            publicKey: Buffer.from('public-key').toString('base64url'),
+            counter: 10,
+            transports: ['internal'],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    (
+      webauthnServer.verifyAuthenticationResponse as jest.Mock
+    ).mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          newCounter: 7,
+        },
+      } as any);
+
+    const { flowId } = await service.startPasskeyLogin({
+      rateLimitKey: '127.0.0.1',
+    });
+
+    await service.finishPasskeyLogin({
+      flowId,
+      response: { id: 'cred-1' },
+    });
+
+    expect(users[0].passkeys[0].counter).toBe(10);
+    expect(authStorageService.saveUsers).toHaveBeenCalledTimes(1);
   });
 
   it('returns current session and invalidates it on logout', async () => {
