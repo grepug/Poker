@@ -95,9 +95,10 @@ export const EN_MESSAGES = {
 
   "game.preset.minRaise": "Min Raise",
   "game.preset.minBet": "Min Bet",
+  "game.preset.bet": "Bet",
   "game.preset.call": "Call",
+  "game.preset.raise": "Raise",
   "game.preset.double": "2x",
-  "game.preset.threeBet": "3-Bet",
   "game.preset.halfPot": "1/2 Pot",
   "game.preset.allIn": "All-In",
 
@@ -385,9 +386,10 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
 
   "game.preset.minRaise": "最小加注",
   "game.preset.minBet": "最小下注",
+  "game.preset.bet": "下注",
   "game.preset.call": "跟注",
+  "game.preset.raise": "加注",
   "game.preset.double": "2倍",
-  "game.preset.threeBet": "3-Bet",
   "game.preset.halfPot": "半池",
   "game.preset.allIn": "全下",
 
