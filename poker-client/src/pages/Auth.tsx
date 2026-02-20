@@ -33,21 +33,35 @@ export const AuthPage: React.FC = () => {
     return error.message.toLowerCase().includes("passkey not registered");
   };
 
-  const handlePasskeyContinue = async () => {
+  const handlePasskeyRegister = async () => {
+    if (!requiresRegistrationProfile) {
+      setRequiresRegistrationProfile(true);
+      setFeedback(null);
+      return;
+    }
+
+    const name = displayName.trim();
+    if (!name) {
+      setFeedback(t("auth.error.displayNameRequired"));
+      return;
+    }
+
     setIsSubmitting(true);
     setFeedback(null);
     try {
-      if (requiresRegistrationProfile) {
-        const name = displayName.trim();
-        if (!name) {
-          setFeedback(t("auth.error.displayNameRequired"));
-          return;
-        }
+      await registerWithPasskey(name, avatarEmoji);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : t("auth.error.registerFailed"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-        await registerWithPasskey(name, avatarEmoji);
-        return;
-      }
-
+  const handlePasskeyLogin = async () => {
+    setRequiresRegistrationProfile(false);
+    setIsSubmitting(true);
+    setFeedback(null);
+    try {
       await loginWithPasskey();
     } catch (error) {
       if (!shouldFallbackToRegister(error)) {
@@ -138,39 +152,20 @@ export const AuthPage: React.FC = () => {
             <button
               type="button"
               disabled={passkeyDisabled}
-              onClick={handlePasskeyContinue}
+              onClick={handlePasskeyRegister}
               className="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("auth.passkeyRegisterButton")}
+            </button>
+
+            <button
+              type="button"
+              disabled={passkeyDisabled}
+              onClick={handlePasskeyLogin}
+              className="w-full rounded-xl border border-emerald-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("auth.passkeyContinueButton")}
             </button>
-
-            {!requiresRegistrationProfile && (
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setRequiresRegistrationProfile(true);
-                  setFeedback(null);
-                }}
-                className="w-full rounded-xl border border-emerald-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("auth.passkeySwitchToRegister")}
-              </button>
-            )}
-
-            {requiresRegistrationProfile && (
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setRequiresRegistrationProfile(false);
-                  setFeedback(null);
-                }}
-                className="w-full rounded-xl border border-emerald-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("auth.passkeySwitchToLogin")}
-              </button>
-            )}
 
             {!passkeySupported && (
               <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
