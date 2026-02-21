@@ -261,10 +261,18 @@ Current test coverage:
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
 CLIENT_URL=http://localhost:5173
+AUTH_DOMAIN=localhost:5173
+WEBAUTHN_RP_ID=localhost
+WEBAUTHN_ORIGIN=http://localhost:5173
 NODE_ENV=development
 DATA_DIR=./data
 FRONTEND_DIST_PATH=../poker-client/dist
 ```
+
+Auth passkey domain configuration:
+- `AUTH_DOMAIN` accepts either host/port (`poker.example.com`, `localhost:5173`) or full origin (`https://poker.example.com`).
+- If `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` are set, they take precedence over `AUTH_DOMAIN`.
+- Localhost-like hosts default to `http`, non-local hosts default to `https` when `AUTH_DOMAIN` has no scheme.
 
 ### Frontend
 

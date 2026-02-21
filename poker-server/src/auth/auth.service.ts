@@ -56,6 +56,71 @@ type SessionUser = {
 };
 
 const FLOW_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_WEBAUTHN_RP_ID = 'localhost';
+const DEFAULT_WEBAUTHN_ORIGIN = 'http://localhost:5173';
+const LOCALHOST_RP_IDS = new Set(['localhost', '127.0.0.1', '::1']);
+
+type WebauthnDomainConfig = {
+  rpId: string;
+  expectedOrigins: string[];
+};
+
+const parseOriginList = (input: string | undefined): string[] => {
+  if (!input) {
+    return [];
+  }
+  return input
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+};
+
+const parseAuthDomain = (
+  authDomain: string | undefined,
+): { rpId: string; origin: string } | null => {
+  const raw = authDomain?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const hasScheme = /^https?:\/\//i.test(raw);
+  try {
+    const preliminary = hasScheme ? new URL(raw) : new URL(`http://${raw}`);
+    const protocol = hasScheme
+      ? preliminary.protocol
+      : LOCALHOST_RP_IDS.has(preliminary.hostname)
+        ? 'http:'
+        : 'https:';
+    const normalized = new URL(preliminary.toString());
+    normalized.protocol = protocol;
+    normalized.pathname = '/';
+    normalized.search = '';
+    normalized.hash = '';
+
+    return {
+      rpId: normalized.hostname,
+      origin: normalized.origin,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const resolveWebauthnDomainConfig = (): WebauthnDomainConfig => {
+  const explicitRpId = process.env.WEBAUTHN_RP_ID?.trim();
+  const explicitOrigins = parseOriginList(process.env.WEBAUTHN_ORIGIN);
+  const authDomain = parseAuthDomain(process.env.AUTH_DOMAIN);
+
+  return {
+    rpId: explicitRpId || authDomain?.rpId || DEFAULT_WEBAUTHN_RP_ID,
+    expectedOrigins:
+      explicitOrigins.length > 0
+        ? explicitOrigins
+        : authDomain?.origin
+          ? [authDomain.origin]
+          : [DEFAULT_WEBAUTHN_ORIGIN],
+  };
+};
 
 @Injectable()
 export class AuthService implements OnModuleInit, OnModuleDestroy {
@@ -99,13 +164,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     process.env.AUTH_PASSWORD_LOGIN_ENABLED?.trim() === 'true' ||
     process.env.NODE_ENV !== 'production';
   private readonly rpName = process.env.WEBAUTHN_RP_NAME?.trim() || 'Poker Game';
-  private readonly rpId = process.env.WEBAUTHN_RP_ID?.trim() || 'localhost';
-  private readonly expectedOrigins = (
-    process.env.WEBAUTHN_ORIGIN?.trim() || 'http://localhost:5173'
-  )
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  private readonly webauthnDomainConfig = resolveWebauthnDomainConfig();
+  private readonly rpId = this.webauthnDomainConfig.rpId;
+  private readonly expectedOrigins = this.webauthnDomainConfig.expectedOrigins;
   private flowCleanupTimer: NodeJS.Timeout | null = null;
   private userMutationQueue: Promise<void> = Promise.resolve();
   private sessionMutationQueue: Promise<void> = Promise.resolve();

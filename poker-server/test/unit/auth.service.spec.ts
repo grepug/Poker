@@ -21,6 +21,12 @@ jest.mock('@simplewebauthn/server', () => ({
 }));
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const AUTH_ENV_KEYS = [
+  'AUTH_DOMAIN',
+  'WEBAUTHN_RP_ID',
+  'WEBAUTHN_ORIGIN',
+] as const;
+type AuthEnvKey = (typeof AUTH_ENV_KEYS)[number];
 
 describe('AuthService', () => {
   let users: AuthUserRecord[];
@@ -28,10 +34,16 @@ describe('AuthService', () => {
   let authStorageService: jest.Mocked<IAuthStorageService>;
   let storageService: jest.Mocked<IStorageService>;
   let service: AuthService;
+  let envSnapshot: Partial<Record<AuthEnvKey, string | undefined>>;
 
   beforeEach(() => {
     users = [];
     sessions = [];
+    envSnapshot = {};
+    for (const key of AUTH_ENV_KEYS) {
+      envSnapshot[key] = process.env[key];
+      delete process.env[key];
+    }
 
     authStorageService = {
       getUsers: jest.fn(async () => clone(users)),
@@ -56,6 +68,14 @@ describe('AuthService', () => {
   });
 
   afterEach(() => {
+    for (const key of AUTH_ENV_KEYS) {
+      const value = envSnapshot[key];
+      if (value === undefined) {
+        delete process.env[key];
+        continue;
+      }
+      process.env[key] = value;
+    }
     jest.restoreAllMocks();
   });
 
@@ -105,6 +125,59 @@ describe('AuthService', () => {
     expect(result.options).toEqual(
       expect.objectContaining({
         challenge: expect.any(String),
+      }),
+    );
+  });
+
+  it('derives WebAuthn domain config from AUTH_DOMAIN', async () => {
+    process.env.AUTH_DOMAIN = 'poker.example.com';
+    service = new AuthService(authStorageService, storageService);
+
+    users = [
+      {
+        id: 'user-1',
+        accountId: 'pk_test',
+        displayName: 'alice',
+        avatarEmoji: '🦊',
+        passkeys: [
+          {
+            credentialId: 'cred-1',
+            publicKey: Buffer.from('public-key').toString('base64url'),
+            counter: 1,
+            transports: ['internal'],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    (webauthnServer.verifyAuthenticationResponse as jest.Mock).mockResolvedValue({
+      verified: true,
+      authenticationInfo: {
+        newCounter: 2,
+      },
+    } as any);
+
+    const { flowId } = await service.startPasskeyLogin({
+      rateLimitKey: '127.0.0.1',
+    });
+    await service.finishPasskeyLogin({
+      flowId,
+      response: { id: 'cred-1' },
+    });
+
+    expect(webauthnServer.generateAuthenticationOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rpID: 'poker.example.com',
+      }),
+    );
+    expect(webauthnServer.verifyAuthenticationResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedRPID: 'poker.example.com',
+        expectedOrigin: 'https://poker.example.com',
       }),
     );
   });
