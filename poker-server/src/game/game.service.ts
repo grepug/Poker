@@ -10,6 +10,8 @@ import {
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
 
+type ServerPlayer = Player & { userId?: string };
+
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
@@ -27,6 +29,7 @@ export class GameService {
     hostName: string,
     hostEmoji?: string,
     config?: Partial<RoomConfig>,
+    hostUserId?: string,
   ): Promise<Room> {
     const roomId = generateRoomId();
     const hostId = generatePlayerId();
@@ -41,8 +44,9 @@ export class GameService {
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
 
-    const host: Player = {
+    const host: ServerPlayer = {
       id: hostId,
+      userId: hostUserId,
       socketId: hostSocketId,
       name: hostName,
       emoji: hostEmoji,
@@ -86,7 +90,13 @@ export class GameService {
     socketId: string,
     playerName: string,
     playerEmoji?: string,
+    userId?: string,
   ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
+    const normalizedPlayerName = playerName.trim();
+    if (!normalizedPlayerName) {
+      throw new Error('Player name cannot be empty');
+    }
+
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
@@ -97,7 +107,13 @@ export class GameService {
       throw new Error('Cannot join room - game has ended');
     }
 
-    const existingPlayer = room.players.find((p) => p.name === playerName);
+    const playersWithUserId = room.players as ServerPlayer[];
+    const existingPlayerByUserId = userId
+      ? playersWithUserId.find((player) => player.userId === userId)
+      : undefined;
+    const existingPlayer =
+      existingPlayerByUserId ??
+      playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
       if (
         existingPlayer.status !== 'disconnected' &&
@@ -142,10 +158,16 @@ export class GameService {
       if (playerEmoji !== undefined) {
         existingPlayer.emoji = playerEmoji;
       }
+      if (userId) {
+        existingPlayer.userId = userId;
+      }
+      existingPlayer.name = normalizedPlayerName;
       room.lastActivityAt = Date.now();
 
       await this.storageService.saveRoom(room);
-      this.logger.log(`Player ${playerName} reclaimed seat in room ${roomId}`);
+      this.logger.log(
+        `Player ${normalizedPlayerName} reclaimed seat in room ${roomId}`,
+      );
 
       return { room, player: existingPlayer, rejoined: true };
     }
@@ -165,10 +187,11 @@ export class GameService {
     const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
     const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
-    const player: Player = {
+    const player: ServerPlayer = {
       id: playerId,
+      userId,
       socketId,
-      name: playerName,
+      name: normalizedPlayerName,
       emoji: playerEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,
@@ -187,7 +210,7 @@ export class GameService {
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
-    this.logger.log(`Player ${playerName} joined room ${roomId}`);
+    this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
   }
@@ -266,16 +289,21 @@ export class GameService {
     playerName: string,
     newSocketId: string,
     playerId?: string,
+    userId?: string,
   ): Promise<Player | null> {
+    const normalizedPlayerName = playerName.trim();
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
       return null;
     }
 
+    const playersWithUserId = room.players as ServerPlayer[];
     const player = playerId
-      ? room.players.find((p) => p.id === playerId)
-      : room.players.find((p) => p.name === playerName);
+      ? playersWithUserId.find((p) => p.id === playerId)
+      : userId
+        ? playersWithUserId.find((p) => p.userId === userId)
+        : playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (!player) {
       return null;
     }

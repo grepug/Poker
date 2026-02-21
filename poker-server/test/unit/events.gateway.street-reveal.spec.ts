@@ -124,6 +124,7 @@ describe('EventsGateway reveal next street idempotency', () => {
         calculateMinRaise: jest.fn().mockReturnValue(10),
       } as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      { getUserByToken: jest.fn() } as any,
       storageService,
       {
         getMessagePage: jest.fn().mockResolvedValue({
@@ -157,6 +158,10 @@ describe('EventsGateway reveal next street idempotency', () => {
       roomId: 'ROOM1',
       playerId: 'p-bob',
     });
+  });
+
+  afterEach(() => {
+    gateway.onModuleDestroy();
   });
 
   it('silently ignores a duplicated reveal request triggered by race', async () => {

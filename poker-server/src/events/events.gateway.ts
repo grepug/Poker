@@ -7,7 +7,7 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Logger, Inject } from '@nestjs/common';
+import { Logger, Inject, OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { GameService } from '../game/game.service';
 import { HandService } from '../game/hand.service';
@@ -16,6 +16,11 @@ import { TestDeckService } from '../game/test-deck.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
+import { AuthService } from '../auth/auth.service';
+import {
+  PlayerProfileUpdatedRealtimeEvent,
+  realtimeEventBus,
+} from '../common/realtime-events';
 import {
   BettingRound,
   BlindType,
@@ -53,6 +58,8 @@ import {
   SendChatMessageData,
   SendChatMessageAck,
   Card,
+  PlayerProfileUpdatedData,
+  UpdateProfileData,
 } from 'poker-types';
 
 const resolveGatewayCorsOrigin = ():
@@ -91,7 +98,9 @@ const resolveGatewayCorsOrigin = ():
     credentials: true,
   },
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   @WebSocketServer()
   server: Server;
 
@@ -134,6 +143,17 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     process.env.CHAT_PAGE_MAX_SIZE || '200',
   );
   private readonly chatRateWindows = new Map<string, number[]>();
+  private readonly profileUpdatedListenerKey = 'events-gateway-profile-updated';
+  private readonly profileUpdatedListener = (
+    payload: PlayerProfileUpdatedRealtimeEvent,
+  ) => {
+    const message: PlayerProfileUpdatedData = {
+      playerId: payload.playerId,
+      playerName: payload.playerName,
+      playerEmoji: payload.playerEmoji,
+    };
+    this.server.to(payload.roomId).emit('PLAYER_PROFILE_UPDATED', message);
+  };
 
   private getRoomShareUrl(client: Socket, roomId: string) {
     const configuredClientUrl = process.env.CLIENT_URL?.trim();
@@ -162,13 +182,61 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly handService: HandService,
     private readonly bettingService: BettingService,
     private readonly testDeckService: TestDeckService,
+    private readonly authService: AuthService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
     @Inject('IChatStorageService')
     private readonly chatStorageService: IChatStorageService,
     @Inject('IChatMediaStorageService')
     private readonly chatMediaStorageService: IChatMediaStorageService,
-  ) {}
+  ) {
+    realtimeEventBus.setSingletonListener(
+      'PLAYER_PROFILE_UPDATED',
+      this.profileUpdatedListenerKey,
+      this.profileUpdatedListener,
+    );
+  }
+
+  onModuleDestroy() {
+    realtimeEventBus.clearSingletonListener(
+      'PLAYER_PROFILE_UPDATED',
+      this.profileUpdatedListenerKey,
+      this.profileUpdatedListener,
+    );
+  }
+
+  private extractSocketToken(client: Socket): string {
+    const authPayload = client.handshake.auth as Record<string, unknown> | undefined;
+    const authTokenCandidate = authPayload?.token;
+    if (typeof authTokenCandidate === 'string' && authTokenCandidate.trim()) {
+      return authTokenCandidate.trim();
+    }
+
+    const authorizationHeader = client.handshake.headers.authorization;
+    if (typeof authorizationHeader === 'string' && authorizationHeader.trim()) {
+      if (/^bearer\s+/i.test(authorizationHeader)) {
+        return authorizationHeader.replace(/^bearer\s+/i, '').trim();
+      }
+
+      return authorizationHeader.trim();
+    }
+
+    return '';
+  }
+
+  private async requireAuthenticatedUser(client: Socket, tokenOverride?: string) {
+    const token = tokenOverride?.trim() || this.extractSocketToken(client);
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+
+    const user = await this.authService.getUserByToken(token);
+    if (!user) {
+      throw new Error('Invalid session');
+    }
+
+    return user;
+  }
 
   private resolveRoomReadyPhase(room: any): ReadyPhase | null {
     if (room?.gameState === 'WAITING') {
@@ -411,14 +479,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: CreateRoomData,
   ) {
     try {
-      // For simplicity, use socket ID as player name initially
-      const hostName = `Player_${client.id.slice(0, 6)}`;
+      const authenticatedUser = await this.requireAuthenticatedUser(client);
 
       const room = await this.gameService.createRoom(
         client.id,
-        data.playerName || hostName,
-        data.playerEmoji,
+        authenticatedUser.displayName,
+        authenticatedUser.avatarEmoji,
         data.config,
+        authenticatedUser.id,
       );
 
       // Join socket room
@@ -451,13 +519,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: JoinRoomData,
   ) {
     try {
+      const authenticatedUser = await this.requireAuthenticatedUser(client);
       return await this.runRoomActionSequentially(data.roomId, async () => {
         const { room, player, rejoined } =
           await this.gameService.addPlayerToRoom(
             data.roomId,
             client.id,
-            data.playerName,
-            data.playerEmoji,
+            authenticatedUser.displayName,
+            authenticatedUser.avatarEmoji,
+            authenticatedUser.id,
           );
 
         client.join(room.id);
@@ -484,7 +554,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
 
         client.emit('ROOM_JOINED', {
-          player,
+          player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
         });
         await this.emitInitialChatHistory(client, room.id);
@@ -510,12 +580,17 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: ReconnectData,
   ) {
     try {
+      const authenticatedUser = await this.requireAuthenticatedUser(
+        client,
+        data.sessionToken,
+      );
       return await this.runRoomActionSequentially(data.roomId, async () => {
         const player = await this.gameService.updatePlayerSocket(
           data.roomId,
-          data.playerName,
+          authenticatedUser.displayName,
           client.id,
           data.playerId,
+          authenticatedUser.id,
         );
 
         if (!player) {
@@ -544,7 +619,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.syncRoomReadyState(room);
         await this.storageService.saveRoom(room);
         client.emit('RECONNECT_SUCCESS', {
-          player,
+          player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
           yourCards: player.cards,
         });
@@ -566,6 +641,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Reconnect error: ${error.message}`);
       client.emit('RECONNECT_ERROR', { reason: error.message });
       return { success: false };
+    }
+  }
+
+  @SubscribeMessage('UPDATE_PROFILE')
+  async handleUpdateProfile(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: UpdateProfileData,
+  ) {
+    try {
+      const authenticatedUser = await this.requireAuthenticatedUser(client);
+      const user = await this.authService.updateProfileByUserId({
+        userId: authenticatedUser.id,
+        displayName: data.displayName,
+        avatarEmoji: data.avatarEmoji,
+      });
+      return { success: true, user };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update profile';
+      this.logger.error(`Update profile error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
     }
   }
 
@@ -2495,8 +2591,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private sanitizePlayer(player: any): any {
+    const { userId: _userId, cards: _cards, ...safePlayer } = player;
+    void _userId;
+    void _cards;
     return {
-      ...player,
+      ...safePlayer,
       cards: undefined, // Don't send cards in general updates
     };
   }

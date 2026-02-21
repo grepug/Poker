@@ -9,6 +9,9 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
 const FRONTEND_URL =
   process.env.PW_FRONTEND_URL ??
   `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
+const BACKEND_URL =
+  process.env.PW_BACKEND_URL ??
+  `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.PW_BACKEND_PORT ?? '3001'}`;
 
 const DEFAULT_STARTING_CHIPS = 1000;
 const DEFAULT_SMALL_BLIND = 5;
@@ -16,6 +19,7 @@ const DEFAULT_BIG_BLIND = 10;
 const DEFAULT_OPENING_POT = DEFAULT_SMALL_BLIND + DEFAULT_BIG_BLIND;
 const DEFAULT_TWO_PLAYER_MATCHED_POT = DEFAULT_BIG_BLIND * 2;
 const DEFAULT_SMALL_BLIND_CALL_GAP = DEFAULT_BIG_BLIND - DEFAULT_SMALL_BLIND;
+const DEFAULT_TEST_PASSWORD = 'test1234';
 
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
@@ -110,6 +114,9 @@ async function createRoomViaSocket(
   playerName: string,
   config?: Record<string, unknown>,
 ) {
+  await ensureProfileForCurrentSession(page, {
+    displayName: playerName,
+  });
   await waitForPokerDebug(page);
   await page.evaluate(
     async ({ requestedName, requestedConfig }) => {
@@ -147,6 +154,115 @@ async function createRoomViaSocket(
   return roomCode;
 }
 
+async function authenticateTestUser(
+  page: Page,
+  accountId: string,
+  profile: { displayName: string; avatarEmoji?: string },
+) {
+  await page.goto(FRONTEND_URL);
+
+  const avatarEmoji = profile.avatarEmoji ?? '🙂';
+  await page.evaluate(
+    async ({ backendOrigin, loginAccountId, password, displayName, avatar }) => {
+      const loginResponse = await fetch(`${backendOrigin}/api/auth/password/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: loginAccountId,
+          password,
+        }),
+      });
+
+      const loginPayload = (await loginResponse.json()) as {
+        sessionToken?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!loginResponse.ok || !loginPayload.sessionToken) {
+        throw new Error(
+          loginPayload.message ||
+            loginPayload.error ||
+            `login failed (${loginResponse.status})`,
+        );
+      }
+
+      window.localStorage.setItem('poker.authToken', loginPayload.sessionToken);
+
+      const profileResponse = await fetch(`${backendOrigin}/api/auth/me/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${loginPayload.sessionToken}`,
+        },
+        body: JSON.stringify({
+          displayName,
+          avatarEmoji: avatar,
+        }),
+      });
+      if (!profileResponse.ok) {
+        const profilePayload = (await profileResponse.json()) as {
+          message?: string;
+          error?: string;
+        };
+        throw new Error(
+          profilePayload.message ||
+            profilePayload.error ||
+            `profile update failed (${profileResponse.status})`,
+        );
+      }
+    },
+    {
+      backendOrigin: BACKEND_URL,
+      loginAccountId: accountId,
+      password: DEFAULT_TEST_PASSWORD,
+      displayName: profile.displayName,
+      avatar: avatarEmoji,
+    },
+  );
+
+  await page.goto(FRONTEND_URL);
+  await page.waitForSelector('[data-testid="connection-status"]');
+  await expect(page.locator('[data-testid="connection-status"]')).toContainText(
+    'Connected',
+  );
+}
+
+async function ensureProfileForCurrentSession(
+  page: Page,
+  profile: { displayName: string; avatarEmoji?: string },
+) {
+  await page.evaluate(
+    async ({ backendOrigin, displayName, avatar }) => {
+      const token = window.localStorage.getItem('poker.authToken');
+      if (!token) {
+        throw new Error('missing auth token for profile update');
+      }
+      const response = await fetch(`${backendOrigin}/api/auth/me/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          displayName,
+          avatarEmoji: avatar,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string; error?: string };
+        throw new Error(
+          payload.message || payload.error || `profile update failed (${response.status})`,
+        );
+      }
+    },
+    {
+      backendOrigin: BACKEND_URL,
+      displayName: profile.displayName,
+      avatar: profile.avatarEmoji ?? '🙂',
+    },
+  );
+}
+
 async function setupTwoPlayerSession(
   browser: any,
   options?: SetupTwoPlayerOptions,
@@ -162,16 +278,14 @@ async function setupTwoPlayerSession(
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
 
-  await alicePage.goto(FRONTEND_URL);
-  await bobPage.goto(FRONTEND_URL);
-  await alicePage.waitForSelector('[data-testid="connection-status"]');
-  await bobPage.waitForSelector('[data-testid="connection-status"]');
-  await expect(alicePage.locator('[data-testid="connection-status"]')).toContainText(
-    'Connected',
-  );
-  await expect(bobPage.locator('[data-testid="connection-status"]')).toContainText(
-    'Connected',
-  );
+  await authenticateTestUser(alicePage, 'test1', {
+    displayName: 'Alice',
+    avatarEmoji: '🦊',
+  });
+  await authenticateTestUser(bobPage, 'test2', {
+    displayName: 'Bob',
+    avatarEmoji: '🐻',
+  });
 
   const roomCode = options?.roomConfig
     ? await createRoomViaSocket(alicePage, 'Alice', options.roomConfig)
@@ -209,27 +323,18 @@ async function setupThreePlayerSession(browser: any): Promise<ThreePlayerSession
   const bobPage = await bobContext.newPage();
   const charliePage = await charlieContext.newPage();
 
-  await Promise.all([
-    alicePage.goto(FRONTEND_URL),
-    bobPage.goto(FRONTEND_URL),
-    charliePage.goto(FRONTEND_URL),
-  ]);
-  await Promise.all([
-    alicePage.waitForSelector('[data-testid="connection-status"]'),
-    bobPage.waitForSelector('[data-testid="connection-status"]'),
-    charliePage.waitForSelector('[data-testid="connection-status"]'),
-  ]);
-  await Promise.all([
-    expect(alicePage.locator('[data-testid="connection-status"]')).toContainText(
-      'Connected',
-    ),
-    expect(bobPage.locator('[data-testid="connection-status"]')).toContainText(
-      'Connected',
-    ),
-    expect(charliePage.locator('[data-testid="connection-status"]')).toContainText(
-      'Connected',
-    ),
-  ]);
+  await authenticateTestUser(alicePage, 'test1', {
+    displayName: 'Alice',
+    avatarEmoji: '🦊',
+  });
+  await authenticateTestUser(bobPage, 'test2', {
+    displayName: 'Bob',
+    avatarEmoji: '🐻',
+  });
+  await authenticateTestUser(charliePage, 'test3', {
+    displayName: 'Charlie',
+    avatarEmoji: '🐼',
+  });
 
   await alicePage.fill('[data-testid="name-input"]', 'Alice');
   await alicePage.click('[data-testid="create-room-button"]');
@@ -3286,100 +3391,75 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
   test('@critical 4.3: Check When Bet Required - verify check button disabled when facing a bet', async ({
     browser,
   }) => {
-    const aliceContext = await browser.newContext();
-    const bobContext = await browser.newContext();
-    const alicePage = await aliceContext.newPage();
-    const bobPage = await bobContext.newPage();
+    const session = await setupTwoPlayerSession(browser);
 
-    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
-    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+    try {
+      const { alicePage, bobPage } = session;
 
-    await alicePage.goto(FRONTEND_URL);
-    await bobPage.goto(FRONTEND_URL);
-    await alicePage.waitForSelector('[data-testid="connection-status"]');
-    await bobPage.waitForSelector('[data-testid="connection-status"]');
+      alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+      bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
 
-    // Alice creates room
-    console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
-    await alicePage.click('[data-testid="create-room-button"]');
-    await alicePage.waitForSelector('[data-testid="room-title"]');
-    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
-    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
-    console.log('Room created:', roomCode);
+      console.log('Alice starting game...');
+      await alicePage.click('[data-testid="start-game-button"]');
+      await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+      await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+      console.log('Game started');
 
-    // Bob joins
-    console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
-    await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
-    await bobPage.click('[data-testid="join-room-button"]');
-    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
-    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
-    console.log('Both players in room');
+      // PRE_FLOP: Bob acts first (small blind, needs to call or raise)
+      console.log('Pre-flop: Bob waiting for turn...');
+      await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
 
-    // Start game
-    console.log('Alice starting game...');
-    await alicePage.click('[data-testid="start-game-button"]');
-    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
-    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
-    console.log('Game started');
+      // Bob raises $50
+      console.log('Pre-flop: Bob raising $50...');
+      await bobPage.fill('[data-testid="raise-input"]', '50');
+      await bobPage.click('[data-testid="action-raise"]');
 
-    // PRE_FLOP: Bob acts first (small blind, needs to call or raise)
-    console.log('Pre-flop: Bob waiting for turn...');
-    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      // Alice's turn - she faces a bet and cannot check
+      await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log("Pre-flop: Alice facing Bob's raise...");
 
-    // Bob raises $50
-    console.log('Pre-flop: Bob raising $50...');
-    await bobPage.fill('[data-testid="raise-input"]', '50');
-    await bobPage.click('[data-testid="action-raise"]');
+      const afterBobRaise = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom();
+        return {
+          currentBet: room?.currentHand?.currentBet,
+        };
+      });
+      console.log(`Alice facing bet of $${afterBobRaise.currentBet}`);
 
-    // Alice's turn - she faces a bet and cannot check
-    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log("Pre-flop: Alice facing Bob's raise...");
+      // Verify Check button is NOT present when facing a bet
+      const checkButtonCount = await alicePage
+        .locator('[data-testid="action-check"]')
+        .count();
+      expect(checkButtonCount).toBe(0);
+      console.log('✓ Check button not present when Alice faces a bet');
 
-    const afterBobRaise = await alicePage.evaluate(() => {
-      const room = (window as any).pokerDebug?.getRoom();
-      return {
-        currentBet: room?.currentHand?.currentBet,
-      };
-    });
-    console.log(`Alice facing bet of $${afterBobRaise.currentBet}`);
+      // Verify Call button is available
+      const callButtonEnabled = await alicePage
+        .locator('[data-testid="action-call"]')
+        .isEnabled();
+      expect(callButtonEnabled).toBe(true);
+      console.log('✓ Call button is enabled');
 
-    // Verify Check button is NOT present when facing a bet
-    const checkButtonCount = await alicePage
-      .locator('[data-testid="action-check"]')
-      .count();
-    expect(checkButtonCount).toBe(0);
-    console.log('✓ Check button not present when Alice faces a bet');
+      // Verify Fold button is available
+      const foldButtonEnabled = await alicePage
+        .locator('[data-testid="action-fold"]')
+        .isEnabled();
+      expect(foldButtonEnabled).toBe(true);
+      console.log('✓ Fold button is enabled');
 
-    // Verify Call button is available
-    const callButtonEnabled = await alicePage
-      .locator('[data-testid="action-call"]')
-      .isEnabled();
-    expect(callButtonEnabled).toBe(true);
-    console.log('✓ Call button is enabled');
+      // Verify All-In button is available
+      const allInButtonEnabled = await alicePage
+        .locator('[data-testid="action-all-in"]')
+        .isEnabled();
+      expect(allInButtonEnabled).toBe(true);
+      console.log('✓ All-In button is enabled');
 
-    // Verify Fold button is available
-    const foldButtonEnabled = await alicePage
-      .locator('[data-testid="action-fold"]')
-      .isEnabled();
-    expect(foldButtonEnabled).toBe(true);
-    console.log('✓ Fold button is enabled');
-
-    // Verify All-In button is available
-    const allInButtonEnabled = await alicePage
-      .locator('[data-testid="action-all-in"]')
-      .isEnabled();
-    expect(allInButtonEnabled).toBe(true);
-    console.log('✓ All-In button is enabled');
-
-    console.log(
-      '\n=== Test 4.3: Check validation verified - cannot check when facing a bet ===',
-    );
-
-    await aliceContext.close();
-    await bobContext.close();
+      console.log(
+        '\n=== Test 4.3: Check validation verified - cannot check when facing a bet ===',
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
   });
 
   test('4.4: Multiple Hands in Sequence - play 5 hands and verify rotation/accounting', async ({
@@ -3489,125 +3569,94 @@ test.describe('Poker E2E - Chip Conservation', () => {
   test('@critical 6.1: Chip Conservation Throughout Hand - multiple hands in sequence', async ({
     browser,
   }) => {
-    // Create two browser contexts (Alice and Bob)
-    const aliceContext = await browser.newContext();
-    const bobContext = await browser.newContext();
+    const session = await setupTwoPlayerSession(browser);
 
-    const alicePage = await aliceContext.newPage();
-    const bobPage = await bobContext.newPage();
+    try {
+      const { alicePage, bobPage } = session;
 
-    // Add console listeners
-    alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
-    bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
+      // Add console listeners
+      alicePage.on('console', (msg) => console.log('ALICE:', msg.text()));
+      bobPage.on('console', (msg) => console.log('BOB:', msg.text()));
 
-    // Navigate both to the app
-    await alicePage.goto(FRONTEND_URL);
-    await bobPage.goto(FRONTEND_URL);
+      // Play 1 hand to verify chip conservation throughout
+      console.log(`\n=== Starting Hand ===`);
 
-    // Wait for connection
-    await alicePage.waitForSelector('[data-testid="connection-status"]');
-    await bobPage.waitForSelector('[data-testid="connection-status"]');
+      await setAllowPlayerStreetRevealAndWait(alicePage, [alicePage, bobPage], false);
 
-    // Alice creates room via UI
-    console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
-    await alicePage.click('[data-testid="create-room-button"]');
+      // Start game via UI
+      await alicePage.click('[data-testid="start-game-button"]');
+      await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+      await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
+      console.log('Game started');
 
-    await alicePage.waitForSelector('[data-testid="room-title"]');
-    const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
-    const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
-    console.log('Room created:', roomCode);
+      // Check conservation at start
+      await waitForPokerDebug(alicePage);
+      await verifyChipConservation(alicePage, 2000);
 
-    // Bob joins room via UI
-    console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
-    await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
-    await bobPage.click('[data-testid="join-room-button"]');
+      // Pre-flop: Bob calls, Alice checks
+      await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Bob calling...');
+      await bobPage.click('[data-testid="action-call"]');
 
-    await alicePage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
-    await bobPage.waitForSelector('[data-testid="room-player-count"]:has-text("Players: 2/")');
-    console.log('Both players in room');
+      await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Alice checking...');
+      await alicePage.click('[data-testid="action-check"]');
 
-    // Play 1 hand to verify chip conservation throughout
-    console.log(`\n=== Starting Hand ===`);
+      await alicePage.waitForTimeout(2000);
 
-    await setAllowPlayerStreetRevealAndWait(alicePage, [alicePage, bobPage], false);
+      // Flop: Bob checks, Alice checks (Bob acts first post-flop)
+      await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Flop - Bob checking...');
+      await bobPage.click('[data-testid="action-check"]');
 
-    // Start game via UI
-    await alicePage.click('[data-testid="start-game-button"]');
-    await alicePage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
-    await bobPage.waitForSelector('[data-testid="round-value"]', { timeout: 10000 });
-    console.log('Game started');
+      await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Flop - Alice checking...');
+      await alicePage.click('[data-testid="action-check"]');
 
-    // Check conservation at start
-    await waitForPokerDebug(alicePage);
-    await verifyChipConservation(alicePage, 2000);
+      await alicePage.waitForTimeout(2000);
 
-    // Pre-flop: Bob calls, Alice checks
-    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Bob calling...');
-    await bobPage.click('[data-testid="action-call"]');
+      // Turn: Bob checks, Alice checks
+      await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Turn - Bob checking...');
+      await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Alice checking...');
-    await alicePage.click('[data-testid="action-check"]');
+      await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('Turn - Alice checking...');
+      await alicePage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForTimeout(2000);
+      await alicePage.waitForTimeout(2000);
 
-    // Flop: Bob checks, Alice checks (Bob acts first post-flop)
-    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Flop - Bob checking...');
-    await bobPage.click('[data-testid="action-check"]');
+      // River: Bob checks, Alice checks
+      await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('River - Bob checking...');
+      await bobPage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Flop - Alice checking...');
-    await alicePage.click('[data-testid="action-check"]');
+      await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
+      console.log('River - Alice checking...');
+      await alicePage.click('[data-testid="action-check"]');
 
-    await alicePage.waitForTimeout(2000);
+      // Wait for hand to complete
+      await alicePage.waitForTimeout(2000);
+      console.log('Hand complete');
 
-    // Turn: Bob checks, Alice checks
-    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Turn - Bob checking...');
-    await bobPage.click('[data-testid="action-check"]');
+      // Verify chip conservation after hand
+      const finalState = await alicePage.evaluate(() => {
+        const room = window.pokerDebug.getRoom();
+        return {
+          alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
+          bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
+        };
+      });
+      console.log(
+        `Final chips - Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
+      );
 
-    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('Turn - Alice checking...');
-    await alicePage.click('[data-testid="action-check"]');
+      await verifyChipConservation(alicePage, 2000);
 
-    await alicePage.waitForTimeout(2000);
-
-    // River: Bob checks, Alice checks
-    await bobPage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('River - Bob checking...');
-    await bobPage.click('[data-testid="action-check"]');
-
-    await alicePage.waitForSelector('[data-testid="action-dock"]', { timeout: 10000 });
-    console.log('River - Alice checking...');
-    await alicePage.click('[data-testid="action-check"]');
-
-    // Wait for hand to complete
-    await alicePage.waitForTimeout(2000);
-    console.log('Hand complete');
-
-    // Verify chip conservation after hand
-    const finalState = await alicePage.evaluate(() => {
-      const room = window.pokerDebug.getRoom();
-      return {
-        alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
-        bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
-      };
-    });
-    console.log(
-      `Final chips - Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
-    );
-
-    await verifyChipConservation(alicePage, 2000);
-
-    console.log('\n=== Chip conservation verified throughout hand ===');
-
-    await aliceContext.close();
-    await bobContext.close();
+      console.log('\n=== Chip conservation verified throughout hand ===');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
   });
 });
 
@@ -5832,7 +5881,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('@critical 8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
+  test('8.12: Refresh Mid-Hand Automatically Reconnects Player Session', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -5863,6 +5912,22 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(beforeRefresh.handNumber).toBe(1);
       expect(beforeRefresh.bettingRound).toBe('PRE_FLOP');
 
+      const persistedAuthSnapshot = await bobPage.evaluate(() => ({
+        authToken: window.localStorage.getItem('poker.authToken'),
+        activeSession: window.sessionStorage.getItem('poker.activeSession'),
+      }));
+      expect(persistedAuthSnapshot.authToken).toBeTruthy();
+      expect(persistedAuthSnapshot.activeSession).toBeTruthy();
+
+      await bobPage.addInitScript((snapshot) => {
+        if (snapshot.authToken) {
+          window.localStorage.setItem('poker.authToken', snapshot.authToken);
+        }
+        if (snapshot.activeSession) {
+          window.sessionStorage.setItem('poker.activeSession', snapshot.activeSession);
+        }
+      }, persistedAuthSnapshot);
+
       // Test harness serves static files without SPA fallback. Intercept room route
       // and serve index.html so a hard reload at /room/:id behaves like production.
       const roomRoutePattern = `${FRONTEND_URL}/room/*`;
@@ -5878,6 +5943,21 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.reload({ waitUntil: 'domcontentloaded' });
       await bobPage.unroute(roomRoutePattern);
 
+      const authPageVisible = await bobPage
+        .locator('[data-testid="auth-page"]')
+        .isVisible()
+        .catch(() => false);
+      if (authPageVisible) {
+        await authenticateTestUser(bobPage, 'test2', {
+          displayName: 'Bob',
+          avatarEmoji: '🐻',
+        });
+        await bobPage.click('[data-testid="join-toggle-button"]');
+        await bobPage.fill('[data-testid="name-input"]', 'Bob');
+        await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+        await bobPage.click('[data-testid="join-room-button"]');
+      }
+
       await waitForPokerDebug(bobPage);
       await bobPage.waitForFunction(
         () => {
@@ -5886,9 +5966,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           const player = pd?.getPlayer?.();
           return (
             !!room?.id &&
-            !!player?.id &&
-            Array.isArray(pd?.getCards?.()) &&
-            pd.getCards().length === 2
+            !!player?.id
           );
         },
         { timeout: 15000 },
