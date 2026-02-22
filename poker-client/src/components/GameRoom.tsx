@@ -1887,8 +1887,11 @@ const useGameRoomElement = () => {
   );
   const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
   const canReadyPreGame = !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
-  const canRandomizeSeats = isHost && !isGameStarted && !isGameEnded && tablePlayers.length >= 2;
-  const showPreGameActionArea = canReadyPreGame || canRandomizeSeats;
+  const canRandomizeSeatsPreGame =
+    isHost && !isGameStarted && !isGameEnded && tablePlayers.length >= 2;
+  const canRandomizeSeatsNextHand =
+    isHost && isHandPausedForNextHand && !isGameEnded && tablePlayers.length >= 2;
+  const showPreGameActionArea = canReadyPreGame || canRandomizeSeatsPreGame;
   const shouldShowSeatReadyOverlay =
     !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
 
@@ -1989,7 +1992,7 @@ const useGameRoomElement = () => {
   );
   const showShowdownDecisionArea = isShowdownDecisionStep;
   const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
-  const showNextHandActionArea = canReadyNextHand;
+  const showNextHandActionArea = canReadyNextHand || canRandomizeSeatsNextHand;
   const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
   const showBottomOperationDock = showOperationBar || showNextHandActionArea || showPreGameActionArea;
   const operationBarMode = showShowdownDecisionArea
@@ -3567,7 +3570,7 @@ const useGameRoomElement = () => {
             canReady={canReadyPreGame}
             hasReadied={hasReadiedCurrentPhase}
             canEndGame={false}
-            canRandomizeSeats={canRandomizeSeats}
+            canRandomizeSeats={canRandomizeSeatsPreGame}
             onReady={markReady}
             onOpenEndGameConfirm={() => {}}
             onRandomizeSeats={randomizeSeats}
@@ -3642,11 +3645,13 @@ const useGameRoomElement = () => {
             canReady={canReadyNextHand}
             hasReadied={hasReadiedCurrentPhase}
             canEndGame={canHostEndGame}
+            canRandomizeSeats={canRandomizeSeatsNextHand}
             onReady={markReady}
             onOpenEndGameConfirm={() => {
               if (!canHostEndGame) return;
               setShowEndGameConfirmModal(true);
             }}
+            onRandomizeSeats={randomizeSeats}
             t={t}
           />
         </ChipComposerDock>

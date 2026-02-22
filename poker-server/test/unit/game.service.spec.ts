@@ -524,7 +524,89 @@ describe('GameService addPlayerToRoom', () => {
     randomSpy.mockRestore();
   });
 
-  it('rejects seat shuffle when game is not waiting', async () => {
+  it('allows seat shuffle between hands and resets next-hand ready state', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 2,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-charlie',
+          socketId: 's-charlie',
+          name: 'Charlie',
+          position: 4,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'disconnected',
+        }),
+      ],
+      currentHand: {
+        handNumber: 3,
+        dealerPosition: 0,
+        smallBlindPosition: 2,
+        bigBlindPosition: 4,
+        currentPlayerTurn: null,
+        pot: 120,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 20,
+        activePlayers: ['p-host', 'p-bob'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {
+          'p-host': 60,
+          'p-bob': 60,
+        },
+        vpipPlayerIds: ['p-host', 'p-bob'],
+        lastResult: {
+          winners: [],
+          playerHands: [],
+          totalPot: 120,
+          payouts: [],
+          netByPlayerId: {},
+        },
+        startedAt: Date.now(),
+      },
+    });
+    room.readyPhase = 'NEXT_HAND';
+    room.readyPlayerIds = ['p-host', 'p-bob'];
+    storageService.getRoom.mockResolvedValue(room);
+    const randomSpy = jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0);
+
+    const updated = await gameService.shuffleSeatOrder('ROOM01');
+
+    expect(updated.players.filter((player) => player.status !== 'left').map((player) => player.position)).toEqual([
+      2,
+      4,
+      0,
+    ]);
+    expect(updated.readyPhase).toBe('NEXT_HAND');
+    expect(updated.readyPlayerIds).toEqual([]);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    randomSpy.mockRestore();
+  });
+
+  it('rejects seat shuffle during an active hand', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',
       players: [
@@ -547,11 +629,32 @@ describe('GameService addPlayerToRoom', () => {
           status: 'connected',
         }),
       ],
+      currentHand: {
+        handNumber: 3,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-host',
+        pot: 30,
+        communityCards: [],
+        bettingRound: 'PRE_FLOP',
+        currentBet: 20,
+        lastRaiseSize: 10,
+        activePlayers: ['p-host', 'p-bob'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {
+          'p-host': 20,
+          'p-bob': 10,
+        },
+        vpipPlayerIds: ['p-host'],
+        startedAt: Date.now(),
+      },
     });
     storageService.getRoom.mockResolvedValue(room);
 
     await expect(gameService.shuffleSeatOrder('ROOM01')).rejects.toThrow(
-      'Seat order can only be changed before game starts',
+      'Seat order can only be changed before game starts or between hands',
     );
     expect(storageService.saveRoom).not.toHaveBeenCalled();
   });

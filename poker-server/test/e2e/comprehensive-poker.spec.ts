@@ -4799,6 +4799,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.locator('.table-controls-strip [data-testid="start-game-button"]'),
       ).toHaveCount(0);
       await expect(alicePage.locator('[data-testid="randomize-seats-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="randomize-seats-button"]')).toContainText(
+        'Adjust Seats',
+      );
       await expect(bobPage.locator('[data-testid="randomize-seats-button"]')).toHaveCount(0);
 
       const preShufflePositions = await alicePage.evaluate(() => {
@@ -4851,6 +4854,69 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(postShufflePositions.every((entry: { readyCount: number }) => entry.readyCount === 0)).toBe(
         true,
       );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.2aa: Hand-end action bar lets host adjust seats', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.click('[data-testid="action-fold"]');
+      await alicePage.waitForFunction(
+        () => window.pokerDebug?.getRoom()?.currentHand?.currentPlayerTurn === null,
+        { timeout: 10000 },
+      );
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await expect(alicePage.locator('[data-testid="start-next-hand-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="randomize-seats-button"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="randomize-seats-button"]')).toContainText(
+        'Adjust Seats',
+      );
+      await expect(bobPage.locator('[data-testid="randomize-seats-button"]')).toHaveCount(0);
+
+      const preShufflePositions = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return (room?.players ?? [])
+          .filter((player: any) => player.status !== 'left')
+          .map((player: any) => ({
+            playerId: player.id,
+            position: player.position,
+          }))
+          .sort((left: any, right: any) => left.playerId.localeCompare(right.playerId));
+      });
+
+      await alicePage.click('[data-testid="randomize-seats-button"]');
+
+      await alicePage.waitForFunction((beforePositionsSnapshot) => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const current = (room?.players ?? [])
+          .filter((player: any) => player.status !== 'left')
+          .map((player: any) => ({
+            playerId: player.id,
+            position: player.position,
+          }))
+          .sort((left: any, right: any) => left.playerId.localeCompare(right.playerId));
+        const changedSeat = current.some(
+          (entry: { playerId: string; position: number }, index: number) =>
+            entry.position !== beforePositionsSnapshot[index]?.position,
+        );
+
+        return (
+          changedSeat &&
+          room?.readyPhase === 'NEXT_HAND' &&
+          (room?.readyPlayerIds ?? []).length === 0
+        );
+      }, preShufflePositions);
     } finally {
       await teardownTwoPlayerSession(session);
     }

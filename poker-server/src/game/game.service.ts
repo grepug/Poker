@@ -431,8 +431,10 @@ export class GameService {
       throw new Error('Room not found');
     }
 
-    if (room.gameState !== 'WAITING') {
-      throw new Error('Seat order can only be changed before game starts');
+    if (!this.isSeatShuffleAllowed(room)) {
+      throw new Error(
+        'Seat order can only be changed before game starts or between hands',
+      );
     }
 
     const seatedPlayers = this.getSeatedPlayers(room);
@@ -457,7 +459,7 @@ export class GameService {
       player.position = shuffledPositions[index];
     });
 
-    room.readyPhase = 'START_GAME';
+    room.readyPhase = room.gameState === 'WAITING' ? 'START_GAME' : 'NEXT_HAND';
     room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
@@ -487,6 +489,21 @@ export class GameService {
 
   private getSeatedPlayers(room: Room): Player[] {
     return room.players.filter((player) => player.status !== 'left');
+  }
+
+  private isSeatShuffleAllowed(room: Room): boolean {
+    if (room.gameState === 'WAITING') {
+      return true;
+    }
+
+    if (room.gameState !== 'IN_PROGRESS' || !room.currentHand) {
+      return false;
+    }
+
+    return (
+      room.currentHand.currentPlayerTurn === null &&
+      Boolean(room.currentHand.lastResult)
+    );
   }
 
   private shuffleNumbers(values: number[]): number[] {

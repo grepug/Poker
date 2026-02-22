@@ -31,14 +31,14 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
   t,
 }) => {
   const isPreGame = mode === "pregame";
-  if (mode === "nextHand" && !canReady) {
+  if (mode === "nextHand" && !canReady && !canRandomizeSeats) {
     return null;
   }
   if (isPreGame && !canReady && !canRandomizeSeats) {
     return null;
   }
 
-  const showReadyButton = mode === "nextHand" || canReady;
+  const showReadyButton = canReady;
   const readyButtonTestId = isPreGame ? "start-game-button" : "start-next-hand-button";
   const title = isPreGame ? t("game.pregame.actionTitle") : t("game.handComplete");
   const hint = isPreGame ? t("game.pregame.actionHint") : t("game.handCompleteHint");
@@ -61,7 +61,7 @@ export const NextHandActionArea: React.FC<NextHandActionAreaProps> = ({
               {hasReadied ? t("game.ready.waitingOthers") : t("common.ready")}
             </button>
           )}
-          {isPreGame && canRandomizeSeats && onRandomizeSeats && (
+          {canRandomizeSeats && onRandomizeSeats && (
             <button
               onClick={onRandomizeSeats}
               disabled={isRandomizingSeats}
