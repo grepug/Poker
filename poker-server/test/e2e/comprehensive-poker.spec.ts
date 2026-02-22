@@ -5019,6 +5019,59 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4aa: Auth Removes Redundant Copy And Supports Full Emoji Selection', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="auth-page"]');
+
+      const authPage = page.locator('[data-testid="auth-page"]');
+      await expect(authPage).not.toContainText(
+        'Passkey is recommended. Password login is enabled for test accounts (test1/test2/test3).',
+      );
+      await expect(authPage).not.toContainText(
+        'Register with Passkey first. If you already have one, use the login button below.',
+      );
+
+      await page.getByRole('button', {
+        name: /Register and sign in with Passkey|用 Passkey 注册并登录/,
+      }).click();
+      await expect(page.locator('[data-testid="auth-emoji-grid"]')).toBeVisible();
+
+      const emojiGrid = page.locator('[data-testid="auth-emoji-grid"]');
+      const extendedEmojiOption = page.locator(
+        '[data-testid="auth-emoji-option"][data-emoji="👾"]',
+      );
+      await extendedEmojiOption.scrollIntoViewIfNeeded();
+      await extendedEmojiOption.click();
+      await expect(extendedEmojiOption).toHaveClass(/ring-emerald-300\/80/);
+
+      const isScrollable = await emojiGrid.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
+      );
+      expect(isScrollable).toBe(true);
+
+      await page.evaluate(() => {
+        window.localStorage.setItem('poker.locale', 'zh_hans');
+      });
+      await page.goto(FRONTEND_URL);
+      await page.waitForSelector('[data-testid="auth-page"]');
+
+      await expect(authPage).not.toContainText(
+        '默认推荐使用 Passkey。测试环境支持账号密码（test1/test2/test3）。',
+      );
+      await expect(authPage).not.toContainText(
+        '新用户请先注册 Passkey；已有 Passkey 可点击下方登录按钮。',
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
   test('8.4ab: Host can create short-deck room from lobby and keep short-deck state in game', async ({
     browser,
   }) => {
