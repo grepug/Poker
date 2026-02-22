@@ -117,7 +117,7 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
                 onClick={onShowMyHand}
                 disabled={!canShowMyHand || hasShownMyHand || hasFoldedMyHand}
                 data-testid="show-my-hand-button"
-                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+                className="operation-action-button operation-action-button--secondary"
               >
                 {hasShownMyHand ? t("game.showdown.shown") : t("game.showdown.show")}
               </button>
@@ -133,7 +133,7 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
                   }}
                   disabled={!canFoldMyHand || hasFoldedMyHand || hasShownMyHand}
                   data-testid="fold-my-hand-button"
-                  className="rounded-xl border border-rose-300/70 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="operation-action-button operation-action-button--danger"
                 >
                   {hasFoldedMyHand ? t("game.showdown.mucked") : t("common.fold")}
                 </button>
@@ -172,7 +172,7 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
             onClick={onRevealNextStreet}
             disabled={!canRevealNextStreet || hasRevealedNextStreet}
             data-testid="reveal-next-street-button"
-            className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+            className="operation-action-button operation-action-button--secondary"
           >
             {hasRevealedNextStreet
               ? t("game.streetReveal.revealed")

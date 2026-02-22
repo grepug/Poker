@@ -26,6 +26,7 @@ import type {
   ChatMessage,
   SendChatMessageData,
   VoiceMessagePayload,
+  SeatOrderUpdatedData,
 } from "poker-types";
 import { useSocket } from "./SocketContext";
 import { getVoicePlaybackState } from "../services/voice-playback.service";
@@ -95,12 +96,14 @@ type DebugApi = {
   getShowdownDecisionState: () => ShowdownDecisionStateData | null;
   getRevealedShowdownHandsByPlayerId: () => Record<string, RevealedShowdownHand>;
   getNextStreetRevealState: () => NextStreetRevealState | null;
+  getSeatShuffleToken: () => number;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
   createRoom: (name?: string, emoji?: string, options?: CreateRoomOptions) => void;
   joinRoom: (roomId: string, name?: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
+  randomizeSeats: () => void;
   endGame: () => void;
   showMyHand: () => void;
   muckMyHand: () => void;
@@ -143,6 +146,7 @@ interface GameContextType {
   showdownDecisionState: ShowdownDecisionStateData | null;
   revealedShowdownHandsByPlayerId: Record<string, RevealedShowdownHand>;
   nextStreetRevealState: NextStreetRevealState | null;
+  seatShuffleToken: number;
   isHost: boolean;
   isRecoveringSession: boolean;
   lastError: string | null;
@@ -160,6 +164,7 @@ interface GameContextType {
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
+  randomizeSeats: () => void;
   endGame: () => void;
   showMyHand: () => void;
   muckMyHand: () => void;
@@ -357,6 +362,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     useState<Record<string, RevealedShowdownHand>>({});
   const [nextStreetRevealState, setNextStreetRevealState] =
     useState<NextStreetRevealState | null>(null);
+  const [seatShuffleToken, setSeatShuffleToken] = useState(0);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -415,6 +421,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       setLastPlayerActionEvent(null);
       setFinalGameResult(null);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setSeatShuffleToken(0);
       clearStoredFinalResult(data.room.id);
       setChatMessages([]);
       setChatHasMore(false);
@@ -442,6 +449,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           : null;
       setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setSeatShuffleToken(0);
       setChatMessages([]);
       setChatHasMore(false);
       setChatNextBeforeSeq(null);
@@ -468,6 +476,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           : null;
       setFinalGameResult(restoredFinalResult);
       setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
+      setSeatShuffleToken(0);
       setChatMessages([]);
       setChatHasMore(false);
       setChatNextBeforeSeq(null);
@@ -642,6 +651,43 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           readyPlayerIds: data.readyPlayerIds ?? [],
         };
       });
+    });
+
+    socket.on("SEAT_ORDER_UPDATED", (data: SeatOrderUpdatedData) => {
+      const positionByPlayerId = new Map(
+        (data.players ?? []).map((entry) => [entry.playerId, entry.position]),
+      );
+
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: prev.players.map((seatPlayer) => {
+            const nextPosition = positionByPlayerId.get(seatPlayer.id);
+            if (typeof nextPosition !== "number") {
+              return seatPlayer;
+            }
+            return {
+              ...seatPlayer,
+              position: nextPosition,
+            };
+          }),
+        };
+      });
+
+      setPlayer((prev) => {
+        if (!prev) return prev;
+        const nextPosition = positionByPlayerId.get(prev.id);
+        if (typeof nextPosition !== "number") {
+          return prev;
+        }
+        return {
+          ...prev,
+          position: nextPosition,
+        };
+      });
+
+      setSeatShuffleToken(data.shuffledAt || Date.now());
     });
 
     // Game started
@@ -1107,6 +1153,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       socket.off("HOST_CHANGED");
       socket.off("ROOM_CONFIG_UPDATED");
       socket.off("READY_STATE_UPDATED");
+      socket.off("SEAT_ORDER_UPDATED");
       socket.off("GAME_STARTED");
       socket.off("YOUR_CARDS");
       socket.off("PLAYER_TURN");
@@ -1298,6 +1345,17 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     });
   }, [socket]);
 
+  const randomizeSeats = useCallback(() => {
+    if (!socket) return;
+    setLastError(null);
+    socket.emit("RANDOMIZE_SEATS", {}, (response) => {
+      console.log("Randomize seats response:", response);
+      if (response && "success" in response && !response.success) {
+        setLastError(response.error || "Failed to randomize seats");
+      }
+    });
+  }, [socket]);
+
   const endGame = useCallback(() => {
     if (!socket) return;
     setLastError(null);
@@ -1371,6 +1429,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setShowdownDecisionState(null);
     setRevealedShowdownHandsByPlayerId({});
     setNextStreetRevealState(null);
+    setSeatShuffleToken(0);
     setIsRecoveringSession(false);
     setLastError(null);
     setChatMessages([]);
@@ -1524,12 +1583,14 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         getShowdownDecisionState: () => showdownDecisionState,
         getRevealedShowdownHandsByPlayerId: () => revealedShowdownHandsByPlayerId,
         getNextStreetRevealState: () => nextStreetRevealState,
+        getSeatShuffleToken: () => seatShuffleToken,
         getSocket: () => socket,
         createRoom,
         joinRoom,
         startGame,
         startNextHand,
         markReady,
+        randomizeSeats,
         endGame,
         showMyHand,
         muckMyHand,
@@ -1577,6 +1638,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     showdownDecisionState,
     revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
+    seatShuffleToken,
     socket,
     isHost,
     createRoom,
@@ -1584,6 +1646,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     startGame,
     startNextHand,
     markReady,
+    randomizeSeats,
     endGame,
     showMyHand,
     muckMyHand,
@@ -1615,6 +1678,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         showdownDecisionState,
         revealedShowdownHandsByPlayerId,
         nextStreetRevealState,
+        seatShuffleToken,
         isHost,
         isRecoveringSession,
         lastError,
@@ -1628,6 +1692,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         startGame,
         startNextHand,
         markReady,
+        randomizeSeats,
         endGame,
         showMyHand,
         muckMyHand,

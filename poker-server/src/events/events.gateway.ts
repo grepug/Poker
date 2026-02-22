@@ -31,6 +31,7 @@ import {
   PlayerActionDisplayKind,
   RequestRebuyData,
   MuckMyHandData,
+  RandomizeSeatsData,
   RevealNextStreetData,
   ShowMyHandData,
   UpdateRoomConfigData,
@@ -51,6 +52,7 @@ import {
   ShowdownDecisionStateData,
   RoomConfigUpdatedData,
   ReadyStateUpdatedData,
+  SeatOrderUpdatedData,
   ReadyPhase,
   ChatHistorySyncData,
   ChatMessage,
@@ -883,6 +885,62 @@ export class EventsGateway
       );
     } catch (error) {
       this.logger.error(`Player ready error: ${error.message}`);
+      client.emit('ERROR', { message: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('RANDOMIZE_SEATS')
+  async handleRandomizeSeats(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() _data: RandomizeSeatsData,
+  ) {
+    void _data;
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(
+        playerInfo.roomId,
+        async () => {
+          const room = await this.getRoom(playerInfo.roomId);
+          if (!room) throw new Error('Room not found');
+
+          if (room.hostId !== playerInfo.playerId) {
+            throw new Error('Only host can randomize seats');
+          }
+
+          const seatedPlayers = room.players.filter(
+            (seatPlayer: any) => seatPlayer.status !== 'left',
+          );
+          if (seatedPlayers.length < 2) {
+            throw new Error('Need at least 2 seated players to shuffle seats');
+          }
+
+          if (room.gameState !== 'WAITING') {
+            throw new Error('Seat order can only be changed before game starts');
+          }
+
+          const updatedRoom = await this.gameService.shuffleSeatOrder(room.id);
+          const payload: SeatOrderUpdatedData = {
+            players: updatedRoom.players
+              .filter((seatPlayer: any) => seatPlayer.status !== 'left')
+              .map((seatPlayer: any) => ({
+                playerId: seatPlayer.id,
+                position: seatPlayer.position,
+              })),
+            shuffledByPlayerId: playerInfo.playerId,
+            shuffledAt: Date.now(),
+          };
+
+          this.server.to(updatedRoom.id).emit('SEAT_ORDER_UPDATED', payload);
+          this.emitReadyStateUpdated(updatedRoom.id, updatedRoom);
+
+          return { success: true };
+        },
+      );
+    } catch (error) {
+      this.logger.error(`Randomize seats error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false, error: error.message };
     }

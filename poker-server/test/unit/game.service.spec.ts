@@ -462,4 +462,129 @@ describe('GameService addPlayerToRoom', () => {
     expect(updated?.currentHand?.currentPlayerTurn).toBeNull();
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
+
+  it('shuffles all seated players including disconnected and resets pregame ready state', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-charlie',
+          socketId: 's-charlie',
+          name: 'Charlie',
+          position: 2,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'disconnected',
+        }),
+        createPlayer({
+          id: 'p-left',
+          socketId: '',
+          name: 'Left',
+          position: 5,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'left',
+        }),
+      ],
+    });
+    room.readyPhase = 'START_GAME';
+    room.readyPlayerIds = ['p-host', 'p-bob'];
+    storageService.getRoom.mockResolvedValue(room);
+    const randomSpy = jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0);
+
+    const updated = await gameService.shuffleSeatOrder('ROOM01');
+
+    const shuffledPlayers = updated.players.filter((player) => player.status !== 'left');
+    expect(shuffledPlayers.map((player) => player.position)).toEqual([1, 2, 0]);
+    expect(updated.players.find((player) => player.id === 'p-left')?.position).toBe(5);
+    expect(updated.readyPhase).toBe('START_GAME');
+    expect(updated.readyPlayerIds).toEqual([]);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    randomSpy.mockRestore();
+  });
+
+  it('rejects seat shuffle when game is not waiting', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    await expect(gameService.shuffleSeatOrder('ROOM01')).rejects.toThrow(
+      'Seat order can only be changed before game starts',
+    );
+    expect(storageService.saveRoom).not.toHaveBeenCalled();
+  });
+
+  it('rejects seat shuffle when fewer than two players are seated', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Alice',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        createPlayer({
+          id: 'p-left',
+          socketId: '',
+          name: 'Bob',
+          position: 1,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'left',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    await expect(gameService.shuffleSeatOrder('ROOM01')).rejects.toThrow(
+      'Need at least 2 seated players to shuffle seats',
+    );
+    expect(storageService.saveRoom).not.toHaveBeenCalled();
+  });
 });

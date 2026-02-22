@@ -52,6 +52,7 @@ export interface UpdateRoomConfigData {
 }
 
 export interface PlayerReadyData {}
+export interface RandomizeSeatsData {}
 
 export interface UpdateProfileData {
   displayName: string;
@@ -90,6 +91,10 @@ export interface ClientToServerEvents {
   ) => void;
   PLAYER_READY: (
     data: PlayerReadyData,
+    callback: (response: any) => void,
+  ) => void;
+  RANDOMIZE_SEATS: (
+    data: RandomizeSeatsData,
     callback: (response: any) => void,
   ) => void;
   UPDATE_PROFILE: (
@@ -272,6 +277,15 @@ export interface ReadyStateUpdatedData {
   readyPlayerIds: string[];
 }
 
+export interface SeatOrderUpdatedData {
+  players: Array<{
+    playerId: string;
+    position: number;
+  }>;
+  shuffledByPlayerId: string;
+  shuffledAt: number;
+}
+
 export interface PlayerReboughtData {
   playerId: string;
   playerName: string;
@@ -355,6 +369,7 @@ export interface ServerToClientEvents {
   HOST_CHANGED: (data: HostChangedData) => void;
   ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;
   READY_STATE_UPDATED: (data: ReadyStateUpdatedData) => void;
+  SEAT_ORDER_UPDATED: (data: SeatOrderUpdatedData) => void;
   PLAYER_REBOUGHT: (data: PlayerReboughtData) => void;
   PLAYER_LEFT: (data: PlayerLeftData) => void;
   GAME_ENDED: (data: GameEndedData) => void;

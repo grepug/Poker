@@ -21,7 +21,6 @@ const meta = {
     rankingsLabel: "Rankings",
     chatLabel: "Chat (2)",
     finalResultsLabel: "Final Results",
-    startLabel: "Start",
     hiddenHudCopy: {
       potLabel: "Pot: $120",
       chipsLabel: "Your Chips: $980",
@@ -39,7 +38,6 @@ const meta = {
       dismissLabel: "Dismiss chat preview",
     },
     showFinalResultsButton: false,
-    showStartGameButton: true,
     onCopyInvite: () => {},
     onLeave: () => {},
     onOpenSettings: () => {},
@@ -47,7 +45,6 @@ const meta = {
     onOpenRankings: () => {},
     onToggleChat: () => {},
     onOpenFinalResults: () => {},
-    onStartGame: () => {},
     onOpenChatFromPreview: () => {},
     onDismissPreview: () => {},
   },

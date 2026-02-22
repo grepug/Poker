@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Card as PokerCard } from "poker-types";
 import { Card } from "@/components/Card";
 import { CommunityCardsLane } from "@/components/poker/community-cards-lane";
@@ -47,6 +47,7 @@ type TableBoardProps = {
   potValue: string;
   potHint: string | null;
   potPulse: boolean;
+  seatShuffleToken: number;
   seatOrbitItems: SeatOrbitItem[];
 };
 
@@ -361,11 +362,36 @@ export const TableBoard: React.FC<TableBoardProps> = ({
   potValue,
   potHint,
   potPulse,
+  seatShuffleToken,
   seatOrbitItems,
 }) => {
   const seatOrbitRef = useRef<HTMLDivElement | null>(null);
+  const [isSeatShuffleAnimating, setIsSeatShuffleAnimating] = useState(false);
+  const previousSeatShuffleTokenRef = useRef(seatShuffleToken);
   const baseSeatWidthToken = seatOrbitItems[0]?.width ?? null;
   const seatOrbitItemCount = seatOrbitItems.length;
+
+  useEffect(() => {
+    if (!seatShuffleToken || seatShuffleToken === previousSeatShuffleTokenRef.current) {
+      return;
+    }
+
+    previousSeatShuffleTokenRef.current = seatShuffleToken;
+    setIsSeatShuffleAnimating(true);
+
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const animationDurationMs = prefersReducedMotion ? 0 : 900;
+    const timeout = window.setTimeout(() => {
+      setIsSeatShuffleAnimating(false);
+    }, animationDurationMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [seatShuffleToken]);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") {
@@ -448,7 +474,10 @@ export const TableBoard: React.FC<TableBoardProps> = ({
 
   return (
     <section className="table-board-wrap" data-testid="table-board-section">
-      <div ref={feltOvalRef} className="felt-oval">
+      <div
+        ref={feltOvalRef}
+        className={`felt-oval ${isSeatShuffleAnimating ? "felt-oval--seat-shuffle" : ""}`}
+      >
         <div ref={boardCenterStackRef} className="board-center-stack">
           <div ref={communityLaneRef}>
             <CommunityCardsLane>
@@ -485,10 +514,15 @@ export const TableBoard: React.FC<TableBoardProps> = ({
           </div>
         </div>
 
-        <div ref={seatOrbitRef} className="seat-orbit" data-testid="players-section">
+        <div
+          ref={seatOrbitRef}
+          className={`seat-orbit ${isSeatShuffleAnimating ? "seat-orbit--shuffling" : ""}`}
+          data-testid="players-section"
+          data-seat-shuffle-token={seatShuffleToken}
+        >
           {seatOrbitItems.map((item) => (
             <div
-              key={`seat-slot-${item.slotIndex}`}
+              key={`seat-slot-${item.playerId}`}
               className="seat-orbit__slot"
               style={{
                 top: item.top,

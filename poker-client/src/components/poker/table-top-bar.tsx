@@ -31,13 +31,10 @@ type TableTopBarProps = {
   rankingsLabel: string;
   chatLabel: string;
   finalResultsLabel: string;
-  startLabel: string;
-  startDisabled?: boolean;
   hiddenHudCopy: HiddenHudCopy;
   isChatPanelOpen: boolean;
   chatPreview: ChatPreview | null;
   showFinalResultsButton: boolean;
-  showStartGameButton: boolean;
   onCopyInvite: () => void;
   onLeave: () => void;
   onOpenSettings: () => void;
@@ -45,7 +42,6 @@ type TableTopBarProps = {
   onOpenRankings: () => void;
   onToggleChat: () => void;
   onOpenFinalResults: () => void;
-  onStartGame: () => void;
   onOpenChatFromPreview: () => void;
   onDismissPreview: () => void;
 };
@@ -63,13 +59,10 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   rankingsLabel,
   chatLabel,
   finalResultsLabel,
-  startLabel,
-  startDisabled = false,
   hiddenHudCopy,
   isChatPanelOpen,
   chatPreview,
   showFinalResultsButton,
-  showStartGameButton,
   onCopyInvite,
   onLeave,
   onOpenSettings,
@@ -77,7 +70,6 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   onOpenRankings,
   onToggleChat,
   onOpenFinalResults,
-  onStartGame,
   onOpenChatFromPreview,
   onDismissPreview,
 }) => {
@@ -191,18 +183,6 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          {showStartGameButton && (
-            <button
-              onClick={onStartGame}
-              disabled={startDisabled}
-              data-testid="start-game-button"
-              className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {startLabel}
-            </button>
-          )}
-        </div>
       </section>
 
       {!isChatPanelOpen && chatPreview && (

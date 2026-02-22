@@ -760,6 +760,7 @@ const desktopArgs: TableBoardStoryArgs = {
   potValue: "$220",
   potHint: "Drag chips to bet",
   potPulse: true,
+  seatShuffleToken: 0,
   seatOrbitItems,
 };
 

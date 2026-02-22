@@ -10,11 +10,15 @@ const meta = {
   },
   tags: ["autodocs"],
   args: {
-    canReadyNextHand: true,
-    hasReadiedNextHand: false,
+    mode: "nextHand",
+    canReady: true,
+    hasReadied: false,
     canEndGame: true,
-    onReadyNextHand: () => {},
+    canRandomizeSeats: false,
+    isRandomizingSeats: false,
+    onReady: () => {},
     onOpenEndGameConfirm: () => {},
+    onRandomizeSeats: () => {},
     t: storyTranslate,
   },
   decorators: [
@@ -33,8 +37,18 @@ export const HostControls: Story = {};
 
 export const WaitingForOthers: Story = {
   args: {
-    canReadyNextHand: true,
-    hasReadiedNextHand: true,
+    canReady: true,
+    hasReadied: true,
     canEndGame: false,
+  },
+};
+
+export const PregameHost: Story = {
+  args: {
+    mode: "pregame",
+    canReady: true,
+    hasReadied: false,
+    canEndGame: false,
+    canRandomizeSeats: true,
   },
 };

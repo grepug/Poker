@@ -424,6 +424,47 @@ export class GameService {
     return room;
   }
 
+  async shuffleSeatOrder(roomId: string): Promise<Room> {
+    const room = await this.storageService.getRoom(roomId);
+
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    if (room.gameState !== 'WAITING') {
+      throw new Error('Seat order can only be changed before game starts');
+    }
+
+    const seatedPlayers = this.getSeatedPlayers(room);
+    if (seatedPlayers.length < 2) {
+      throw new Error('Need at least 2 seated players to shuffle seats');
+    }
+
+    const originalPositions = seatedPlayers.map((player) => player.position);
+    const shuffledPositions = this.shuffleNumbers(originalPositions);
+
+    const isSameOrder = shuffledPositions.every(
+      (position, index) => position === originalPositions[index],
+    );
+
+    if (isSameOrder) {
+      const rotated = shuffledPositions.slice(1);
+      rotated.push(shuffledPositions[0]);
+      shuffledPositions.splice(0, shuffledPositions.length, ...rotated);
+    }
+
+    seatedPlayers.forEach((player, index) => {
+      player.position = shuffledPositions[index];
+    });
+
+    room.readyPhase = 'START_GAME';
+    room.readyPlayerIds = [];
+    room.lastActivityAt = Date.now();
+
+    await this.storageService.saveRoom(room);
+    return room;
+  }
+
   /**
    * Validate that a room is in a valid state
    */
@@ -446,5 +487,14 @@ export class GameService {
 
   private getSeatedPlayers(room: Room): Player[] {
     return room.players.filter((player) => player.status !== 'left');
+  }
+
+  private shuffleNumbers(values: number[]): number[] {
+    const next = [...values];
+    for (let index = next.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+    }
+    return next;
   }
 }

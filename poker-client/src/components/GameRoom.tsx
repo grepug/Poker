@@ -1609,6 +1609,7 @@ const useGameRoomElement = () => {
     lastError,
     clearError,
     markReady,
+    randomizeSeats,
     endGame,
     showMyHand,
     muckMyHand,
@@ -1621,6 +1622,7 @@ const useGameRoomElement = () => {
     isChatPanelOpen,
     setChatPanelOpen,
     clearChatUnread,
+    seatShuffleToken,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
   const { user, updateProfile } = useAuth();
@@ -1884,8 +1886,9 @@ const useGameRoomElement = () => {
     [currentReadyPhase, room?.readyPhase, room?.readyPlayerIds],
   );
   const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
-  const showPreGameReadyButton =
-    !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
+  const canReadyPreGame = !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
+  const canRandomizeSeats = isHost && !isGameStarted && !isGameEnded && tablePlayers.length >= 2;
+  const showPreGameActionArea = canReadyPreGame || canRandomizeSeats;
   const shouldShowSeatReadyOverlay =
     !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
 
@@ -1988,6 +1991,7 @@ const useGameRoomElement = () => {
   const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
   const showNextHandActionArea = canReadyNextHand;
   const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
+  const showBottomOperationDock = showOperationBar || showNextHandActionArea || showPreGameActionArea;
   const operationBarMode = showShowdownDecisionArea
     ? "showdown"
     : showNextStreetActionArea
@@ -1996,10 +2000,14 @@ const useGameRoomElement = () => {
   const showTurnActionDock = isYourTurn && !showOperationBar && !showNextHandActionArea;
   const shouldAnchorCardsFlyoutToBottomBar =
     showOperationBar || showNextHandActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const shouldTrackBottomBarHeight =
+    shouldAnchorCardsFlyoutToBottomBar || (isDesktopSideDock && showBottomOperationDock);
   const activeBottomBarMode = showOperationBar
     ? "operation"
     : showNextHandActionArea
       ? "nextHand"
+      : showPreGameActionArea
+        ? "pregame"
       : showTurnActionDock
         ? "turn"
         : null;
@@ -2760,7 +2768,7 @@ const useGameRoomElement = () => {
   }, [resetTurnInteractionState, showTurnActionDock]);
 
   useEffect(() => {
-    if (!shouldAnchorCardsFlyoutToBottomBar) {
+    if (!shouldTrackBottomBarHeight) {
       setBottomBarHeight(0);
       return;
     }
@@ -2789,7 +2797,7 @@ const useGameRoomElement = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateOverlayHeight);
     };
-  }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
+  }, [activeBottomBarMode, shouldTrackBottomBarHeight]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
@@ -3384,7 +3392,7 @@ const useGameRoomElement = () => {
   return (
     <TableShell
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
-      showDesktopOperationDock={(showOperationBar || showNextHandActionArea) && isDesktopSideDock}
+      showDesktopOperationDock={showBottomOperationDock && isDesktopSideDock}
       desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
@@ -3408,8 +3416,6 @@ const useGameRoomElement = () => {
             : t("game.chat.button")
         }
         finalResultsLabel={t("game.final.title")}
-        startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
-        startDisabled={hasReadiedCurrentPhase}
         hiddenHudCopy={{
           potLabel: t("game.pot", { amount: displayPot }),
           chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
@@ -3435,7 +3441,6 @@ const useGameRoomElement = () => {
               }
         }
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
-        showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
         onLeave={handleLeave}
         onOpenSettings={() => {
@@ -3450,7 +3455,6 @@ const useGameRoomElement = () => {
         onOpenRankings={() => setShowRankingsModal(true)}
         onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
         onOpenFinalResults={() => setShowFinalSummaryModal(true)}
-        onStartGame={markReady}
         onOpenChatFromPreview={handleOpenChatFromPreview}
         onDismissPreview={handleDismissPreview}
       />
@@ -3520,6 +3524,7 @@ const useGameRoomElement = () => {
         potValue={`$${animatedPotValue}`}
         potHint={isYourTurn ? t("game.dragHint") : null}
         potPulse={potAnimationTick >= 0}
+        seatShuffleToken={seatShuffleToken}
         seatOrbitItems={seatOrbitItems}
       />
 
@@ -3549,6 +3554,26 @@ const useGameRoomElement = () => {
             t={t}
           />
         </HandResultsPanel>
+      )}
+
+      {showPreGameActionArea && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <NextHandActionArea
+            mode="pregame"
+            canReady={canReadyPreGame}
+            hasReadied={hasReadiedCurrentPhase}
+            canEndGame={false}
+            canRandomizeSeats={canRandomizeSeats}
+            onReady={markReady}
+            onOpenEndGameConfirm={() => {}}
+            onRandomizeSeats={randomizeSeats}
+            t={t}
+          />
+        </ChipComposerDock>
       )}
 
       {operationBarMode !== null && (
@@ -3613,10 +3638,11 @@ const useGameRoomElement = () => {
           testId="operation-overlay"
         >
           <NextHandActionArea
-            canReadyNextHand={canReadyNextHand}
-            hasReadiedNextHand={hasReadiedCurrentPhase}
+            mode="nextHand"
+            canReady={canReadyNextHand}
+            hasReadied={hasReadiedCurrentPhase}
             canEndGame={canHostEndGame}
-            onReadyNextHand={markReady}
+            onReady={markReady}
             onOpenEndGameConfirm={() => {
               if (!canHostEndGame) return;
               setShowEndGameConfirmModal(true);

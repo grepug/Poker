@@ -4784,6 +4784,78 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.2a: Pregame actions live in bottom bar and host can randomize seats', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await expect(
+        alicePage.locator('[data-testid="operation-overlay"] [data-testid="start-game-button"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('.table-controls-strip [data-testid="start-game-button"]'),
+      ).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="randomize-seats-button"]')).toBeVisible();
+      await expect(bobPage.locator('[data-testid="randomize-seats-button"]')).toHaveCount(0);
+
+      const preShufflePositions = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return (room?.players ?? [])
+          .filter((player: any) => player.status !== 'left')
+          .map((player: any) => ({
+            playerId: player.id,
+            position: player.position,
+          }))
+          .sort((left: any, right: any) => left.playerId.localeCompare(right.playerId));
+      });
+
+      await alicePage.click('[data-testid="randomize-seats-button"]');
+
+      await alicePage.waitForFunction((beforePositionsSnapshot) => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const current = (room?.players ?? [])
+          .filter((player: any) => player.status !== 'left')
+          .map((player: any) => ({
+            playerId: player.id,
+            position: player.position,
+          }))
+          .sort((left: any, right: any) => left.playerId.localeCompare(right.playerId));
+
+        return current.some(
+          (entry: { playerId: string; position: number }, index: number) =>
+            entry.position !== beforePositionsSnapshot[index]?.position,
+        );
+      }, preShufflePositions);
+
+      const postShufflePositions = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return (room?.players ?? [])
+          .filter((player: any) => player.status !== 'left')
+          .map((player: any) => ({
+            playerId: player.id,
+            position: player.position,
+            readyCount: (room?.readyPlayerIds ?? []).length,
+          }))
+          .sort((left: any, right: any) => left.playerId.localeCompare(right.playerId));
+      });
+
+      const changedSeatCount = postShufflePositions.reduce(
+        (count: number, entry: { playerId: string; position: number }, index: number) =>
+          entry.position !== preShufflePositions[index]?.position ? count + 1 : count,
+        0,
+      );
+      expect(changedSeatCount).toBeGreaterThan(0);
+      expect(postShufflePositions.every((entry: { readyCount: number }) => entry.readyCount === 0)).toBe(
+        true,
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.2b: Top Overlay Drops Redundant Stat Chips', async ({ browser }) => {
     const session = await setupTwoPlayerSession(browser);
 
