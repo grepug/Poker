@@ -687,7 +687,10 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         };
       });
 
-      setSeatShuffleToken(data.shuffledAt || Date.now());
+      setSeatShuffleToken((prevToken) => {
+        const incomingToken = data.shuffledAt ?? Date.now();
+        return incomingToken === prevToken ? incomingToken + 1 : incomingToken;
+      });
     });
 
     // Game started

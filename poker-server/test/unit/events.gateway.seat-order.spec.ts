@@ -253,7 +253,7 @@ describe('EventsGateway randomize seats', () => {
     });
   });
 
-  it('rejects randomize seats during an active hand', async () => {
+  it('propagates service validation errors for invalid shuffle state', async () => {
     const room = createRoom({
       hostId: 'p-host',
       gameState: 'IN_PROGRESS',
@@ -268,6 +268,9 @@ describe('EventsGateway randomize seats', () => {
     });
 
     storageService.getRoom.mockResolvedValue(room);
+    gameService.shuffleSeatOrder.mockRejectedValue(
+      new Error('Seat order can only be changed before game starts or between hands'),
+    );
 
     const hostClient = {
       id: 'socket-host',
@@ -284,7 +287,7 @@ describe('EventsGateway randomize seats', () => {
       success: false,
       error: 'Seat order can only be changed before game starts or between hands',
     });
-    expect(gameService.shuffleSeatOrder).not.toHaveBeenCalled();
+    expect(gameService.shuffleSeatOrder).toHaveBeenCalledWith('ROOM1');
     expect(hostClient.emit).toHaveBeenCalledWith('ERROR', {
       message: 'Seat order can only be changed before game starts or between hands',
     });

@@ -257,19 +257,6 @@ export class EventsGateway
     return null;
   }
 
-  private canShuffleSeats(room: any): boolean {
-    if (room?.gameState === 'WAITING') {
-      return true;
-    }
-
-    return Boolean(
-      room?.gameState === 'IN_PROGRESS' &&
-        room?.currentHand &&
-        room.currentHand.currentPlayerTurn === null &&
-        room.currentHand.lastResult,
-    );
-  }
-
   private getReadyEligiblePlayerIds(room: any): string[] {
     return (room?.players ?? [])
       .filter(
@@ -921,19 +908,6 @@ export class EventsGateway
 
           if (room.hostId !== playerInfo.playerId) {
             throw new Error('Only host can randomize seats');
-          }
-
-          const seatedPlayers = room.players.filter(
-            (seatPlayer: any) => seatPlayer.status !== 'left',
-          );
-          if (seatedPlayers.length < 2) {
-            throw new Error('Need at least 2 seated players to shuffle seats');
-          }
-
-          if (!this.canShuffleSeats(room)) {
-            throw new Error(
-              'Seat order can only be changed before game starts or between hands',
-            );
           }
 
           const updatedRoom = await this.gameService.shuffleSeatOrder(room.id);
