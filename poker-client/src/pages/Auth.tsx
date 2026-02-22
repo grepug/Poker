@@ -106,20 +106,12 @@ export const AuthPage: React.FC = () => {
           <div className="space-y-2 text-center">
             <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">{t("auth.systemBadge")}</p>
             <h1 className="text-3xl font-black tracking-tight text-white">{t("auth.title")}</h1>
-            <p className="text-sm text-emerald-100/75">
-              {t("auth.subtitle")}
-            </p>
           </div>
 
           <div className="space-y-4 rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-4">
             <h2 className="text-sm font-semibold text-emerald-100">
               {requiresRegistrationProfile ? t("auth.passkeyRegisterTitle") : t("auth.passkeyLoginTitle")}
             </h2>
-            <p className="text-xs text-emerald-100/70">
-              {requiresRegistrationProfile
-                ? t("auth.passkeySingleButtonHint")
-                : t("auth.passkeyLoginHint")}
-            </p>
 
             {requiresRegistrationProfile && (
               <>
@@ -130,12 +122,17 @@ export const AuthPage: React.FC = () => {
                   className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
                 />
 
-                <div className="grid grid-cols-10 gap-1">
-                  {PLAYER_EMOJI_OPTIONS.slice(0, 30).map((emoji) => (
+                <div
+                  data-testid="auth-emoji-grid"
+                  className="grid max-h-52 grid-cols-10 gap-1 overflow-y-auto rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-2"
+                >
+                  {PLAYER_EMOJI_OPTIONS.map((emoji) => (
                     <button
                       key={emoji}
                       type="button"
                       onClick={() => setAvatarEmoji(emoji)}
+                      data-testid="auth-emoji-option"
+                      data-emoji={emoji}
                       className={`h-9 rounded-lg text-xl transition ${
                         avatarEmoji === emoji
                           ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
