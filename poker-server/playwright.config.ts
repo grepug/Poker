@@ -17,7 +17,8 @@ const BACKEND_TARGET = new URL(
 const FRONTEND_URL = FRONTEND_TARGET.origin;
 const BACKEND_URL = BACKEND_TARGET.origin;
 const FRONTEND_PORT =
-  FRONTEND_TARGET.port || (FRONTEND_TARGET.protocol === 'https:' ? '443' : '80');
+  FRONTEND_TARGET.port ||
+  (FRONTEND_TARGET.protocol === 'https:' ? '443' : '80');
 const BACKEND_PORT =
   BACKEND_TARGET.port || (BACKEND_TARGET.protocol === 'https:' ? '443' : '80');
 const FRONTEND_BIND_HOST =
@@ -53,7 +54,10 @@ export default defineConfig({
   projects: [
     {
       name: 'comprehensive-e2e',
-      testMatch: 'comprehensive-poker.spec.ts',
+      testMatch: [
+        'comprehensive-poker.spec.ts',
+        'robot-lobby-controls.spec.ts',
+      ],
       use: {
         ...devices['Desktop Chrome'],
         headless: true,

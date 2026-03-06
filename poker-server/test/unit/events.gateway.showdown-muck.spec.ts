@@ -191,6 +191,13 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         calculateMinRaise: jest.fn().mockReturnValue(10),
       } as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest
+          .fn()
+          .mockReturnValue('robot ai unavailable'),
+        decideAction: jest.fn(),
+      } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
       {
@@ -283,7 +290,9 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     expect(handService.determineWinner).not.toHaveBeenCalled();
     expect(roomState.currentHand.activePlayers).toEqual(['p-bob']);
     expect(roomState.currentHand.pendingStreetRevealRound).toBe('SHOWDOWN');
-    expect(roomState.currentHand.nextStreetRequiredPlayerIds).toEqual(['p-bob']);
+    expect(roomState.currentHand.nextStreetRequiredPlayerIds).toEqual([
+      'p-bob',
+    ]);
     expect(roomEmitter.emit).toHaveBeenCalledWith(
       'PLAYER_HAND_MUCKED',
       expect.objectContaining({ playerId: 'p-alice' }),
@@ -337,7 +346,10 @@ describe('EventsGateway showdown reveal/muck flow', () => {
       expect.arrayContaining([
         [
           'PLAYER_HAND_REVEALED',
-          expect.objectContaining({ playerId: 'p-alice', showdownOrderIndex: 0 }),
+          expect.objectContaining({
+            playerId: 'p-alice',
+            showdownOrderIndex: 0,
+          }),
         ],
         [
           'PLAYER_HAND_REVEALED',

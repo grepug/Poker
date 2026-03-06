@@ -8,6 +8,7 @@ export { HandResultsPanel } from "./hand-results-panel";
 export { NextHandActionArea } from "./next-hand-action-area";
 export { OperationActionBar } from "./operation-action-bar";
 export { RankingsModal } from "./rankings-modal";
+export { ReadyActionArea } from "./ready-action-area";
 export { RulesModal } from "./rules-modal";
 export { SettingsModal } from "./settings-modal";
 export { TableBoard } from "./table-board";

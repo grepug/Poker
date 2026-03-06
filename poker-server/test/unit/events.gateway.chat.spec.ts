@@ -67,6 +67,13 @@ describe('EventsGateway chat events', () => {
       {} as any,
       {} as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest
+          .fn()
+          .mockReturnValue('robot ai unavailable'),
+        decideAction: jest.fn(),
+      } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
       chatStorageService,
@@ -198,8 +205,9 @@ describe('EventsGateway chat events', () => {
   });
 
   it('continues room action queue after a failed task', async () => {
-    const runRoomActionSequentially = (gateway as any)
-      .runRoomActionSequentially.bind(gateway) as <T>(
+    const runRoomActionSequentially = (
+      gateway as any
+    ).runRoomActionSequentially.bind(gateway) as <T>(
       roomId: string,
       task: () => Promise<T>,
     ) => Promise<T>;
@@ -214,5 +222,4 @@ describe('EventsGateway chat events', () => {
       runRoomActionSequentially('ROOM1', async () => 'ok'),
     ).resolves.toBe('ok');
   });
-
 });

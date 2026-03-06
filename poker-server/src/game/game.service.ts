@@ -49,6 +49,7 @@ export class GameService {
       userId: hostUserId,
       socketId: hostSocketId,
       name: hostName,
+      isRobot: false,
       emoji: hostEmoji,
       chips: 0, // Chips assigned when game starts
       totalBuyIn: 0,
@@ -192,6 +193,7 @@ export class GameService {
       userId,
       socketId,
       name: normalizedPlayerName,
+      isRobot: false,
       emoji: playerEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,
@@ -213,6 +215,109 @@ export class GameService {
     this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
+  }
+
+  async addRobotToRoom(
+    roomId: string,
+    hostPlayerId: string,
+    robotName?: string,
+    robotEmoji?: string,
+  ): Promise<{ room: Room; player: Player }> {
+    const room = await this.storageService.getRoom(roomId);
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    if (room.hostId !== hostPlayerId) {
+      throw new Error('Only host can manage robots');
+    }
+
+    if (!this.canManageRobots(room)) {
+      throw new Error(
+        'Robots can only be managed before game start or between hands',
+      );
+    }
+
+    const seatedPlayers = this.getSeatedPlayers(room);
+    if (seatedPlayers.length >= room.config.maxPlayers) {
+      throw new Error('Room is full');
+    }
+
+    const baseName = robotName?.trim() || this.buildDefaultRobotName(room);
+    const uniqueName = this.ensureUniquePlayerName(room, baseName);
+    const position = this.findNextAvailablePosition(room);
+    if (position < 0 || position >= room.config.maxPlayers) {
+      throw new Error('Room is full');
+    }
+
+    const joinsDuringInProgressGame = room.gameState === 'IN_PROGRESS';
+    const initialChips = joinsDuringInProgressGame
+      ? room.config.startingChips
+      : 0;
+    const initialBuyIn = joinsDuringInProgressGame
+      ? room.config.startingChips
+      : 0;
+    const robotPlayer: Player = {
+      id: generatePlayerId(),
+      socketId: '',
+      name: uniqueName,
+      isRobot: true,
+      emoji: robotEmoji,
+      chips: initialChips,
+      totalBuyIn: initialBuyIn,
+      handsPlayedCount: 0,
+      handsWonCount: 0,
+      vpipHandsCount: 0,
+      position,
+      status: 'waiting',
+      cards: null,
+      currentBet: 0,
+      lastAction: null,
+      lastConnectedAt: Date.now(),
+    };
+
+    room.players.push(robotPlayer);
+    room.lastActivityAt = Date.now();
+    await this.storageService.saveRoom(room);
+
+    this.logger.log(`Robot ${robotPlayer.name} added to room ${room.id}`);
+    return { room, player: robotPlayer };
+  }
+
+  async removeRobotFromRoom(
+    roomId: string,
+    hostPlayerId: string,
+    robotPlayerId: string,
+  ): Promise<Room> {
+    const room = await this.storageService.getRoom(roomId);
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    if (room.hostId !== hostPlayerId) {
+      throw new Error('Only host can manage robots');
+    }
+
+    if (!this.canManageRobots(room)) {
+      throw new Error(
+        'Robots can only be managed before game start or between hands',
+      );
+    }
+
+    const robot = room.players.find(
+      (player) => player.id === robotPlayerId && player.isRobot,
+    );
+    if (!robot) {
+      throw new Error('Robot player not found');
+    }
+
+    const updatedRoom = await this.removePlayerFromRoom(roomId, robotPlayerId);
+    if (!updatedRoom) {
+      throw new Error('Room no longer exists');
+    }
+
+    this.logger.log(`Robot ${robot.name} removed from room ${room.id}`);
+    return updatedRoom;
   }
 
   /**
@@ -398,6 +503,59 @@ export class GameService {
     }
 
     return -1;
+  }
+
+  private canManageRobots(room: Room): boolean {
+    if (room.gameState === 'WAITING') {
+      return true;
+    }
+
+    if (
+      room.gameState === 'IN_PROGRESS' &&
+      room.currentHand &&
+      room.currentHand.currentPlayerTurn === null &&
+      room.currentHand.lastResult
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private buildDefaultRobotName(room: Room): string {
+    const usedRobotIndexes = new Set<number>();
+    for (const player of room.players) {
+      const match = player.name.match(/^Robot\s+(\d+)$/i);
+      if (match?.[1]) {
+        usedRobotIndexes.add(Number(match[1]));
+      }
+    }
+
+    let nextIndex = 1;
+    while (usedRobotIndexes.has(nextIndex)) {
+      nextIndex += 1;
+    }
+
+    return `Robot ${nextIndex}`;
+  }
+
+  private ensureUniquePlayerName(room: Room, baseName: string): string {
+    const normalizedBaseName = baseName.trim() || 'Robot';
+    const takenNames = new Set(
+      room.players
+        .filter((player) => player.status !== 'left')
+        .map((player) => player.name.toLowerCase()),
+    );
+
+    if (!takenNames.has(normalizedBaseName.toLowerCase())) {
+      return normalizedBaseName;
+    }
+
+    let suffix = 2;
+    while (takenNames.has(`${normalizedBaseName} ${suffix}`.toLowerCase())) {
+      suffix += 1;
+    }
+    return `${normalizedBaseName} ${suffix}`;
   }
 
   /**

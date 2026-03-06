@@ -140,45 +140,50 @@ describe('EventsGateway membership mutation serialization', () => {
           return updatedPlayer;
         },
       ),
-      removePlayerFromRoom: jest.fn(async (roomId: string, playerId: string) => {
-        if (roomId !== 'ROOM1') {
-          return null;
-        }
-
-        let updatedRoom: any = null;
-        await persistViaStaleSnapshot((draft) => {
-          const player = draft.players.find((entry: any) => entry.id === playerId);
-          if (!player) {
-            return;
+      removePlayerFromRoom: jest.fn(
+        async (roomId: string, playerId: string) => {
+          if (roomId !== 'ROOM1') {
+            return null;
           }
 
-          player.status = 'left';
-          player.socketId = '';
-          player.cards = null;
-          player.currentBet = 0;
-          player.lastAction = null;
-          player.lastConnectedAt = Date.now();
-
-          if (draft.currentHand) {
-            draft.currentHand.activePlayers = draft.currentHand.activePlayers.filter(
-              (activePlayerId: string) => activePlayerId !== playerId,
+          let updatedRoom: any = null;
+          await persistViaStaleSnapshot((draft) => {
+            const player = draft.players.find(
+              (entry: any) => entry.id === playerId,
             );
-
-            if (draft.currentHand.roundActions?.[playerId]) {
-              delete draft.currentHand.roundActions[playerId];
+            if (!player) {
+              return;
             }
 
-            if (draft.currentHand.currentPlayerTurn === playerId) {
-              draft.currentHand.currentPlayerTurn = null;
+            player.status = 'left';
+            player.socketId = '';
+            player.cards = null;
+            player.currentBet = 0;
+            player.lastAction = null;
+            player.lastConnectedAt = Date.now();
+
+            if (draft.currentHand) {
+              draft.currentHand.activePlayers =
+                draft.currentHand.activePlayers.filter(
+                  (activePlayerId: string) => activePlayerId !== playerId,
+                );
+
+              if (draft.currentHand.roundActions?.[playerId]) {
+                delete draft.currentHand.roundActions[playerId];
+              }
+
+              if (draft.currentHand.currentPlayerTurn === playerId) {
+                draft.currentHand.currentPlayerTurn = null;
+              }
             }
-          }
 
-          draft.lastActivityAt = Date.now();
-          updatedRoom = deepClone(draft);
-        });
+            draft.lastActivityAt = Date.now();
+            updatedRoom = deepClone(draft);
+          });
 
-        return updatedRoom;
-      }),
+          return updatedRoom;
+        },
+      ),
     };
 
     handService = {
@@ -212,7 +217,9 @@ describe('EventsGateway membership mutation serialization', () => {
       hasChatData: jest.fn(),
       deleteRoomChat: jest.fn(),
       listRoomsWithChatData: jest.fn().mockResolvedValue([]),
-      pruneRoomMessages: jest.fn().mockResolvedValue({ deleted: 0, remaining: 0 }),
+      pruneRoomMessages: jest
+        .fn()
+        .mockResolvedValue({ deleted: 0, remaining: 0 }),
     };
 
     chatMediaStorageService = {
@@ -247,6 +254,13 @@ describe('EventsGateway membership mutation serialization', () => {
       handService,
       bettingService,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest
+          .fn()
+          .mockReturnValue('robot ai unavailable'),
+        decideAction: jest.fn(),
+      } as any,
       authService,
       storageService,
       chatStorageService,
@@ -343,7 +357,10 @@ describe('EventsGateway membership mutation serialization', () => {
     const result = await gateway.handleLeaveRoom(leavingClient as any);
 
     expect(result).toEqual({ success: true });
-    expect(gameService.removePlayerFromRoom).toHaveBeenCalledWith('ROOM1', 'p-bob');
+    expect(gameService.removePlayerFromRoom).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-bob',
+    );
     expect(bettingService.isBettingRoundComplete).toHaveBeenCalledTimes(1);
     expect(handleBettingRoundCompleteSpy).toHaveBeenCalledTimes(1);
     expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');

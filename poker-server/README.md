@@ -58,6 +58,22 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Robot players
+
+Robot players use the Vercel AI SDK with an OpenAI-compatible provider.
+
+Set these values in `.env` before testing live robot decisions:
+
+```bash
+AI_ROBOT_API_KEY=...
+AI_ROBOT_BASE_URL=https://provider.example/v1
+AI_ROBOT_MODEL_ID=...
+AI_ROBOT_TEMPERATURE=0.3
+```
+
+Use the provider API root for `AI_ROBOT_BASE_URL`. Do not point it directly at
+`/chat/completions` or `/responses`, because the SDK appends the required path.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

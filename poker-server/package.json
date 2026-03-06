@@ -26,6 +26,7 @@
     "test:e2e:ui": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true ./node_modules/.bin/playwright test --ui"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.35",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^10.0.0",
@@ -33,12 +34,14 @@
     "@nestjs/platform-socket.io": "^10.4.22",
     "@nestjs/websockets": "^10.4.22",
     "@simplewebauthn/server": "^13.2.2",
+    "ai": "^6.0.116",
     "nanoid": "^3.3.11",
     "poker-types": "file:../poker-types",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

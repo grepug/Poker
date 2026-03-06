@@ -52,6 +52,13 @@ export interface UpdateRoomConfigData {
 }
 
 export interface PlayerReadyData {}
+export interface AddRobotPlayerData {
+  name?: string;
+  emoji?: string;
+}
+export interface RemoveRobotPlayerData {
+  playerId: string;
+}
 
 export interface UpdateProfileData {
   displayName: string;
@@ -94,6 +101,14 @@ export interface ClientToServerEvents {
   ) => void;
   UPDATE_PROFILE: (
     data: UpdateProfileData,
+    callback: (response: any) => void,
+  ) => void;
+  ADD_ROBOT_PLAYER: (
+    data: AddRobotPlayerData,
+    callback: (response: any) => void,
+  ) => void;
+  REMOVE_ROBOT_PLAYER: (
+    data: RemoveRobotPlayerData,
     callback: (response: any) => void,
   ) => void;
   PLAYER_ACTION: (

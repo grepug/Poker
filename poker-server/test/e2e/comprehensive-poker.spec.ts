@@ -7649,7 +7649,6 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
   });
 });
 
-
 // Type augmentation for window.pokerDebug
 declare global {
   interface Window {
