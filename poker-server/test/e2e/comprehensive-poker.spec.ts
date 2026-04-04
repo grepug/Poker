@@ -6480,8 +6480,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(bobPage, 'Bob');
 
       const bobFoldButton = bobPage.locator('[data-testid="action-fold"]');
+      const bobContinuePreset = bobPage.locator('[data-testid="chip-load-continue"]');
+      const bobRaisePreset = bobPage.locator('[data-testid="chip-load-raise"]');
+      const bobAllInPreset = bobPage.locator('[data-testid="chip-load-all-in"]');
       await expect(bobFoldButton).toBeVisible();
       await expect(bobFoldButton).toBeDisabled();
+      await expect(bobContinuePreset).toBeEnabled();
+      await expect(bobRaisePreset).toBeEnabled();
+      await expect(bobAllInPreset).toBeEnabled();
       await expect(bobFoldButton).toBeEnabled({ timeout: 3000 });
       await bobFoldButton.click();
 
@@ -6777,6 +6783,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await playCheckCheckToShowdown(alicePage, bobPage);
       await handCompletePromise;
 
+      await expect(alicePage.locator('[data-testid="hand-results-modal"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
         'Hand results are visible to all players.',
@@ -6823,6 +6830,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         })),
       );
       expect(flyoutCards).toEqual(resultCards);
+
+      await alicePage.locator('[data-testid="close-hand-results-button"]').click();
+      await expect(alicePage.locator('[data-testid="hand-results-modal"]')).toHaveCount(0);
     } finally {
       await teardownTwoPlayerSession(session);
     }
