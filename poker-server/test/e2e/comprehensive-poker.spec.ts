@@ -35,6 +35,23 @@ async function assertWaitingBadgeExternalForSeat(page: Page, playerId: string) {
   await expect(seat).not.toContainText(/NEXT HAND|下手入局/);
 }
 
+async function openLeaveRoomConfirm(
+  page: Page,
+  triggerSelector = '[data-testid="leave-room-button"]',
+) {
+  await page.click(triggerSelector);
+  await expect(page.locator('[data-testid="leave-room-confirm-modal"]')).toBeVisible();
+}
+
+async function confirmLeaveRoom(
+  page: Page,
+  triggerSelector = '[data-testid="leave-room-button"]',
+) {
+  await openLeaveRoomConfirm(page, triggerSelector);
+  await page.click('[data-testid="leave-room-confirm-accept"]');
+  await expect(page.locator('[data-testid="leave-room-confirm-modal"]')).toHaveCount(0);
+}
+
 // Helper to verify chip conservation (chips only, not including current bets)
 async function verifyChipConservation(page: Page, expected: number = 2000) {
   const state = await page.evaluate(() => {
@@ -4974,7 +4991,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { bobPage } = session;
-      await bobPage.click('[data-testid="leave-room-button"]');
+      await openLeaveRoomConfirm(bobPage);
+      await bobPage.click('[data-testid="leave-room-confirm-cancel"]');
+      await expect(bobPage.locator('[data-testid="leave-room-confirm-modal"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="room-title"]')).toBeVisible();
+
+      await confirmLeaveRoom(bobPage);
 
       await expect(bobPage).toHaveURL(/\/$/);
       await expect(bobPage.locator('[data-testid="name-input"]')).toBeVisible();
@@ -5163,17 +5185,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     const page = await context.newPage();
 
     try {
-      await page.goto(FRONTEND_URL);
-      await page.waitForSelector('[data-testid="connection-status"]');
-      await expect(page.locator('[data-testid="connection-status"]')).toContainText(
-        'Connected',
-      );
-
-      await page.fill('[data-testid="name-input"]', 'RememberMe');
+      await authenticateTestUser(page, 'test1', {
+        displayName: 'RememberMe',
+      });
       await page.click('[data-testid="create-room-button"]');
       await page.waitForSelector('[data-testid="room-title"]');
 
-      await page.click('[data-testid="leave-room-button"]');
+      await confirmLeaveRoom(page);
       await expect(page).toHaveURL(/\/$/);
       await expect(page.locator('[data-testid="name-input"]')).toHaveValue(
         'RememberMe',
@@ -5405,7 +5423,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(bobBeforeLeave.status).toBe('connected');
       expect(bobBeforeLeave.cardsCount).toBe(2);
 
-      await bobPage.click('[data-testid="leave-room-button"]');
+      await confirmLeaveRoom(bobPage);
       await expect(bobPage).toHaveURL(/\/$/);
 
       await Promise.all([
@@ -5458,6 +5476,42 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(bobAfterRejoin.cardsCount).toBe(0);
     } finally {
       await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('8.4f: Final Summary Leave Uses Shared Confirmation Flow', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await expect(alicePage.locator('[data-testid="next-hand-action-area"]')).toBeVisible();
+      await alicePage.click('[data-testid="end-game-button"]');
+      await expect(alicePage.locator('[data-testid="end-game-confirm-modal"]')).toBeVisible();
+      await alicePage.click('[data-testid="end-game-confirm-accept"]');
+
+      await expect(alicePage.locator('[data-testid="final-summary-modal"]')).toBeVisible();
+
+      await openLeaveRoomConfirm(alicePage, '[data-testid="leave-from-final-summary-button"]');
+      await alicePage.click('[data-testid="leave-room-confirm-cancel"]');
+      await expect(alicePage.locator('[data-testid="leave-room-confirm-modal"]')).toHaveCount(0);
+      await expect(alicePage.locator('[data-testid="final-summary-modal"]')).toBeVisible();
+
+      await confirmLeaveRoom(alicePage, '[data-testid="leave-from-final-summary-button"]');
+      await expect(alicePage).toHaveURL(/\/$/);
+      await expect(alicePage.locator('[data-testid="name-input"]')).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
     }
   });
 
@@ -6425,8 +6479,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await bobPage.waitForFunction(() => window.navigator.webdriver === false);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      await expect(bobPage.locator('[data-testid="action-fold"]')).toBeVisible();
-      await bobPage.click('[data-testid="action-fold"]');
+      const bobFoldButton = bobPage.locator('[data-testid="action-fold"]');
+      await expect(bobFoldButton).toBeVisible();
+      await expect(bobFoldButton).toBeDisabled();
+      await expect(bobFoldButton).toBeEnabled({ timeout: 3000 });
+      await bobFoldButton.click();
 
       await expect(
         bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
@@ -6440,16 +6497,26 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
       ).toHaveCount(0);
 
-      await waitForPlayerTurn(bobPage, 'Bob');
-      await bobPage.click('[data-testid="action-fold"]');
-      await bobPage.click('[data-testid="action-quick-confirm-accept"]');
-      await expect(
-        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
-      ).toBeVisible();
-      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await bobPage.evaluate(() => (window as any).pokerDebug.call());
+      await waitForPlayerTurn(alicePage, 'Alice');
 
-      await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
-      await expect(bobPage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
+      const aliceCheckButton = alicePage.locator('[data-testid="action-check"]');
+      const aliceFoldButton = alicePage.locator('[data-testid="action-fold"]');
+      await expect(aliceCheckButton).toBeVisible();
+      await expect(aliceCheckButton).toBeDisabled();
+      await expect(aliceFoldButton).toBeDisabled();
+      await expect(aliceCheckButton).toBeEnabled({ timeout: 3000 });
+      await expect(aliceFoldButton).toBeEnabled();
+
+      await aliceCheckButton.click();
+      await expect(
+        alicePage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="action-quick-confirm-modal"]'),
+      ).toHaveCount(0);
+      await alicePage.click('[data-testid="action-quick-confirm-accept"]');
+      await waitForRound(bobPage, 'FLOP', 3);
     } finally {
       await teardownTwoPlayerSession(session);
     }

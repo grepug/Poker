@@ -19,6 +19,7 @@ import {
   FinalSummaryModal,
   HandResultsContent,
   HandResultsPanel,
+  LeaveRoomConfirmModal,
   NextHandActionArea,
   OperationActionBar,
   RankingsModal,
@@ -1636,6 +1637,7 @@ const useGameRoomElement = () => {
   const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -2857,6 +2859,7 @@ const useGameRoomElement = () => {
   useEffect(() => {
     if (!finalGameResult) return;
     setShowEndGameConfirmModal(false);
+    setShowLeaveConfirmModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult]);
 
@@ -2950,6 +2953,10 @@ const useGameRoomElement = () => {
   );
 
   const dismissTransientOverlays = useCallback(() => {
+    if (showLeaveConfirmModal) {
+      setShowLeaveConfirmModal(false);
+      return;
+    }
     if (lastError) clearError();
     if (showRankingsModal) setShowRankingsModal(false);
     if (showRulesModal) setShowRulesModal(false);
@@ -2962,9 +2969,11 @@ const useGameRoomElement = () => {
     isGameEnded,
     lastError,
     quickConfirmAction,
+    setShowLeaveConfirmModal,
     setShowEndGameConfirmModal,
     setShowRankingsModal,
     setShowRulesModal,
+    showLeaveConfirmModal,
     showEndGameConfirmModal,
     showFinalSummaryModal,
     showRankingsModal,
@@ -2978,6 +2987,7 @@ const useGameRoomElement = () => {
       !showRankingsModal &&
       !showRulesModal &&
       !showSettingsModal &&
+      !showLeaveConfirmModal &&
       !showEndGameConfirmModal &&
       !showFinalSummaryModal &&
       !quickConfirmAction
@@ -2995,6 +3005,7 @@ const useGameRoomElement = () => {
   }, [
     dismissTransientOverlays,
     lastError,
+    showLeaveConfirmModal,
     showEndGameConfirmModal,
     showFinalSummaryModal,
     showRankingsModal,
@@ -3250,7 +3261,12 @@ const useGameRoomElement = () => {
     endGame();
   };
 
-  const handleLeave = () => {
+  const handleRequestLeave = () => {
+    setShowLeaveConfirmModal(true);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowLeaveConfirmModal(false);
     leaveRoom();
     navigate("/");
   };
@@ -3437,7 +3453,7 @@ const useGameRoomElement = () => {
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
         showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
-        onLeave={handleLeave}
+        onLeave={handleRequestLeave}
         onOpenSettings={() => {
           if (user) {
             setProfileDisplayNameDraft(user.displayName);
@@ -3722,6 +3738,14 @@ const useGameRoomElement = () => {
         />
       )}
 
+      {showLeaveConfirmModal && (
+        <LeaveRoomConfirmModal
+          onCancel={() => setShowLeaveConfirmModal(false)}
+          onConfirm={handleConfirmLeave}
+          t={t}
+        />
+      )}
+
       {showFinalSummaryModal && finalGameResult && (
         <FinalSummaryModal
           ref={finalSummaryPanelRef}
@@ -3731,7 +3755,7 @@ const useGameRoomElement = () => {
           currentPlayerId={player.id}
           isGameEnded={isGameEnded}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
-          onLeave={handleLeave}
+          onLeave={handleRequestLeave}
           onClose={() => setShowFinalSummaryModal(false)}
           t={t}
         />
