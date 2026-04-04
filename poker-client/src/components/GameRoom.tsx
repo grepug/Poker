@@ -18,7 +18,7 @@ import {
   EndGameConfirmModal,
   FinalSummaryModal,
   HandResultsContent,
-  HandResultsPanel,
+  HandResultsModal,
   NextHandActionArea,
   OperationActionBar,
   RankingsModal,
@@ -1636,6 +1636,7 @@ const useGameRoomElement = () => {
   const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showHandResultsModal, setShowHandResultsModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -1658,7 +1659,7 @@ const useGameRoomElement = () => {
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
-  const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
+  const lastDisplayedHandResultRef = useRef<HandResult | null>(null);
   const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
@@ -2723,21 +2724,17 @@ const useGameRoomElement = () => {
 
   useEffect(() => {
     if (!lastHandResult) {
-      lastAutoScrolledResultRef.current = null;
+      lastDisplayedHandResultRef.current = null;
+      setShowHandResultsModal(false);
       return;
     }
 
-    if (lastAutoScrolledResultRef.current === lastHandResult) {
+    if (lastDisplayedHandResultRef.current === lastHandResult) {
       return;
     }
 
-    lastAutoScrolledResultRef.current = lastHandResult;
-    window.requestAnimationFrame(() => {
-      handResultsPanelRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+    lastDisplayedHandResultRef.current = lastHandResult;
+    setShowHandResultsModal(true);
   }, [lastHandResult]);
 
   useEffect(() => {
@@ -2856,12 +2853,14 @@ const useGameRoomElement = () => {
 
   useEffect(() => {
     if (!finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowEndGameConfirmModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult]);
 
   useEffect(() => {
     if (!isGameEnded || !finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult, isGameEnded]);
 
@@ -2955,6 +2954,7 @@ const useGameRoomElement = () => {
     if (showRulesModal) setShowRulesModal(false);
     if (showSettingsModal) setShowSettingsModal(false);
     if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
+    if (showHandResultsModal) setShowHandResultsModal(false);
     if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
     if (quickConfirmAction) setQuickConfirmAction(null);
   }, [
@@ -2963,6 +2963,7 @@ const useGameRoomElement = () => {
     lastError,
     quickConfirmAction,
     setShowEndGameConfirmModal,
+    showHandResultsModal,
     setShowRankingsModal,
     setShowRulesModal,
     showEndGameConfirmModal,
@@ -2979,6 +2980,7 @@ const useGameRoomElement = () => {
       !showRulesModal &&
       !showSettingsModal &&
       !showEndGameConfirmModal &&
+      !showHandResultsModal &&
       !showFinalSummaryModal &&
       !quickConfirmAction
     ) {
@@ -2996,6 +2998,7 @@ const useGameRoomElement = () => {
     dismissTransientOverlays,
     lastError,
     showEndGameConfirmModal,
+    showHandResultsModal,
     showFinalSummaryModal,
     showRankingsModal,
     showRulesModal,
@@ -3523,8 +3526,12 @@ const useGameRoomElement = () => {
         seatOrbitItems={seatOrbitItems}
       />
 
-      {lastHandResult && (
-        <HandResultsPanel ref={handResultsPanelRef}>
+      {showHandResultsModal && lastHandResult && !finalGameResult && (
+        <HandResultsModal
+          ref={handResultsPanelRef}
+          onClose={() => setShowHandResultsModal(false)}
+          t={t}
+        >
           <HandResultsContent
             currentHandNumber={currentHandNumber}
             totalPot={lastHandResult.totalPot}
@@ -3548,7 +3555,7 @@ const useGameRoomElement = () => {
             }
             t={t}
           />
-        </HandResultsPanel>
+        </HandResultsModal>
       )}
 
       {operationBarMode !== null && (
