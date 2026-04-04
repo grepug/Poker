@@ -4,11 +4,16 @@ import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
-type OperationActionBarMode = "showdown" | "streetReveal";
+type OperationActionBarMode = "showdown" | "streetReveal" | "runCount";
 
 type OperationActionBarProps = {
   mode: OperationActionBarMode;
   isAutomationMode: boolean;
+  runCountCanChoose: boolean;
+  runCountHasChosenTwice: boolean;
+  runCountReadyCount: number;
+  runCountTotalCount: number;
+  runCountWaitingPlayerNames: string[];
   isResultRevealStep: boolean;
   canRevealNextStreet: boolean;
   hasRevealedNextStreet: boolean;
@@ -19,6 +24,8 @@ type OperationActionBarProps = {
   showdownIsDecisionTurn: boolean;
   showdownWaitingPlayerName: string | null;
   showdownIsForcedRevealTurn: boolean;
+  onChooseRunOnce: () => void;
+  onChooseRunTwice: () => void;
   onRevealNextStreet: () => void;
   onShowMyHand: () => void;
   onFoldMyHand: () => void;
@@ -28,6 +35,11 @@ type OperationActionBarProps = {
 export const OperationActionBar: React.FC<OperationActionBarProps> = ({
   mode,
   isAutomationMode,
+  runCountCanChoose,
+  runCountHasChosenTwice,
+  runCountReadyCount,
+  runCountTotalCount,
+  runCountWaitingPlayerNames,
   isResultRevealStep,
   canRevealNextStreet,
   hasRevealedNextStreet,
@@ -38,6 +50,8 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
   showdownIsDecisionTurn,
   showdownWaitingPlayerName,
   showdownIsForcedRevealTurn,
+  onChooseRunOnce,
+  onChooseRunTwice,
   onRevealNextStreet,
   onShowMyHand,
   onFoldMyHand,
@@ -59,6 +73,57 @@ export const OperationActionBar: React.FC<OperationActionBarProps> = ({
       setShowFoldQuickConfirm(false);
     }
   }, [mode, showdownIsDecisionTurn]);
+
+  if (mode === "runCount") {
+    const waitingNamesLabel = runCountWaitingPlayerNames.join(", ");
+
+    return (
+      <section className="operation-action-bar" data-testid="run-count-action-area">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-emerald-100">
+              {t("game.runCount.actionTitle")}
+            </h3>
+            <p className="text-xs text-emerald-100/70">{t("game.runCount.actionHint")}</p>
+            <p className="mt-2 text-xs font-semibold text-cyan-100/90">
+              {t("game.runCount.readyProgress", {
+                ready: runCountReadyCount,
+                total: runCountTotalCount,
+              })}
+            </p>
+            <p className="mt-1 text-xs text-emerald-100/70" data-testid="run-count-waiting-hint">
+              {waitingNamesLabel
+                ? t("game.runCount.waitingHint", { names: waitingNamesLabel })
+                : t("game.runCount.waitingForTable")}
+            </p>
+          </div>
+          {runCountCanChoose && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onChooseRunOnce}
+                data-testid="run-count-once-button"
+                className="rounded-xl border border-cyan-400/60 bg-cyan-900/30 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-800/45 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t("game.runCount.runOnce")}
+              </button>
+              <button
+                type="button"
+                onClick={onChooseRunTwice}
+                disabled={runCountHasChosenTwice}
+                data-testid="run-count-twice-button"
+                className="rounded-xl border border-amber-300/70 bg-amber-400/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {runCountHasChosenTwice
+                  ? t("game.runCount.agreedTwice")
+                  : t("game.runCount.runTwice")}
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   if (mode === "showdown") {
     return (

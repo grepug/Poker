@@ -8,6 +8,7 @@ import {
   HandResult,
   PotPayout,
   Card,
+  RunCount,
   HandPositionLabel,
   PersistedBettingRoundAdvancedPayload,
   PersistedHandStartedPayload,
@@ -195,6 +196,9 @@ export class HandService {
       }),
       vpipPlayerIds: [],
       showdownLastAggressorPlayerId: null,
+      runCountDecision: null,
+      runCount: 1,
+      runoutBoards: [],
       startedAt: Date.now(),
     };
 
@@ -307,6 +311,8 @@ export class HandService {
         );
       }
       hand.bettingRound = 'SHOWDOWN';
+      hand.runCount = 1;
+      hand.runoutBoards = [[...hand.communityCards]];
 
       // Update test deck if in test mode
       if (testDeck) {
@@ -374,6 +380,8 @@ export class HandService {
 
       case 'RIVER':
         hand.bettingRound = 'SHOWDOWN';
+        hand.runCount = 1;
+        hand.runoutBoards = [[...hand.communityCards]];
         break;
 
       case 'SHOWDOWN':
@@ -439,6 +447,91 @@ export class HandService {
     return hand.bettingRound;
   }
 
+  async resolveRunCount(room: Room, runCount: RunCount): Promise<BettingRound> {
+    const hand = room.currentHand;
+    if (!hand) {
+      throw new Error('No active hand');
+    }
+
+    const prefixBoard = [...hand.communityCards];
+    const runoutBoards = this.buildRunoutBoards(room, runCount, prefixBoard);
+    hand.communityCards = [...(runoutBoards[0] ?? prefixBoard)];
+    hand.runCount = runCount;
+    hand.runoutBoards = runoutBoards;
+    hand.runCountDecision = null;
+    hand.bettingRound = 'SHOWDOWN';
+    hand.currentPlayerTurn = null;
+
+    room.lastActivityAt = Date.now();
+    await this.storageService.persistRoom(room);
+
+    this.logger.log(
+      `Resolved run count=${runCount} for room ${room.id}, boards=${runoutBoards.length}`,
+    );
+    return 'SHOWDOWN';
+  }
+
+  private buildRunoutBoards(
+    room: Room,
+    runCount: RunCount,
+    prefixBoard: Card[],
+  ): Card[][] {
+    if (prefixBoard.length >= 5) {
+      return [[...prefixBoard]];
+    }
+
+    const { deck: initialDeck, persistDeck } = this.buildRemainingDeck(room);
+    let deck = initialDeck;
+    const runoutBoards: Card[][] = [];
+
+    for (let runIndex = 0; runIndex < runCount; runIndex += 1) {
+      const board = [...prefixBoard];
+      while (board.length < 5) {
+        const { dealt, remaining } = dealCards(deck, 1);
+        board.push(dealt[0]);
+        deck = remaining;
+      }
+      runoutBoards.push(board);
+    }
+
+    persistDeck(deck);
+    return runoutBoards;
+  }
+
+  private buildRemainingDeck(room: Room): {
+    deck: Card[];
+    persistDeck: (nextDeck: Card[]) => void;
+  } {
+    const useShortDeckRules = Boolean(room.config.useShortDeckRules);
+    const testDeck = this.testDeckService.getDeck(room.id);
+
+    if (testDeck) {
+      this.logger.debug(`Using test deck for room ${room.id}`);
+      return {
+        deck: [...testDeck],
+        persistDeck: (nextDeck) => this.testDeckService.setDeck(room.id, nextDeck),
+      };
+    }
+
+    let deck = shuffleDeck(createDeck({ useShortDeckRules }));
+    const dealtCards = [
+      ...(room.currentHand?.communityCards ?? []),
+      ...room.players.flatMap((player) => player.cards || []),
+    ];
+
+    deck = deck.filter(
+      (card) =>
+        !dealtCards.some(
+          (dealt) => dealt.suit === card.suit && dealt.rank === card.rank,
+        ),
+    );
+
+    return {
+      deck,
+      persistDeck: () => {},
+    };
+  }
+
   /**
    * Determine winner(s) at showdown
    */
@@ -460,6 +553,12 @@ export class HandService {
       throw new Error('No active players');
     }
     const contributions = this.getHandContributions(room);
+    const showdownBoards =
+      hand.runoutBoards && hand.runoutBoards.length > 0
+        ? hand.runoutBoards.map((board) => [...board])
+        : [[...hand.communityCards]];
+    const resolvedRunCount: RunCount =
+      showdownBoards.length > 1 || hand.runCount === 2 ? 2 : 1;
 
     // If only one player left, they win
     if (activePlayers.length === 1) {
@@ -478,40 +577,98 @@ export class HandService {
             useShortDeckRules: Boolean(room.config.useShortDeckRules),
           })
         : null;
+      const winnerRunHands = showdownBoards.map((board, runIndex) => ({
+        runIndex,
+        hand:
+          winnerCards.length + board.length >= 5
+            ? evaluateHand(winnerCards.concat(board), {
+                useShortDeckRules: Boolean(room.config.useShortDeckRules),
+              })
+            : null,
+      }));
       const evaluationsByPlayerId = new Map<
         string,
         { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
       >([[winner.id, { player: winner, evaluation: winnerHand }]]);
+      const runHandsByPlayerId = new Map<
+        string,
+        Array<{ runIndex: number; hand: ReturnType<typeof evaluateHand> | null }>
+      >([[winner.id, winnerRunHands]]);
+      const payouts: PotPayout[] = [
+        {
+          segmentIndex: 0,
+          potType: 'MAIN',
+          amount: hand.pot,
+          eligiblePlayerIds: activePlayers.map((player) => player.id),
+          winnerShares: [
+            {
+              playerId: winner.id,
+              amountWon: hand.pot,
+            },
+          ],
+          uncontested: activePlayers.length === 1,
+        },
+      ];
 
       winner.handsWonCount = (winner.handsWonCount ?? 0) + 1;
       const result: HandResult = {
+        runCount: resolvedRunCount,
+        runouts: showdownBoards.map((board, runIndex) => {
+          const runAmount = this.splitAmountAcrossRuns(
+            hand.pot,
+            resolvedRunCount,
+            runIndex,
+          );
+          const winnerRunHand = winnerRunHands[runIndex]?.hand ?? null;
+          return {
+            runIndex,
+            board: [...board],
+            winners:
+              runAmount > 0
+                ? [
+                    {
+                      playerId: winner.id,
+                      playerName: winner.name,
+                      hand: winnerRunHand,
+                      amountWon: runAmount,
+                    },
+                  ]
+                : [],
+            payouts:
+              runAmount > 0
+                ? [
+                    {
+                      segmentIndex: 0,
+                      potType: 'MAIN',
+                      amount: runAmount,
+                      eligiblePlayerIds: activePlayers.map((player) => player.id),
+                      winnerShares: [
+                        {
+                          playerId: winner.id,
+                          amountWon: runAmount,
+                        },
+                      ],
+                      uncontested: true,
+                    },
+                  ]
+                : [],
+          };
+        }),
         winners: [
           {
             playerId: winner.id,
             playerName: winner.name,
-            hand: winnerHand,
+            hand: resolvedRunCount === 1 ? winnerHand : null,
             amountWon: hand.pot,
           },
         ],
-        playerHands: [
-          ...this.buildResultPlayerHands(room, evaluationsByPlayerId),
-        ],
+        playerHands: this.buildResultPlayerHands(
+          room,
+          evaluationsByPlayerId,
+          runHandsByPlayerId,
+        ),
         totalPot: hand.pot,
-        payouts: [
-          {
-            segmentIndex: 0,
-            potType: 'MAIN',
-            amount: hand.pot,
-            eligiblePlayerIds: activePlayers.map((player) => player.id),
-            winnerShares: [
-              {
-                playerId: winner.id,
-                amountWon: hand.pot,
-              },
-            ],
-            uncontested: activePlayers.length === 1,
-          },
-        ],
+        payouts,
         netByPlayerId: this.buildNetByPlayerId(
           contributions,
           new Map([[winner.id, hand.pot]]),
@@ -523,21 +680,6 @@ export class HandService {
       return result;
     }
 
-    // Evaluate all hands
-    const evaluations = activePlayers.map((player) => ({
-      player,
-      evaluation: evaluateHand(
-        (player.cards ?? []).concat(hand.communityCards),
-        {
-          useShortDeckRules: Boolean(room.config.useShortDeckRules),
-        },
-      ),
-    }));
-
-    const evaluationsByPlayerId = new Map<
-      string,
-      { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
-    >(evaluations.map((entry) => [entry.player.id, entry]));
     const sidePotSegments = this.buildPotSegments(
       contributions,
       hand.activePlayers,
@@ -546,74 +688,105 @@ export class HandService {
     // Keep side pots on hand for visibility/debugging (excluding the main pot segment).
     hand.sidePots = sidePotSegments.slice(1);
 
+    const runHandsByPlayerId = new Map<
+      string,
+      Array<{ runIndex: number; hand: ReturnType<typeof evaluateHand> | null }>
+    >();
     const payoutByPlayerId = new Map<string, number>();
     const payouts: PotPayout[] = [];
+    const runouts: NonNullable<HandResult['runouts']> = [];
     let distributedTotal = 0;
 
-    for (const [segmentIndex, segment] of sidePotSegments.entries()) {
-      const eligibleEvaluations = segment.eligiblePlayers
-        .map((playerId) => evaluationsByPlayerId.get(playerId))
-        .filter((entry): entry is (typeof evaluations)[number] => !!entry)
-        .sort((a, b) => compareHands(b.evaluation, a.evaluation));
-
-      if (eligibleEvaluations.length === 0) {
-        continue;
-      }
-
-      const winningEvaluations = [eligibleEvaluations[0]];
-      for (let i = 1; i < eligibleEvaluations.length; i++) {
-        if (
-          compareHands(
-            eligibleEvaluations[i].evaluation,
-            eligibleEvaluations[0].evaluation,
-          ) === 0
-        ) {
-          winningEvaluations.push(eligibleEvaluations[i]);
-        } else {
-          break;
-        }
-      }
-
-      // Split odd chips deterministically by table position to preserve total chips.
-      winningEvaluations.sort((a, b) => a.player.position - b.player.position);
-      const amountPerWinner = Math.floor(
-        segment.amount / winningEvaluations.length,
+    const evaluationMapsByRunIndex = showdownBoards.map((board, runIndex) => {
+      const evaluationsByPlayerId = this.buildEvaluationsByPlayerId(
+        room,
+        activePlayers,
+        board,
       );
-      const remainder = segment.amount % winningEvaluations.length;
-      const winnerShares: PotPayout['winnerShares'] = [];
 
-      for (let i = 0; i < winningEvaluations.length; i++) {
-        const winner = winningEvaluations[i];
-        const award = amountPerWinner + (i < remainder ? 1 : 0);
-        if (award <= 0) {
+      for (const [playerId, entry] of evaluationsByPlayerId.entries()) {
+        const existingRunHands = runHandsByPlayerId.get(playerId) ?? [];
+        existingRunHands.push({
+          runIndex,
+          hand: entry.evaluation,
+        });
+        runHandsByPlayerId.set(playerId, existingRunHands);
+      }
+
+      const runPayout = this.resolveRunPayouts(
+        evaluationsByPlayerId,
+        sidePotSegments,
+        resolvedRunCount,
+        runIndex,
+      );
+
+      for (const payout of runPayout.payouts) {
+        const aggregatePayout = payouts[payout.segmentIndex];
+        if (!aggregatePayout) {
+          payouts[payout.segmentIndex] = {
+            ...payout,
+            winnerShares: payout.winnerShares.map((share) => ({ ...share })),
+          };
           continue;
         }
-        payoutByPlayerId.set(
-          winner.player.id,
-          (payoutByPlayerId.get(winner.player.id) || 0) + award,
-        );
-        winnerShares.push({
-          playerId: winner.player.id,
-          amountWon: award,
-        });
-        distributedTotal += award;
+
+        aggregatePayout.amount += payout.amount;
+        aggregatePayout.uncontested =
+          aggregatePayout.uncontested && payout.uncontested;
+        for (const share of payout.winnerShares) {
+          const existingShare = aggregatePayout.winnerShares.find(
+            (candidate) => candidate.playerId === share.playerId,
+          );
+          if (existingShare) {
+            existingShare.amountWon += share.amountWon;
+          } else {
+            aggregatePayout.winnerShares.push({ ...share });
+          }
+        }
       }
 
-      payouts.push({
-        segmentIndex,
-        potType: segmentIndex === 0 ? 'MAIN' : 'SIDE',
-        amount: segment.amount,
-        eligiblePlayerIds: segment.eligiblePlayers,
-        winnerShares,
-        uncontested: segment.eligiblePlayers.length === 1,
-      });
-    }
+      for (const [playerId, amountWon] of runPayout.payoutByPlayerId.entries()) {
+        payoutByPlayerId.set(
+          playerId,
+          (payoutByPlayerId.get(playerId) || 0) + amountWon,
+        );
+      }
+      distributedTotal += runPayout.distributedTotal;
 
-    if (distributedTotal !== hand.pot && evaluations.length > 0) {
+      const runWinners = Array.from(runPayout.payoutByPlayerId.entries())
+        .map(([playerId, amountWon]) => {
+          const evaluation = evaluationsByPlayerId.get(playerId)!;
+          return {
+            playerId,
+            playerName: evaluation.player.name,
+            hand: evaluation.evaluation,
+            amountWon,
+          };
+        })
+        .sort((left, right) => right.amountWon - left.amountWon);
+
+      runouts.push({
+        runIndex,
+        board: [...board],
+        winners: runWinners,
+        payouts: runPayout.payouts,
+      });
+
+      return evaluationsByPlayerId;
+    });
+
+    const primaryEvaluationsByPlayerId =
+      evaluationMapsByRunIndex[0] ??
+      new Map<
+        string,
+        { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
+      >();
+
+    if (distributedTotal !== hand.pot && evaluationMapsByRunIndex.length > 0) {
       const adjustment = hand.pot - distributedTotal;
-      const fallbackWinner = evaluations
-        .slice()
-        .sort((a, b) => compareHands(b.evaluation, a.evaluation))[0];
+      const fallbackWinner = [...primaryEvaluationsByPlayerId.values()].sort(
+        (left, right) => compareHands(right.evaluation, left.evaluation),
+      )[0];
       payoutByPlayerId.set(
         fallbackWinner.player.id,
         (payoutByPlayerId.get(fallbackWinner.player.id) || 0) + adjustment,
@@ -655,11 +828,11 @@ export class HandService {
 
     const winners = Array.from(payoutByPlayerId.entries())
       .map(([playerId, amountWon]) => {
-        const evaluation = evaluationsByPlayerId.get(playerId)!;
+        const evaluation = primaryEvaluationsByPlayerId.get(playerId)!;
         return {
           playerId,
           playerName: evaluation.player.name,
-          hand: evaluation.evaluation,
+          hand: resolvedRunCount === 1 ? evaluation.evaluation : null,
           amountWon,
         };
       })
@@ -674,8 +847,14 @@ export class HandService {
     }
 
     const result: HandResult = {
+      runCount: resolvedRunCount,
+      runouts,
       winners,
-      playerHands: this.buildResultPlayerHands(room, evaluationsByPlayerId),
+      playerHands: this.buildResultPlayerHands(
+        room,
+        primaryEvaluationsByPlayerId,
+        runHandsByPlayerId,
+      ),
       totalPot: hand.pot,
       payouts,
       netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
@@ -684,6 +863,146 @@ export class HandService {
     this.captureSettledPlayerCards(room);
     await this.cleanupHand(room, winners[0]?.playerId);
     return result;
+  }
+
+  private buildEvaluationsByPlayerId(
+    room: Room,
+    activePlayers: Player[],
+    board: Card[],
+  ): Map<string, { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }> {
+    return new Map(
+      activePlayers.map((player) => {
+        if (!player.cards || player.cards.length !== 2) {
+          throw new Error(
+            `Cards unavailable for showdown evaluation: ${player.id}`,
+          );
+        }
+
+        return [
+          player.id,
+          {
+            player,
+            evaluation: evaluateHand(player.cards.concat(board), {
+              useShortDeckRules: Boolean(room.config.useShortDeckRules),
+            }),
+          },
+        ];
+      }),
+    );
+  }
+
+  private resolveRunPayouts(
+    evaluationsByPlayerId: Map<
+      string,
+      { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
+    >,
+    sidePotSegments: Array<{ amount: number; eligiblePlayers: string[] }>,
+    runCount: RunCount,
+    runIndex: number,
+  ): {
+    payouts: PotPayout[];
+    payoutByPlayerId: Map<string, number>;
+    distributedTotal: number;
+  } {
+    const payoutByPlayerId = new Map<string, number>();
+    const payouts: PotPayout[] = [];
+    let distributedTotal = 0;
+
+    for (const [segmentIndex, segment] of sidePotSegments.entries()) {
+      const segmentAmount = this.splitAmountAcrossRuns(
+        segment.amount,
+        runCount,
+        runIndex,
+      );
+      if (segmentAmount <= 0) {
+        continue;
+      }
+
+      const eligibleEvaluations = segment.eligiblePlayers
+        .map((playerId) => evaluationsByPlayerId.get(playerId))
+        .filter(
+          (
+            entry,
+          ): entry is {
+            player: Player;
+            evaluation: ReturnType<typeof evaluateHand> | null;
+          } => Boolean(entry),
+        )
+        .sort((left, right) => compareHands(right.evaluation, left.evaluation));
+
+      if (eligibleEvaluations.length === 0) {
+        continue;
+      }
+
+      const winningEvaluations = [eligibleEvaluations[0]];
+      for (let index = 1; index < eligibleEvaluations.length; index += 1) {
+        if (
+          compareHands(
+            eligibleEvaluations[index].evaluation,
+            eligibleEvaluations[0].evaluation,
+          ) === 0
+        ) {
+          winningEvaluations.push(eligibleEvaluations[index]);
+        } else {
+          break;
+        }
+      }
+
+      // Preserve the table's existing odd-chip convention inside each run.
+      winningEvaluations.sort((left, right) => left.player.position - right.player.position);
+      const amountPerWinner = Math.floor(
+        segmentAmount / winningEvaluations.length,
+      );
+      const remainder = segmentAmount % winningEvaluations.length;
+      const winnerShares: PotPayout['winnerShares'] = [];
+
+      for (let index = 0; index < winningEvaluations.length; index += 1) {
+        const winner = winningEvaluations[index];
+        const award = amountPerWinner + (index < remainder ? 1 : 0);
+        if (award <= 0) {
+          continue;
+        }
+
+        payoutByPlayerId.set(
+          winner.player.id,
+          (payoutByPlayerId.get(winner.player.id) || 0) + award,
+        );
+        winnerShares.push({
+          playerId: winner.player.id,
+          amountWon: award,
+        });
+        distributedTotal += award;
+      }
+
+      payouts.push({
+        segmentIndex,
+        potType: segmentIndex === 0 ? 'MAIN' : 'SIDE',
+        amount: segmentAmount,
+        eligiblePlayerIds: segment.eligiblePlayers,
+        winnerShares,
+        uncontested: segment.eligiblePlayers.length === 1,
+      });
+    }
+
+    return {
+      payouts,
+      payoutByPlayerId,
+      distributedTotal,
+    };
+  }
+
+  private splitAmountAcrossRuns(
+    amount: number,
+    runCount: RunCount,
+    runIndex: number,
+  ): number {
+    if (runCount <= 1) {
+      return amount;
+    }
+
+    const baseAmount = Math.floor(amount / runCount);
+    const remainder = amount % runCount;
+    return baseAmount + (runIndex < remainder ? 1 : 0);
   }
 
   private captureSettledPlayerCards(room: Room): void {
@@ -710,6 +1029,10 @@ export class HandService {
       string,
       { player: Player; evaluation: ReturnType<typeof evaluateHand> | null }
     >,
+    runHandsByPlayerId: Map<
+      string,
+      Array<{ runIndex: number; hand: ReturnType<typeof evaluateHand> | null }>
+    > = new Map(),
   ): HandResult['playerHands'] {
     const hand = room.currentHand!;
     const dealtPlayerIds =
@@ -751,15 +1074,22 @@ export class HandService {
         isShown ? 'shown' : 'hidden';
       const evaluation =
         evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
+      const runHands = runHandsByPlayerId.get(player.id) ?? [];
 
       return {
         playerId: player.id,
         playerName: player.name,
         cards: cardsVisibility === 'shown' ? (player.cards ?? []) : [],
-        hand: cardsVisibility === 'shown' ? evaluation : null,
+        hand:
+          cardsVisibility === 'shown'
+            ? runHands.length <= 1
+              ? (runHands[0]?.hand ?? evaluation)
+              : null
+            : null,
         resultStatus,
         cardsVisibility,
         seatPosition: player.position,
+        runHands: runHands.length > 0 ? runHands : undefined,
       };
     });
   }

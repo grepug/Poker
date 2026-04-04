@@ -718,6 +718,10 @@ async function getRoomSnapshot(page: Page) {
       pendingStreetRevealRound: hand?.pendingStreetRevealRound ?? null,
       nextStreetRequiredPlayerIds: hand?.nextStreetRequiredPlayerIds ?? [],
       nextStreetReadyPlayerIds: hand?.nextStreetReadyPlayerIds ?? [],
+      runCountDecisionEligiblePlayerIds:
+        hand?.runCountDecision?.eligiblePlayerIds ?? [],
+      runCountDecisionTwiceAgreedPlayerIds:
+        hand?.runCountDecision?.twiceAgreedPlayerIds ?? [],
       showdownDecisionPlayerId: hand?.showdownDecisionPlayerId ?? null,
       hasLastResult: Boolean(hand?.lastResult),
       aliceChips: alice?.chips ?? 0,
@@ -1248,7 +1252,20 @@ async function waitForHandCompleteWithTerminalAutoProgress(
       playerPageEntries.map((entry) => [entry.playerId, entry.page]),
     );
 
-    if (state.pendingStreetRevealRound === 'SHOWDOWN') {
+    if ((state.runCountDecisionEligiblePlayerIds ?? []).length > 0) {
+      for (const page of uniquePages) {
+        if (page.isClosed()) {
+          continue;
+        }
+        const response = await emitSocketEventAck(page, 'SET_RUN_COUNT', {
+          runCount: 1,
+        });
+        if (response.success || response.duplicate) {
+          progressed = true;
+          break;
+        }
+      }
+    } else if (state.pendingStreetRevealRound === 'SHOWDOWN') {
       const revealButtonPage = (
         await Promise.all(
           uniquePages.map(async (page) =>
@@ -1421,6 +1438,24 @@ async function completeCurrentHandWithPassiveActions(
     const state = await getRoomSnapshot(anchorPage);
     if (state.handNumber !== handNumber || state.hasLastResult) {
       return;
+    }
+
+    if ((state.runCountDecisionEligiblePlayerIds ?? []).length > 0) {
+      let resolvedRunCount = false;
+      for (const decisionPage of Object.values(pageByName)) {
+        if (decisionPage.isClosed()) {
+          continue;
+        }
+        const response = await emitSocketEventAck(decisionPage, 'SET_RUN_COUNT', {
+          runCount: 1,
+        });
+        if (response.success || response.duplicate) {
+          resolvedRunCount = true;
+          break;
+        }
+      }
+      await anchorPage.waitForTimeout(resolvedRunCount ? 120 : 200);
+      continue;
     }
 
     if (state.pendingStreetRevealRound === 'SHOWDOWN') {
