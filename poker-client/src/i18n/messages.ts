@@ -227,6 +227,10 @@ export const EN_MESSAGES = {
   "game.endGameConfirm.body": "This will stop the match and publish final standings for all players.",
   "game.endGameConfirm.warning": "You can no longer start another hand after ending the game.",
   "game.endGameConfirm.confirm": "End Game Now",
+  "game.leaveConfirm.title": "Leave this room?",
+  "game.leaveConfirm.body": "You will leave the current table and return to the lobby.",
+  "game.leaveConfirm.warning": "Your local room view will close immediately after you confirm.",
+  "game.leaveConfirm.confirm": "Leave Room",
 
   "game.final.title": "Final Results",
   "game.final.subtitle": "Shareable table standings and highlights from the full game.",
@@ -564,6 +568,10 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.endGameConfirm.body": "结束后将停止对局，并向所有玩家发布最终排行榜。",
   "game.endGameConfirm.warning": "结束后将无法继续开始下一局。",
   "game.endGameConfirm.confirm": "立即结束游戏",
+  "game.leaveConfirm.title": "确认离开房间？",
+  "game.leaveConfirm.body": "确认后你将离开当前牌桌，并返回大厅。",
+  "game.leaveConfirm.warning": "确认后当前房间界面会立即关闭。",
+  "game.leaveConfirm.confirm": "离开房间",
 
   "game.final.title": "最终结果",
   "game.final.subtitle": "整场游戏的可分享排行榜与亮点数据。",
