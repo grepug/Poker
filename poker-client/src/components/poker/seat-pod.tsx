@@ -1,4 +1,5 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
+import type { HandPositionLabel } from "poker-types";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -21,7 +22,7 @@ type SeatPodProps = {
   isYou: boolean;
   roleIcon: "dealer" | "small-blind" | null;
   roleLabel: string | null;
-  positionLabel?: string | null;
+  positionLabel?: HandPositionLabel | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
