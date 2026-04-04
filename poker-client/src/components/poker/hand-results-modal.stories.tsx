@@ -46,6 +46,7 @@ const meta = {
   },
   tags: ["autodocs"],
   args: {
+    ariaLabel: "Hand results",
     onClose: () => {},
     t: storyTranslate,
   },

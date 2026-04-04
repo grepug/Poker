@@ -8,23 +8,22 @@ type Translate = (
 
 type HandResultsModalProps = {
   children?: React.ReactNode;
+  ariaLabel: string;
+  footer?: React.ReactNode;
   onClose: () => void;
   t: Translate;
 };
 
 export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalProps>(
-  ({ children, onClose, t }, ref) => (
+  ({ children, ariaLabel, footer, onClose, t }, ref) => (
     <div
       className="fixed inset-0 z-[74] overflow-y-auto bg-emerald-950/88 p-4 backdrop-blur-sm"
       data-testid="hand-results-modal"
       role="dialog"
       aria-modal="true"
+      aria-label={ariaLabel}
     >
-      <section
-        ref={ref}
-        className="surface-panel mx-auto w-full max-w-4xl p-4 md:p-6"
-        data-testid="hand-results-panel"
-      >
+      <div className="mx-auto w-full max-w-4xl">
         <div className="mb-3 flex justify-end">
           <button
             onClick={onClose}
@@ -34,8 +33,15 @@ export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalPr
             {t("common.close")}
           </button>
         </div>
-        {children}
-      </section>
+        <section
+          ref={ref}
+          className="surface-panel p-4 md:p-6"
+          data-testid="hand-results-panel"
+        >
+          {children}
+        </section>
+        {footer ? <div className="mt-3">{footer}</div> : null}
+      </div>
     </div>
   ),
 );

@@ -3144,13 +3144,13 @@ const useGameRoomElement = () => {
 
   const saveShareablePanelScreenshot = async ({
     panel,
-    hiddenControlTestId,
+    hiddenControlTestIds,
     fileSuffix,
     successMessageKey,
     failureMessageKey,
   }: {
     panel: HTMLElement;
-    hiddenControlTestId: string;
+    hiddenControlTestIds: string[];
     fileSuffix: string;
     successMessageKey: MessageKey;
     failureMessageKey: MessageKey;
@@ -3158,13 +3158,14 @@ const useGameRoomElement = () => {
     if (!room) return;
 
     try {
+      const hiddenControlTestIdSet = new Set(hiddenControlTestIds);
       const screenshotDataUrl = await toPng(panel, {
         cacheBust: true,
         pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
         backgroundColor: "#032b26",
         filter: (node) => {
           if (!(node instanceof HTMLElement)) return true;
-          return node.dataset.testid !== hiddenControlTestId;
+          return !hiddenControlTestIdSet.has(node.dataset.testid ?? "");
         },
       });
 
@@ -3228,7 +3229,10 @@ const useGameRoomElement = () => {
 
     await saveShareablePanelScreenshot({
       panel: handResultsPanelRef.current,
-      hiddenControlTestId: "save-result-screenshot-button",
+      hiddenControlTestIds: [
+        "save-result-screenshot-button",
+        "close-hand-results-button",
+      ],
       fileSuffix: `hand-${currentHandNumber ?? "result"}`,
       successMessageKey: "game.resultScreenshotSaved",
       failureMessageKey: "game.resultScreenshotFailed",
@@ -3240,7 +3244,7 @@ const useGameRoomElement = () => {
 
     await saveShareablePanelScreenshot({
       panel: finalSummaryPanelRef.current,
-      hiddenControlTestId: "save-final-summary-screenshot-button",
+      hiddenControlTestIds: ["save-final-summary-screenshot-button"],
       fileSuffix: "final-results",
       successMessageKey: "game.final.screenshotSaved",
       failureMessageKey: "game.final.screenshotFailed",
@@ -3529,6 +3533,22 @@ const useGameRoomElement = () => {
       {showHandResultsModal && lastHandResult && !finalGameResult && (
         <HandResultsModal
           ref={handResultsPanelRef}
+          ariaLabel={t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
+          footer={
+            showNextHandActionArea ? (
+              <NextHandActionArea
+                canReadyNextHand={canReadyNextHand}
+                hasReadiedNextHand={hasReadiedCurrentPhase}
+                canEndGame={canHostEndGame}
+                onReadyNextHand={markReady}
+                onOpenEndGameConfirm={() => {
+                  if (!canHostEndGame) return;
+                  setShowEndGameConfirmModal(true);
+                }}
+                t={t}
+              />
+            ) : null
+          }
           onClose={() => setShowHandResultsModal(false)}
           t={t}
         >
@@ -3613,7 +3633,7 @@ const useGameRoomElement = () => {
         </ChipComposerDock>
       )}
 
-      {showNextHandActionArea && (
+      {showNextHandActionArea && !showHandResultsModal && (
         <ChipComposerDock
           ref={bottomBarOverlayRef}
           className="chip-composer-dock--operation"
