@@ -76,13 +76,14 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onLegacyRaiseAmountChange,
   t,
 }) => {
+  const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
   const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
   const previousQuickDecisionAvailableRef = React.useRef(false);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
-    React.useState(false);
+    React.useState(isQuickDecisionAvailable);
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
   const quickConfirmStyle = useAnchoredPopover({
@@ -92,10 +93,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     preferredPlacement: "top",
     align: "start",
   });
-  const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!isQuickDecisionAvailable) {
       if (quickDecisionLockTimeoutRef.current !== null) {
         window.clearTimeout(quickDecisionLockTimeoutRef.current);
