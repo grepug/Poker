@@ -107,6 +107,14 @@ const useHomeElement = ({
     clearFeedback();
   };
 
+  const handleLogout = () => {
+    void logout()
+      .catch(() => undefined)
+      .finally(() => {
+        navigate("/auth", { replace: true });
+      });
+  };
+
   const handleCreateRoom = () => {
     if (isRecoveringSession) {
       return;
@@ -177,10 +185,7 @@ const useHomeElement = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                void logout();
-                navigate("/auth", { replace: true });
-              }}
+              onClick={handleLogout}
               className="rounded-lg border border-rose-500/60 bg-rose-900/35 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-800/45"
             >
               {t("home.logout")}

@@ -583,7 +583,7 @@ export class HandService {
       return {
         playerId: player.id,
         playerName: player.name,
-        cards: player.cards ?? [],
+        cards: cardsVisibility === 'shown' ? player.cards ?? [] : [],
         hand: cardsVisibility === 'shown' ? evaluation : null,
         resultStatus,
         cardsVisibility,

@@ -60,6 +60,7 @@ import {
   Card,
   PlayerProfileUpdatedData,
   UpdateProfileData,
+  HandResult,
 } from 'poker-types';
 
 const resolveGatewayCorsOrigin = ():
@@ -2281,7 +2282,7 @@ export class EventsGateway
     await this.storageService.saveRoom(room);
 
     const handCompleteData: HandCompleteData = {
-      result,
+      result: this.sanitizeHandResult(result)!,
       handNumber: room.currentHand.handNumber,
       isShowdown,
       revealedPlayerIds,
@@ -2583,10 +2584,38 @@ export class EventsGateway
   }
 
   private sanitizeRoom(room: any): any {
-    // Remove sensitive data
+    const sanitizedCurrentHand = room.currentHand
+      ? {
+          ...room.currentHand,
+          lastResult: this.sanitizeHandResult(room.currentHand.lastResult),
+        }
+      : room.currentHand;
+
     return {
       ...room,
+      currentHand: sanitizedCurrentHand,
       players: room.players.map((p: any) => this.sanitizePlayer(p)),
+    };
+  }
+
+  private sanitizeHandResult(
+    result: HandResult | null | undefined,
+  ): HandResult | null | undefined {
+    if (!result) {
+      return result;
+    }
+
+    return {
+      ...result,
+      playerHands: result.playerHands.map((entry) =>
+        entry.cardsVisibility === 'shown'
+          ? entry
+          : {
+              ...entry,
+              cards: [],
+              hand: null,
+            },
+      ),
     };
   }
 

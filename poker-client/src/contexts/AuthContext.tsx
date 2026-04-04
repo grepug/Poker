@@ -152,6 +152,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = useCallback(async () => {
     try {
       await authService.logout(authTokenStorage.read());
+    } catch (error) {
+      console.warn("Logout request failed", error);
     } finally {
       clearSession();
     }

@@ -231,6 +231,164 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     gateway.onModuleDestroy();
   });
 
+  it('redacts hidden cards from HAND_COMPLETE while keeping the stored result intact', async () => {
+    handService.determineWinner.mockResolvedValueOnce({
+      winners: [
+        {
+          playerId: 'p-bob',
+          playerName: 'Bob',
+          hand: {
+            rank: 'pair',
+            cards: [],
+            kickers: [],
+            description: 'Pair',
+          },
+          amountWon: 200,
+        },
+      ],
+      playerHands: [
+        {
+          playerId: 'p-alice',
+          playerName: 'Alice',
+          cards: [
+            { suit: 'hearts', rank: 'A' },
+            { suit: 'clubs', rank: 'K' },
+          ],
+          hand: null,
+          resultStatus: 'hidden_contender',
+          cardsVisibility: 'hidden',
+          seatPosition: 0,
+        },
+        {
+          playerId: 'p-bob',
+          playerName: 'Bob',
+          cards: [
+            { suit: 'spades', rank: 'Q' },
+            { suit: 'diamonds', rank: 'J' },
+          ],
+          hand: {
+            rank: 'pair',
+            cards: [],
+            kickers: [],
+            description: 'Pair',
+          },
+          resultStatus: 'shown',
+          cardsVisibility: 'shown',
+          seatPosition: 1,
+        },
+      ],
+      totalPot: 200,
+      payouts: [
+        {
+          segmentIndex: 0,
+          potType: 'MAIN',
+          amount: 200,
+          eligiblePlayerIds: ['p-alice', 'p-bob'],
+          winnerShares: [
+            {
+              playerId: 'p-bob',
+              amountWon: 200,
+            },
+          ],
+          uncontested: false,
+        },
+      ],
+      netByPlayerId: {
+        'p-alice': -100,
+        'p-bob': 100,
+      },
+    });
+
+    await (gateway as any).completeAndBroadcastHand(roomState);
+
+    const handCompletePayload = roomEmitter.emit.mock.calls.find(
+      ([eventName]) => eventName === 'HAND_COMPLETE',
+    )?.[1];
+    expect(handCompletePayload?.result?.playerHands).toEqual([
+      expect.objectContaining({
+        playerId: 'p-alice',
+        cards: [],
+        hand: null,
+        cardsVisibility: 'hidden',
+      }),
+      expect.objectContaining({
+        playerId: 'p-bob',
+        cards: [
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'diamonds', rank: 'J' },
+        ],
+        cardsVisibility: 'shown',
+      }),
+    ]);
+    expect(roomState.currentHand.lastResult.playerHands[0].cards).toEqual([
+      { suit: 'hearts', rank: 'A' },
+      { suit: 'clubs', rank: 'K' },
+    ]);
+  });
+
+  it('redacts hidden cards from sanitized room snapshots', () => {
+    roomState.currentHand.lastResult = {
+      winners: [],
+      playerHands: [
+        {
+          playerId: 'p-alice',
+          playerName: 'Alice',
+          cards: [
+            { suit: 'hearts', rank: 'A' },
+            { suit: 'clubs', rank: 'K' },
+          ],
+          hand: null,
+          resultStatus: 'hidden_contender',
+          cardsVisibility: 'hidden',
+          seatPosition: 0,
+        },
+        {
+          playerId: 'p-bob',
+          playerName: 'Bob',
+          cards: [
+            { suit: 'spades', rank: 'Q' },
+            { suit: 'diamonds', rank: 'J' },
+          ],
+          hand: {
+            rank: 'pair',
+            cards: [],
+            kickers: [],
+            description: 'Pair',
+          },
+          resultStatus: 'shown',
+          cardsVisibility: 'shown',
+          seatPosition: 1,
+        },
+      ],
+      totalPot: 200,
+      payouts: [],
+      netByPlayerId: {
+        'p-alice': -100,
+        'p-bob': 100,
+      },
+    };
+
+    const sanitizedRoom = (gateway as any).sanitizeRoom(roomState);
+
+    expect(sanitizedRoom.players[0].cards).toBeUndefined();
+    expect(sanitizedRoom.currentHand.lastResult.playerHands).toEqual([
+      expect.objectContaining({
+        playerId: 'p-alice',
+        cards: [],
+        hand: null,
+        cardsVisibility: 'hidden',
+      }),
+      expect.objectContaining({
+        playerId: 'p-bob',
+        cards: [
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'diamonds', rank: 'J' },
+        ],
+        cardsVisibility: 'shown',
+      }),
+    ]);
+  });
+
   it('keeps showdown pending after only one reveal', async () => {
     const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
 

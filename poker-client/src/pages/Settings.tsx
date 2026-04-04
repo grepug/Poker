@@ -35,8 +35,13 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/auth", { replace: true });
+    try {
+      await logout();
+    } catch {
+      // Local session is already cleared in the auth context.
+    } finally {
+      navigate("/auth", { replace: true });
+    }
   };
 
   return (
