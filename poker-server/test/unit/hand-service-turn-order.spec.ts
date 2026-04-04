@@ -119,11 +119,71 @@ describe('HandService turn order', () => {
     expect(hand.smallBlindPosition).toBe(3);
     expect(hand.bigBlindPosition).toBe(0);
     expect(hand.currentPlayerTurn).toBe('p3');
+    expect(hand.positionLabelsByPlayerId).toEqual({
+      p0: 'BTN/BB',
+      p3: 'SB',
+    });
 
     const playerAt3 = room.players.find((player) => player.id === 'p3');
     const playerAt0 = room.players.find((player) => player.id === 'p0');
     expect(playerAt3?.chips).toBe(995);
     expect(playerAt0?.chips).toBe(990);
   });
-});
 
+  it('assigns multi-player position labels from the hand-start seat order', async () => {
+    const room: Room = {
+      id: 'ROOM-SIXMAX',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        buildPlayer({ id: 'p8', position: 8 }),
+        buildPlayer({ id: 'p0', position: 0 }),
+        buildPlayer({ id: 'p4', position: 4 }),
+        buildPlayer({ id: 'p9', position: 9 }),
+        buildPlayer({ id: 'p2', position: 2 }),
+        buildPlayer({ id: 'p6', position: 6 }),
+      ],
+      gameState: 'WAITING',
+      currentHand: {
+        handNumber: 7,
+        dealerPosition: 4,
+        smallBlindPosition: 6,
+        bigBlindPosition: 8,
+        currentPlayerTurn: null,
+        pot: 0,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 10,
+        activePlayers: [],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {},
+        startedAt: Date.now(),
+      },
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const hand = await handService.startNewHand(room);
+
+    expect(hand.dealerPosition).toBe(6);
+    expect(hand.smallBlindPosition).toBe(8);
+    expect(hand.bigBlindPosition).toBe(9);
+    expect(hand.positionLabelsByPlayerId).toEqual({
+      p6: 'BTN',
+      p8: 'SB',
+      p9: 'BB',
+      p0: 'UTG',
+      p2: 'HJ',
+      p4: 'CO',
+    });
+  });
+});

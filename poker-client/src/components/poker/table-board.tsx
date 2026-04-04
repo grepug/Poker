@@ -23,6 +23,7 @@ type SeatOrbitItem = {
   isYou: boolean;
   roleIcon: "dealer" | "small-blind" | null;
   roleLabel: string | null;
+  positionLabel?: string | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -505,6 +506,7 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                   isYou={item.isYou}
                   roleIcon={item.roleIcon}
                   roleLabel={item.roleLabel}
+                  positionLabel={item.positionLabel}
                   externalStatusLabel={item.externalStatusLabel}
                   externalStatusToneClass={item.externalStatusToneClass}
                   internalStatusLabel={item.internalStatusLabel}

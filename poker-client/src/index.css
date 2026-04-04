@@ -951,6 +951,30 @@ body {
   text-shadow: 0 1px 0 rgba(2, 6, 23, 0.5);
 }
 
+.seat-pod__position-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 46%;
+  min-height: 0.9rem;
+  padding: 0.08rem 0.28rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(252, 211, 77, 0.58);
+  background:
+    linear-gradient(180deg, rgba(120, 53, 15, 0.94), rgba(146, 64, 14, 0.82));
+  color: #fef3c7;
+  font-size: calc(var(--seat-status-size) * 1.02);
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  box-shadow: 0 4px 10px rgba(2, 6, 23, 0.28);
+}
+
 .seat-pod__action {
   font-size: var(--seat-bet-size);
   color: rgba(207, 250, 254, 0.94);

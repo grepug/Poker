@@ -7,6 +7,20 @@ export type BettingRound = "PRE_FLOP" | "FLOP" | "TURN" | "RIVER" | "SHOWDOWN";
 // Game state
 export type GameStateType = "WAITING" | "IN_PROGRESS" | "ENDED";
 
+export type HandPositionLabel =
+  | "BTN"
+  | "BTN/SB"
+  | "BTN/BB"
+  | "SB"
+  | "BB"
+  | "UTG"
+  | "UTG+1"
+  | "UTG+2"
+  | "MP"
+  | "LJ"
+  | "HJ"
+  | "CO";
+
 // Side pot for all-in scenarios
 export interface SidePot {
   amount: number;
@@ -29,6 +43,7 @@ export interface Hand {
   roundActions: Record<string, boolean>; // Track if player acted this round
   sidePots: SidePot[];
   potContributions: Record<string, number>; // Total chips each player put into the pot this hand
+  positionLabelsByPlayerId?: Record<string, HandPositionLabel>; // Runtime-only: current-hand position badges for dealt-in seats
   vpipPlayerIds?: string[]; // Runtime-only: players who voluntarily entered the pot pre-flop
   lastResult?: HandResult | null; // Runtime-only: final hand result for paused hand state
   revealedPlayerIds?: string[]; // Runtime-only: players who revealed their hand to the table
