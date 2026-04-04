@@ -4,6 +4,7 @@ export { ChipComposerDock } from "./chip-composer-dock";
 export { EndGameConfirmModal } from "./end-game-confirm-modal";
 export { FinalSummaryModal } from "./final-summary-modal";
 export { HandResultsContent } from "./hand-results-content";
+export { HandResultsModal } from "./hand-results-modal";
 export { HandResultsPanel } from "./hand-results-panel";
 export { NextHandActionArea } from "./next-hand-action-area";
 export { OperationActionBar } from "./operation-action-bar";

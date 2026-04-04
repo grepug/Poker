@@ -6710,6 +6710,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await playCheckCheckToShowdown(alicePage, bobPage);
       await handCompletePromise;
 
+      await expect(alicePage.locator('[data-testid="hand-results-modal"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="hand-results-mode"]')).toContainText(
         'Hand results are visible to all players.',
@@ -6756,6 +6757,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         })),
       );
       expect(flyoutCards).toEqual(resultCards);
+
+      await alicePage.locator('[data-testid="close-hand-results-button"]').click();
+      await expect(alicePage.locator('[data-testid="hand-results-modal"]')).toHaveCount(0);
     } finally {
       await teardownTwoPlayerSession(session);
     }
