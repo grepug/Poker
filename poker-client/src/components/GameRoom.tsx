@@ -1326,7 +1326,10 @@ const getSeatSlotWidth = ({
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
   if (occupiedSeats <= 8) return "clamp(3.72rem, 13.5vw, 5.08rem)";
-  return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 10) return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 12) return "clamp(3.18rem, 11.2vw, 4.3rem)";
+  if (occupiedSeats <= 16) return "clamp(2.86rem, 9.8vw, 3.86rem)";
+  return "clamp(2.58rem, 8.5vw, 3.38rem)";
 };
 
 const getSeatDensityClass = ({
@@ -2127,7 +2130,7 @@ const useGameRoomElement = () => {
 
   const orbitCapacity = useMemo(() => {
     if (!room) return 6;
-    return room.config.maxPlayers > 6 ? 10 : 6;
+    return Math.max(room.config.maxPlayers, 6);
   }, [room]);
 
   const seatSlotWidth = useMemo(

@@ -80,7 +80,7 @@ export const EN_MESSAGES = {
   "home.roomCode": "Room Code",
   "home.enterRoomCode": "Enter room code",
   "home.joinRoom": "Join Room",
-  "home.footer": "2-10 players • Texas Hold'em rules",
+  "home.footer": "2-20 players • Texas Hold'em rules",
   "home.accountSettings": "Account Settings",
   "home.logout": "Sign Out",
 
@@ -421,7 +421,7 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "home.roomCode": "房间码",
   "home.enterRoomCode": "输入房间码",
   "home.joinRoom": "加入房间",
-  "home.footer": "2-10 人 • 德州扑克规则",
+  "home.footer": "2-20 人 • 德州扑克规则",
   "home.accountSettings": "账户设置",
   "home.logout": "退出登录",
 

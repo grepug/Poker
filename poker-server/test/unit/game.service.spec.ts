@@ -60,7 +60,7 @@ describe('GameService addPlayerToRoom', () => {
         startingChips: params.startingChips ?? 1000,
         smallBlind: 10,
         bigBlind: 20,
-        maxPlayers: params.maxPlayers ?? 10,
+        maxPlayers: params.maxPlayers ?? 20,
         reconnectGracePeriod: 30000,
         allowPlayerStreetReveal: true,
       },
@@ -76,8 +76,17 @@ describe('GameService addPlayerToRoom', () => {
     const room = await gameService.createRoom('socket-host', 'Alice');
 
     expect(room.config.useShortDeckRules).toBe(false);
-    expect(room.config.maxPlayers).toBe(10);
+    expect(room.config.maxPlayers).toBe(20);
     expect(room.players[0].name).toBe('Alice');
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
+  it('respects explicit max player overrides when creating a room', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
+      maxPlayers: 4,
+    });
+
+    expect(room.config.maxPlayers).toBe(4);
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
@@ -150,7 +159,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.status).toBe('waiting');
@@ -360,7 +373,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.position).toBe(1);

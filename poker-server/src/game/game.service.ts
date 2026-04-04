@@ -38,7 +38,7 @@ export class GameService {
       startingChips: 1000,
       smallBlind: 5,
       bigBlind: 10,
-      maxPlayers: 10,
+      maxPlayers: 20,
       useShortDeckRules: false,
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
