@@ -173,7 +173,7 @@ POKER_DATA_VOLUME=myapp_poker_data docker compose up --build -d
 docker compose down
 ```
 
-### Reset stored room data
+### Reset stored persistent app data
 
 ```bash
 docker compose down -v
