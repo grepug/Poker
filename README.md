@@ -139,6 +139,17 @@ This repository includes a production Docker setup where:
 - `/app/data` is mounted as a Docker volume so data survives container restarts and redeploys
 - The physical Docker volume defaults to `poker_data` so persistence does not depend on the Compose project name
 
+### Zeabur
+
+Zeabur does not use this repository's `docker-compose.yml` when deploying `PREBUILT_V2` services. For Zeabur deployments, persistence must be configured in the Zeabur service itself by mounting a Zeabur Volume at `/app/data`.
+
+Recommended Zeabur setup:
+
+- Mount a Zeabur Volume such as `poker-staging-data` to `/app/data`
+- Keep `DATA_DIR=/app/data`
+
+Without that Zeabur volume mount, users, sessions, rooms, chat history, and uploaded chat audio will be lost on redeploy because the container filesystem is ephemeral.
+
 ### Run with Docker Compose
 
 ```bash
