@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef } from "react";
-import type { Card as PokerCard } from "poker-types";
+import type { Card as PokerCard, HandPositionLabel } from "poker-types";
 import { Card } from "@/components/Card";
 import { CommunityCardsLane } from "@/components/poker/community-cards-lane";
 import { PotDropZone } from "@/components/poker/pot-drop-zone";
@@ -23,6 +23,7 @@ type SeatOrbitItem = {
   isYou: boolean;
   roleIcon: "dealer" | "small-blind" | null;
   roleLabel: string | null;
+  positionLabel?: HandPositionLabel | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -505,6 +506,7 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                   isYou={item.isYou}
                   roleIcon={item.roleIcon}
                   roleLabel={item.roleLabel}
+                  positionLabel={item.positionLabel}
                   externalStatusLabel={item.externalStatusLabel}
                   externalStatusToneClass={item.externalStatusToneClass}
                   internalStatusLabel={item.internalStatusLabel}

@@ -8,11 +8,23 @@ import {
   HandResult,
   PotPayout,
   Card,
+  HandPositionLabel,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { createDeck, shuffleDeck, dealCards } from '../common/utils/deck';
 import { evaluateHand, compareHands } from '../common/utils/hand-evaluator';
 import { TestDeckService } from './test-deck.service';
+
+const POSITION_LABELS_BY_PLAYER_COUNT: Record<number, HandPositionLabel[]> = {
+  3: ['BTN', 'SB', 'BB'],
+  4: ['BTN', 'SB', 'BB', 'UTG'],
+  5: ['BTN', 'SB', 'BB', 'UTG', 'CO'],
+  6: ['BTN', 'SB', 'BB', 'UTG', 'HJ', 'CO'],
+  7: ['BTN', 'SB', 'BB', 'UTG', 'LJ', 'HJ', 'CO'],
+  8: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'LJ', 'HJ', 'CO'],
+  9: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'MP', 'LJ', 'HJ', 'CO'],
+  10: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'UTG+2', 'MP', 'LJ', 'HJ', 'CO'],
+};
 
 @Injectable()
 export class HandService {
@@ -134,6 +146,12 @@ export class HandService {
       sidePots: [],
       potContributions,
       dealtPlayerIds: [...activePlayerIds],
+      positionLabelsByPlayerId: this.buildPositionLabelsByPlayerId({
+        activePlayers,
+        dealerPosition,
+        smallBlindPosition,
+        bigBlindPosition,
+      }),
       vpipPlayerIds: [],
       showdownLastAggressorPlayerId: null,
       startedAt: Date.now(),
@@ -798,6 +816,101 @@ export class HandService {
 
   private getPlayersInSeatOrder(players: Player[]): Player[] {
     return [...players].sort((left, right) => left.position - right.position);
+  }
+
+  private buildPositionLabelsByPlayerId({
+    activePlayers,
+    dealerPosition,
+    smallBlindPosition,
+    bigBlindPosition,
+  }: {
+    activePlayers: Player[];
+    dealerPosition: number;
+    smallBlindPosition: number;
+    bigBlindPosition: number;
+  }): Record<string, HandPositionLabel> {
+    if (activePlayers.length === 0) {
+      return {};
+    }
+
+    if (activePlayers.length === 2) {
+      return this.buildHeadsUpPositionLabelsByPlayerId({
+        activePlayers,
+        dealerPosition,
+        smallBlindPosition,
+        bigBlindPosition,
+      });
+    }
+
+    const orderedFromButton = this.getPlayersClockwiseFromPosition(
+      activePlayers,
+      dealerPosition,
+    );
+    const labels = POSITION_LABELS_BY_PLAYER_COUNT[orderedFromButton.length];
+    if (!labels || labels.length !== orderedFromButton.length) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      orderedFromButton.map((player, index) => [player.id, labels[index]]),
+    );
+  }
+
+  private buildHeadsUpPositionLabelsByPlayerId({
+    activePlayers,
+    dealerPosition,
+    smallBlindPosition,
+    bigBlindPosition,
+  }: {
+    activePlayers: Player[];
+    dealerPosition: number;
+    smallBlindPosition: number;
+    bigBlindPosition: number;
+  }): Record<string, HandPositionLabel> {
+    const labelsByPlayerId: Record<string, HandPositionLabel> = {};
+    const playerByPosition = new Map(
+      activePlayers.map((player) => [player.position, player]),
+    );
+    const dealerPlayer = playerByPosition.get(dealerPosition);
+    const smallBlindPlayer = playerByPosition.get(smallBlindPosition);
+    const bigBlindPlayer = playerByPosition.get(bigBlindPosition);
+
+    if (dealerPlayer && dealerPosition === smallBlindPosition) {
+      labelsByPlayerId[dealerPlayer.id] = 'BTN/SB';
+    } else if (dealerPlayer && dealerPosition === bigBlindPosition) {
+      labelsByPlayerId[dealerPlayer.id] = 'BTN/BB';
+    } else if (dealerPlayer) {
+      labelsByPlayerId[dealerPlayer.id] = 'BTN';
+    }
+
+    if (smallBlindPlayer && !labelsByPlayerId[smallBlindPlayer.id]) {
+      labelsByPlayerId[smallBlindPlayer.id] = 'SB';
+    }
+
+    if (bigBlindPlayer && !labelsByPlayerId[bigBlindPlayer.id]) {
+      labelsByPlayerId[bigBlindPlayer.id] = 'BB';
+    }
+
+    return labelsByPlayerId;
+  }
+
+  private getPlayersClockwiseFromPosition(
+    players: Player[],
+    startingPosition: number,
+  ): Player[] {
+    const sortedPlayers = this.getPlayersInSeatOrder(players);
+    const startIndex = sortedPlayers.findIndex(
+      (player) => player.position === startingPosition,
+    );
+
+    if (startIndex === -1) {
+      return sortedPlayers;
+    }
+
+    return [
+      ...sortedPlayers.slice(startIndex),
+      ...sortedPlayers.slice(0, startIndex),
+    ];
   }
 
   private getNextPlayerByPosition(

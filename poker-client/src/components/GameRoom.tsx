@@ -2435,6 +2435,8 @@ const useGameRoomElement = () => {
         );
 
         const seatPlayerId = seatPlayer.id;
+        const seatPositionLabel =
+          currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2515,6 +2517,7 @@ const useGameRoomElement = () => {
           isYou: isSelfSeat,
           roleIcon,
           roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
+          positionLabel: seatPositionLabel,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,

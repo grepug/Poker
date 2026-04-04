@@ -1,4 +1,5 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
+import type { HandPositionLabel } from "poker-types";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -21,6 +22,7 @@ type SeatPodProps = {
   isYou: boolean;
   roleIcon: "dealer" | "small-blind" | null;
   roleLabel: string | null;
+  positionLabel?: HandPositionLabel | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -39,6 +41,7 @@ type AutoFitTextRule = {
 
 const AUTO_FIT_TEXT_RULES: AutoFitTextRule[] = [
   { selector: ".seat-pod__status-badge", minFontPx: 6.5 },
+  { selector: ".seat-pod__position-badge", minFontPx: 5.8 },
   { selector: ".seat-pod__action", minFontPx: 7 },
   { selector: ".seat-pod__remaining", minFontPx: 7.5 },
   { selector: ".seat-pod__ready-overlay", minFontPx: 6.5 },
@@ -220,6 +223,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   isYou,
   roleIcon,
   roleLabel,
+  positionLabel,
   externalStatusLabel,
   externalStatusToneClass,
   internalStatusLabel,
@@ -303,6 +307,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
     densityClass,
     floatingStatusLabel,
     playerName,
+    positionLabel,
     readyOverlayLabel,
     remainingLabel,
     roleLabel,
@@ -368,6 +373,14 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           {playerEmoji}
         </span>
         <span className="seat-pod__name">{playerName}</span>
+        {positionLabel && (
+          <span
+            className="seat-pod__position-badge"
+            data-testid={`${testId}-position-badge`}
+          >
+            {positionLabel}
+          </span>
+        )}
       </div>
 
       <div className="seat-pod__row seat-pod__row--action">
