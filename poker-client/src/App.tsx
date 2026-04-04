@@ -105,7 +105,7 @@ const RoomRoute: React.FC = () => {
 };
 
 const AppRoutes: React.FC = () => {
-  const { authToken, isAuthenticated, isInitializing } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
 
   if (isInitializing) {
     return (
@@ -116,22 +116,32 @@ const AppRoutes: React.FC = () => {
   }
 
   return (
-    <SocketProvider authToken={authToken}>
+    <SocketProvider isAuthenticated={isAuthenticated}>
       <GameProvider>
         <UrlStateSync />
         <IosInstallPrompt />
         <Routes>
           <Route
             path="/auth"
-            element={isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />}
+            element={
+              isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
+            }
           />
           <Route
             path="/"
-            element={isAuthenticated ? <Home /> : <Navigate to="/auth" replace />}
+            element={
+              isAuthenticated ? <Home /> : <Navigate to="/auth" replace />
+            }
           />
           <Route
             path="/settings"
-            element={isAuthenticated ? <SettingsPage /> : <Navigate to="/auth" replace />}
+            element={
+              isAuthenticated ? (
+                <SettingsPage />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
           />
           <Route path="/room" element={<RoomRoute />} />
           <Route path="/room/:roomId" element={<RoomRoute />} />

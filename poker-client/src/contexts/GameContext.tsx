@@ -29,7 +29,10 @@ import type {
 } from "poker-types";
 import { useSocket } from "./SocketContext";
 import { getVoicePlaybackState } from "../services/voice-playback.service";
-import { writeLastPlayerEmoji, writeLastPlayerName } from "../utils/player-name-storage";
+import {
+  writeLastPlayerEmoji,
+  writeLastPlayerName,
+} from "../utils/player-name-storage";
 
 export interface PlayerActionFlashEvent {
   id: string;
@@ -93,10 +96,17 @@ type DebugApi = {
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
   getShowdownDecisionState: () => ShowdownDecisionStateData | null;
-  getRevealedShowdownHandsByPlayerId: () => Record<string, RevealedShowdownHand>;
+  getRevealedShowdownHandsByPlayerId: () => Record<
+    string,
+    RevealedShowdownHand
+  >;
   getNextStreetRevealState: () => NextStreetRevealState | null;
   getSocket: () => ReturnType<typeof useSocket>["socket"];
-  createRoom: (name?: string, emoji?: string, options?: CreateRoomOptions) => void;
+  createRoom: (
+    name?: string,
+    emoji?: string,
+    options?: CreateRoomOptions,
+  ) => void;
   joinRoom: (roomId: string, name?: string, emoji?: string) => void;
   startGame: () => void;
   startNextHand: () => void;
@@ -105,7 +115,11 @@ type DebugApi = {
   showMyHand: () => void;
   muckMyHand: () => void;
   revealNextStreet: () => void;
-  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
+  performAction: (
+    action: PlayerAction,
+    amount?: number,
+    actionId?: string,
+  ) => void;
   fold: () => void;
   check: () => void;
   call: () => void;
@@ -119,10 +133,7 @@ type DebugApi = {
   getChatMessages: () => ChatMessage[];
   getChatUnreadCount: () => number;
   sendChatText: (text: string, clientMessageId?: string) => void;
-  sendChatVoice: (
-    voice: VoiceMessagePayload,
-    clientMessageId?: string,
-  ) => void;
+  sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
   loadOlderChatMessages: () => void;
   setChatPanelOpen: (open: boolean) => void;
   clearChatUnread: () => void;
@@ -164,7 +175,11 @@ interface GameContextType {
   showMyHand: () => void;
   muckMyHand: () => void;
   revealNextStreet: () => void;
-  performAction: (action: PlayerAction, amount?: number, actionId?: string) => void;
+  performAction: (
+    action: PlayerAction,
+    amount?: number,
+    actionId?: string,
+  ) => void;
   leaveRoom: () => void;
   requestRebuy: (amount: number) => void;
   updateRoomConfig: (
@@ -243,7 +258,9 @@ function clearStoredSession() {
 
 function readStoredFinalResult(roomId: string): GameEndedData | null {
   if (typeof window === "undefined") return null;
-  const raw = window.sessionStorage.getItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`);
+  const raw = window.sessionStorage.getItem(
+    `${FINAL_RESULT_STORAGE_PREFIX}${roomId}`,
+  );
   if (!raw) return null;
   try {
     return JSON.parse(raw) as GameEndedData;
@@ -254,7 +271,10 @@ function readStoredFinalResult(roomId: string): GameEndedData | null {
 
 function writeStoredFinalResult(roomId: string, result: GameEndedData) {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(`${FINAL_RESULT_STORAGE_PREFIX}${roomId}`, JSON.stringify(result));
+  window.sessionStorage.setItem(
+    `${FINAL_RESULT_STORAGE_PREFIX}${roomId}`,
+    JSON.stringify(result),
+  );
 }
 
 function clearStoredFinalResult(roomId: string) {
@@ -282,11 +302,15 @@ function deriveNextStreetRevealStateFromRoom(
   };
 }
 
-function deriveLastHandResultFromRoom(roomState: Room | null | undefined): HandResult | null {
+function deriveLastHandResultFromRoom(
+  roomState: Room | null | undefined,
+): HandResult | null {
   return roomState?.currentHand?.lastResult ?? null;
 }
 
-function deriveRevealedHandPlayerIdsFromRoom(roomState: Room | null | undefined): string[] {
+function deriveRevealedHandPlayerIdsFromRoom(
+  roomState: Room | null | undefined,
+): string[] {
   return roomState?.currentHand?.revealedPlayerIds ?? [];
 }
 
@@ -309,7 +333,8 @@ function deriveShowdownDecisionStateFromRoom(
 
   const currentPlayerId = currentHand.showdownDecisionPlayerId ?? null;
   const currentPlayerName =
-    roomState?.players.find((seatPlayer) => seatPlayer.id === currentPlayerId)?.name ?? null;
+    roomState?.players.find((seatPlayer) => seatPlayer.id === currentPlayerId)
+      ?.name ?? null;
 
   return {
     handNumber: currentHand.handNumber,
@@ -331,7 +356,10 @@ function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
 }
 
-function mergeChatMessageLists(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+function mergeChatMessageLists(
+  existing: ChatMessage[],
+  incoming: ChatMessage[],
+): ChatMessage[] {
   return normalizeChatMessages([...existing, ...incoming]);
 }
 
@@ -347,10 +375,14 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   const [player, setPlayer] = useState<Player | null>(null);
   const [yourCards, setYourCards] = useState<Card[] | null>(null);
   const [lastHandResult, setLastHandResult] = useState<HandResult | null>(null);
-  const [finalGameResult, setFinalGameResult] = useState<GameEndedData | null>(null);
+  const [finalGameResult, setFinalGameResult] = useState<GameEndedData | null>(
+    null,
+  );
   const [lastPlayerActionEvent, setLastPlayerActionEvent] =
     useState<PlayerActionFlashEvent | null>(null);
-  const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>([]);
+  const [revealedHandPlayerIds, setRevealedHandPlayerIds] = useState<string[]>(
+    [],
+  );
   const [showdownDecisionState, setShowdownDecisionState] =
     useState<ShowdownDecisionStateData | null>(null);
   const [revealedShowdownHandsByPlayerId, setRevealedShowdownHandsByPlayerId] =
@@ -361,7 +393,9 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   const [lastError, setLastError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatHasMore, setChatHasMore] = useState(false);
-  const [chatNextBeforeSeq, setChatNextBeforeSeq] = useState<number | null>(null);
+  const [chatNextBeforeSeq, setChatNextBeforeSeq] = useState<number | null>(
+    null,
+  );
   const [chatLoadingHistory, setChatLoadingHistory] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [isChatPanelOpen, setIsChatPanelOpenState] = useState(false);
@@ -398,812 +432,850 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     writeLastPlayerEmoji(player.emoji);
   }, [player?.emoji]);
 
-  const registerSocketStateListeners = useCallback((socketInstance: NonNullable<typeof socket>) => {
-    const socket = socketInstance;
+  const registerSocketStateListeners = useCallback(
+    (socketInstance: NonNullable<typeof socket>) => {
+      const socket = socketInstance;
 
-    // Room created
-    socket.on("ROOM_CREATED", (data) => {
-      const roomState = data.room as unknown as Room;
-      setRoom(roomState); // SanitizedRoom from server
-      const host = data.room.players[0];
-      setPlayer({ ...host, cards: null } as Player);
-      setYourCards(null);
-      setLastHandResult(deriveLastHandResultFromRoom(roomState));
-      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
-      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
-      setRevealedShowdownHandsByPlayerId({});
-      setLastPlayerActionEvent(null);
-      setFinalGameResult(null);
-      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
-      clearStoredFinalResult(data.room.id);
-      setChatMessages([]);
-      setChatHasMore(false);
-      setChatNextBeforeSeq(null);
-      setChatUnreadCount(0);
-      setChatLoadingHistory(false);
-      setIsRecoveringSession(false);
-      console.log("Room created:", data.roomId);
-    });
-
-    // Room joined
-    socket.on("ROOM_JOINED", (data) => {
-      const roomState = data.room as unknown as Room;
-      setRoom(roomState); // SanitizedRoom from server
-      setPlayer(data.player);
-      setYourCards(data.player?.cards ?? null);
-      setLastHandResult(deriveLastHandResultFromRoom(roomState));
-      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
-      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
-      setRevealedShowdownHandsByPlayerId({});
-      setLastPlayerActionEvent(null);
-      const restoredFinalResult =
-        roomState.gameState === "ENDED" && roomState.id
-          ? readStoredFinalResult(roomState.id)
-          : null;
-      setFinalGameResult(restoredFinalResult);
-      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
-      setChatMessages([]);
-      setChatHasMore(false);
-      setChatNextBeforeSeq(null);
-      setChatUnreadCount(0);
-      setChatLoadingHistory(false);
-      setIsRecoveringSession(false);
-      setLastError(null);
-    });
-
-    // Explicit reconnect success
-    socket.on("RECONNECT_SUCCESS", (data) => {
-      const roomState = data.room as unknown as Room;
-      setRoom(roomState);
-      setPlayer(data.player as Player);
-      setYourCards(data.yourCards ?? null);
-      setLastHandResult(deriveLastHandResultFromRoom(roomState));
-      setRevealedHandPlayerIds(deriveRevealedHandPlayerIdsFromRoom(roomState));
-      setShowdownDecisionState(deriveShowdownDecisionStateFromRoom(roomState));
-      setRevealedShowdownHandsByPlayerId({});
-      setLastPlayerActionEvent(null);
-      const restoredFinalResult =
-        roomState.gameState === "ENDED" && roomState.id
-          ? readStoredFinalResult(roomState.id)
-          : null;
-      setFinalGameResult(restoredFinalResult);
-      setNextStreetRevealState(deriveNextStreetRevealStateFromRoom(roomState));
-      setChatMessages([]);
-      setChatHasMore(false);
-      setChatNextBeforeSeq(null);
-      setChatUnreadCount(0);
-      setChatLoadingHistory(false);
-      setLastError(null);
-      setIsRecoveringSession(false);
-      reconnectInFlightRef.current = false;
-    });
-
-    // Explicit reconnect failure
-    socket.on("RECONNECT_ERROR", (data) => {
-      const reason = data.reason || "Reconnect failed";
-      reconnectInFlightRef.current = false;
-      setIsRecoveringSession(false);
-      setShowdownDecisionState(null);
-      setRevealedShowdownHandsByPlayerId({});
-      if (isInvalidReconnectReason(reason)) {
-        clearStoredSession();
-        setRoom(null);
-        setPlayer(null);
+      // Room created
+      socket.on("ROOM_CREATED", (data) => {
+        const roomState = data.room as unknown as Room;
+        setRoom(roomState); // SanitizedRoom from server
+        const host = data.room.players[0];
+        setPlayer({ ...host, cards: null } as Player);
         setYourCards(null);
-      }
-      setLastError(reason);
-    });
-
-    // Player joined
-    socket.on("PLAYER_JOINED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          players: [...prev.players, { ...data.player, cards: null } as Player],
-        } as Room;
-      });
-    });
-
-    // Player left
-    socket.on("PLAYER_LEFT", (data) => {
-      setRoom((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          players: prev.players.map((p) =>
-            p.id === data.playerId
-              ? {
-                  ...p,
-                  status: "left",
-                  cards: null,
-                  currentBet: 0,
-                  lastAction: null,
-                }
-              : p,
-          ),
-        };
-      });
-    });
-
-    socket.on("PLAYER_DISCONNECTED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map((p) =>
-            p.id === data.playerId ? { ...p, status: "disconnected" } : p,
-          ),
-        };
-      });
-      setPlayer((prev) =>
-        prev && prev.id === data.playerId
-          ? { ...prev, status: "disconnected" }
-          : prev,
-      );
-    });
-
-    socket.on("PLAYER_RECONNECTED", (data) => {
-      const nextStatus = data.status || "connected";
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map((p) =>
-            p.id === data.playerId ? { ...p, status: nextStatus } : p,
-          ),
-        };
-      });
-      setPlayer((prev) =>
-        prev && prev.id === data.playerId
-          ? { ...prev, status: nextStatus }
-          : prev,
-      );
-    });
-
-    socket.on("PLAYER_PROFILE_UPDATED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map((playerEntry) =>
-            playerEntry.id === data.playerId
-              ? {
-                  ...playerEntry,
-                  name: data.playerName,
-                  emoji: data.playerEmoji ?? playerEntry.emoji,
-                }
-              : playerEntry,
-          ),
-        };
-      });
-      setPlayer((prev) =>
-        prev && prev.id === data.playerId
-          ? {
-              ...prev,
-              name: data.playerName,
-              emoji: data.playerEmoji ?? prev.emoji,
-            }
-          : prev,
-      );
-    });
-
-    socket.on("PLAYER_AUTO_FOLDED", (data) => {
-      setLastPlayerActionEvent({
-        id: `${Date.now()}-${data.playerId}-auto-fold`,
-        playerId: data.playerId,
-        playerName: data.playerName,
-        action: "fold",
-        newPot: roomRef.current?.currentHand?.pot ?? 0,
-        createdAt: Date.now(),
-      });
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map((p) =>
-            p.id === data.playerId
-              ? { ...p, status: "folded", lastAction: "fold" }
-              : p,
-          ),
-        };
-      });
-      setPlayer((prev) =>
-        prev && prev.id === data.playerId
-          ? { ...prev, status: "folded", lastAction: "fold" }
-          : prev,
-      );
-    });
-
-    // Host changed
-    socket.on("HOST_CHANGED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return null;
-        return { ...prev, hostId: data.newHostId };
-      });
-    });
-
-    socket.on("ROOM_CONFIG_UPDATED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          config: data.config,
-        };
-      });
-    });
-
-    socket.on("READY_STATE_UPDATED", (data) => {
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          readyPhase: data.phase ?? null,
-          readyPlayerIds: data.readyPlayerIds ?? [],
-        };
-      });
-    });
-
-    // Game started
-    socket.on("GAME_STARTED", (data) => {
-      setLastHandResult(null);
-      setFinalGameResult(null);
-      const currentRoomId = roomRef.current?.id;
-      if (currentRoomId) {
-        clearStoredFinalResult(currentRoomId);
-      }
-      setLastPlayerActionEvent(null);
-      setRevealedHandPlayerIds([]);
-      setShowdownDecisionState(null);
-      setRevealedShowdownHandsByPlayerId({});
-      setNextStreetRevealState(null);
-      // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
-      // If this player is not dealt in, clear cards immediately.
-      setYourCards((prevCards) => {
-        const currentPlayerId = playerRef.current?.id;
-        if (!currentPlayerId) return null;
-        const seatForCurrentPlayer = data.players?.find((p) => p.id === currentPlayerId);
-        return seatForCurrentPlayer?.hasCards ? prevCards : null;
-      });
-      setRoom((prev) => {
-        if (!prev) return null;
-        // Map players with cards field added
-        const playersWithCards = data.players.map((p) => ({
-          ...p,
-          cards: null as Card[] | null,
-        })) as Player[];
-
-        return {
-          ...prev,
-          currentHand: data.hand as Hand,
-          players: playersWithCards,
-          gameState: "IN_PROGRESS",
-          readyPhase: null,
-          readyPlayerIds: [],
-        } as Room;
-      });
-
-      // Update player chips from game start
-      setPlayer((prev) => {
-        if (!prev) return prev;
-        const updatedPlayer = data.players.find((p) => p.id === prev.id);
-        console.log("Updating player on GAME_STARTED:", {
-          prev: prev.chips,
-          updated: updatedPlayer?.chips,
-        });
-        return updatedPlayer
-          ? { ...prev, ...updatedPlayer, cards: prev.cards }
-          : prev;
-      });
-    });
-
-    // Your cards
-    socket.on("YOUR_CARDS", (data) => {
-      setYourCards(data.cards);
-    });
-
-    // Community cards dealt
-    socket.on("COMMUNITY_CARDS_DEALT", (data) => {
-      setNextStreetRevealState(null);
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-        return {
-          ...prev,
-          currentHand: {
-            ...prev.currentHand,
-            communityCards: data.cards,
-            bettingRound: data.round,
-          },
-        } as Room;
-      });
-    });
-
-    // Hand complete
-    socket.on("HAND_COMPLETE", (data) => {
-      console.log("Hand complete:", data.result);
-      setLastHandResult(data.result);
-      setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
-      setShowdownDecisionState(null);
-      setRevealedShowdownHandsByPlayerId({});
-      setNextStreetRevealState(null);
-      setYourCards((prevCards) => {
-        const currentPlayerId = playerRef.current?.id;
-        if (!currentPlayerId) return prevCards;
-        const myHand = data.result.playerHands.find(
-          (entry) => entry.playerId === currentPlayerId,
+        setLastHandResult(deriveLastHandResultFromRoom(roomState));
+        setRevealedHandPlayerIds(
+          deriveRevealedHandPlayerIdsFromRoom(roomState),
         );
-        if (!myHand) {
-          return prevCards;
-        }
-        if (myHand.cardsVisibility === "shown" && myHand.cards.length > 0) {
-          return myHand.cards;
-        }
-        return prevCards;
+        setShowdownDecisionState(
+          deriveShowdownDecisionStateFromRoom(roomState),
+        );
+        setRevealedShowdownHandsByPlayerId({});
+        setLastPlayerActionEvent(null);
+        setFinalGameResult(null);
+        setNextStreetRevealState(
+          deriveNextStreetRevealStateFromRoom(roomState),
+        );
+        clearStoredFinalResult(data.room.id);
+        setChatMessages([]);
+        setChatHasMore(false);
+        setChatNextBeforeSeq(null);
+        setChatUnreadCount(0);
+        setChatLoadingHistory(false);
+        setIsRecoveringSession(false);
+        console.log("Room created:", data.roomId);
       });
-      // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-        const updatedPlayers = prev.players.map((p) => {
+
+      // Room joined
+      socket.on("ROOM_JOINED", (data) => {
+        const roomState = data.room as unknown as Room;
+        setRoom(roomState); // SanitizedRoom from server
+        setPlayer(data.player);
+        setYourCards(data.player?.cards ?? null);
+        setLastHandResult(deriveLastHandResultFromRoom(roomState));
+        setRevealedHandPlayerIds(
+          deriveRevealedHandPlayerIdsFromRoom(roomState),
+        );
+        setShowdownDecisionState(
+          deriveShowdownDecisionStateFromRoom(roomState),
+        );
+        setRevealedShowdownHandsByPlayerId({});
+        setLastPlayerActionEvent(null);
+        const restoredFinalResult =
+          roomState.gameState === "ENDED" && roomState.id
+            ? readStoredFinalResult(roomState.id)
+            : null;
+        setFinalGameResult(restoredFinalResult);
+        setNextStreetRevealState(
+          deriveNextStreetRevealStateFromRoom(roomState),
+        );
+        setChatMessages([]);
+        setChatHasMore(false);
+        setChatNextBeforeSeq(null);
+        setChatUnreadCount(0);
+        setChatLoadingHistory(false);
+        setIsRecoveringSession(false);
+        setLastError(null);
+      });
+
+      // Explicit reconnect success
+      socket.on("RECONNECT_SUCCESS", (data) => {
+        const roomState = data.room as unknown as Room;
+        setRoom(roomState);
+        setPlayer(data.player as Player);
+        setYourCards(data.yourCards ?? null);
+        setLastHandResult(deriveLastHandResultFromRoom(roomState));
+        setRevealedHandPlayerIds(
+          deriveRevealedHandPlayerIdsFromRoom(roomState),
+        );
+        setShowdownDecisionState(
+          deriveShowdownDecisionStateFromRoom(roomState),
+        );
+        setRevealedShowdownHandsByPlayerId({});
+        setLastPlayerActionEvent(null);
+        const restoredFinalResult =
+          roomState.gameState === "ENDED" && roomState.id
+            ? readStoredFinalResult(roomState.id)
+            : null;
+        setFinalGameResult(restoredFinalResult);
+        setNextStreetRevealState(
+          deriveNextStreetRevealStateFromRoom(roomState),
+        );
+        setChatMessages([]);
+        setChatHasMore(false);
+        setChatNextBeforeSeq(null);
+        setChatUnreadCount(0);
+        setChatLoadingHistory(false);
+        setLastError(null);
+        setIsRecoveringSession(false);
+        reconnectInFlightRef.current = false;
+      });
+
+      // Explicit reconnect failure
+      socket.on("RECONNECT_ERROR", (data) => {
+        const reason = data.reason || "Reconnect failed";
+        reconnectInFlightRef.current = false;
+        setIsRecoveringSession(false);
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+        if (isInvalidReconnectReason(reason)) {
+          clearStoredSession();
+          setRoom(null);
+          setPlayer(null);
+          setYourCards(null);
+        }
+        setLastError(reason);
+      });
+
+      // Player joined
+      socket.on("PLAYER_JOINED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            players: [
+              ...prev.players,
+              { ...data.player, cards: null } as Player,
+            ],
+          } as Room;
+        });
+      });
+
+      // Player left
+      socket.on("PLAYER_LEFT", (data) => {
+        setRoom((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === data.playerId
+                ? {
+                    ...p,
+                    status: "left",
+                    cards: null,
+                    currentBet: 0,
+                    lastAction: null,
+                  }
+                : p,
+            ),
+          };
+        });
+      });
+
+      socket.on("PLAYER_DISCONNECTED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === data.playerId ? { ...p, status: "disconnected" } : p,
+            ),
+          };
+        });
+        setPlayer((prev) =>
+          prev && prev.id === data.playerId
+            ? { ...prev, status: "disconnected" }
+            : prev,
+        );
+      });
+
+      socket.on("PLAYER_RECONNECTED", (data) => {
+        const nextStatus = data.status || "connected";
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === data.playerId ? { ...p, status: nextStatus } : p,
+            ),
+          };
+        });
+        setPlayer((prev) =>
+          prev && prev.id === data.playerId
+            ? { ...prev, status: nextStatus }
+            : prev,
+        );
+      });
+
+      socket.on("PLAYER_PROFILE_UPDATED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((playerEntry) =>
+              playerEntry.id === data.playerId
+                ? {
+                    ...playerEntry,
+                    name: data.playerName,
+                    emoji: data.playerEmoji ?? playerEntry.emoji,
+                  }
+                : playerEntry,
+            ),
+          };
+        });
+        setPlayer((prev) =>
+          prev && prev.id === data.playerId
+            ? {
+                ...prev,
+                name: data.playerName,
+                emoji: data.playerEmoji ?? prev.emoji,
+              }
+            : prev,
+        );
+      });
+
+      socket.on("PLAYER_AUTO_FOLDED", (data) => {
+        setLastPlayerActionEvent({
+          id: `${Date.now()}-${data.playerId}-auto-fold`,
+          playerId: data.playerId,
+          playerName: data.playerName,
+          action: "fold",
+          newPot: roomRef.current?.currentHand?.pot ?? 0,
+          createdAt: Date.now(),
+        });
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === data.playerId
+                ? { ...p, status: "folded", lastAction: "fold" }
+                : p,
+            ),
+          };
+        });
+        setPlayer((prev) =>
+          prev && prev.id === data.playerId
+            ? { ...prev, status: "folded", lastAction: "fold" }
+            : prev,
+        );
+      });
+
+      // Host changed
+      socket.on("HOST_CHANGED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return null;
+          return { ...prev, hostId: data.newHostId };
+        });
+      });
+
+      socket.on("ROOM_CONFIG_UPDATED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            config: data.config,
+          };
+        });
+      });
+
+      socket.on("READY_STATE_UPDATED", (data) => {
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            readyPhase: data.phase ?? null,
+            readyPlayerIds: data.readyPlayerIds ?? [],
+          };
+        });
+      });
+
+      // Game started
+      socket.on("GAME_STARTED", (data) => {
+        setLastHandResult(null);
+        setFinalGameResult(null);
+        const currentRoomId = roomRef.current?.id;
+        if (currentRoomId) {
+          clearStoredFinalResult(currentRoomId);
+        }
+        setLastPlayerActionEvent(null);
+        setRevealedHandPlayerIds([]);
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+        setNextStreetRevealState(null);
+        // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
+        // If this player is not dealt in, clear cards immediately.
+        setYourCards((prevCards) => {
+          const currentPlayerId = playerRef.current?.id;
+          if (!currentPlayerId) return null;
+          const seatForCurrentPlayer = data.players?.find(
+            (p) => p.id === currentPlayerId,
+          );
+          return seatForCurrentPlayer?.hasCards ? prevCards : null;
+        });
+        setRoom((prev) => {
+          if (!prev) return null;
+          // Map players with cards field added
+          const playersWithCards = data.players.map((p) => ({
+            ...p,
+            cards: null as Card[] | null,
+          })) as Player[];
+
+          return {
+            ...prev,
+            currentHand: data.hand as Hand,
+            players: playersWithCards,
+            gameState: "IN_PROGRESS",
+            readyPhase: null,
+            readyPlayerIds: [],
+          } as Room;
+        });
+
+        // Update player chips from game start
+        setPlayer((prev) => {
+          if (!prev) return prev;
+          const updatedPlayer = data.players.find((p) => p.id === prev.id);
+          console.log("Updating player on GAME_STARTED:", {
+            prev: prev.chips,
+            updated: updatedPlayer?.chips,
+          });
+          return updatedPlayer
+            ? { ...prev, ...updatedPlayer, cards: prev.cards }
+            : prev;
+        });
+      });
+
+      // Your cards
+      socket.on("YOUR_CARDS", (data) => {
+        setYourCards(data.cards);
+      });
+
+      // Community cards dealt
+      socket.on("COMMUNITY_CARDS_DEALT", (data) => {
+        setNextStreetRevealState(null);
+        setRoom((prev) => {
+          if (!prev || !prev.currentHand) return prev;
+          return {
+            ...prev,
+            currentHand: {
+              ...prev.currentHand,
+              communityCards: data.cards,
+              bettingRound: data.round,
+            },
+          } as Room;
+        });
+      });
+
+      // Hand complete
+      socket.on("HAND_COMPLETE", (data) => {
+        console.log("Hand complete:", data.result);
+        setLastHandResult(data.result);
+        setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+        setNextStreetRevealState(null);
+        setYourCards((prevCards) => {
+          const currentPlayerId = playerRef.current?.id;
+          if (!currentPlayerId) return prevCards;
+          const myHand = data.result.playerHands.find(
+            (entry) => entry.playerId === currentPlayerId,
+          );
+          if (!myHand) {
+            return prevCards;
+          }
+          if (myHand.cardsVisibility === "shown" && myHand.cards.length > 0) {
+            return myHand.cards;
+          }
+          return prevCards;
+        });
+        // Mark hand paused and settle winner chips until the next GAME_STARTED arrives.
+        setRoom((prev) => {
+          if (!prev || !prev.currentHand) return prev;
+          const updatedPlayers = prev.players.map((p) => {
+            const winnerData = data.result.winners.find(
+              (w) => w.playerId === p.id,
+            );
+            return {
+              ...p,
+              chips: winnerData ? p.chips + winnerData.amountWon : p.chips,
+              currentBet: 0,
+            };
+          });
+          return {
+            ...prev,
+            players: updatedPlayers,
+            currentHand: {
+              ...prev.currentHand,
+              currentPlayerTurn: null,
+            },
+          };
+        });
+
+        setPlayer((prev) => {
+          if (!prev) return prev;
           const winnerData = data.result.winners.find(
-            (w) => w.playerId === p.id,
+            (w) => w.playerId === prev.id,
           );
           return {
-            ...p,
-            chips: winnerData ? p.chips + winnerData.amountWon : p.chips,
+            ...prev,
+            chips: winnerData ? prev.chips + winnerData.amountWon : prev.chips,
             currentBet: 0,
           };
         });
-        return {
+      });
+
+      socket.on("SHOWDOWN_DECISION_STATE", (data) => {
+        setShowdownDecisionState(data);
+      });
+
+      socket.on("PLAYER_HAND_REVEALED", (data) => {
+        setRevealedHandPlayerIds((prev) =>
+          prev.includes(data.playerId) ? prev : [...prev, data.playerId],
+        );
+        setRevealedShowdownHandsByPlayerId((prev) => ({
           ...prev,
-          players: updatedPlayers,
-          currentHand: {
-            ...prev.currentHand,
-            currentPlayerTurn: null,
+          [data.playerId]: {
+            playerId: data.playerId,
+            playerName: data.playerName,
+            cards: data.cards ?? [],
+            showdownOrderIndex: data.showdownOrderIndex ?? -1,
           },
-        };
+        }));
       });
 
-      setPlayer((prev) => {
-        if (!prev) return prev;
-        const winnerData = data.result.winners.find((w) => w.playerId === prev.id);
-        return {
-          ...prev,
-          chips: winnerData ? prev.chips + winnerData.amountWon : prev.chips,
-          currentBet: 0,
-        };
-      });
-    });
+      socket.on("PLAYER_HAND_MUCKED", (data) => {
+        setRevealedHandPlayerIds((prev) =>
+          prev.filter((playerId) => playerId !== data.playerId),
+        );
+        setRevealedShowdownHandsByPlayerId((prev) => {
+          if (!prev[data.playerId]) {
+            return prev;
+          }
 
-    socket.on("SHOWDOWN_DECISION_STATE", (data) => {
-      setShowdownDecisionState(data);
-    });
-
-    socket.on("PLAYER_HAND_REVEALED", (data) => {
-      setRevealedHandPlayerIds((prev) =>
-        prev.includes(data.playerId) ? prev : [...prev, data.playerId],
-      );
-      setRevealedShowdownHandsByPlayerId((prev) => ({
-        ...prev,
-        [data.playerId]: {
-          playerId: data.playerId,
-          playerName: data.playerName,
-          cards: data.cards ?? [],
-          showdownOrderIndex: data.showdownOrderIndex ?? -1,
-        },
-      }));
-    });
-
-    socket.on("PLAYER_HAND_MUCKED", (data) => {
-      setRevealedHandPlayerIds((prev) => prev.filter((playerId) => playerId !== data.playerId));
-      setRevealedShowdownHandsByPlayerId((prev) => {
-        if (!prev[data.playerId]) {
-          return prev;
-        }
-
-        const next = { ...prev };
-        delete next[data.playerId];
-        return next;
-      });
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map((seatPlayer) =>
-            seatPlayer.id === data.playerId
-              ? { ...seatPlayer, status: "folded", lastAction: "fold" }
-              : seatPlayer,
-          ),
-        };
-      });
-      setPlayer((prev) =>
-        prev && prev.id === data.playerId
-          ? { ...prev, status: "folded", lastAction: "fold" }
-          : prev,
-      );
-    });
-
-    socket.on("GAME_ENDED", (data) => {
-      setFinalGameResult(data);
-      const currentRoomId = roomRef.current?.id;
-      if (currentRoomId) {
-        writeStoredFinalResult(currentRoomId, data);
-      }
-      setLastHandResult(null);
-      setLastPlayerActionEvent(null);
-      setRevealedHandPlayerIds([]);
-      setShowdownDecisionState(null);
-      setRevealedShowdownHandsByPlayerId({});
-      setNextStreetRevealState(null);
-      setYourCards(null);
-
-      const standingsByPlayerId = new Map(
-        data.standings.map((entry) => [entry.playerId, entry]),
-      );
-
-      setRoom((prev) => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          gameState: "ENDED",
-          currentHand: null,
-          readyPhase: null,
-          readyPlayerIds: [],
-          players: prev.players.map((seatPlayer) => {
-            const standing = standingsByPlayerId.get(seatPlayer.id);
-            return {
-              ...seatPlayer,
-              chips: standing ? standing.finalChips : seatPlayer.chips,
-              currentBet: 0,
-              lastAction: null,
-              cards: null,
-            };
-          }),
-        };
-      });
-
-      setPlayer((prev) => {
-        if (!prev) return prev;
-        const standing = standingsByPlayerId.get(prev.id);
-        return {
-          ...prev,
-          chips: standing ? standing.finalChips : prev.chips,
-          currentBet: 0,
-          lastAction: null,
-          cards: null,
-        };
-      });
-    });
-
-    // New hand starting
-    socket.on("NEW_HAND_STARTING", () => {
-      console.log("New hand starting, waiting for GAME_STARTED event...");
-      setShowdownDecisionState(null);
-      setRevealedShowdownHandsByPlayerId({});
-      setNextStreetRevealState(null);
-    });
-
-    socket.on("NEXT_STREET_REVEAL_STATE", (data) => {
-      setNextStreetRevealState({
-        nextRound: data.nextRound,
-        readyPlayerIds: data.readyPlayerIds ?? [],
-        requiredPlayerIds: data.requiredPlayerIds ?? [],
-      });
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-        return {
-          ...prev,
-          currentHand: {
-            ...prev.currentHand,
-            currentPlayerTurn: null,
-            pendingStreetRevealRound: data.nextRound,
-          },
-        };
-      });
-    });
-
-    // Player turn
-    socket.on("PLAYER_TURN", (data) => {
-      console.log("Player turn:", data);
-
-      setRoom((prev) => {
-        if (!prev || !prev.currentHand) return prev;
-        return {
-          ...prev,
-          currentHand: {
-            ...prev.currentHand,
-            currentPlayerTurn: data.playerId,
-            currentBet: data.currentBet,
-            minRaise: data.minRaise,
-          },
-        } as Room;
-      });
-    });
-
-    // Player acted
-    socket.on("PLAYER_ACTED", (data) => {
-      console.log("Player acted:", data);
-      const roomSnapshot = roomRef.current;
-      const actedPlayerBefore = roomSnapshot?.players.find((p) => p.id === data.playerId);
-      const preRoundCurrentBet = roomSnapshot?.currentHand?.currentBet ?? 0;
-      const preActionCurrentBet = actedPlayerBefore?.currentBet ?? 0;
-      const chipsCommitted = actedPlayerBefore
-        ? Math.max(0, actedPlayerBefore.chips - data.newChips)
-        : 0;
-      const committedAmount = data.committedAmount ?? chipsCommitted;
-      const isNoChipAction = data.action === "check" || data.action === "fold";
-      const totalBetAfterAction =
-        data.totalBetAfterAction ??
-        (isNoChipAction ? preActionCurrentBet : preActionCurrentBet + committedAmount);
-      const resolvedDisplayKind =
-        data.displayKind ??
-        resolveFallbackDisplayKind({
-          action: data.action,
-          preRoundCurrentBet,
+          const next = { ...prev };
+          delete next[data.playerId];
+          return next;
         });
-      const resolvedAmount = isNoChipAction ? undefined : totalBetAfterAction;
-      const resolvedStatus =
-        data.playerStatus ??
-        (data.action === "fold"
-          ? "folded"
-          : data.action === "all-in"
-            ? "all-in"
-            : undefined);
-
-      setLastPlayerActionEvent({
-        id: `${Date.now()}-${data.playerId}-${data.action}`,
-        playerId: data.playerId,
-        playerName: data.playerName,
-        action: data.action,
-        amount: resolvedAmount,
-        isOpeningBet: resolvedDisplayKind === "bet-to",
-        displayKind: resolvedDisplayKind,
-        totalBetAfterAction,
-        committedAmount,
-        blindType: data.blindType ?? null,
-        newPot: data.newPot,
-        createdAt: Date.now(),
-      });
-      setRoom((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          currentHand: prev.currentHand
-            ? {
-                ...prev.currentHand,
-                pot: data.newPot,
-              }
-            : prev.currentHand,
-          players: prev.players.map((p) =>
-            p.id === data.playerId
-              ? {
-                  // Keep currentBet in sync for call/all-in when payload has no explicit amount.
-                  // We derive the committed amount from chip delta.
-                  ...(() => {
-                    const chipsCommitted = Math.max(0, p.chips - data.newChips);
-                    const resolvedCommittedAmount = data.committedAmount ?? chipsCommitted;
-                    const nextCurrentBet =
-                      data.totalBetAfterAction ??
-                      (data.action === "check" || data.action === "fold"
-                        ? p.currentBet
-                        : p.currentBet + resolvedCommittedAmount);
-
-                    return {
-                      ...p,
-                      chips: data.newChips,
-                      status: resolvedStatus ?? p.status,
-                      lastAction: data.action,
-                      currentBet: nextCurrentBet,
-                    };
-                  })(),
-                }
-              : p,
-          ),
-        } as Room;
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map((seatPlayer) =>
+              seatPlayer.id === data.playerId
+                ? { ...seatPlayer, status: "folded", lastAction: "fold" }
+                : seatPlayer,
+            ),
+          };
+        });
+        setPlayer((prev) =>
+          prev && prev.id === data.playerId
+            ? { ...prev, status: "folded", lastAction: "fold" }
+            : prev,
+        );
       });
 
-      // Update player state if it's the current player
-      setPlayer((prev) => {
-        if (!prev || prev.id !== data.playerId) return prev;
-        const committedByDiff = Math.max(0, prev.chips - data.newChips);
-        const resolvedCommittedAmount = data.committedAmount ?? committedByDiff;
-        return {
-          ...prev,
-          chips: data.newChips,
-          status: resolvedStatus ?? prev.status,
-          lastAction: data.action,
-          currentBet:
-            data.totalBetAfterAction ??
-            (data.action === "check" || data.action === "fold"
-              ? prev.currentBet
-              : prev.currentBet + resolvedCommittedAmount),
-        };
+      socket.on("GAME_ENDED", (data) => {
+        setFinalGameResult(data);
+        const currentRoomId = roomRef.current?.id;
+        if (currentRoomId) {
+          writeStoredFinalResult(currentRoomId, data);
+        }
+        setLastHandResult(null);
+        setLastPlayerActionEvent(null);
+        setRevealedHandPlayerIds([]);
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+        setNextStreetRevealState(null);
+        setYourCards(null);
+
+        const standingsByPlayerId = new Map(
+          data.standings.map((entry) => [entry.playerId, entry]),
+        );
+
+        setRoom((prev) => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            gameState: "ENDED",
+            currentHand: null,
+            readyPhase: null,
+            readyPlayerIds: [],
+            players: prev.players.map((seatPlayer) => {
+              const standing = standingsByPlayerId.get(seatPlayer.id);
+              return {
+                ...seatPlayer,
+                chips: standing ? standing.finalChips : seatPlayer.chips,
+                currentBet: 0,
+                lastAction: null,
+                cards: null,
+              };
+            }),
+          };
+        });
+
+        setPlayer((prev) => {
+          if (!prev) return prev;
+          const standing = standingsByPlayerId.get(prev.id);
+          return {
+            ...prev,
+            chips: standing ? standing.finalChips : prev.chips,
+            currentBet: 0,
+            lastAction: null,
+            cards: null,
+          };
+        });
       });
-    });
 
-    // Betting round complete
-    socket.on("BETTING_ROUND_COMPLETE", (data) => {
-      console.log("Betting round complete, next round:", data.nextRound);
+      // New hand starting
+      socket.on("NEW_HAND_STARTING", () => {
+        console.log("New hand starting, waiting for GAME_STARTED event...");
+        setShowdownDecisionState(null);
+        setRevealedShowdownHandsByPlayerId({});
+        setNextStreetRevealState(null);
+      });
 
-      if (data.awaitingPlayerStreetReveal) {
+      socket.on("NEXT_STREET_REVEAL_STATE", (data) => {
         setNextStreetRevealState({
           nextRound: data.nextRound,
           readyPlayerIds: data.readyPlayerIds ?? [],
           requiredPlayerIds: data.requiredPlayerIds ?? [],
         });
-      } else {
-        setNextStreetRevealState(null);
-      }
-      if (data.nextRound !== "SHOWDOWN") {
-        setShowdownDecisionState(null);
-        setRevealedShowdownHandsByPlayerId({});
-      }
-
-      // Reset all players' currentBet to 0 for the new betting round
-      setRoom((prev) => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          currentHand: prev.currentHand
-            ? {
-                ...prev.currentHand,
-                currentBet: 0,
-                currentPlayerTurn: data.awaitingPlayerStreetReveal
-                  ? null
-                  : prev.currentHand.currentPlayerTurn,
-                pendingStreetRevealRound: data.awaitingPlayerStreetReveal
-                  ? data.nextRound
-                  : null,
-              }
-            : prev.currentHand,
-          players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
-        };
+        setRoom((prev) => {
+          if (!prev || !prev.currentHand) return prev;
+          return {
+            ...prev,
+            currentHand: {
+              ...prev.currentHand,
+              currentPlayerTurn: null,
+              pendingStreetRevealRound: data.nextRound,
+            },
+          };
+        });
       });
-    });
 
-    socket.on("CHAT_HISTORY_SYNC", (data: ChatHistorySyncData) => {
-      const normalizedMessages = normalizeChatMessages(data.messages ?? []);
-      setChatMessages((prev) => mergeChatMessageLists(prev, normalizedMessages));
-      setChatHasMore(Boolean(data.hasMore));
-      setChatNextBeforeSeq(data.nextBeforeSeq ?? null);
-      setChatLoadingHistory(false);
-      if (chatPanelOpenRef.current) {
-        setChatUnreadCount(0);
-      }
-    });
+      // Player turn
+      socket.on("PLAYER_TURN", (data) => {
+        console.log("Player turn:", data);
 
-    socket.on("CHAT_MESSAGE_ADDED", (data) => {
-      if (!data?.message) {
-        return;
-      }
+        setRoom((prev) => {
+          if (!prev || !prev.currentHand) return prev;
+          return {
+            ...prev,
+            currentHand: {
+              ...prev.currentHand,
+              currentPlayerTurn: data.playerId,
+              currentBet: data.currentBet,
+              minRaise: data.minRaise,
+            },
+          } as Room;
+        });
+      });
 
-      setChatMessages((prev) => mergeChatMessageLists(prev, [data.message]));
-      if (
-        !chatPanelOpenRef.current &&
-        data.message.sender.playerId !== playerRef.current?.id
-      ) {
-        setChatUnreadCount((prev) => prev + 1);
-      }
-    });
+      // Player acted
+      socket.on("PLAYER_ACTED", (data) => {
+        console.log("Player acted:", data);
+        const roomSnapshot = roomRef.current;
+        const actedPlayerBefore = roomSnapshot?.players.find(
+          (p) => p.id === data.playerId,
+        );
+        const preRoundCurrentBet = roomSnapshot?.currentHand?.currentBet ?? 0;
+        const preActionCurrentBet = actedPlayerBefore?.currentBet ?? 0;
+        const chipsCommitted = actedPlayerBefore
+          ? Math.max(0, actedPlayerBefore.chips - data.newChips)
+          : 0;
+        const committedAmount = data.committedAmount ?? chipsCommitted;
+        const isNoChipAction =
+          data.action === "check" || data.action === "fold";
+        const totalBetAfterAction =
+          data.totalBetAfterAction ??
+          (isNoChipAction
+            ? preActionCurrentBet
+            : preActionCurrentBet + committedAmount);
+        const resolvedDisplayKind =
+          data.displayKind ??
+          resolveFallbackDisplayKind({
+            action: data.action,
+            preRoundCurrentBet,
+          });
+        const resolvedAmount = isNoChipAction ? undefined : totalBetAfterAction;
+        const resolvedStatus =
+          data.playerStatus ??
+          (data.action === "fold"
+            ? "folded"
+            : data.action === "all-in"
+              ? "all-in"
+              : undefined);
 
-    // Error
-    socket.on("ERROR", (data) => {
-      console.error("Socket error:", data.message);
-      setLastError(data.message);
-    });
+        setLastPlayerActionEvent({
+          id: `${Date.now()}-${data.playerId}-${data.action}`,
+          playerId: data.playerId,
+          playerName: data.playerName,
+          action: data.action,
+          amount: resolvedAmount,
+          isOpeningBet: resolvedDisplayKind === "bet-to",
+          displayKind: resolvedDisplayKind,
+          totalBetAfterAction,
+          committedAmount,
+          blindType: data.blindType ?? null,
+          newPot: data.newPot,
+          createdAt: Date.now(),
+        });
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            currentHand: prev.currentHand
+              ? {
+                  ...prev.currentHand,
+                  pot: data.newPot,
+                }
+              : prev.currentHand,
+            players: prev.players.map((p) =>
+              p.id === data.playerId
+                ? {
+                    // Keep currentBet in sync for call/all-in when payload has no explicit amount.
+                    // We derive the committed amount from chip delta.
+                    ...(() => {
+                      const chipsCommitted = Math.max(
+                        0,
+                        p.chips - data.newChips,
+                      );
+                      const resolvedCommittedAmount =
+                        data.committedAmount ?? chipsCommitted;
+                      const nextCurrentBet =
+                        data.totalBetAfterAction ??
+                        (data.action === "check" || data.action === "fold"
+                          ? p.currentBet
+                          : p.currentBet + resolvedCommittedAmount);
 
-    return () => {
-      socket.off("ROOM_CREATED");
-      socket.off("ROOM_JOINED");
-      socket.off("RECONNECT_SUCCESS");
-      socket.off("RECONNECT_ERROR");
-      socket.off("PLAYER_JOINED");
-      socket.off("PLAYER_LEFT");
-      socket.off("PLAYER_DISCONNECTED");
-      socket.off("PLAYER_RECONNECTED");
-      socket.off("PLAYER_PROFILE_UPDATED");
-      socket.off("PLAYER_AUTO_FOLDED");
-      socket.off("HOST_CHANGED");
-      socket.off("ROOM_CONFIG_UPDATED");
-      socket.off("READY_STATE_UPDATED");
-      socket.off("GAME_STARTED");
-      socket.off("YOUR_CARDS");
-      socket.off("PLAYER_TURN");
-      socket.off("PLAYER_ACTED");
-      socket.off("COMMUNITY_CARDS_DEALT");
-      socket.off("HAND_COMPLETE");
-      socket.off("SHOWDOWN_DECISION_STATE");
-      socket.off("PLAYER_HAND_REVEALED");
-      socket.off("PLAYER_HAND_MUCKED");
-      socket.off("GAME_ENDED");
-      socket.off("NEW_HAND_STARTING");
-      socket.off("NEXT_STREET_REVEAL_STATE");
-      socket.off("BETTING_ROUND_COMPLETE");
-      socket.off("CHAT_HISTORY_SYNC");
-      socket.off("CHAT_MESSAGE_ADDED");
-      socket.off("ERROR");
-    };
-  }, []);
+                      return {
+                        ...p,
+                        chips: data.newChips,
+                        status: resolvedStatus ?? p.status,
+                        lastAction: data.action,
+                        currentBet: nextCurrentBet,
+                      };
+                    })(),
+                  }
+                : p,
+            ),
+          } as Room;
+        });
+
+        // Update player state if it's the current player
+        setPlayer((prev) => {
+          if (!prev || prev.id !== data.playerId) return prev;
+          const committedByDiff = Math.max(0, prev.chips - data.newChips);
+          const resolvedCommittedAmount =
+            data.committedAmount ?? committedByDiff;
+          return {
+            ...prev,
+            chips: data.newChips,
+            status: resolvedStatus ?? prev.status,
+            lastAction: data.action,
+            currentBet:
+              data.totalBetAfterAction ??
+              (data.action === "check" || data.action === "fold"
+                ? prev.currentBet
+                : prev.currentBet + resolvedCommittedAmount),
+          };
+        });
+      });
+
+      // Betting round complete
+      socket.on("BETTING_ROUND_COMPLETE", (data) => {
+        console.log("Betting round complete, next round:", data.nextRound);
+
+        if (data.awaitingPlayerStreetReveal) {
+          setNextStreetRevealState({
+            nextRound: data.nextRound,
+            readyPlayerIds: data.readyPlayerIds ?? [],
+            requiredPlayerIds: data.requiredPlayerIds ?? [],
+          });
+        } else {
+          setNextStreetRevealState(null);
+        }
+        if (data.nextRound !== "SHOWDOWN") {
+          setShowdownDecisionState(null);
+          setRevealedShowdownHandsByPlayerId({});
+        }
+
+        // Reset all players' currentBet to 0 for the new betting round
+        setRoom((prev) => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            currentHand: prev.currentHand
+              ? {
+                  ...prev.currentHand,
+                  currentBet: 0,
+                  currentPlayerTurn: data.awaitingPlayerStreetReveal
+                    ? null
+                    : prev.currentHand.currentPlayerTurn,
+                  pendingStreetRevealRound: data.awaitingPlayerStreetReveal
+                    ? data.nextRound
+                    : null,
+                }
+              : prev.currentHand,
+            players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
+          };
+        });
+      });
+
+      socket.on("CHAT_HISTORY_SYNC", (data: ChatHistorySyncData) => {
+        const normalizedMessages = normalizeChatMessages(data.messages ?? []);
+        setChatMessages((prev) =>
+          mergeChatMessageLists(prev, normalizedMessages),
+        );
+        setChatHasMore(Boolean(data.hasMore));
+        setChatNextBeforeSeq(data.nextBeforeSeq ?? null);
+        setChatLoadingHistory(false);
+        if (chatPanelOpenRef.current) {
+          setChatUnreadCount(0);
+        }
+      });
+
+      socket.on("CHAT_MESSAGE_ADDED", (data) => {
+        if (!data?.message) {
+          return;
+        }
+
+        setChatMessages((prev) => mergeChatMessageLists(prev, [data.message]));
+        if (
+          !chatPanelOpenRef.current &&
+          data.message.sender.playerId !== playerRef.current?.id
+        ) {
+          setChatUnreadCount((prev) => prev + 1);
+        }
+      });
+
+      // Error
+      socket.on("ERROR", (data) => {
+        console.error("Socket error:", data.message);
+        setLastError(data.message);
+      });
+
+      return () => {
+        socket.off("ROOM_CREATED");
+        socket.off("ROOM_JOINED");
+        socket.off("RECONNECT_SUCCESS");
+        socket.off("RECONNECT_ERROR");
+        socket.off("PLAYER_JOINED");
+        socket.off("PLAYER_LEFT");
+        socket.off("PLAYER_DISCONNECTED");
+        socket.off("PLAYER_RECONNECTED");
+        socket.off("PLAYER_PROFILE_UPDATED");
+        socket.off("PLAYER_AUTO_FOLDED");
+        socket.off("HOST_CHANGED");
+        socket.off("ROOM_CONFIG_UPDATED");
+        socket.off("READY_STATE_UPDATED");
+        socket.off("GAME_STARTED");
+        socket.off("YOUR_CARDS");
+        socket.off("PLAYER_TURN");
+        socket.off("PLAYER_ACTED");
+        socket.off("COMMUNITY_CARDS_DEALT");
+        socket.off("HAND_COMPLETE");
+        socket.off("SHOWDOWN_DECISION_STATE");
+        socket.off("PLAYER_HAND_REVEALED");
+        socket.off("PLAYER_HAND_MUCKED");
+        socket.off("GAME_ENDED");
+        socket.off("NEW_HAND_STARTING");
+        socket.off("NEXT_STREET_REVEAL_STATE");
+        socket.off("BETTING_ROUND_COMPLETE");
+        socket.off("CHAT_HISTORY_SYNC");
+        socket.off("CHAT_MESSAGE_ADDED");
+        socket.off("ERROR");
+      };
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!socket) return;
     return registerSocketStateListeners(socket);
   }, [registerSocketStateListeners, socket]);
 
-  const bindReconnectLifecycleListeners = useCallback((socketInstance: NonNullable<typeof socket>) => {
-    const socket = socketInstance;
+  const bindReconnectLifecycleListeners = useCallback(
+    (socketInstance: NonNullable<typeof socket>) => {
+      const socket = socketInstance;
 
-    const attemptSessionRecovery = () => {
-      if (reconnectInFlightRef.current) return;
+      const attemptSessionRecovery = () => {
+        if (reconnectInFlightRef.current) return;
 
-      const roomState = roomRef.current;
-      const playerState = playerRef.current;
-      const fromState =
-        roomState?.id && playerState?.name && playerState?.id
-          ? {
-              roomId: roomState.id,
-              playerName: playerState.name,
-              playerId: playerState.id,
+        const roomState = roomRef.current;
+        const playerState = playerRef.current;
+        const fromState =
+          roomState?.id && playerState?.name && playerState?.id
+            ? {
+                roomId: roomState.id,
+                playerName: playerState.name,
+                playerId: playerState.id,
+              }
+            : null;
+        const fromStorage = readStoredSession();
+        const payload = fromState ?? fromStorage;
+
+        if (!payload) {
+          setIsRecoveringSession(false);
+          return;
+        }
+
+        reconnectInFlightRef.current = true;
+        setIsRecoveringSession(true);
+        socket.emit("RECONNECT", payload, (response) => {
+          reconnectInFlightRef.current = false;
+          if (response && "success" in response && !response.success) {
+            const reason = response.error || "Reconnect failed";
+            setIsRecoveringSession(false);
+            if (isInvalidReconnectReason(reason)) {
+              clearStoredSession();
+              setRoom(null);
+              setPlayer(null);
+              setYourCards(null);
             }
-          : null;
-      const fromStorage = readStoredSession();
-      const payload = fromState ?? fromStorage;
+            setLastError(reason);
+          }
+        });
+      };
 
-      if (!payload) {
-        setIsRecoveringSession(false);
-        return;
+      const handleConnect = () => {
+        attemptSessionRecovery();
+      };
+
+      const handleDisconnect = () => {
+        const stored = readStoredSession();
+        const hasKnownSession =
+          Boolean(roomRef.current?.id && playerRef.current?.name) ||
+          Boolean(stored);
+        setIsRecoveringSession(hasKnownSession);
+      };
+
+      socket.on("connect", handleConnect);
+      socket.on("disconnect", handleDisconnect);
+
+      if (socket.connected) {
+        handleConnect();
       }
 
-      const sessionToken =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("poker.authToken")
-          : null;
-      const reconnectPayload = sessionToken
-        ? { ...payload, sessionToken }
-        : payload;
-
-      reconnectInFlightRef.current = true;
-      setIsRecoveringSession(true);
-      socket.emit("RECONNECT", reconnectPayload, (response) => {
-        reconnectInFlightRef.current = false;
-        if (response && "success" in response && !response.success) {
-          const reason = response.error || "Reconnect failed";
-          setIsRecoveringSession(false);
-          if (isInvalidReconnectReason(reason)) {
-            clearStoredSession();
-            setRoom(null);
-            setPlayer(null);
-            setYourCards(null);
-          }
-          setLastError(reason);
-        }
-      });
-    };
-
-    const handleConnect = () => {
-      attemptSessionRecovery();
-    };
-
-    const handleDisconnect = () => {
-      const stored = readStoredSession();
-      const hasKnownSession =
-        Boolean(roomRef.current?.id && playerRef.current?.name) || Boolean(stored);
-      setIsRecoveringSession(hasKnownSession);
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-
-    if (socket.connected) {
-      handleConnect();
-    }
-
-    return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-    };
-  }, []);
+      return () => {
+        socket.off("connect", handleConnect);
+        socket.off("disconnect", handleDisconnect);
+      };
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!socket) return;
@@ -1233,37 +1305,40 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       if (playerEmoji) {
         payload.playerEmoji = playerEmoji;
       }
-      socket.emit(
-        "CREATE_ROOM",
-        payload,
-        (response) => {
-          console.log("Create room response:", response);
-          if (response && "success" in response && !response.success) {
-            setLastError(response.error || "Failed to create room");
-          }
-        },
-      );
+      socket.emit("CREATE_ROOM", payload, (response) => {
+        console.log("Create room response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to create room");
+        }
+      });
     },
     [socket],
   );
 
-  const joinRoom = useCallback((roomId: string, playerName?: string, playerEmoji?: string) => {
-    if (!socket) return;
-    setLastError(null);
-    const payload: { roomId: string; playerName?: string; playerEmoji?: string } = { roomId };
-    if (playerName) {
-      payload.playerName = playerName;
-    }
-    if (playerEmoji) {
-      payload.playerEmoji = playerEmoji;
-    }
-    socket.emit("JOIN_ROOM", payload, (response) => {
-      console.log("Join room response:", response);
-      if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Failed to join room");
+  const joinRoom = useCallback(
+    (roomId: string, playerName?: string, playerEmoji?: string) => {
+      if (!socket) return;
+      setLastError(null);
+      const payload: {
+        roomId: string;
+        playerName?: string;
+        playerEmoji?: string;
+      } = { roomId };
+      if (playerName) {
+        payload.playerName = playerName;
       }
-    });
-  }, [socket]);
+      if (playerEmoji) {
+        payload.playerEmoji = playerEmoji;
+      }
+      socket.emit("JOIN_ROOM", payload, (response) => {
+        console.log("Join room response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to join room");
+        }
+      });
+    },
+    [socket],
+  );
 
   const startGame = useCallback(() => {
     if (!socket) return;
@@ -1330,16 +1405,28 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     });
   }, [socket]);
 
-  const performAction = useCallback((action: PlayerAction, amount?: number, actionId?: string) => {
-    if (!socket) return;
-    setLastError(null);
-    socket.emit("PLAYER_ACTION", { action, amount, actionId: actionId || createActionId() }, (response) => {
-      console.log("Action response:", response);
-      if (response && "success" in response && !response.success && response.error) {
-        setLastError(response.error);
-      }
-    });
-  }, [socket]);
+  const performAction = useCallback(
+    (action: PlayerAction, amount?: number, actionId?: string) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit(
+        "PLAYER_ACTION",
+        { action, amount, actionId: actionId || createActionId() },
+        (response) => {
+          console.log("Action response:", response);
+          if (
+            response &&
+            "success" in response &&
+            !response.success &&
+            response.error
+          ) {
+            setLastError(response.error);
+          }
+        },
+      );
+    },
+    [socket],
+  );
 
   const revealNextStreet = useCallback(() => {
     if (!socket) return;
@@ -1386,16 +1473,19 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     });
   }, [socket]);
 
-  const requestRebuy = useCallback((amount: number) => {
-    if (!socket) return;
-    setLastError(null);
-    socket.emit("REQUEST_REBUY", { amount }, (response) => {
-      console.log("Rebuy response:", response);
-      if (response && "success" in response && !response.success) {
-        setLastError(response.error || "Rebuy request failed");
-      }
-    });
-  }, [socket]);
+  const requestRebuy = useCallback(
+    (amount: number) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("REQUEST_REBUY", { amount }, (response) => {
+        console.log("Rebuy response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Rebuy request failed");
+        }
+      });
+    },
+    [socket],
+  );
 
   const updateRoomConfig = useCallback(
     (config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>) => {
@@ -1426,21 +1516,25 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     (payload: SendChatMessageData) => {
       if (!socket) return;
       setLastError(null);
-      socket.emit("SEND_CHAT_MESSAGE", payload, (response: {
-        success?: boolean;
-        error?: string;
-        message?: ChatMessage;
-      }) => {
-        if (!response?.success) {
-          setLastError(response?.error || "Failed to send message");
-          return;
-        }
+      socket.emit(
+        "SEND_CHAT_MESSAGE",
+        payload,
+        (response: {
+          success?: boolean;
+          error?: string;
+          message?: ChatMessage;
+        }) => {
+          if (!response?.success) {
+            setLastError(response?.error || "Failed to send message");
+            return;
+          }
 
-        const message = response.message;
-        if (message) {
-          setChatMessages((prev) => mergeChatMessageLists(prev, [message]));
-        }
-      });
+          const message = response.message;
+          if (message) {
+            setChatMessages((prev) => mergeChatMessageLists(prev, [message]));
+          }
+        },
+      );
     },
     [socket],
   );
@@ -1473,7 +1567,12 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   );
 
   const loadOlderChatMessages = useCallback(() => {
-    if (!socket || chatLoadingHistory || !chatHasMore || chatNextBeforeSeq === null) {
+    if (
+      !socket ||
+      chatLoadingHistory ||
+      !chatHasMore ||
+      chatNextBeforeSeq === null
+    ) {
       return;
     }
 
@@ -1522,7 +1621,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
         getShowdownDecisionState: () => showdownDecisionState,
-        getRevealedShowdownHandsByPlayerId: () => revealedShowdownHandsByPlayerId,
+        getRevealedShowdownHandsByPlayerId: () =>
+          revealedShowdownHandsByPlayerId,
         getNextStreetRevealState: () => nextStreetRevealState,
         getSocket: () => socket,
         createRoom,

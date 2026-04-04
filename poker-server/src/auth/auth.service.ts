@@ -15,7 +15,13 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'crypto';
+import {
+  randomBytes,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+  createHash,
+} from 'crypto';
 import type {
   AuthSessionRecord,
   AuthUserRecord,
@@ -156,14 +162,14 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     process.env.AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT || '10',
   );
   private readonly passwordLoginRateLimitWindowMs = Number(
-    process.env.AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS ||
-      `${10 * 60 * 1000}`,
+    process.env.AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS || `${10 * 60 * 1000}`,
   );
   private readonly sessionTtlMs = 365 * 24 * 60 * 60 * 1000;
   private readonly passwordLoginEnabled =
     process.env.AUTH_PASSWORD_LOGIN_ENABLED?.trim() === 'true' ||
     process.env.NODE_ENV !== 'production';
-  private readonly rpName = process.env.WEBAUTHN_RP_NAME?.trim() || 'Poker Game';
+  private readonly rpName =
+    process.env.WEBAUTHN_RP_NAME?.trim() || 'Poker Game';
   private readonly webauthnDomainConfig = resolveWebauthnDomainConfig();
   private readonly rpId = this.webauthnDomainConfig.rpId;
   private readonly expectedOrigins = this.webauthnDomainConfig.expectedOrigins;
@@ -254,7 +260,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   async finishPasskeyRegistration(input: {
     flowId: string;
     response: unknown;
-  }): Promise<{ sessionToken: string; user: PublicAuthUser }> {
+  }): Promise<{
+    sessionToken: string;
+    sessionExpiresAt: number;
+    user: PublicAuthUser;
+  }> {
     const flow = this.consumeFlow(input.flowId, 'passkey-register');
     const draftUser = flow.draftUser;
     if (!draftUser) {
@@ -273,17 +283,18 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!verification.verified || !verification.registrationInfo) {
-      throw new UnauthorizedException('Passkey registration verification failed');
+      throw new UnauthorizedException(
+        'Passkey registration verification failed',
+      );
     }
 
     const registrationInfo: any = verification.registrationInfo;
     const credentialId: string =
       registrationInfo.credential?.id ||
       Buffer.from(registrationInfo.credentialID).toString('base64url');
-    const publicKey: string =
-      registrationInfo.credential?.publicKey
-        ? Buffer.from(registrationInfo.credential.publicKey).toString('base64url')
-        : Buffer.from(registrationInfo.credentialPublicKey).toString('base64url');
+    const publicKey: string = registrationInfo.credential?.publicKey
+      ? Buffer.from(registrationInfo.credential.publicKey).toString('base64url')
+      : Buffer.from(registrationInfo.credentialPublicKey).toString('base64url');
     const counter: number =
       registrationInfo.credential?.counter ?? registrationInfo.counter ?? 0;
     const transports: string[] | undefined = Array.isArray(
@@ -336,6 +347,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const session = await this.createSessionForUser(user.id);
     return {
       sessionToken: session.token,
+      sessionExpiresAt: session.record.expiresAt,
       user: this.toPublicUser(user),
     };
   }
@@ -370,7 +382,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   async finishPasskeyLogin(input: {
     flowId: string;
     response: unknown;
-  }): Promise<{ sessionToken: string; user: PublicAuthUser }> {
+  }): Promise<{
+    sessionToken: string;
+    sessionExpiresAt: number;
+    user: PublicAuthUser;
+  }> {
     const flow = this.consumeFlow(input.flowId, 'passkey-login');
     const response: any = input.response;
     const credentialId: string = response?.id;
@@ -380,7 +396,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     const users = await this.authStorageService.getUsers();
     const user = users.find((candidate) =>
-      candidate.passkeys.some((passkey) => passkey.credentialId === credentialId),
+      candidate.passkeys.some(
+        (passkey) => passkey.credentialId === credentialId,
+      ),
     );
 
     if (!user) {
@@ -420,7 +438,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       const newCounter = authenticationInfo.newCounter;
       await this.runUserMutation(async () => {
         const latestUsers = await this.authStorageService.getUsers();
-        const latestUser = latestUsers.find((candidate) => candidate.id === user.id);
+        const latestUser = latestUsers.find(
+          (candidate) => candidate.id === user.id,
+        );
         if (!latestUser) {
           return;
         }
@@ -443,6 +463,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const session = await this.createSessionForUser(user.id);
     return {
       sessionToken: session.token,
+      sessionExpiresAt: session.record.expiresAt,
       user: this.toPublicUser(user),
     };
   }
@@ -451,7 +472,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     accountId: string;
     password: string;
     rateLimitKey?: string;
-  }): Promise<{ sessionToken: string; user: PublicAuthUser }> {
+  }): Promise<{
+    sessionToken: string;
+    sessionExpiresAt: number;
+    user: PublicAuthUser;
+  }> {
     if (!this.passwordLoginEnabled) {
       throw new ForbiddenException('Password login is disabled');
     }
@@ -460,9 +485,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (!accountId) {
       throw new BadRequestException('Account is required');
     }
-    const rateLimitPrincipal = `${this.normalizeRateLimitKey(
-      input.rateLimitKey,
-    ) || 'unknown'}:${accountId.toLowerCase()}`;
+    const rateLimitPrincipal = `${
+      this.normalizeRateLimitKey(input.rateLimitKey) || 'unknown'
+    }:${accountId.toLowerCase()}`;
     this.assertAuthRateLimit(
       'password-login',
       rateLimitPrincipal,
@@ -484,6 +509,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const session = await this.createSessionForUser(user.id);
     return {
       sessionToken: session.token,
+      sessionExpiresAt: session.record.expiresAt,
       user: this.toPublicUser(user),
     };
   }
@@ -563,7 +589,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       }
 
       const duplicated = users.find(
-        (entry) => entry.displayName === displayName && entry.id !== input.userId,
+        (entry) =>
+          entry.displayName === displayName && entry.id !== input.userId,
       );
       if (duplicated) {
         throw new BadRequestException('Display name is already taken');
@@ -592,18 +619,23 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         }[] = [];
         let changed = false;
         room.players.forEach(
-          (player: { id: string; userId?: string; name: string; emoji?: string }) => {
-          if (player.userId === user.id) {
-            player.name = user.displayName;
-            player.emoji = user.avatarEmoji;
-            changed = true;
-            pendingEvents.push({
-              roomId: room.id,
-              playerId: player.id,
-              playerName: user.displayName,
-              playerEmoji: user.avatarEmoji,
-            });
-          }
+          (player: {
+            id: string;
+            userId?: string;
+            name: string;
+            emoji?: string;
+          }) => {
+            if (player.userId === user.id) {
+              player.name = user.displayName;
+              player.emoji = user.avatarEmoji;
+              changed = true;
+              pendingEvents.push({
+                roomId: room.id,
+                playerId: player.id,
+                playerName: user.displayName,
+                playerEmoji: user.avatarEmoji,
+              });
+            }
           },
         );
         if (!changed) {
@@ -612,15 +644,19 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         room.lastActivityAt = now;
         return { room, pendingEvents };
       })
-      .filter((entry): entry is {
-        room: Awaited<ReturnType<IStorageService['getAllRooms']>>[number];
-        pendingEvents: {
-          roomId: string;
-          playerId: string;
-          playerName: string;
-          playerEmoji: string;
-        }[];
-      } => Boolean(entry));
+      .filter(
+        (
+          entry,
+        ): entry is {
+          room: Awaited<ReturnType<IStorageService['getAllRooms']>>[number];
+          pendingEvents: {
+            roomId: string;
+            playerId: string;
+            playerName: string;
+            playerEmoji: string;
+          }[];
+        } => Boolean(entry),
+      );
 
     const allPendingEvents: {
       roomId: string;
@@ -643,7 +679,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       });
     });
   }
- 
+
   private async ensureSeededPasswordUsers(): Promise<void> {
     if (!this.passwordLoginEnabled) {
       return;
@@ -870,7 +906,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return this.runSessionMutation(async () => {
       const now = Date.now();
       const sessions = await this.authStorageService.getSessions();
-      const activeSessions = sessions.filter((session) => session.expiresAt > now);
+      const activeSessions = sessions.filter(
+        (session) => session.expiresAt > now,
+      );
       const token = randomBytes(32).toString('base64url');
       const record: AuthSessionRecord = {
         tokenHash: this.hashToken(token),
@@ -899,11 +937,15 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       const tokenHash = this.hashToken(normalizedToken);
       const sessions = await this.authStorageService.getSessions();
       const now = Date.now();
-      const activeSessions = sessions.filter((session) => session.expiresAt > now);
+      const activeSessions = sessions.filter(
+        (session) => session.expiresAt > now,
+      );
       const expiredSessionsRemoved = activeSessions.length !== sessions.length;
       let changed = expiredSessionsRemoved;
 
-      const session = activeSessions.find((entry) => entry.tokenHash === tokenHash);
+      const session = activeSessions.find(
+        (entry) => entry.tokenHash === tokenHash,
+      );
       if (!session) {
         if (changed) {
           await this.authStorageService.saveSessions(activeSessions);

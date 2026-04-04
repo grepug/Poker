@@ -17,6 +17,7 @@ import { IStorageService } from '../common/interfaces/storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
 import { AuthService } from '../auth/auth.service';
+import { readAuthSessionCookie } from '../auth/session-cookie';
 import {
   PlayerProfileUpdatedRealtimeEvent,
   realtimeEventBus,
@@ -207,10 +208,17 @@ export class EventsGateway
   }
 
   private extractSocketToken(client: Socket): string {
-    const authPayload = client.handshake.auth as Record<string, unknown> | undefined;
+    const authPayload = client.handshake.auth as
+      | Record<string, unknown>
+      | undefined;
     const authTokenCandidate = authPayload?.token;
     if (typeof authTokenCandidate === 'string' && authTokenCandidate.trim()) {
       return authTokenCandidate.trim();
+    }
+
+    const cookieToken = readAuthSessionCookie(client.handshake.headers.cookie);
+    if (cookieToken) {
+      return cookieToken;
     }
 
     const authorizationHeader = client.handshake.headers.authorization;
@@ -225,7 +233,10 @@ export class EventsGateway
     return '';
   }
 
-  private async requireAuthenticatedUser(client: Socket, tokenOverride?: string) {
+  private async requireAuthenticatedUser(
+    client: Socket,
+    tokenOverride?: string,
+  ) {
     const token = tokenOverride?.trim() || this.extractSocketToken(client);
     if (!token) {
       throw new Error('Authentication required');
@@ -581,10 +592,7 @@ export class EventsGateway
     @MessageBody() data: ReconnectData,
   ) {
     try {
-      const authenticatedUser = await this.requireAuthenticatedUser(
-        client,
-        data.sessionToken,
-      );
+      const authenticatedUser = await this.requireAuthenticatedUser(client);
       return await this.runRoomActionSequentially(data.roomId, async () => {
         const player = await this.gameService.updatePlayerSocket(
           data.roomId,
@@ -659,7 +667,8 @@ export class EventsGateway
       });
       return { success: true, user };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update profile';
+      const message =
+        error instanceof Error ? error.message : 'Failed to update profile';
       this.logger.error(`Update profile error: ${message}`);
       client.emit('ERROR', { message });
       return { success: false, error: message };
@@ -1162,7 +1171,10 @@ export class EventsGateway
             throw new Error('All-in players must reveal at showdown');
           }
 
-          const didMuck = await this.applyShowdownMuck(room, playerInfo.playerId);
+          const didMuck = await this.applyShowdownMuck(
+            room,
+            playerInfo.playerId,
+          );
           if (!didMuck) {
             return { success: true };
           }
@@ -1981,7 +1993,10 @@ export class EventsGateway
     );
   }
 
-  private getShowdownStartPlayerId(room: any, contenders: any[]): string | null {
+  private getShowdownStartPlayerId(
+    room: any,
+    contenders: any[],
+  ): string | null {
     const hand = room?.currentHand;
     if (!hand || contenders.length === 0) {
       return null;
@@ -2074,7 +2089,9 @@ export class EventsGateway
       return false;
     }
 
-    const player = room.players.find((seatPlayer: any) => seatPlayer.id === playerId);
+    const player = room.players.find(
+      (seatPlayer: any) => seatPlayer.id === playerId,
+    );
     if (!player?.cards) {
       throw new Error('Cards are unavailable for showdown reveal');
     }
@@ -2095,7 +2112,10 @@ export class EventsGateway
     return true;
   }
 
-  private async applyShowdownMuck(room: any, playerId: string): Promise<boolean> {
+  private async applyShowdownMuck(
+    room: any,
+    playerId: string,
+  ): Promise<boolean> {
     const hand = room?.currentHand;
     if (!hand || hand.bettingRound !== 'SHOWDOWN' || hand.lastResult) {
       return false;
@@ -2113,7 +2133,9 @@ export class EventsGateway
       (id: string) => id !== playerId,
     );
 
-    const player = room.players.find((seatPlayer: any) => seatPlayer.id === playerId);
+    const player = room.players.find(
+      (seatPlayer: any) => seatPlayer.id === playerId,
+    );
     if (player) {
       player.status = 'folded';
       player.lastAction = 'fold';
@@ -2139,10 +2161,14 @@ export class EventsGateway
     }
 
     const contenders = this.getShowdownContendingPlayers(room);
-    hand.revealedPlayerIds = (hand.revealedPlayerIds ?? []).filter((playerId: string) =>
-      contenders.some((contender) => contender.id === playerId),
+    hand.revealedPlayerIds = (hand.revealedPlayerIds ?? []).filter(
+      (playerId: string) =>
+        contenders.some((contender) => contender.id === playerId),
     );
-    hand.showdownDecisionOrder = this.buildShowdownDecisionOrder(room, contenders);
+    hand.showdownDecisionOrder = this.buildShowdownDecisionOrder(
+      room,
+      contenders,
+    );
     hand.showdownForcedRevealPlayerIds = contenders
       .filter((player) => player.status === 'all-in')
       .map((player) => player.id);
@@ -2425,9 +2451,9 @@ export class EventsGateway
           !room.currentHand.lastResult &&
           room.currentHand.showdownDecisionPlayerId === playerId
         ) {
-          const forceReveal = (room.currentHand.showdownForcedRevealPlayerIds ?? []).includes(
-            playerId,
-          );
+          const forceReveal = (
+            room.currentHand.showdownForcedRevealPlayerIds ?? []
+          ).includes(playerId);
           if (forceReveal) {
             await this.applyShowdownReveal(room, playerId);
           } else {

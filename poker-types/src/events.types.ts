@@ -30,7 +30,6 @@ export interface ReconnectData {
   roomId: string;
   playerName?: string;
   playerId?: string;
-  sessionToken?: string;
 }
 
 export interface PlayerActionData {
