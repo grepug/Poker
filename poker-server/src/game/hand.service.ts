@@ -372,6 +372,7 @@ export class HandService {
         netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
       };
 
+      this.captureSettledPlayerCards(room);
       await this.cleanupHand(room, winner.id);
       return result;
     }
@@ -529,8 +530,25 @@ export class HandService {
       netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
     };
 
+    this.captureSettledPlayerCards(room);
     await this.cleanupHand(room, winners[0]?.playerId);
     return result;
+  }
+
+  private captureSettledPlayerCards(room: Room): void {
+    const hand = room.currentHand;
+    if (!hand) {
+      return;
+    }
+
+    hand.settledPlayerCardsByPlayerId = Object.fromEntries(
+      room.players
+        .filter(
+          (player): player is Player & { cards: NonNullable<Player['cards']> } =>
+            Array.isArray(player.cards) && player.cards.length > 0,
+        )
+        .map((player) => [player.id, [...player.cards]]),
+    );
   }
 
   private buildResultPlayerHands(

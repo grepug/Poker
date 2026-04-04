@@ -1093,10 +1093,13 @@ export class EventsGateway
           await this.storageService.saveRoom(room);
 
           const player = room.players.find((p) => p.id === playerInfo.playerId);
+          const settledCards =
+            hand.settledPlayerCardsByPlayerId?.[playerInfo.playerId] ??
+            playerHand.cards;
           const revealData: PlayerHandRevealedData = {
             playerId: playerInfo.playerId,
             playerName: player?.name ?? '',
-            cards: playerHand.cards,
+            cards: settledCards,
             handNumber: hand.handNumber,
             showdownOrderIndex: -1,
           };
@@ -2585,10 +2588,18 @@ export class EventsGateway
 
   private sanitizeRoom(room: any): any {
     const sanitizedCurrentHand = room.currentHand
-      ? {
-          ...room.currentHand,
-          lastResult: this.sanitizeHandResult(room.currentHand.lastResult),
-        }
+      ? (() => {
+          const {
+            settledPlayerCardsByPlayerId: _settledPlayerCardsByPlayerId,
+            ...safeCurrentHand
+          } = room.currentHand;
+          void _settledPlayerCardsByPlayerId;
+
+          return {
+            ...safeCurrentHand,
+            lastResult: this.sanitizeHandResult(room.currentHand.lastResult),
+          };
+        })()
       : room.currentHand;
 
     return {

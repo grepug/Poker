@@ -41,6 +41,7 @@ export interface Hand {
   showdownForcedRevealPlayerIds?: string[]; // Runtime-only: players forced to reveal (e.g. all-in)
   showdownLastAggressorPlayerId?: string | null; // Runtime-only: last aggressor during river action
   dealtPlayerIds?: string[]; // Runtime-only: players who were dealt into this hand
+  settledPlayerCardsByPlayerId?: Record<string, Card[]>; // Runtime-only: server-only cards retained for post-hand reveal actions
   startedAt: number;
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }

@@ -389,6 +389,52 @@ describe('EventsGateway showdown reveal/muck flow', () => {
     ]);
   });
 
+  it('reveals a completed hidden hand from server-only settled cards', async () => {
+    roomState.currentHand.lastResult = {
+      winners: [],
+      playerHands: [
+        {
+          playerId: 'p-alice',
+          playerName: 'Alice',
+          cards: [],
+          hand: null,
+          resultStatus: 'hidden_contender',
+          cardsVisibility: 'hidden',
+          seatPosition: 0,
+        },
+      ],
+      totalPot: 200,
+      payouts: [],
+      netByPlayerId: {
+        'p-alice': -100,
+        'p-bob': 100,
+      },
+    };
+    roomState.currentHand.revealedPlayerIds = [];
+    roomState.currentHand.settledPlayerCardsByPlayerId = {
+      'p-alice': [
+        { suit: 'hearts', rank: 'A' },
+        { suit: 'clubs', rank: 'K' },
+      ],
+    };
+
+    const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
+    const response = await gateway.handleShowMyHand(aliceClient, {} as any);
+
+    expect(response).toEqual(expect.objectContaining({ success: true }));
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      'PLAYER_HAND_REVEALED',
+      expect.objectContaining({
+        playerId: 'p-alice',
+        cards: [
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'clubs', rank: 'K' },
+        ],
+        showdownOrderIndex: -1,
+      }),
+    );
+  });
+
   it('keeps showdown pending after only one reveal', async () => {
     const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
 
