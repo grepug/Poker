@@ -27,3 +27,4 @@ services:
 
 volumes:
   poker_data:
+    name: "${POKER_DATA_VOLUME:-poker_data}"
