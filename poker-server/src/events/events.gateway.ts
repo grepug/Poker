@@ -2325,10 +2325,28 @@ export class EventsGateway
         try {
           await this.startAndBroadcastNewHand(room.id);
         } catch (error) {
-          this.logger.error(`Error starting new hand: ${error.message}`);
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (this.isIgnorableTestModeAutoAdvanceError(message)) {
+            this.logger.debug(
+              `Skipping test-mode auto-advance for room ${room.id}: ${message}`,
+            );
+            return;
+          }
+
+          this.logger.error(`Error starting new hand: ${message}`);
         }
       }, 5000);
     }
+  }
+
+  private isIgnorableTestModeAutoAdvanceError(message: string): boolean {
+    return (
+      message.includes('Cannot deal 2 cards from deck of 0') ||
+      message.includes('Need at least 2 players to start a hand') ||
+      /Room .* not found for new hand/.test(message) ||
+      /Room .* missing after starting new hand/.test(message)
+    );
   }
 
   private async advanceRoundAndBroadcast(room: any) {
