@@ -24,7 +24,7 @@ describe('JsonAuthStorageService', () => {
   });
 
   it('persists and loads users + sessions', async () => {
-    await service.saveUsers([
+    await service.replaceUsers([
       {
         id: 'user-1',
         accountId: 'test1',
@@ -35,7 +35,7 @@ describe('JsonAuthStorageService', () => {
         updatedAt: 1,
       },
     ]);
-    await service.saveSessions([
+    await service.replaceSessions([
       {
         tokenHash: 'token-hash-1',
         userId: 'user-1',
@@ -54,10 +54,10 @@ describe('JsonAuthStorageService', () => {
     expect(sessions[0].tokenHash).toBe('token-hash-1');
   });
 
-  it('keeps sessions file valid under concurrent saves', async () => {
+  it('keeps auth state valid under concurrent saves', async () => {
     await Promise.all(
       Array.from({ length: 20 }).map((_, index) =>
-        service.saveSessions([
+        service.replaceSessions([
           {
             tokenHash: `token-hash-${index}`,
             userId: `user-${index}`,
@@ -69,21 +69,21 @@ describe('JsonAuthStorageService', () => {
       ),
     );
 
-    const sessionsPath = path.join(tempDir, 'auth', 'sessions.json');
+    const sessionsPath = path.join(tempDir, 'auth', 'auth.state.json');
     const raw = await readFile(sessionsPath, 'utf-8');
     const parsed = JSON.parse(raw);
 
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed).toHaveLength(1);
-    expect(typeof parsed[0].tokenHash).toBe('string');
+    expect(Array.isArray(parsed.sessions)).toBe(true);
+    expect(parsed.sessions).toHaveLength(1);
+    expect(typeof parsed.sessions[0].tokenHash).toBe('string');
   });
 
   it('continues queued writes after a failed serialization', async () => {
     const circular: any = {};
     circular.self = circular;
-    const failingWrite = service.saveUsers([circular]);
+    const failingWrite = service.replaceUsers([circular]);
 
-    const succeedingWrite = service.saveUsers([
+    const succeedingWrite = service.replaceUsers([
       {
         id: 'user-ok',
         accountId: 'test-ok',
@@ -101,5 +101,51 @@ describe('JsonAuthStorageService', () => {
     const users = await service.getUsers();
     expect(users).toHaveLength(1);
     expect(users[0].id).toBe('user-ok');
+  });
+
+  it('rebuilds auth state from the auth log when the state snapshot is missing', async () => {
+    await service.replaceUsers([
+      {
+        id: 'user-1',
+        accountId: 'test1',
+        displayName: 'Alice',
+        avatarEmoji: 'A',
+        passkeys: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+    await service.replaceSessions([
+      {
+        tokenHash: 'token-hash-1',
+        userId: 'user-1',
+        createdAt: 1,
+        lastUsedAt: 2,
+        expiresAt: 999999,
+      },
+    ]);
+
+    await rm(path.join(tempDir, 'auth', 'auth.state.json'));
+
+    expect(await service.getUsers()).toEqual([
+      {
+        id: 'user-1',
+        accountId: 'test1',
+        displayName: 'Alice',
+        avatarEmoji: 'A',
+        passkeys: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+    expect(await service.getSessions()).toEqual([
+      {
+        tokenHash: 'token-hash-1',
+        userId: 'user-1',
+        createdAt: 1,
+        lastUsedAt: 2,
+        expiresAt: 999999,
+      },
+    ]);
   });
 });

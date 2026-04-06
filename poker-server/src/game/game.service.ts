@@ -9,6 +9,7 @@ import {
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 type ServerPlayer = Player & { userId?: string };
 
@@ -76,7 +77,21 @@ export class GameService {
       lastActivityAt: Date.now(),
     };
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'ROOM_CREATED',
+          actor: { source: 'ROOM_SERVICE', playerId: hostId, playerName: hostName, userId: hostUserId },
+          payload: {
+            hostId,
+            hostName,
+            config: room.config,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Room ${roomId} created by ${hostName}`);
 
     return room;
@@ -164,7 +179,27 @@ export class GameService {
       existingPlayer.name = normalizedPlayerName;
       room.lastActivityAt = Date.now();
 
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'PLAYER_REJOINED',
+            actor: {
+              source: 'ROOM_SERVICE',
+              playerId: existingPlayer.id,
+              playerName: existingPlayer.name,
+              userId,
+            },
+            payload: {
+              playerId: existingPlayer.id,
+              playerName: existingPlayer.name,
+              priorStatus,
+              position: existingPlayer.position,
+            },
+          }),
+        ),
+      );
       this.logger.log(
         `Player ${normalizedPlayerName} reclaimed seat in room ${roomId}`,
       );
@@ -209,7 +244,27 @@ export class GameService {
     room.players.push(player);
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_JOINED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId,
+          },
+          payload: {
+            playerId: player.id,
+            playerName: player.name,
+            position: player.position,
+            joinedDuringActiveGame: joinsDuringActiveGame,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
@@ -277,7 +332,35 @@ export class GameService {
       this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
     }
 
-    await this.storageService.saveRoom(room);
+    const events = [
+      roomEvent({
+        roomId,
+        type: 'PLAYER_LEFT',
+        actor: {
+          source: 'ROOM_SERVICE',
+          playerId: player.id,
+          playerName: player.name,
+          userId: (player as ServerPlayer).userId,
+        },
+        payload: {
+          playerId: player.id,
+          playerName: player.name,
+        },
+      }),
+    ];
+    if (room.hostId !== playerId) {
+      events.push(
+        roomEvent({
+          roomId,
+          type: 'HOST_CHANGED',
+          actor: { source: 'ROOM_SERVICE' },
+          payload: {
+            hostId: room.hostId,
+          },
+        }),
+      );
+    }
+    await this.storageService.persistRoom(room, roomWrite(...events));
     return room;
   }
 
@@ -316,7 +399,25 @@ export class GameService {
     player.lastConnectedAt = Date.now();
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_REJOINED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId,
+          },
+          payload: {
+            playerId: player.id,
+            socketId: newSocketId,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${player.name} reconnected in room ${roomId}`);
 
     return player;
@@ -346,7 +447,25 @@ export class GameService {
     player.status = 'disconnected';
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_DISCONNECTED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId: (player as ServerPlayer).userId,
+          },
+          payload: {
+            playerId: player.id,
+            playerName: player.name,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${player.name} disconnected in room ${roomId}`);
 
     return room;
@@ -375,7 +494,27 @@ export class GameService {
     player.totalBuyIn += amount;
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_REBOUGHT',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId: (player as ServerPlayer).userId,
+          },
+          payload: {
+            playerId: player.id,
+            amount,
+            chips: player.chips,
+            totalBuyIn: player.totalBuyIn,
+          },
+        }),
+      ),
+    );
     this.logger.log(
       `Player ${player.name} bought ${amount} chips in room ${roomId}`,
     );
@@ -418,7 +557,20 @@ export class GameService {
     room.hostId = newHostId;
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'HOST_CHANGED',
+          actor: { source: 'ROOM_SERVICE' },
+          payload: {
+            hostId: newHostId,
+            hostName: newHost.name,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
 
     return room;

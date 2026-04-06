@@ -14,6 +14,7 @@ import { IStorageService } from '../common/interfaces/storage.interface';
 import { createDeck, shuffleDeck, dealCards } from '../common/utils/deck';
 import { evaluateHand, compareHands } from '../common/utils/hand-evaluator';
 import { TestDeckService } from './test-deck.service';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 const POSITION_LABELS_BY_PLAYER_COUNT: Record<number, HandPositionLabel[]> = {
   3: ['BTN', 'SB', 'BB'],
@@ -163,7 +164,34 @@ export class HandService {
     room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'HAND_STARTED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: {
+            handNumber: hand.handNumber,
+            dealerPosition,
+            smallBlindPosition,
+            bigBlindPosition,
+            pot,
+            currentPlayerTurn,
+            players: activePlayers.map((player) => ({
+              playerId: player.id,
+              playerName: player.name,
+              position: player.position,
+              chips: player.chips,
+              cards: player.cards,
+              currentBet: player.currentBet,
+            })),
+          },
+        }),
+      ),
+    );
     this.logger.log(`Hand #${handNumber} started in room ${room.id}`);
 
     return hand;
@@ -244,7 +272,23 @@ export class HandService {
       }
 
       room.lastActivityAt = Date.now();
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'BETTING_ROUND_ADVANCED',
+            actor: { source: 'HAND_SERVICE' },
+            handNumber: hand.handNumber,
+            street: 'SHOWDOWN',
+            payload: {
+              nextRound: 'SHOWDOWN',
+              communityCards: hand.communityCards,
+              allPlayersAllIn: true,
+            },
+          }),
+        ),
+      );
       this.logger.log(
         `All players all-in, skipping to showdown in room ${room.id}, community cards: ${hand.communityCards.length}`,
       );
@@ -309,7 +353,23 @@ export class HandService {
     }
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'BETTING_ROUND_ADVANCED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: {
+            nextRound: hand.bettingRound,
+            communityCards: hand.communityCards,
+            currentPlayerTurn: hand.currentPlayerTurn,
+          },
+        }),
+      ),
+    );
 
     this.logger.log(`Advanced to ${hand.bettingRound} in room ${room.id}`);
     return hand.bettingRound;
@@ -959,7 +1019,7 @@ export class HandService {
     );
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(room);
   }
 
   private reconcileChipConservation(

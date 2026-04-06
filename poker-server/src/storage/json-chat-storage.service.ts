@@ -10,11 +10,24 @@ import {
   PruneChatMessagesOptions,
   PruneChatMessagesResult,
 } from '../common/interfaces/chat-storage.interface';
-import { ChatMessage } from 'poker-types';
+import {
+  ChatMessage,
+  PersistedChatIndex,
+  PersistedChatLogRecord,
+} from 'poker-types';
+import { randomUUID } from 'crypto';
+import {
+  appendJsonlRecords,
+  ensureDir,
+  pathExists,
+  readJsonFile,
+  readJsonlRecords,
+  writeJsonFileAtomic,
+} from './jsonl-store.util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-type PersistedChatRoomData = {
+type LegacyChatRoomData = {
   roomId: string;
   createdAt: number;
   updatedAt: number;
@@ -57,8 +70,11 @@ export class JsonChatStorageService implements IChatStorageService {
     roomId: string,
     options?: GetChatMessagesOptions,
   ): Promise<ChatHistoryPage> {
-    const persisted = await this.readRoomData(roomId);
-    if (!persisted || persisted.messages.length === 0) {
+    await this.ensureDirectories();
+    await this.migrateLegacyChatIfNeeded(roomId);
+
+    const index = await this.readChatIndex(roomId);
+    if (!index || index.latestMessages.length === 0) {
       return {
         messages: [],
         hasMore: false,
@@ -72,7 +88,7 @@ export class JsonChatStorageService implements IChatStorageService {
         ? Math.max(1, Math.floor(options.beforeSeq))
         : Number.POSITIVE_INFINITY;
 
-    const eligibleMessages = persisted.messages.filter((message) => {
+    const eligibleMessages = index.latestMessages.filter((message) => {
       if (!Number.isFinite(beforeSeq)) {
         return true;
       }
@@ -105,16 +121,19 @@ export class JsonChatStorageService implements IChatStorageService {
     options?: AppendChatMessageOptions,
   ): Promise<AppendChatMessageResult> {
     return this.runRoomWriteSequentially(input.roomId, async () => {
+      await this.ensureDirectories();
+      await this.migrateLegacyChatIfNeeded(input.roomId);
+
       const now = Date.now();
-      const persisted =
-        (await this.readRoomData(input.roomId)) ||
-        this.createInitialRoomData(input.roomId, now);
+      const index =
+        (await this.readChatIndex(input.roomId)) ??
+        this.createEmptyIndex(input.roomId, now);
       const dedupeWindowMs =
         options?.dedupeWindowMs ?? this.defaultDedupeWindowMs;
 
       if (input.clientMessageId) {
         const duplicated = this.findDuplicateMessage(
-          persisted.messages,
+          index.latestMessages,
           input.clientMessageId,
           input.sender.playerId,
           now,
@@ -128,9 +147,9 @@ export class JsonChatStorageService implements IChatStorageService {
         }
       }
 
-      const seq = Math.max(1, Math.floor(persisted.nextSeq));
+      const seq = Math.max(1, Math.floor(index.nextSeq));
       const messageBase = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         roomId: input.roomId,
         seq,
         sender: input.sender,
@@ -151,21 +170,51 @@ export class JsonChatStorageService implements IChatStorageService {
               text: input.text!,
             };
 
-      persisted.messages.push(message);
-      persisted.nextSeq = seq + 1;
-      persisted.updatedAt = now;
-
+      const nextMessages = [...index.latestMessages, message];
       const maxMessages = options?.maxMessages;
-      if (
+      const boundedMessages =
         maxMessages !== undefined &&
         Number.isFinite(maxMessages) &&
         maxMessages > 0 &&
-        persisted.messages.length > maxMessages
-      ) {
-        persisted.messages = persisted.messages.slice(-Math.floor(maxMessages));
+        nextMessages.length > maxMessages
+          ? nextMessages.slice(-Math.floor(maxMessages))
+          : nextMessages;
+
+      let nextLogSeq = index.logSeq;
+      const logRecords: PersistedChatLogRecord[] = [];
+
+      logRecords.push({
+        recordId: randomUUID(),
+        seq: ++nextLogSeq,
+        roomId: input.roomId,
+        timestamp: now,
+        type: 'MESSAGE_APPENDED',
+        message,
+      });
+
+      if (boundedMessages.length < nextMessages.length) {
+        logRecords.push({
+          recordId: randomUUID(),
+          seq: ++nextLogSeq,
+          roomId: input.roomId,
+          timestamp: now,
+          type: 'MESSAGES_PRUNED',
+          deleted: nextMessages.length - boundedMessages.length,
+          remaining: boundedMessages.length,
+          olderThanMs: null,
+          keepLatest: maxMessages ?? null,
+        });
       }
 
-      await this.writeRoomData(input.roomId, persisted);
+      await appendJsonlRecords(this.getChatLogPath(input.roomId), logRecords);
+      await this.writeChatIndex(input.roomId, {
+        roomId: input.roomId,
+        createdAt: index.createdAt,
+        updatedAt: now,
+        nextSeq: seq + 1,
+        logSeq: nextLogSeq,
+        latestMessages: boundedMessages,
+      });
 
       return {
         message,
@@ -175,35 +224,60 @@ export class JsonChatStorageService implements IChatStorageService {
   }
 
   async hasChatData(roomId: string): Promise<boolean> {
-    const persisted = await this.readRoomData(roomId);
-    return Boolean(persisted && persisted.messages.length > 0);
+    await this.ensureDirectories();
+    await this.migrateLegacyChatIfNeeded(roomId);
+    const index = await this.readChatIndex(roomId);
+    return Boolean(index && index.latestMessages.length > 0);
   }
 
   async deleteRoomChat(roomId: string): Promise<void> {
     await this.runRoomWriteSequentially(roomId, async () => {
-      await this.unlinkRoomFile(roomId);
+      await this.ensureDirectories();
+      await this.migrateLegacyChatIfNeeded(roomId);
+
+      const index =
+        (await this.readChatIndex(roomId)) ?? this.createEmptyIndex(roomId, Date.now());
+      const now = Date.now();
+      const logRecord: PersistedChatLogRecord = {
+        recordId: randomUUID(),
+        seq: index.logSeq + 1,
+        roomId,
+        timestamp: now,
+        type: 'ROOM_CHAT_DELETED',
+      };
+
+      await appendJsonlRecords(this.getChatLogPath(roomId), [logRecord]);
+      await this.writeChatIndex(roomId, {
+        roomId,
+        createdAt: now,
+        updatedAt: now,
+        nextSeq: 1,
+        logSeq: logRecord.seq,
+        latestMessages: [],
+      });
     });
   }
 
   async listRoomsWithChatData(): Promise<string[]> {
     await this.ensureDirectories();
-    const files = await fs.readdir(this.chatDir);
+    await this.migrateLegacyChatsInDirectory();
+
+    const entries = await fs.readdir(this.chatDir, { withFileTypes: true });
     const roomIds: string[] = [];
 
-    for (const fileName of files) {
-      if (!fileName.endsWith('.json')) {
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
         continue;
       }
 
-      const roomId = fileName.replace(/\.json$/, '');
       try {
-        const hasData = await this.hasChatData(roomId);
-        if (hasData) {
-          roomIds.push(roomId);
+        const index = await this.readChatIndex(entry.name);
+        if (index && index.latestMessages.length > 0) {
+          roomIds.push(entry.name);
         }
       } catch (error) {
         this.logger.warn(
-          `Skipping chat file ${fileName} due to parse/read error: ${(error as Error).message}`,
+          `Skipping chat room ${entry.name} due to read error: ${(error as Error).message}`,
         );
       }
     }
@@ -216,17 +290,18 @@ export class JsonChatStorageService implements IChatStorageService {
     options?: PruneChatMessagesOptions,
   ): Promise<PruneChatMessagesResult> {
     return this.runRoomWriteSequentially(roomId, async () => {
-      const persisted = await this.readRoomData(roomId);
-      if (!persisted || persisted.messages.length === 0) {
+      await this.ensureDirectories();
+      await this.migrateLegacyChatIfNeeded(roomId);
+
+      const index = await this.readChatIndex(roomId);
+      if (!index || index.latestMessages.length === 0) {
         return {
           deleted: 0,
           remaining: 0,
         };
       }
 
-      const originalMessages = persisted.messages;
-      let nextMessages = [...originalMessages];
-
+      let nextMessages = [...index.latestMessages];
       if (
         options?.olderThanMs !== undefined &&
         Number.isFinite(options.olderThanMs)
@@ -236,7 +311,10 @@ export class JsonChatStorageService implements IChatStorageService {
         );
       }
 
-      if (options?.keepLatest !== undefined && Number.isFinite(options.keepLatest)) {
+      if (
+        options?.keepLatest !== undefined &&
+        Number.isFinite(options.keepLatest)
+      ) {
         const safeKeepLatest = Math.max(0, Math.floor(options.keepLatest));
         if (safeKeepLatest === 0) {
           nextMessages = [];
@@ -245,30 +323,42 @@ export class JsonChatStorageService implements IChatStorageService {
         }
       }
 
-      const deleted = originalMessages.length - nextMessages.length;
+      const deleted = index.latestMessages.length - nextMessages.length;
       if (deleted <= 0) {
         return {
           deleted: 0,
-          remaining: originalMessages.length,
+          remaining: index.latestMessages.length,
         };
       }
 
-      if (nextMessages.length === 0) {
-        await this.unlinkRoomFile(roomId);
-        return {
-          deleted,
-          remaining: 0,
-        };
-      }
+      const now = Date.now();
+      const logRecord: PersistedChatLogRecord = {
+        recordId: randomUUID(),
+        seq: index.logSeq + 1,
+        roomId,
+        timestamp: now,
+        type: 'MESSAGES_PRUNED',
+        deleted,
+        remaining: nextMessages.length,
+        olderThanMs: options?.olderThanMs ?? null,
+        keepLatest: options?.keepLatest ?? null,
+      };
 
-      persisted.messages = nextMessages;
-      persisted.nextSeq = Math.max(
-        persisted.nextSeq,
-        nextMessages[nextMessages.length - 1].seq + 1,
-      );
-      persisted.updatedAt = Date.now();
-
-      await this.writeRoomData(roomId, persisted);
+      await appendJsonlRecords(this.getChatLogPath(roomId), [logRecord]);
+      await this.writeChatIndex(roomId, {
+        roomId,
+        createdAt: index.createdAt,
+        updatedAt: now,
+        nextSeq:
+          nextMessages.length === 0
+            ? 1
+            : Math.max(
+                index.nextSeq,
+                nextMessages[nextMessages.length - 1].seq + 1,
+              ),
+        logSeq: logRecord.seq,
+        latestMessages: nextMessages,
+      });
 
       return {
         deleted,
@@ -308,42 +398,37 @@ export class JsonChatStorageService implements IChatStorageService {
       return Math.min(this.defaultPageSize, this.maxPageSize);
     }
 
-    return Math.min(
-      this.maxPageSize,
-      Math.max(1, Math.floor(limit)),
-    );
-  }
-
-  private getRoomFilePath(roomId: string): string {
-    return path.join(this.chatDir, `${roomId}.json`);
-  }
-
-  private async unlinkRoomFile(roomId: string): Promise<void> {
-    const filePath = this.getRoomFilePath(roomId);
-    try {
-      await fs.unlink(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return;
-      }
-      throw error;
-    }
+    return Math.min(this.maxPageSize, Math.max(1, Math.floor(limit)));
   }
 
   private async ensureDirectories(): Promise<void> {
-    await fs.mkdir(this.chatDir, { recursive: true });
+    await ensureDir(this.chatDir);
   }
 
-  private createInitialRoomData(
-    roomId: string,
-    createdAt: number,
-  ): PersistedChatRoomData {
+  private getLegacyChatPath(roomId: string): string {
+    return path.join(this.chatDir, `${roomId}.json`);
+  }
+
+  private getRoomDir(roomId: string): string {
+    return path.join(this.chatDir, roomId);
+  }
+
+  private getChatLogPath(roomId: string): string {
+    return path.join(this.getRoomDir(roomId), 'messages.jsonl');
+  }
+
+  private getChatIndexPath(roomId: string): string {
+    return path.join(this.getRoomDir(roomId), 'chat.index.json');
+  }
+
+  private createEmptyIndex(roomId: string, now: number): PersistedChatIndex {
     return {
       roomId,
-      createdAt,
-      updatedAt: createdAt,
+      createdAt: now,
+      updatedAt: now,
       nextSeq: 1,
-      messages: [],
+      logSeq: 0,
+      latestMessages: [],
     };
   }
 
@@ -371,67 +456,148 @@ export class JsonChatStorageService implements IChatStorageService {
     return null;
   }
 
-  private async readRoomData(
+  private async readChatIndex(roomId: string): Promise<PersistedChatIndex | null> {
+    const index = await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
+    if (index) {
+      return index;
+    }
+
+    return await this.rebuildChatIndexFromLog(roomId);
+  }
+
+  private async writeChatIndex(
     roomId: string,
-  ): Promise<PersistedChatRoomData | null> {
-    try {
-      const filePath = this.getRoomFilePath(roomId);
-      const raw = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(raw) as Partial<PersistedChatRoomData>;
+    index: PersistedChatIndex,
+  ): Promise<void> {
+    await writeJsonFileAtomic(this.getChatIndexPath(roomId), index);
+  }
 
-      const messages = Array.isArray(parsed.messages)
-        ? [...parsed.messages].sort((left, right) => left.seq - right.seq)
-        : [];
-      const highestSeq =
-        messages.length === 0 ? 0 : messages[messages.length - 1].seq;
-      const nextSeq =
-        typeof parsed.nextSeq === 'number' && parsed.nextSeq > 0
-          ? Math.max(Math.floor(parsed.nextSeq), highestSeq + 1)
-          : highestSeq + 1;
-      const now = Date.now();
+  private async rebuildChatIndexFromLog(
+    roomId: string,
+  ): Promise<PersistedChatIndex | null> {
+    const records = await readJsonlRecords<PersistedChatLogRecord>(
+      this.getChatLogPath(roomId),
+    );
+    if (records.length === 0) {
+      return null;
+    }
 
-      return {
-        roomId,
-        createdAt:
-          typeof parsed.createdAt === 'number' ? parsed.createdAt : now,
-        updatedAt:
-          typeof parsed.updatedAt === 'number' ? parsed.updatedAt : now,
-        nextSeq,
-        messages,
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return null;
+    const index = this.createEmptyIndex(roomId, records[0].timestamp);
+    for (const record of records) {
+      index.logSeq = record.seq;
+      index.updatedAt = record.timestamp;
+
+      if (record.type === 'MESSAGE_APPENDED') {
+        index.latestMessages.push(record.message);
+        index.nextSeq = Math.max(index.nextSeq, record.message.seq + 1);
+        continue;
       }
 
-      this.logger.error(
-        `Failed to read chat data for room ${roomId}: ${(error as Error).message}`,
-      );
-      throw error;
+      if (record.type === 'MESSAGES_PRUNED') {
+        let nextMessages = [...index.latestMessages];
+        if (
+          record.olderThanMs !== undefined &&
+          record.olderThanMs !== null &&
+          Number.isFinite(record.olderThanMs)
+        ) {
+          nextMessages = nextMessages.filter(
+            (message) => message.createdAt >= Number(record.olderThanMs),
+          );
+        }
+
+        if (
+          record.keepLatest !== undefined &&
+          record.keepLatest !== null &&
+          Number.isFinite(record.keepLatest)
+        ) {
+          const safeKeepLatest = Math.max(0, Math.floor(record.keepLatest));
+          if (safeKeepLatest === 0) {
+            nextMessages = [];
+          } else if (nextMessages.length > safeKeepLatest) {
+            nextMessages = nextMessages.slice(-safeKeepLatest);
+          }
+        }
+
+        index.latestMessages = nextMessages;
+        index.nextSeq =
+          nextMessages.length === 0
+            ? 1
+            : Math.max(index.nextSeq, nextMessages[nextMessages.length - 1].seq + 1);
+        continue;
+      }
+
+      if (record.type === 'ROOM_CHAT_DELETED') {
+        index.createdAt = record.timestamp;
+        index.updatedAt = record.timestamp;
+        index.nextSeq = 1;
+        index.latestMessages = [];
+        continue;
+      }
+    }
+
+    await this.writeChatIndex(roomId, index);
+    return index;
+  }
+
+  private async migrateLegacyChatsInDirectory(): Promise<void> {
+    const entries = await fs.readdir(this.chatDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) {
+        continue;
+      }
+
+      await this.migrateLegacyChatIfNeeded(entry.name.replace(/\.json$/, ''));
     }
   }
 
-  private async writeRoomData(
-    roomId: string,
-    data: PersistedChatRoomData,
-  ): Promise<void> {
-    await this.ensureDirectories();
-
-    const filePath = this.getRoomFilePath(roomId);
-    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-    const payload = JSON.stringify(data, null, 2);
-
-    let handle: fs.FileHandle | null = null;
-    try {
-      handle = await fs.open(tempPath, 'w');
-      await handle.writeFile(payload, 'utf-8');
-      await handle.sync();
-    } finally {
-      if (handle) {
-        await handle.close();
-      }
+  private async migrateLegacyChatIfNeeded(roomId: string): Promise<void> {
+    const legacyPath = this.getLegacyChatPath(roomId);
+    const hasLegacy = await pathExists(legacyPath);
+    const hasLog = await pathExists(this.getChatLogPath(roomId));
+    const hasIndex = await pathExists(this.getChatIndexPath(roomId));
+    if (!hasLegacy || hasLog || hasIndex) {
+      return;
     }
 
-    await fs.rename(tempPath, filePath);
+    const legacy = await readJsonFile<LegacyChatRoomData>(legacyPath);
+    if (!legacy) {
+      return;
+    }
+
+    let seq = 0;
+    const migratedAt = Number(legacy.updatedAt || legacy.createdAt || Date.now());
+    const records: PersistedChatLogRecord[] = [
+      {
+        recordId: randomUUID(),
+        seq: ++seq,
+        roomId,
+        timestamp: migratedAt,
+        type: 'CHAT_MIGRATED',
+        messageCount: legacy.messages.length,
+      },
+      ...legacy.messages.map((message) => ({
+        recordId: randomUUID(),
+        seq: ++seq,
+        roomId,
+        timestamp: message.createdAt,
+        type: 'MESSAGE_APPENDED' as const,
+        message,
+      })),
+    ];
+
+    await appendJsonlRecords(this.getChatLogPath(roomId), records);
+    await this.writeChatIndex(roomId, {
+      roomId,
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt,
+      nextSeq:
+        typeof legacy.nextSeq === 'number' && legacy.nextSeq > 0
+          ? legacy.nextSeq
+          : legacy.messages.length + 1,
+      logSeq: seq,
+      latestMessages: legacy.messages,
+    });
+    await fs.rm(legacyPath, { force: true });
+    this.logger.log(`Migrated legacy chat history ${roomId} to JSONL layout`);
   }
 }

@@ -209,7 +209,7 @@ describe('EventsGateway membership mutation serialization', () => {
         }
         return deepClone(roomState);
       }),
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(),
       roomExists: jest.fn(),

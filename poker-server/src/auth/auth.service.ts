@@ -29,6 +29,7 @@ import type {
 } from '../common/interfaces/auth-storage.interface';
 import type { IStorageService } from '../common/interfaces/storage.interface';
 import { realtimeEventBus } from '../common/realtime-events';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 type FlowKind = 'passkey-register' | 'passkey-login';
 
@@ -340,7 +341,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       };
 
       users.push(nextUser);
-      await this.authStorageService.saveUsers(users);
+      await this.authStorageService.replaceUsers(users);
       return nextUser;
     });
 
@@ -456,7 +457,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           typeof latestPasskey.counter === 'number' ? latestPasskey.counter : 0;
         latestPasskey.counter = Math.max(storedCounter, newCounter);
         latestPasskey.updatedAt = Date.now();
-        await this.authStorageService.saveUsers(latestUsers);
+        await this.authStorageService.replaceUsers(latestUsers);
       });
     }
 
@@ -551,7 +552,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         (session) => session.tokenHash !== tokenHash,
       );
       if (nextSessions.length !== sessions.length) {
-        await this.authStorageService.saveSessions(nextSessions);
+        await this.authStorageService.replaceSessions(nextSessions);
       }
     });
   }
@@ -599,7 +600,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       foundUser.displayName = displayName;
       foundUser.avatarEmoji = avatarEmoji;
       foundUser.updatedAt = Date.now();
-      await this.authStorageService.saveUsers(users);
+      await this.authStorageService.replaceUsers(users);
       return foundUser;
     });
     await this.applyProfileToRooms(user);
@@ -666,7 +667,25 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }[] = [];
 
     for (const { room, pendingEvents } of changedRooms) {
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'PLAYER_PROFILE_SYNCED',
+            actor: {
+              source: 'AUTH',
+              userId: user.id,
+            },
+            payload: {
+              userId: user.id,
+              displayName: user.displayName,
+              avatarEmoji: user.avatarEmoji,
+              affectedPlayerIds: pendingEvents.map((event) => event.playerId),
+            },
+          }),
+        ),
+      );
       allPendingEvents.push(...pendingEvents);
     }
 
@@ -716,7 +735,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (changed) {
-        await this.authStorageService.saveUsers(users);
+        await this.authStorageService.replaceUsers(users);
       }
     });
   }
@@ -919,7 +938,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       };
 
       activeSessions.push(record);
-      await this.authStorageService.saveSessions(activeSessions);
+      await this.authStorageService.replaceSessions(activeSessions);
       return { token, record };
     });
   }
@@ -948,7 +967,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       );
       if (!session) {
         if (changed) {
-          await this.authStorageService.saveSessions(activeSessions);
+          await this.authStorageService.replaceSessions(activeSessions);
         }
         return null;
       }
@@ -959,7 +978,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         const filteredSessions = activeSessions.filter(
           (entry) => entry.tokenHash !== tokenHash,
         );
-        await this.authStorageService.saveSessions(filteredSessions);
+        await this.authStorageService.replaceSessions(filteredSessions);
         return null;
       }
 
@@ -970,7 +989,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (changed) {
-        await this.authStorageService.saveSessions(activeSessions);
+        await this.authStorageService.replaceSessions(activeSessions);
       }
 
       return { user, session };

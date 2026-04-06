@@ -113,7 +113,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         }
         return deepClone(roomState);
       }),
-      saveRoom: jest.fn(async (room: any) => {
+      persistRoom: jest.fn(async (room: any) => {
         roomState = deepClone(room);
       }),
       deleteRoom: jest.fn(),

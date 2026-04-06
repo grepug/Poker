@@ -41,17 +41,36 @@ export interface PruneChatMessagesResult {
 }
 
 export interface IChatStorageService {
+  /**
+   * Return a bounded page from the current room chat projection.
+   */
   getMessagePage(
     roomId: string,
     options?: GetChatMessagesOptions,
   ): Promise<ChatHistoryPage>;
+  /**
+   * Append one canonical chat record and update the current room chat projection.
+   */
   appendMessage(
     input: AppendChatMessageInput,
     options?: AppendChatMessageOptions,
   ): Promise<AppendChatMessageResult>;
+  /**
+   * Check whether a room currently has chat data.
+   */
   hasChatData(roomId: string): Promise<boolean>;
+  /**
+   * Reset a room's chat projection and append the canonical delete record.
+   */
   deleteRoomChat(roomId: string): Promise<void>;
+  /**
+   * List room ids that currently have chat data in the bounded projection.
+   */
   listRoomsWithChatData(): Promise<string[]>;
+  /**
+   * Prune room chat according to the current store policy while preserving
+   * canonical chat log records.
+   */
   pruneRoomMessages(
     roomId: string,
     options?: PruneChatMessagesOptions,

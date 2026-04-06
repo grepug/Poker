@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, rm, unlink } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { JsonChatStorageService } from '../../src/storage/json-chat-storage.service';
@@ -113,6 +113,32 @@ describe('JsonChatStorageService', () => {
     expect(previousPage.messages.map((message) => message.seq)).toEqual([3, 4, 5]);
     expect(previousPage.hasMore).toBe(true);
     expect(previousPage.nextBeforeSeq).toBe(3);
+  });
+
+  it('rebuilds the bounded chat projection from the log when the index is missing', async () => {
+    const roomId = 'ROOM-REBUILD';
+
+    for (let index = 0; index < 3; index += 1) {
+      await service.appendMessage(
+        {
+          roomId,
+          kind: 'TEXT',
+          text: `message-${index}`,
+          clientMessageId: `bounded-${index}`,
+          sender: {
+            playerId: 'p1',
+            playerName: 'Alice',
+          },
+        },
+        { maxMessages: 2 },
+      );
+    }
+
+    await unlink(path.join(tempDir, 'chat', roomId, 'chat.index.json'));
+
+    const rebuilt = await service.getMessagePage(roomId, { limit: 50 });
+    expect(rebuilt.messages.map((message) => message.seq)).toEqual([2, 3]);
+    expect(rebuilt.hasMore).toBe(false);
   });
 
   it('continues room write queue after a failed task', async () => {

@@ -21,7 +21,7 @@ describe('EventsGateway profile update', () => {
       authService as any,
       {
         getRoom: jest.fn(),
-        saveRoom: jest.fn(),
+        persistRoom: jest.fn(),
         deleteRoom: jest.fn(),
         getAllRooms: jest.fn(),
         roomExists: jest.fn(),

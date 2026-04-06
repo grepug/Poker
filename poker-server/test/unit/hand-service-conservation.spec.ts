@@ -9,7 +9,7 @@ describe('HandService chip conservation reconciliation', () => {
 
   beforeEach(() => {
     storageService = {
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
       getRoom: jest.fn().mockResolvedValue(null),
       deleteRoom: jest.fn().mockResolvedValue(undefined),
       getAllRooms: jest.fn().mockResolvedValue([]),
@@ -131,7 +131,7 @@ describe('HandService chip conservation reconciliation', () => {
 
     expect(totalChips).toBe(expectedTotal);
     expect(winner?.chips).toBe(1000);
-    expect(storageService.saveRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 
   it('debits small chip surplus from winner-first order and restores conservation', async () => {
@@ -154,7 +154,7 @@ describe('HandService chip conservation reconciliation', () => {
     expect(totalChips).toBe(expectedTotal);
     expect(winner?.chips).toBe(1000);
     expect(loser?.chips).toBe(1000);
-    expect(storageService.saveRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 
   it('legacy fallback contributions include folded dealt players for net outcomes', async () => {
@@ -169,6 +169,6 @@ describe('HandService chip conservation reconciliation', () => {
 
     expect(result.netByPlayerId['p1']).toBe(7);
     expect(result.netByPlayerId['p2']).toBe(-7);
-    expect(storageService.saveRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 });

@@ -9,7 +9,7 @@ describe('HandService side-pot distribution', () => {
 
   beforeEach(() => {
     storageService = {
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
       getRoom: jest.fn().mockResolvedValue(null),
       deleteRoom: jest.fn().mockResolvedValue(undefined),
       getAllRooms: jest.fn().mockResolvedValue([]),
@@ -277,7 +277,7 @@ describe('HandService side-pot distribution', () => {
     expect(room.players.find((p) => p.name === 'Bob')?.chips).toBe(1500);
     expect(room.players.find((p) => p.name === 'Charlie')?.chips).toBe(500);
 
-    expect(storageService.saveRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 
   it('marks uncontested side pot when only one active player is eligible', async () => {

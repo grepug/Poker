@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { Room, Player, PlayerAction } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 @Injectable()
 export class BettingService {
@@ -133,7 +134,31 @@ export class BettingService {
     hand.roundActions[playerId] = true;
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'PLAYER_ACTION',
+          actor: {
+            source: 'BETTING_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+          },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: {
+            action,
+            amount: amount ?? null,
+            playerStatus: player.status,
+            playerChips: player.chips,
+            playerCurrentBet: player.currentBet,
+            pot: hand.pot,
+            currentBet: hand.currentBet,
+          },
+        }),
+      ),
+    );
 
     this.logger.log(`Player ${player.name} ${action} in room ${room.id}`);
   }
