@@ -189,10 +189,11 @@ describe('JsonChatStorageService', () => {
   it('prunes by message age using the prune timestamp and replays that deterministically', async () => {
     const roomId = 'ROOM-PRUNE-AGE';
     const nowSpy = jest.spyOn(Date, 'now');
+    let currentNow = 1000;
     let pruneResult;
 
     try {
-      nowSpy.mockReturnValue(1000);
+      nowSpy.mockImplementation(() => currentNow);
       await service.appendMessage({
         roomId,
         kind: 'TEXT',
@@ -204,7 +205,7 @@ describe('JsonChatStorageService', () => {
         },
       });
 
-      nowSpy.mockReturnValue(8000);
+      currentNow = 8000;
       await service.appendMessage({
         roomId,
         kind: 'TEXT',
@@ -216,7 +217,7 @@ describe('JsonChatStorageService', () => {
         },
       });
 
-      nowSpy.mockReturnValue(10000);
+      currentNow = 10000;
       pruneResult = await service.pruneRoomMessages(roomId, {
         olderThanMs: 3000,
       });
