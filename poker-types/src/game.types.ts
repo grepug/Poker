@@ -14,8 +14,7 @@ export type HandPositionLabel =
   | "SB"
   | "BB"
   | "UTG"
-  | "UTG+1"
-  | "UTG+2"
+  | `UTG+${number}`
   | "MP"
   | "LJ"
   | "HJ"

@@ -90,6 +90,34 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
+  it('rejects out-of-range max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 21,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 1,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+  });
+
+  it('rejects non-integer max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: Number.NaN as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 7.5 as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+  });
+
   it('creates room with short-deck rules when requested', async () => {
     const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
       useShortDeckRules: true,

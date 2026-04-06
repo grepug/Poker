@@ -1332,6 +1332,15 @@ const getSeatSlotWidth = ({
   return "clamp(2.58rem, 8.5vw, 3.38rem)";
 };
 
+const normalizeOrbitCapacity = (maxPlayers: number) => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (!Number.isFinite(parsedMaxPlayers)) {
+    return 6;
+  }
+
+  return Math.min(20, Math.max(6, Math.floor(parsedMaxPlayers)));
+};
+
 const getSeatDensityClass = ({
   seatSlotWidthPx,
   occupiedSeatCount,
@@ -2130,7 +2139,7 @@ const useGameRoomElement = () => {
 
   const orbitCapacity = useMemo(() => {
     if (!room) return 6;
-    return Math.max(room.config.maxPlayers, 6);
+    return normalizeOrbitCapacity(room.config.maxPlayers);
   }, [room]);
 
   const seatSlotWidth = useMemo(

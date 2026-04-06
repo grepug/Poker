@@ -42,14 +42,24 @@ describe('HandService turn order', () => {
   });
 
   it('advances clockwise from folded actor position', () => {
-    const playerAt7 = buildPlayer({ id: 'p7', position: 7, status: 'connected', chips: 500 });
+    const playerAt7 = buildPlayer({
+      id: 'p7',
+      position: 7,
+      status: 'connected',
+      chips: 500,
+    });
     const foldedPlayerAt0 = buildPlayer({
       id: 'p0',
       position: 0,
       status: 'folded',
       chips: 500,
     });
-    const playerAt3 = buildPlayer({ id: 'p3', position: 3, status: 'connected', chips: 500 });
+    const playerAt3 = buildPlayer({
+      id: 'p3',
+      position: 3,
+      status: 'connected',
+      chips: 500,
+    });
 
     const room: Room = {
       id: 'ROOM-ORDER',
@@ -184,6 +194,54 @@ describe('HandService turn order', () => {
       p0: 'UTG',
       p2: 'HJ',
       p4: 'CO',
+    });
+  });
+
+  it('assigns deterministic fallback position labels for tables above ten players', async () => {
+    const room: Room = {
+      id: 'ROOM-ELEVEN',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 20,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        buildPlayer({ id: 'p8', position: 8 }),
+        buildPlayer({ id: 'p0', position: 0 }),
+        buildPlayer({ id: 'p4', position: 4 }),
+        buildPlayer({ id: 'p9', position: 9 }),
+        buildPlayer({ id: 'p2', position: 2 }),
+        buildPlayer({ id: 'p6', position: 6 }),
+        buildPlayer({ id: 'p1', position: 1 }),
+        buildPlayer({ id: 'p3', position: 3 }),
+        buildPlayer({ id: 'p5', position: 5 }),
+        buildPlayer({ id: 'p7', position: 7 }),
+        buildPlayer({ id: 'p10', position: 10 }),
+      ],
+      gameState: 'WAITING',
+      currentHand: null,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const hand = await handService.startNewHand(room);
+
+    expect(hand.positionLabelsByPlayerId).toMatchObject({
+      p0: 'BTN',
+      p1: 'SB',
+      p2: 'BB',
+      p3: 'UTG',
+      p4: 'UTG+1',
+      p5: 'UTG+2',
+      p6: 'UTG+3',
+      p7: 'MP',
+      p8: 'LJ',
+      p9: 'HJ',
+      p10: 'CO',
     });
   });
 });
