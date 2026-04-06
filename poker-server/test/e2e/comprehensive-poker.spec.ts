@@ -33,6 +33,11 @@ type PersistedRoomSnapshotMatch = {
   previousSemanticEvent: PersistedRoomEventRecord | null;
 };
 
+type SessionCookie = {
+  name: string;
+  value: string;
+};
+
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
   await page.waitForFunction(() => window.pokerDebug !== undefined, {
@@ -197,79 +202,139 @@ async function authenticateTestUser(
   profile: { displayName: string; avatarEmoji?: string },
 ) {
   const avatarEmoji = profile.avatarEmoji ?? '🙂';
-  const loginResponse = await page
-    .context()
-    .request.post(`${BACKEND_URL}/api/auth/password/login`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        accountId,
-        password: DEFAULT_TEST_PASSWORD,
-      },
-    });
-  const loginPayload = (await loginResponse.json()) as {
-    user?: { id?: string };
-    message?: string;
-    error?: string;
-  };
-  if (!loginResponse.ok() || !loginPayload.user?.id) {
-    throw new Error(
-      loginPayload.message ||
-        loginPayload.error ||
-        `login failed (${loginResponse.status()})`,
-    );
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.context().clearCookies();
+
+      const loginResponse = await page
+        .context()
+        .request.post(`${BACKEND_URL}/api/auth/password/login`, {
+          headers: { 'Content-Type': 'application/json' },
+          data: {
+            accountId,
+            password: DEFAULT_TEST_PASSWORD,
+          },
+        });
+      const loginPayload = (await loginResponse.json()) as {
+        user?: { id?: string };
+        sessionExpiresAt?: number;
+        message?: string;
+        error?: string;
+      };
+      if (!loginResponse.ok() || !loginPayload.user?.id) {
+        throw new Error(
+          loginPayload.message ||
+            loginPayload.error ||
+            `login failed (${loginResponse.status()})`,
+        );
+      }
+
+      const sessionCookie = extractSessionCookie(loginResponse);
+      await page.context().addCookies([
+        {
+          url: BACKEND_URL,
+          name: sessionCookie.name,
+          value: sessionCookie.value,
+          httpOnly: true,
+          sameSite: 'Lax',
+          secure: BACKEND_URL.startsWith('https://'),
+          ...(typeof loginPayload.sessionExpiresAt === 'number'
+            ? { expires: Math.floor(loginPayload.sessionExpiresAt / 1000) }
+            : {}),
+        },
+      ]);
+
+      const profileResponse = await page
+        .context()
+        .request.patch(`${BACKEND_URL}/api/auth/me/profile`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sessionCookie.value}`,
+          },
+          data: {
+            displayName: profile.displayName,
+            avatarEmoji,
+          },
+        });
+      if (!profileResponse.ok()) {
+        const profilePayload = (await profileResponse.json()) as {
+          message?: string;
+          error?: string;
+        };
+        throw new Error(
+          profilePayload.message ||
+            profilePayload.error ||
+            `profile update failed (${profileResponse.status()})`,
+        );
+      }
+
+      await page.goto(FRONTEND_URL);
+      const landingModeHandle = await page.waitForFunction(
+        () => {
+          const pokerDebug = (window as any).pokerDebug;
+          const room = pokerDebug?.getRoom?.();
+          const player = pokerDebug?.getPlayer?.();
+          const socket = pokerDebug?.getSocket?.();
+
+          if (
+            document.querySelector('[data-testid="room-title"]') &&
+            room?.id &&
+            player?.id
+          ) {
+            return 'room';
+          }
+          if (
+            document.querySelector('[data-testid="connection-status"]') &&
+            socket?.connected
+          ) {
+            return 'home';
+          }
+          if (document.querySelector('[data-testid="auth-page"]')) {
+            return 'auth';
+          }
+          return null;
+        },
+        { timeout: 5000 },
+      );
+      const landingMode = await landingModeHandle.jsonValue();
+      if (landingMode === 'auth') {
+        throw new Error('Frontend remained on auth page after login');
+      }
+
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      await page.goto('about:blank').catch(() => undefined);
+      if (attempt < 3) {
+        await page.waitForTimeout(250);
+      }
+    }
   }
 
-  const profileResponse = await page
-    .context()
-    .request.patch(`${BACKEND_URL}/api/auth/me/profile`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        displayName: profile.displayName,
-        avatarEmoji,
-      },
-    });
-  if (!profileResponse.ok()) {
-    const profilePayload = (await profileResponse.json()) as {
-      message?: string;
-      error?: string;
-    };
-    throw new Error(
-      profilePayload.message ||
-        profilePayload.error ||
-        `profile update failed (${profileResponse.status()})`,
-    );
+  throw lastError ?? new Error('Authentication failed');
+}
+
+function extractSessionCookie(response: {
+  headers(): Record<string, string>;
+}): SessionCookie {
+  const setCookieHeader = response.headers()['set-cookie'];
+  const firstCookie = setCookieHeader?.split(',')[0]?.trim() ?? '';
+  const cookiePair = firstCookie.split(';')[0]?.trim() ?? '';
+  const equalsIndex = cookiePair.indexOf('=');
+
+  if (equalsIndex <= 0) {
+    throw new Error('Missing auth session cookie in login response');
   }
 
-  await page.goto(FRONTEND_URL);
-  const landingModeHandle = await page.waitForFunction(
-    () => {
-      const pokerDebug = (window as any).pokerDebug;
-      const room = pokerDebug?.getRoom?.();
-      const player = pokerDebug?.getPlayer?.();
-      const socket = pokerDebug?.getSocket?.();
+  const name = cookiePair.slice(0, equalsIndex).trim();
+  const value = cookiePair.slice(equalsIndex + 1).trim();
+  if (!name || !value) {
+    throw new Error('Invalid auth session cookie in login response');
+  }
 
-      if (
-        document.querySelector('[data-testid="room-title"]') &&
-        room?.id &&
-        player?.id
-      ) {
-        return 'room';
-      }
-      if (
-        document.querySelector('[data-testid="connection-status"]') &&
-        socket?.connected
-      ) {
-        return 'home';
-      }
-      if (document.querySelector('[data-testid="auth-page"]')) {
-        return 'auth';
-      }
-      return null;
-    },
-    { timeout: 5000 },
-  );
-  const landingMode = await landingModeHandle.jsonValue();
-  expect(landingMode).not.toBe('auth');
+  return { name, value };
 }
 
 async function ensureProfileForCurrentSession(
