@@ -32,6 +32,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import type { SeatBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -2437,12 +2438,26 @@ const useGameRoomElement = () => {
         const seatPlayerId = seatPlayer.id;
         const seatPositionLabel =
           currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
-        const seatCornerRoleLabel =
-          roleIcon
-            ? seatPositionLabel ??
-              (roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null)
-            : null;
-        const seatInlinePositionLabel = roleIcon ? null : seatPositionLabel;
+        const seatBadge: SeatBadge | null =
+          roleIcon && seatPositionLabel
+            ? {
+                placement: "corner",
+                icon: roleIcon,
+                text: seatPositionLabel,
+              }
+            : seatPositionLabel
+              ? {
+                  placement: "inline",
+                  icon: null,
+                  text: seatPositionLabel,
+                }
+              : roleIcon
+                ? {
+                    placement: "corner",
+                    icon: roleIcon,
+                    text: roleIcon === "dealer" ? "D" : "SB",
+                  }
+                : null;
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2521,9 +2536,7 @@ const useGameRoomElement = () => {
           playerEmoji: seatPlayer.emoji || "🎲",
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
-          roleIcon,
-          roleLabel: seatCornerRoleLabel,
-          positionLabel: seatInlinePositionLabel,
+          badge: seatBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
