@@ -1,5 +1,4 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
-import type { HandPositionLabel } from "poker-types";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -15,17 +14,10 @@ type SeatActionLabel = {
   tone: "blind" | "aggressive" | "call" | "allin" | "pending";
 };
 
-export type SeatBadge =
-  | {
-      placement: "corner";
-      icon: "dealer" | "small-blind";
-      text: string;
-    }
-  | {
-      placement: "inline";
-      icon: null;
-      text: HandPositionLabel;
-    };
+export type SeatBadge = {
+  text: string;
+  tone: "dealer" | "small-blind" | "position";
+};
 
 type SeatPodProps = {
   testId: string;
@@ -51,7 +43,6 @@ type AutoFitTextRule = {
 
 const AUTO_FIT_TEXT_RULES: AutoFitTextRule[] = [
   { selector: ".seat-pod__status-badge", minFontPx: 6.5 },
-  { selector: ".seat-pod__position-badge", minFontPx: 5.8 },
   { selector: ".seat-pod__action", minFontPx: 7 },
   { selector: ".seat-pod__remaining", minFontPx: 7.5 },
   { selector: ".seat-pod__ready-overlay", minFontPx: 6.5 },
@@ -249,6 +240,12 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   const floatingStatusTestId = externalStatusLabel
     ? `${testId}-external-status`
     : `${testId}-status`;
+  const badgeTestId =
+    badge?.tone === "dealer"
+      ? `${testId}-dealer-icon`
+      : badge?.tone === "small-blind"
+        ? `${testId}-small-blind-icon`
+        : `${testId}-corner-badge`;
   const seatNodeRef = useRef<HTMLDivElement | null>(null);
   const rafIdRef = useRef(0);
 
@@ -312,8 +309,8 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   }, [
     scheduleFit,
     actionLabel?.text,
-    badge?.placement,
     badge?.text,
+    badge?.tone,
     densityClass,
     floatingStatusLabel,
     playerName,
@@ -328,7 +325,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
       className={cn(
         "seat-pod",
         isYou && "seat-pod--you",
-        badge?.placement === "corner" && "seat-pod--has-role-icon",
+        Boolean(badge) && "seat-pod--has-role-icon",
         Boolean(floatingStatusLabel) && "seat-pod--has-status-badge",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
@@ -338,13 +335,13 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         densityClass,
       )}
     >
-      {badge?.placement === "corner" && (
+      {badge && (
         <div
           className={cn(
             "seat-pod__role-icon",
-            `seat-pod__role-icon--${badge.icon}`,
+            `seat-pod__role-icon--${badge.tone}`,
           )}
-          data-testid={`${testId}-${badge.icon}-icon`}
+          data-testid={badgeTestId}
         >
           {badge.text}
         </div>
@@ -384,14 +381,6 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           {playerEmoji}
         </span>
         <span className="seat-pod__name">{playerName}</span>
-        {badge?.placement === "inline" && (
-          <span
-            className="seat-pod__position-badge"
-            data-testid={`${testId}-position-badge`}
-          >
-            {badge.text}
-          </span>
-        )}
       </div>
 
       <div className="seat-pod__row seat-pod__row--action">

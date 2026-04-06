@@ -2441,20 +2441,17 @@ const useGameRoomElement = () => {
         const seatBadge: SeatBadge | null =
           roleIcon && seatPositionLabel
             ? {
-                placement: "corner",
-                icon: roleIcon,
+                tone: roleIcon === "dealer" ? "dealer" : "small-blind",
                 text: seatPositionLabel,
               }
-            : seatPositionLabel
+          : seatPositionLabel
               ? {
-                  placement: "inline",
-                  icon: null,
+                  tone: "position",
                   text: seatPositionLabel,
                 }
               : roleIcon
                 ? {
-                    placement: "corner",
-                    icon: roleIcon,
+                    tone: roleIcon === "dealer" ? "dealer" : "small-blind",
                     text: roleIcon === "dealer" ? "D" : "SB",
                   }
                 : null;
