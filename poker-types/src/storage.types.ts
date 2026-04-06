@@ -1,6 +1,8 @@
-import { BettingRound, HandResult } from "./game.types";
+import { BettingRound, HandPositionLabel, HandResult } from "./game.types";
 import { Card } from "./card.types";
 import { ChatMessage } from "./chat.types";
+import { PlayerAction, PlayerStatus } from "./player.types";
+import { PlayerActionDisplayKind } from "./events.types";
 
 export type PersistedActor = {
   playerId?: string;
@@ -57,6 +59,105 @@ export type RoomPersistedWrite = {
 export type PersistedRoomSnapshot = {
   lastRoomEventSeq: number;
   updatedAt: number;
+};
+
+export type PersistedRoomPlayerStateSnapshot = {
+  playerId: string;
+  playerName: string;
+  position: number;
+  status: PlayerStatus;
+  chips: number;
+  currentBet: number;
+  totalBuyIn: number;
+  lastAction: PlayerAction | null;
+  isActiveInHand: boolean;
+  positionLabel?: HandPositionLabel | null;
+  cards?: Card[] | null;
+};
+
+export type PersistedPlayerActionRequest = {
+  actionId?: string | null;
+  action: PlayerAction;
+  amount?: number | null;
+};
+
+export type PersistedPlayerActionDecisionContext = {
+  currentPlayerTurnBefore: string | null;
+  playerStatusBefore: PlayerStatus;
+  playerChipsBefore: number;
+  playerCurrentBetBefore: number;
+  potBefore: number;
+  currentBetBefore: number;
+  lastRaiseSizeBefore: number;
+  callAmountBefore: number;
+  minimumRaiseBy: number;
+  minimumRaiseTo: number;
+  maximumBetTo: number;
+  facingBet: boolean;
+  legalActions: PlayerAction[];
+  activePlayerIds: string[];
+  communityCards: Card[];
+  potContributions: Record<string, number>;
+  players: PersistedRoomPlayerStateSnapshot[];
+};
+
+export type PersistedPlayerActionResult = {
+  resolvedAction: PlayerAction;
+  displayKind: PlayerActionDisplayKind;
+  committedAmount: number;
+  totalBetAfterAction: number;
+  playerStatusAfter: PlayerStatus;
+  playerChipsAfter: number;
+  playerCurrentBetAfter: number;
+  potAfter: number;
+  currentBetAfter: number;
+  lastRaiseSizeAfter: number;
+  activePlayerIds: string[];
+  potContributions: Record<string, number>;
+  players: PersistedRoomPlayerStateSnapshot[];
+};
+
+export type PersistedPlayerActionPayload = {
+  action: PlayerAction;
+  amount: number | null;
+  playerStatus: PlayerStatus;
+  playerChips: number;
+  playerCurrentBet: number;
+  pot: number;
+  currentBet: number;
+  request: PersistedPlayerActionRequest;
+  decision: PersistedPlayerActionDecisionContext;
+  result: PersistedPlayerActionResult;
+};
+
+export type PersistedHandStartedPayload = {
+  handNumber: number;
+  dealerPosition: number;
+  smallBlindPosition: number;
+  bigBlindPosition: number;
+  pot: number;
+  currentBet: number;
+  lastRaiseSize: number;
+  currentPlayerTurn: string | null;
+  activePlayerIds: string[];
+  dealtPlayerIds: string[];
+  positionLabelsByPlayerId: Record<string, HandPositionLabel>;
+  potContributions: Record<string, number>;
+  communityCards: Card[];
+  players: PersistedRoomPlayerStateSnapshot[];
+};
+
+export type PersistedBettingRoundAdvancedPayload = {
+  nextRound: BettingRound;
+  communityCards: Card[];
+  currentPlayerTurn?: string | null;
+  allPlayersAllIn?: boolean;
+  pot: number;
+  currentBet: number;
+  lastRaiseSize: number;
+  activePlayerIds: string[];
+  potContributions: Record<string, number>;
+  players: PersistedRoomPlayerStateSnapshot[];
 };
 
 export type PersistedChatLogRecord =

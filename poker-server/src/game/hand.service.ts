@@ -9,6 +9,9 @@ import {
   PotPayout,
   Card,
   HandPositionLabel,
+  PersistedBettingRoundAdvancedPayload,
+  PersistedHandStartedPayload,
+  PersistedRoomPlayerStateSnapshot,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { createDeck, shuffleDeck, dealCards } from '../common/utils/deck';
@@ -164,6 +167,23 @@ export class HandService {
     room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
+    const handStartedPayload: PersistedHandStartedPayload = {
+      handNumber: hand.handNumber,
+      dealerPosition,
+      smallBlindPosition,
+      bigBlindPosition,
+      pot,
+      currentBet: hand.currentBet,
+      lastRaiseSize: hand.lastRaiseSize,
+      currentPlayerTurn,
+      activePlayerIds: [...hand.activePlayers],
+      dealtPlayerIds: [...(hand.dealtPlayerIds ?? [])],
+      positionLabelsByPlayerId: { ...(hand.positionLabelsByPlayerId ?? {}) },
+      potContributions: { ...hand.potContributions },
+      communityCards: [...hand.communityCards],
+      players: this.buildPersistedPlayerSnapshots(room, { includeCards: true }),
+    };
+
     await this.storageService.persistRoom(
       room,
       roomWrite(
@@ -173,22 +193,7 @@ export class HandService {
           actor: { source: 'HAND_SERVICE' },
           handNumber: hand.handNumber,
           street: hand.bettingRound,
-          payload: {
-            handNumber: hand.handNumber,
-            dealerPosition,
-            smallBlindPosition,
-            bigBlindPosition,
-            pot,
-            currentPlayerTurn,
-            players: activePlayers.map((player) => ({
-              playerId: player.id,
-              playerName: player.name,
-              position: player.position,
-              chips: player.chips,
-              cards: player.cards,
-              currentBet: player.currentBet,
-            })),
-          },
+          payload: handStartedPayload,
         }),
       ),
     );
@@ -272,6 +277,20 @@ export class HandService {
       }
 
       room.lastActivityAt = Date.now();
+      const showdownAdvancePayload: PersistedBettingRoundAdvancedPayload = {
+        nextRound: 'SHOWDOWN',
+        communityCards: [...hand.communityCards],
+        currentPlayerTurn: hand.currentPlayerTurn,
+        allPlayersAllIn: true,
+        pot: hand.pot,
+        currentBet: hand.currentBet,
+        lastRaiseSize: hand.lastRaiseSize,
+        activePlayerIds: [...hand.activePlayers],
+        potContributions: { ...hand.potContributions },
+        players: this.buildPersistedPlayerSnapshots(room, {
+          includeCards: true,
+        }),
+      };
       await this.storageService.persistRoom(
         room,
         roomWrite(
@@ -281,11 +300,7 @@ export class HandService {
             actor: { source: 'HAND_SERVICE' },
             handNumber: hand.handNumber,
             street: 'SHOWDOWN',
-            payload: {
-              nextRound: 'SHOWDOWN',
-              communityCards: hand.communityCards,
-              allPlayersAllIn: true,
-            },
+            payload: showdownAdvancePayload,
           }),
         ),
       );
@@ -353,6 +368,19 @@ export class HandService {
     }
 
     room.lastActivityAt = Date.now();
+    const roundAdvancePayload: PersistedBettingRoundAdvancedPayload = {
+      nextRound: hand.bettingRound,
+      communityCards: [...hand.communityCards],
+      currentPlayerTurn: hand.currentPlayerTurn,
+      pot: hand.pot,
+      currentBet: hand.currentBet,
+      lastRaiseSize: hand.lastRaiseSize,
+      activePlayerIds: [...hand.activePlayers],
+      potContributions: { ...hand.potContributions },
+      players: this.buildPersistedPlayerSnapshots(room, {
+        includeCards: true,
+      }),
+    };
     await this.storageService.persistRoom(
       room,
       roomWrite(
@@ -362,11 +390,7 @@ export class HandService {
           actor: { source: 'HAND_SERVICE' },
           handNumber: hand.handNumber,
           street: hand.bettingRound,
-          payload: {
-            nextRound: hand.bettingRound,
-            communityCards: hand.communityCards,
-            currentPlayerTurn: hand.currentPlayerTurn,
-          },
+          payload: roundAdvancePayload,
         }),
       ),
     );
@@ -914,6 +938,28 @@ export class HandService {
     return Object.fromEntries(
       orderedFromButton.map((player, index) => [player.id, labels[index]]),
     );
+  }
+
+  private buildPersistedPlayerSnapshots(
+    room: Room,
+    options?: {
+      includeCards?: boolean;
+    },
+  ): PersistedRoomPlayerStateSnapshot[] {
+    const hand = room.currentHand;
+    return this.getPlayersInSeatOrder(room.players).map((player) => ({
+      playerId: player.id,
+      playerName: player.name,
+      position: player.position,
+      status: player.status,
+      chips: player.chips,
+      currentBet: player.currentBet,
+      totalBuyIn: player.totalBuyIn,
+      lastAction: player.lastAction,
+      isActiveInHand: hand ? hand.activePlayers.includes(player.id) : false,
+      positionLabel: hand?.positionLabelsByPlayerId?.[player.id] ?? null,
+      cards: options?.includeCards ? player.cards : undefined,
+    }));
   }
 
   private buildHeadsUpPositionLabelsByPlayerId({

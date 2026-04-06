@@ -1,4 +1,7 @@
 import { test, expect, Page, BrowserContext } from '@playwright/test';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { PersistedRoomEventRecord, Room } from 'poker-types';
 
 /**
  * Comprehensive Poker E2E Test Suite
@@ -20,6 +23,15 @@ const DEFAULT_OPENING_POT = DEFAULT_SMALL_BLIND + DEFAULT_BIG_BLIND;
 const DEFAULT_TWO_PLAYER_MATCHED_POT = DEFAULT_BIG_BLIND * 2;
 const DEFAULT_SMALL_BLIND_CALL_GAP = DEFAULT_BIG_BLIND - DEFAULT_SMALL_BLIND;
 const DEFAULT_TEST_PASSWORD = 'test1234';
+const E2E_DATA_DIR = path.resolve(process.cwd(), 'data');
+const ROOM_STATE_UPDATED_EVENT = 'ROOM_STATE_UPDATED';
+
+type PersistedRoomSnapshotMatch = {
+  event: PersistedRoomEventRecord;
+  room: Room;
+  previousEvent: PersistedRoomEventRecord | null;
+  previousSemanticEvent: PersistedRoomEventRecord | null;
+};
 
 // Helper to wait for pokerDebug to be available
 async function waitForPokerDebug(page: Page) {
@@ -634,6 +646,82 @@ async function getRoomSnapshot(page: Page) {
       bobCurrentBet: bob?.currentBet ?? 0,
     };
   });
+}
+
+async function readPersistedRoomEvents(
+  roomId: string,
+): Promise<PersistedRoomEventRecord[]> {
+  const roomEventsPath = path.join(E2E_DATA_DIR, 'rooms', roomId, 'room-events.jsonl');
+  const raw = await fs.readFile(roomEventsPath, 'utf-8');
+
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as PersistedRoomEventRecord);
+}
+
+async function waitForPersistedRoomSnapshot(
+  roomId: string,
+  predicate: (room: Room, event: PersistedRoomEventRecord) => boolean,
+  timeoutMs = 10000,
+): Promise<PersistedRoomSnapshotMatch> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const events = await readPersistedRoomEvents(roomId);
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event.type !== ROOM_STATE_UPDATED_EVENT) {
+          continue;
+        }
+
+        const room = (event.payload as { room?: Room }).room;
+        if (!room) {
+          continue;
+        }
+
+        if (predicate(room, event)) {
+          let previousSemanticEvent: PersistedRoomEventRecord | null = null;
+          for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+            const previousCandidate = events[previousIndex];
+            if (previousCandidate.type !== ROOM_STATE_UPDATED_EVENT) {
+              previousSemanticEvent = previousCandidate;
+              break;
+            }
+          }
+
+          return {
+            event,
+            room,
+            previousEvent: index > 0 ? events[index - 1] ?? null : null,
+            previousSemanticEvent,
+          };
+        }
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`Timed out waiting for persisted room snapshot for ${roomId}`);
+}
+
+function buildChipRanking(room: Room) {
+  return [...room.players]
+    .sort((left, right) => right.chips - left.chips || left.position - right.position)
+    .map((player) => ({
+      playerId: player.id,
+      name: player.name,
+      chips: player.chips,
+      position: player.position,
+    }));
 }
 
 async function waitForHandStart(page: Page, handNumber: number) {
@@ -8357,6 +8445,101 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
 
       expect(hasEndpoints.hasFirst).toBe(true);
       expect(hasEndpoints.hasLast).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('10.2a: Persisted room snapshots can reconstruct a point-in-time table state', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.raise(50));
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const liveState = await getRoomSnapshot(alicePage);
+      expect(liveState.bettingRound).toBe('PRE_FLOP');
+      expect(liveState.currentPlayerName).toBe('Alice');
+      expect(liveState.pot).toBeGreaterThan(DEFAULT_OPENING_POT);
+      expect(liveState.currentBet).toBeGreaterThan(DEFAULT_BIG_BLIND);
+
+      const persisted = await waitForPersistedRoomSnapshot(
+        roomCode,
+        (room) => {
+          const hand = room.currentHand;
+          const alice = room.players.find((player) => player.name === 'Alice');
+          const bob = room.players.find((player) => player.name === 'Bob');
+
+          return (
+            hand?.handNumber === liveState.handNumber &&
+            hand?.bettingRound === liveState.bettingRound &&
+            hand?.pot === liveState.pot &&
+            hand?.currentBet === liveState.currentBet &&
+            hand?.currentPlayerTurn === liveState.currentPlayerTurn &&
+            alice?.chips === liveState.aliceChips &&
+            bob?.chips === liveState.bobChips &&
+            alice?.currentBet === liveState.aliceCurrentBet &&
+            bob?.currentBet === liveState.bobCurrentBet
+          );
+        },
+        10000,
+      );
+
+      expect(persisted.event.seq).toBeGreaterThan(0);
+      expect(persisted.room.currentHand?.bettingRound).toBe('PRE_FLOP');
+      expect(persisted.room.currentHand?.pot).toBe(liveState.pot);
+      expect(persisted.room.currentHand?.currentBet).toBe(liveState.currentBet);
+      expect(persisted.room.currentHand?.currentPlayerTurn).toBe(
+        liveState.currentPlayerTurn,
+      );
+
+      const persistedRanking = buildChipRanking(persisted.room);
+      expect(persistedRanking.slice(0, 2)).toEqual([
+        expect.objectContaining({ name: 'Alice', chips: liveState.aliceChips }),
+        expect.objectContaining({ name: 'Bob', chips: liveState.bobChips }),
+      ]);
+
+      expect(persisted.previousSemanticEvent?.type).toBe('PLAYER_ACTION');
+      expect(persisted.previousSemanticEvent?.handNumber).toBe(
+        liveState.handNumber,
+      );
+      expect(persisted.previousSemanticEvent?.street).toBe('PRE_FLOP');
+      expect(
+        (persisted.previousSemanticEvent?.payload as any)?.request,
+      ).toEqual(
+        expect.objectContaining({
+          action: 'raise',
+          amount: 50,
+        }),
+      );
+      expect(
+        (persisted.previousSemanticEvent?.payload as any)?.result,
+      ).toEqual(
+        expect.objectContaining({
+          resolvedAction: 'raise',
+          totalBetAfterAction: liveState.currentBet,
+          committedAmount: liveState.pot - DEFAULT_OPENING_POT,
+          currentBetAfter: liveState.currentBet,
+          potAfter: liveState.pot,
+        }),
+      );
+      expect(
+        (persisted.previousSemanticEvent?.payload as any)?.decision,
+      ).toEqual(
+        expect.objectContaining({
+          currentBetBefore: DEFAULT_BIG_BLIND,
+          callAmountBefore: DEFAULT_SMALL_BLIND_CALL_GAP,
+          minimumRaiseBy: DEFAULT_BIG_BLIND,
+          minimumRaiseTo: DEFAULT_BIG_BLIND * 2,
+          facingBet: true,
+        }),
+      );
     } finally {
       await teardownTwoPlayerSession(session);
     }

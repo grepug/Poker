@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { Room, Player, PlayerAction } from 'poker-types';
+import {
+  PersistedPlayerActionPayload,
+  PersistedRoomPlayerStateSnapshot,
+  Player,
+  PlayerAction,
+  PlayerActionDisplayKind,
+  Room,
+} from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
@@ -89,6 +96,9 @@ export class BettingService {
     playerId: string,
     action: PlayerAction,
     amount?: number,
+    options?: {
+      actionId?: string | null;
+    },
   ): Promise<void> {
     const hand = room.currentHand;
     if (!hand) {
@@ -105,6 +115,14 @@ export class BettingService {
     if (!validation.valid) {
       throw new Error(validation.reason || 'Invalid action');
     }
+
+    const actionContext = this.buildPlayerActionContext(
+      room,
+      player,
+      action,
+      amount,
+      options?.actionId ?? null,
+    );
 
     switch (action) {
       case 'fold':
@@ -133,6 +151,43 @@ export class BettingService {
     // Mark player as acted this round
     hand.roundActions[playerId] = true;
 
+    const resolvedAction = player.lastAction ?? action;
+    const displayKind = this.toDisplayKind(
+      resolvedAction,
+      actionContext.decision.currentBetBefore,
+    );
+    const committedAmount = Math.max(
+      0,
+      actionContext.decision.playerChipsBefore - player.chips,
+    );
+
+    const payload: PersistedPlayerActionPayload = {
+      action,
+      amount: amount ?? null,
+      playerStatus: player.status,
+      playerChips: player.chips,
+      playerCurrentBet: player.currentBet,
+      pot: hand.pot,
+      currentBet: hand.currentBet,
+      request: actionContext.request,
+      decision: actionContext.decision,
+      result: {
+        resolvedAction,
+        displayKind,
+        committedAmount,
+        totalBetAfterAction: player.currentBet,
+        playerStatusAfter: player.status,
+        playerChipsAfter: player.chips,
+        playerCurrentBetAfter: player.currentBet,
+        potAfter: hand.pot,
+        currentBetAfter: hand.currentBet,
+        lastRaiseSizeAfter: hand.lastRaiseSize,
+        activePlayerIds: [...hand.activePlayers],
+        potContributions: { ...hand.potContributions },
+        players: this.buildPlayerStateSnapshots(room),
+      },
+    };
+
     room.lastActivityAt = Date.now();
     await this.storageService.persistRoom(
       room,
@@ -147,15 +202,7 @@ export class BettingService {
           },
           handNumber: hand.handNumber,
           street: hand.bettingRound,
-          payload: {
-            action,
-            amount: amount ?? null,
-            playerStatus: player.status,
-            playerChips: player.chips,
-            playerCurrentBet: player.currentBet,
-            pot: hand.pot,
-            currentBet: hand.currentBet,
-          },
+          payload,
         }),
       ),
     );
@@ -174,6 +221,31 @@ export class BettingService {
     // Minimum raise is the size of the last raise
     // If no raise yet, it's the big blind amount
     return hand.lastRaiseSize;
+  }
+
+  getLegalActions(room: Room, playerId: string): PlayerAction[] {
+    const minRaise = this.calculateMinRaise(room);
+    const candidates: Array<{
+      action: PlayerAction;
+      amount?: number;
+    }> = [
+      { action: 'fold' },
+      { action: 'check' },
+      { action: 'call' },
+      { action: 'raise', amount: minRaise },
+      { action: 'all-in' },
+    ];
+
+    return candidates
+      .filter((candidate) =>
+        this.validateAction(
+          room,
+          playerId,
+          candidate.action,
+          candidate.amount,
+        ).valid,
+      )
+      .map((candidate) => candidate.action);
   }
 
   /**
@@ -346,6 +418,81 @@ export class BettingService {
     const player = room.players.find((entry) => entry.id === playerId);
     if (!player) return;
     player.vpipHandsCount = (player.vpipHandsCount ?? 0) + 1;
+  }
+
+  private buildPlayerActionContext(
+    room: Room,
+    player: Player,
+    action: PlayerAction,
+    amount: number | undefined,
+    actionId: string | null,
+  ): Pick<PersistedPlayerActionPayload, 'request' | 'decision'> {
+    const hand = room.currentHand!;
+    const callAmountBefore = Math.max(0, hand.currentBet - player.currentBet);
+    const minimumRaiseBy = this.calculateMinRaise(room);
+
+    return {
+      request: {
+        actionId,
+        action,
+        amount: amount ?? null,
+      },
+      decision: {
+        currentPlayerTurnBefore: hand.currentPlayerTurn,
+        playerStatusBefore: player.status,
+        playerChipsBefore: player.chips,
+        playerCurrentBetBefore: player.currentBet,
+        potBefore: hand.pot,
+        currentBetBefore: hand.currentBet,
+        lastRaiseSizeBefore: hand.lastRaiseSize,
+        callAmountBefore,
+        minimumRaiseBy,
+        minimumRaiseTo: hand.currentBet + minimumRaiseBy,
+        maximumBetTo: player.currentBet + player.chips,
+        facingBet: hand.currentBet > player.currentBet,
+        legalActions: this.getLegalActions(room, player.id),
+        activePlayerIds: [...hand.activePlayers],
+        communityCards: [...hand.communityCards],
+        potContributions: { ...hand.potContributions },
+        players: this.buildPlayerStateSnapshots(room),
+      },
+    };
+  }
+
+  private buildPlayerStateSnapshots(room: Room): PersistedRoomPlayerStateSnapshot[] {
+    const hand = room.currentHand;
+    return [...room.players]
+      .sort((left, right) => left.position - right.position)
+      .map((player) => ({
+        playerId: player.id,
+        playerName: player.name,
+        position: player.position,
+        status: player.status,
+        chips: player.chips,
+        currentBet: player.currentBet,
+        totalBuyIn: player.totalBuyIn,
+        lastAction: player.lastAction,
+        isActiveInHand: hand ? hand.activePlayers.includes(player.id) : false,
+        positionLabel: hand?.positionLabelsByPlayerId?.[player.id] ?? null,
+      }));
+  }
+
+  private toDisplayKind(
+    action: PlayerAction,
+    currentBetBefore: number,
+  ): PlayerActionDisplayKind {
+    switch (action) {
+      case 'fold':
+        return 'fold';
+      case 'check':
+        return 'check';
+      case 'call':
+        return 'call-to';
+      case 'all-in':
+        return 'all-in-to';
+      case 'raise':
+        return currentBetBefore <= 0 ? 'bet-to' : 'raise-to';
+    }
   }
 
   /**

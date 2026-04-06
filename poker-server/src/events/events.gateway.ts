@@ -1482,6 +1482,9 @@ export class EventsGateway
             playerInfo.playerId,
             data.action,
             data.amount,
+            {
+              actionId: actionId ?? null,
+            },
           );
 
           if (actionId) {

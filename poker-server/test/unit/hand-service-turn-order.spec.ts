@@ -128,6 +128,20 @@ describe('HandService turn order', () => {
     const playerAt0 = room.players.find((player) => player.id === 'p0');
     expect(playerAt3?.chips).toBe(995);
     expect(playerAt0?.chips).toBe(990);
+
+    const persistedWrite = storageService.persistRoom.mock.calls[0][1];
+    const payload = persistedWrite?.events[0].payload as any;
+    expect(payload.activePlayerIds).toEqual(['p0', 'p3']);
+    expect(payload.positionLabelsByPlayerId).toEqual({
+      p0: 'BTN/BB',
+      p3: 'SB',
+    });
+    expect(payload.currentBet).toBe(10);
+    expect(payload.lastRaiseSize).toBe(10);
+    expect(payload.potContributions).toEqual({
+      p0: 10,
+      p3: 5,
+    });
   });
 
   it('assigns multi-player position labels from the hand-start seat order', async () => {
@@ -185,5 +199,85 @@ describe('HandService turn order', () => {
       p2: 'HJ',
       p4: 'CO',
     });
+  });
+
+  it('persists betting round advancement with table context', async () => {
+    const room: Room = {
+      id: 'ROOM-ADVANCE',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        {
+          ...buildPlayer({ id: 'p0', position: 0, chips: 990 }),
+          currentBet: 0,
+          cards: [
+            { rank: 'A', suit: 'spades' },
+            { rank: 'K', suit: 'spades' },
+          ],
+        },
+        {
+          ...buildPlayer({ id: 'p1', position: 1, chips: 995 }),
+          currentBet: 0,
+          cards: [
+            { rank: 'Q', suit: 'hearts' },
+            { rank: 'Q', suit: 'clubs' },
+          ],
+        },
+      ],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 1,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p1',
+        pot: 15,
+        communityCards: [],
+        bettingRound: 'PRE_FLOP',
+        currentBet: 10,
+        lastRaiseSize: 10,
+        activePlayers: ['p0', 'p1'],
+        roundActions: { p0: true, p1: true },
+        sidePots: [],
+        potContributions: {
+          p0: 10,
+          p1: 5,
+        },
+        positionLabelsByPlayerId: {
+          p0: 'BTN/BB',
+          p1: 'SB',
+        },
+        dealtPlayerIds: ['p0', 'p1'],
+        startedAt: Date.now(),
+      },
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const nextRound = await handService.advanceBettingRound(room);
+
+    expect(nextRound).toBe('FLOP');
+    const persistedWrite = storageService.persistRoom.mock.calls[0][1];
+    const payload = persistedWrite?.events[0].payload as any;
+    expect(payload.nextRound).toBe('FLOP');
+    expect(payload.currentBet).toBe(0);
+    expect(payload.lastRaiseSize).toBe(10);
+    expect(payload.activePlayerIds).toEqual(['p0', 'p1']);
+    expect(payload.potContributions).toEqual({
+      p0: 10,
+      p1: 5,
+    });
+    expect(payload.players.map((player: any) => player.playerId)).toEqual([
+      'p0',
+      'p1',
+    ]);
+    expect(payload.communityCards).toHaveLength(3);
   });
 });
