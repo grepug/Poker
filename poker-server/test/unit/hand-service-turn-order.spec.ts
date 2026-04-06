@@ -102,7 +102,7 @@ describe('HandService turn order', () => {
     expect(nextPlayer?.id).toBe('p3');
   });
 
-  it('uses seat positions for heads-up blind assignment even when player array is unsorted', async () => {
+  it('uses seat positions for heads-up blind assignment even when displayed badges follow the UX contract', async () => {
     const room: Room = {
       id: 'ROOM-HEADSUP',
       hostId: 'p0',
@@ -263,6 +263,9 @@ describe('HandService turn order', () => {
           p1: 5,
         },
         positionLabelsByPlayerId: {
+          // Intentional heads-up UX contract: displayed badges stay BTN/SB for
+          // the dealer and BB for the other player, even when blind mechanics
+          // differ in the underlying hand state.
           p0: 'BTN/SB',
           p1: 'BB',
         },
