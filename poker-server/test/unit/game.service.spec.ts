@@ -60,7 +60,7 @@ describe('GameService addPlayerToRoom', () => {
         startingChips: params.startingChips ?? 1000,
         smallBlind: 10,
         bigBlind: 20,
-        maxPlayers: params.maxPlayers ?? 20,
+        maxPlayers: params.maxPlayers ?? 10,
         reconnectGracePeriod: 30000,
         allowPlayerStreetReveal: true,
       },
@@ -76,7 +76,7 @@ describe('GameService addPlayerToRoom', () => {
     const room = await gameService.createRoom('socket-host', 'Alice');
 
     expect(room.config.useShortDeckRules).toBe(false);
-    expect(room.config.maxPlayers).toBe(20);
+    expect(room.config.maxPlayers).toBe(10);
     expect(room.players[0].name).toBe('Alice');
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
@@ -93,15 +93,15 @@ describe('GameService addPlayerToRoom', () => {
   it('rejects out-of-range max player overrides when creating a room', async () => {
     await expect(
       gameService.createRoom('socket-host', 'Alice', '🦊', {
-        maxPlayers: 21,
+        maxPlayers: 16,
       }),
-    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
 
     await expect(
       gameService.createRoom('socket-host', 'Alice', '🦊', {
         maxPlayers: 1,
       }),
-    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
   });
 
   it('rejects non-integer max player overrides when creating a room', async () => {
@@ -109,13 +109,13 @@ describe('GameService addPlayerToRoom', () => {
       gameService.createRoom('socket-host', 'Alice', '🦊', {
         maxPlayers: Number.NaN as unknown as number,
       }),
-    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
 
     await expect(
       gameService.createRoom('socket-host', 'Alice', '🦊', {
         maxPlayers: 7.5 as unknown as number,
       }),
-    ).rejects.toThrow('maxPlayers must be an integer between 2 and 20');
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
   });
 
   it('creates room with short-deck rules when requested', async () => {

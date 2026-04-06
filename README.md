@@ -6,7 +6,7 @@ A full-stack Texas Hold'em poker web application built with React, NestJS, and W
 
 - **Texas Hold'em Rules**: Full implementation with all betting rounds (Pre-flop, Flop, Turn, River, Showdown)
 - **Real-time Multiplayer**: WebSocket-based communication for instant updates
-- **2-20 Players**: Support for multiplayer games
+- **2-15 Players**: Support for multiplayer games
 - **Full Betting System**: Fold, Check, Call, Raise, All-in
 - **Host Migration**: Automatic host transfer when current host leaves
 - **Reconnection Support**: 30-second grace period for disconnected players

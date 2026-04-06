@@ -13,7 +13,7 @@ import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
 type ServerPlayer = Player & { userId?: string };
 
 const MIN_ROOM_PLAYERS = 2;
-const MAX_ROOM_PLAYERS = 20;
+const MAX_ROOM_PLAYERS = 15;
 
 const normalizeMaxPlayers = (maxPlayers: unknown): number => {
   const parsedMaxPlayers = Number(maxPlayers);
@@ -57,7 +57,7 @@ export class GameService {
       startingChips: 1000,
       smallBlind: 5,
       bigBlind: 10,
-      maxPlayers: 20,
+      maxPlayers: 10,
       useShortDeckRules: false,
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,

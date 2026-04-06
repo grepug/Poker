@@ -205,7 +205,7 @@ describe('HandService turn order', () => {
         startingChips: 1000,
         smallBlind: 5,
         bigBlind: 10,
-        maxPlayers: 20,
+        maxPlayers: 15,
         reconnectGracePeriod: 120000,
         allowPlayerStreetReveal: true,
       },

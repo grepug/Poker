@@ -1338,7 +1338,7 @@ const normalizeOrbitCapacity = (maxPlayers: number) => {
     return 6;
   }
 
-  return Math.min(20, Math.max(6, Math.floor(parsedMaxPlayers)));
+  return Math.min(15, Math.max(6, Math.floor(parsedMaxPlayers)));
 };
 
 const getSeatDensityClass = ({
