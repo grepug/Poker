@@ -86,6 +86,5 @@ install_package_deps() {
 seed_server_env
 
 install_package_deps "$current_root/poker-types"
-install_package_deps "$current_root/poker-registry"
 install_package_deps "$current_root/poker-client"
 install_package_deps "$current_root/poker-server"
