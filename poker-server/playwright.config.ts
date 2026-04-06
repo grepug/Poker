@@ -26,11 +26,6 @@ const FRONTEND_BIND_HOST =
   FRONTEND_TARGET.hostname;
 
 const prepareFrontendCommand = `node ./test/e2e/scripts/prepare-frontend-dist.cjs ${BACKEND_URL}`;
-const parsedWorkers = Number.parseInt(process.env.PW_WORKERS ?? '', 10);
-const resolvedWorkers =
-  Number.isFinite(parsedWorkers) && parsedWorkers > 0
-    ? parsedWorkers
-    : 1;
 
 export default defineConfig({
   testDir: './test/e2e',
@@ -38,7 +33,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: resolvedWorkers, // Allow parallel execution; override with PW_WORKERS
+  workers: 1,
   reporter: 'html',
   timeout: 60000, // 60 second timeout for tests
 

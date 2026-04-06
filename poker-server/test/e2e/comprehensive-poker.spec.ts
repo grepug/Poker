@@ -5108,6 +5108,7 @@ test.describe('Poker E2E - Test Suite 7: Winner Determination', () => {
       const result = await handCompletePromise;
       expect(result.winners).toHaveLength(1);
       expect(result.winners[0].playerName).toBe('Alice');
+      expect(result.winners[0].hand).toBeNull();
       expect(result.winners[0].amountWon).toBe(DEFAULT_OPENING_POT);
       expect(result.playerHands).toHaveLength(2);
       expect(

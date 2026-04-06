@@ -78,7 +78,7 @@ export interface HandResult {
   winners: Array<{
     playerId: string;
     playerName: string;
-    hand: HandEvaluation;
+    hand: HandEvaluation | null;
     amountWon: number;
   }>;
   playerHands: Array<{
