@@ -23,6 +23,7 @@ describe('HandService turn order', () => {
     id: string;
     position: number;
     status?: Player['status'];
+    connectionStatus?: Player['connectionStatus'];
     chips?: number;
   }): Player => ({
     id: params.id,
@@ -35,6 +36,7 @@ describe('HandService turn order', () => {
     vpipHandsCount: 0,
     position: params.position,
     status: params.status ?? 'connected',
+    connectionStatus: params.connectionStatus,
     cards: null,
     currentBet: 0,
     lastAction: null,
@@ -242,6 +244,38 @@ describe('HandService turn order', () => {
       p8: 'LJ',
       p9: 'HJ',
       p10: 'CO',
+    });
+  });
+
+  it('excludes disconnected seats from the next hand even when gameplay status stays connected', async () => {
+    const room: Room = {
+      id: 'ROOM-DISCONNECTED',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        buildPlayer({ id: 'p0', position: 0 }),
+        buildPlayer({ id: 'p1', position: 1, connectionStatus: 'disconnected' }),
+        buildPlayer({ id: 'p2', position: 2 }),
+      ],
+      gameState: 'WAITING',
+      currentHand: null,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const hand = await handService.startNewHand(room);
+
+    expect(hand.activePlayers).toEqual(['p0', 'p2']);
+    expect(hand.positionLabelsByPlayerId).toEqual({
+      p0: 'BTN/BB',
+      p2: 'SB',
     });
   });
 });
