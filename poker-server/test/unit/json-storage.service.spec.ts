@@ -4,6 +4,7 @@ import { JsonStorageService } from '../../src/storage/json-storage.service';
 import { Room, GameStateType } from 'poker-types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { roomEvent, roomWrite } from '../../src/storage/room-write.factory';
 
 describe('JsonStorageService', () => {
   let service: JsonStorageService;
@@ -11,6 +12,13 @@ describe('JsonStorageService', () => {
   const testRoomsDir = path.join(testDataDir, 'rooms');
 
   beforeEach(async () => {
+    try {
+      await fs.rm(testDataDir, { recursive: true, force: true });
+    } catch (error) {
+      // Ignore if doesn't exist
+    }
+    await fs.mkdir(testRoomsDir, { recursive: true });
+
     const module: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -23,14 +31,6 @@ describe('JsonStorageService', () => {
     }).compile();
 
     service = module.get<JsonStorageService>(JsonStorageService);
-
-    // Clean test directory
-    try {
-      await fs.rm(testDataDir, { recursive: true, force: true });
-    } catch (error) {
-      // Ignore if doesn't exist
-    }
-    await fs.mkdir(testRoomsDir, { recursive: true });
   });
 
   afterEach(async () => {
@@ -60,12 +60,12 @@ describe('JsonStorageService', () => {
     lastActivityAt: Date.now(),
   });
 
-  describe('saveRoom', () => {
-    it('should save room to JSON file', async () => {
+  describe('persistRoom', () => {
+    it('should save room to room snapshot file', async () => {
       const room = createMockRoom('TEST123');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
-      const filePath = path.join(testRoomsDir, 'TEST123.json');
+      const filePath = path.join(testRoomsDir, 'TEST123', 'room.snapshot.json');
       const exists = await fs
         .access(filePath)
         .then(() => true)
@@ -76,15 +76,16 @@ describe('JsonStorageService', () => {
 
     it('should save correct data', async () => {
       const room = createMockRoom('TEST123');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
-      const filePath = path.join(testRoomsDir, 'TEST123.json');
+      const filePath = path.join(testRoomsDir, 'TEST123', 'room.snapshot.json');
       const data = await fs.readFile(filePath, 'utf-8');
       const saved = JSON.parse(data);
 
-      expect(saved.id).toBe('TEST123');
-      expect(saved.hostId).toBe('player1');
-      expect(saved.config.startingChips).toBe(1000);
+      expect(saved.room.id).toBe('TEST123');
+      expect(saved.room.hostId).toBe('player1');
+      expect(saved.room.config.startingChips).toBe(1000);
+      expect(saved.snapshot.lastRoomEventSeq).toBeGreaterThan(0);
     });
 
     it('should overwrite existing room', async () => {
@@ -94,18 +95,195 @@ describe('JsonStorageService', () => {
       const room2 = createMockRoom('TEST123');
       room2.config.startingChips = 2000;
 
-      await service.saveRoom(room1);
-      await service.saveRoom(room2);
+      await service.persistRoom(room1);
+      await service.persistRoom(room2);
 
       const retrieved = await service.getRoom('TEST123');
       expect(retrieved?.config.startingChips).toBe(2000);
+    });
+
+    it('serializes concurrent writes per room with monotonic event sequences', async () => {
+      await Promise.all(
+        Array.from({ length: 8 }).map((_, index) =>
+          service.persistRoom({
+            ...createMockRoom('ROOMSEQ'),
+            config: {
+              ...createMockRoom('ROOMSEQ').config,
+              startingChips: 1000 + index,
+            },
+            lastActivityAt: index + 1,
+          }),
+        ),
+      );
+
+      const raw = await fs.readFile(
+        path.join(testRoomsDir, 'ROOMSEQ', 'room-events.jsonl'),
+        'utf-8',
+      );
+      const seqs = raw
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line).seq);
+
+      expect(seqs).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
+    });
+
+    it('rebuilds from the room log when the snapshot file is missing before the next write', async () => {
+      const original = createMockRoom('ROOMLOG');
+      original.config.startingChips = 1000;
+      original.lastActivityAt = 100;
+
+      await service.persistRoom(
+        original,
+        roomWrite(
+          roomEvent({
+            roomId: original.id,
+            type: 'ROOM_CONFIG_UPDATED',
+            actor: { source: 'ROOM_SERVICE' },
+            payload: {
+              startingChips: original.config.startingChips,
+            },
+          }),
+        ),
+      );
+
+      await fs.rm(path.join(testRoomsDir, 'ROOMLOG', 'room.snapshot.json'));
+
+      const updated = {
+        ...original,
+        config: {
+          ...original.config,
+          startingChips: 2000,
+        },
+        lastActivityAt: 200,
+      };
+
+      await service.persistRoom(
+        updated,
+        roomWrite(
+          roomEvent({
+            roomId: updated.id,
+            type: 'ROOM_CONFIG_UPDATED',
+            actor: { source: 'ROOM_SERVICE' },
+            payload: {
+              startingChips: updated.config.startingChips,
+            },
+          }),
+        ),
+      );
+
+      const raw = await fs.readFile(
+        path.join(testRoomsDir, 'ROOMLOG', 'room-events.jsonl'),
+        'utf-8',
+      );
+      const records = raw
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+      expect(records.map((record) => record.seq)).toEqual([1, 2, 3, 4]);
+      expect(records[2].type).toBe('ROOM_CONFIG_UPDATED');
+      expect((await service.getRoom('ROOMLOG'))?.config.startingChips).toBe(2000);
+    });
+
+    it('removes a legacy room snapshot once the JSONL room layout is already usable', async () => {
+      const room = createMockRoom('ROOMCLEAN');
+      await fs.mkdir(path.join(testRoomsDir, 'ROOMCLEAN'), { recursive: true });
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEAN.json'),
+        JSON.stringify(room),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEAN', 'room-events.jsonl'),
+        [
+          JSON.stringify({
+            recordId: 'r1',
+            seq: 1,
+            roomId: 'ROOMCLEAN',
+            handNumber: null,
+            street: null,
+            timestamp: room.createdAt,
+            type: 'ROOM_MIGRATED',
+            actor: { source: 'MIGRATION' },
+            payload: { legacyPath: path.join(testRoomsDir, 'ROOMCLEAN.json') },
+          }),
+          JSON.stringify({
+            recordId: 'r2',
+            seq: 2,
+            roomId: 'ROOMCLEAN',
+            handNumber: null,
+            street: null,
+            timestamp: room.lastActivityAt,
+            type: 'ROOM_STATE_UPDATED',
+            actor: { source: 'SYSTEM' },
+            payload: { room },
+          }),
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const loaded = await service.getRoom('ROOMCLEAN');
+      expect(loaded?.id).toBe('ROOMCLEAN');
+      await expect(fs.readFile(path.join(testRoomsDir, 'ROOMCLEAN.json'), 'utf-8')).rejects.toThrow();
+    });
+
+    it('rebuilds a corrupt room projection during legacy cleanup before removing the legacy file', async () => {
+      const room = createMockRoom('ROOMCLEANBROKEN');
+      await fs.mkdir(path.join(testRoomsDir, 'ROOMCLEANBROKEN'), { recursive: true });
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN.json'),
+        JSON.stringify(room),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN', 'room-events.jsonl'),
+        [
+          JSON.stringify({
+            recordId: 'r1',
+            seq: 1,
+            roomId: 'ROOMCLEANBROKEN',
+            handNumber: null,
+            street: null,
+            timestamp: room.createdAt,
+            type: 'ROOM_MIGRATED',
+            actor: { source: 'MIGRATION' },
+            payload: { legacyPath: path.join(testRoomsDir, 'ROOMCLEANBROKEN.json') },
+          }),
+          JSON.stringify({
+            recordId: 'r2',
+            seq: 2,
+            roomId: 'ROOMCLEANBROKEN',
+            handNumber: null,
+            street: null,
+            timestamp: room.lastActivityAt,
+            type: 'ROOM_STATE_UPDATED',
+            actor: { source: 'SYSTEM' },
+            payload: { room },
+          }),
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN', 'room.snapshot.json'),
+        '{broken',
+        'utf-8',
+      );
+
+      const loaded = await service.getRoom('ROOMCLEANBROKEN');
+      expect(loaded?.id).toBe('ROOMCLEANBROKEN');
+      await expect(
+        fs.readFile(path.join(testRoomsDir, 'ROOMCLEANBROKEN.json'), 'utf-8'),
+      ).rejects.toThrow();
     });
   });
 
   describe('getRoom', () => {
     it('should retrieve saved room', async () => {
       const room = createMockRoom('TEST123');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
       const retrieved = await service.getRoom('TEST123');
       expect(retrieved).not.toBeNull();
@@ -138,7 +316,7 @@ describe('JsonStorageService', () => {
         },
       ];
 
-      await service.saveRoom(room);
+      await service.persistRoom(room);
       const retrieved = await service.getRoom('TEST123');
 
       expect(retrieved?.players).toHaveLength(1);
@@ -149,7 +327,7 @@ describe('JsonStorageService', () => {
   describe('deleteRoom', () => {
     it('should delete existing room', async () => {
       const room = createMockRoom('TEST123');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
       await service.deleteRoom('TEST123');
 
@@ -173,9 +351,9 @@ describe('JsonStorageService', () => {
       const room2 = createMockRoom('ROOM2');
       const room3 = createMockRoom('ROOM3');
 
-      await service.saveRoom(room1);
-      await service.saveRoom(room2);
-      await service.saveRoom(room3);
+      await service.persistRoom(room1);
+      await service.persistRoom(room2);
+      await service.persistRoom(room3);
 
       const rooms = await service.getAllRooms();
       expect(rooms).toHaveLength(3);
@@ -186,10 +364,12 @@ describe('JsonStorageService', () => {
 
     it('should skip corrupted files', async () => {
       const room = createMockRoom('ROOM1');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
       // Create a corrupted file
-      const corruptedPath = path.join(testRoomsDir, 'CORRUPTED.json');
+      const corruptedDir = path.join(testRoomsDir, 'CORRUPTED');
+      await fs.mkdir(corruptedDir, { recursive: true });
+      const corruptedPath = path.join(corruptedDir, 'room.snapshot.json');
       await fs.writeFile(corruptedPath, 'invalid json {{{', 'utf-8');
 
       const rooms = await service.getAllRooms();
@@ -201,7 +381,7 @@ describe('JsonStorageService', () => {
   describe('roomExists', () => {
     it('should return true for existing room', async () => {
       const room = createMockRoom('TEST123');
-      await service.saveRoom(room);
+      await service.persistRoom(room);
 
       const exists = await service.roomExists('TEST123');
       expect(exists).toBe(true);

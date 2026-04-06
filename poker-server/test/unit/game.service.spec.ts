@@ -8,7 +8,7 @@ describe('GameService addPlayerToRoom', () => {
 
   beforeEach(() => {
     storageService = {
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
       getRoom: jest.fn().mockResolvedValue(null),
       deleteRoom: jest.fn().mockResolvedValue(undefined),
       getAllRooms: jest.fn().mockResolvedValue([]),
@@ -78,7 +78,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(room.config.useShortDeckRules).toBe(false);
     expect(room.config.maxPlayers).toBe(10);
     expect(room.players[0].name).toBe('Alice');
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('respects explicit max player overrides when creating a room', async () => {
@@ -87,7 +87,10 @@ describe('GameService addPlayerToRoom', () => {
     });
 
     expect(room.config.maxPlayers).toBe(4);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.anything(),
+    );
   });
 
   it('rejects out-of-range max player overrides when creating a room', async () => {
@@ -124,7 +127,7 @@ describe('GameService addPlayerToRoom', () => {
     });
 
     expect(room.config.useShortDeckRules).toBe(true);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('adds joiner with zero chips while table is waiting', async () => {
@@ -157,7 +160,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.totalBuyIn).toBe(0);
     expect(player.status).toBe('waiting');
     expect(room.players).toHaveLength(2);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('allows join while game is in progress and assigns starting chips as buy-in', async () => {
@@ -198,7 +201,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.chips).toBe(1500);
     expect(player.totalBuyIn).toBe(1500);
     expect(room.players).toHaveLength(3);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('rejects join when game has ended', async () => {
@@ -221,7 +224,7 @@ describe('GameService addPlayerToRoom', () => {
     await expect(
       gameService.addPlayerToRoom('ROOM01', 's-bob', 'Bob'),
     ).rejects.toThrow('Cannot join room - game has ended');
-    expect(storageService.saveRoom).not.toHaveBeenCalled();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate player names', async () => {
@@ -244,7 +247,7 @@ describe('GameService addPlayerToRoom', () => {
     await expect(
       gameService.addPlayerToRoom('ROOM01', 's-other', 'Alice'),
     ).rejects.toThrow('Name already taken');
-    expect(storageService.saveRoom).not.toHaveBeenCalled();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
   it('reclaims disconnected player seat when joining with same name', async () => {
@@ -286,7 +289,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.status).toBe('connected');
     expect((player as any).emoji).toBe('🤠');
     expect(room.players).toHaveLength(2);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('reclaims left player record when joining with same name', async () => {
@@ -329,7 +332,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.chips).toBe(425);
     expect(player.totalBuyIn).toBe(1000);
     expect((player as any).emoji).toBe('🤠');
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('rejects left player reclaim when table is full and original seat is occupied', async () => {
@@ -371,7 +374,7 @@ describe('GameService addPlayerToRoom', () => {
     await expect(
       gameService.addPlayerToRoom('ROOM01', 's-new-bob', 'Bob'),
     ).rejects.toThrow('Room is full');
-    expect(storageService.saveRoom).not.toHaveBeenCalled();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
   it('ignores left players for room capacity checks', async () => {
@@ -411,7 +414,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.position).toBe(1);
     expect(player.status).toBe('waiting');
     expect(room.players).toHaveLength(3);
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
   it('rejects join when room is full', async () => {
@@ -444,13 +447,13 @@ describe('GameService addPlayerToRoom', () => {
     await expect(
       gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie'),
     ).rejects.toThrow('Room is full');
-    expect(storageService.saveRoom).not.toHaveBeenCalled();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
   it('marks player as left instead of removing player state', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',
-      hostId: 'p-bob',
+      hostId: 'p-alice',
       players: [
         createPlayer({
           id: 'p-alice',
@@ -505,6 +508,45 @@ describe('GameService addPlayerToRoom', () => {
     expect(updated?.hostId).toBe('p-alice');
     expect(updated?.currentHand?.activePlayers).toEqual(['p-alice']);
     expect(updated?.currentHand?.currentPlayerTurn).toBeNull();
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_LEFT',
+    ]);
+  });
+
+  it('emits HOST_CHANGED only when the host actually changes', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-alice',
+      players: [
+        createPlayer({
+          id: 'p-alice',
+          socketId: 's-alice',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-alice');
+
+    expect(updated?.hostId).toBe('p-bob');
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_LEFT',
+      'HOST_CHANGED',
+    ]);
   });
 });

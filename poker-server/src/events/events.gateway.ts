@@ -63,6 +63,7 @@ import {
   UpdateProfileData,
   HandResult,
 } from 'poker-types';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 const resolveGatewayCorsOrigin = ():
   | string
@@ -386,7 +387,20 @@ export class EventsGateway
 
     room.readyPlayerIds = [...readySet];
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'READY_STATE_UPDATED',
+          actor: { source: 'EVENTS_GATEWAY', playerId },
+          payload: {
+            phase,
+            readyPlayerIds: room.readyPlayerIds,
+          },
+        }),
+      ),
+    );
     this.emitReadyStateUpdated(room.id, room);
 
     const allReady = this.areAllEligiblePlayersReady(room);
@@ -463,7 +477,20 @@ export class EventsGateway
         );
         if (updatedRoom) {
           this.syncRoomReadyState(updatedRoom);
-          await this.storageService.saveRoom(updatedRoom);
+          await this.storageService.persistRoom(
+            updatedRoom,
+            roomWrite(
+              roomEvent({
+                roomId,
+                type: 'READY_STATE_UPDATED',
+                actor: { source: 'EVENTS_GATEWAY', playerId },
+                payload: {
+                  phase: updatedRoom.readyPhase,
+                  readyPlayerIds: updatedRoom.readyPlayerIds,
+                },
+              }),
+            ),
+          );
           const started = await this.maybeStartReadyPhaseIfAllReady(
             roomId,
             updatedRoom,
@@ -575,7 +602,20 @@ export class EventsGateway
           `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
         );
         this.syncRoomReadyState(room);
-        await this.storageService.saveRoom(room);
+        await this.storageService.persistRoom(
+          room,
+          roomWrite(
+            roomEvent({
+              roomId: room.id,
+              type: 'READY_STATE_UPDATED',
+              actor: { source: 'EVENTS_GATEWAY', playerId: player.id },
+              payload: {
+                phase: room.readyPhase,
+                readyPlayerIds: room.readyPlayerIds,
+              },
+            }),
+          ),
+        );
         this.emitReadyStateUpdated(room.id, room);
         return { success: true };
       });
@@ -626,7 +666,20 @@ export class EventsGateway
           throw new Error('Room not found');
         }
         this.syncRoomReadyState(room);
-        await this.storageService.saveRoom(room);
+        await this.storageService.persistRoom(
+          room,
+          roomWrite(
+            roomEvent({
+              roomId: room.id,
+              type: 'READY_STATE_UPDATED',
+              actor: { source: 'EVENTS_GATEWAY', playerId: player.id },
+              payload: {
+                phase: room.readyPhase,
+                readyPlayerIds: room.readyPlayerIds,
+              },
+            }),
+          ),
+        );
         client.emit('RECONNECT_SUCCESS', {
           player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
@@ -990,7 +1043,19 @@ export class EventsGateway
           status: nextStatus,
         };
       });
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'ROOM_CONFIG_UPDATED',
+            actor: { source: 'EVENTS_GATEWAY', playerId: playerInfo.playerId },
+            payload: {
+              config: room.config,
+            },
+          }),
+        ),
+      );
 
       const gameEndedData: GameEndedData = {
         standings,
@@ -1098,10 +1163,29 @@ export class EventsGateway
 
           currentReveals.add(playerInfo.playerId);
           hand.revealedPlayerIds = [...currentReveals];
-          room.lastActivityAt = Date.now();
-          await this.storageService.saveRoom(room);
-
           const player = room.players.find((p) => p.id === playerInfo.playerId);
+          room.lastActivityAt = Date.now();
+          await this.storageService.persistRoom(
+            room,
+            roomWrite(
+              roomEvent({
+                roomId: room.id,
+                type: 'SHOWDOWN_DECISION_UPDATED',
+                actor: {
+                  source: 'EVENTS_GATEWAY',
+                  playerId: playerInfo.playerId,
+                  playerName: player?.name ?? '',
+                },
+                handNumber: hand.handNumber,
+                street: hand.bettingRound,
+                payload: {
+                  action: 'REVEAL',
+                  revealedPlayerIds: hand.revealedPlayerIds,
+                },
+              }),
+            ),
+          );
+
           const settledCards =
             hand.settledPlayerCardsByPlayerId?.[playerInfo.playerId] ??
             playerHand.cards;
@@ -1226,7 +1310,23 @@ export class EventsGateway
             hand.nextStreetReadyPlayerIds = [...ready];
             hand.nextStreetRequiredPlayerIds = [...required];
             room.lastActivityAt = Date.now();
-            await this.storageService.saveRoom(room);
+            await this.storageService.persistRoom(
+              room,
+              roomWrite(
+                roomEvent({
+                  roomId: room.id,
+                  type: 'STREET_REVEAL_UPDATED',
+                  actor: { source: 'EVENTS_GATEWAY', playerId: playerInfo.playerId },
+                  handNumber: hand.handNumber,
+                  street: nextRound,
+                  payload: {
+                    nextRound,
+                    readyPlayerIds: [...ready],
+                    requiredPlayerIds: [...required],
+                  },
+                }),
+              ),
+            );
           }
 
           const revealState: NextStreetRevealStateData = {
@@ -1295,7 +1395,22 @@ export class EventsGateway
         allowPlayerStreetReveal: nextAllowReveal,
       };
       room.lastActivityAt = Date.now();
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'STREET_REVEAL_UPDATED',
+            actor: { source: 'EVENTS_GATEWAY', playerId: playerInfo.playerId },
+            handNumber: room.currentHand?.handNumber ?? null,
+            street: room.currentHand?.bettingRound ?? null,
+            payload: {
+              nextRound: room.currentHand?.pendingStreetRevealRound ?? null,
+              config: room.config,
+            },
+          }),
+        ),
+      );
 
       this.server.to(room.id).emit('ROOM_CONFIG_UPDATED', {
         config: room.config,
@@ -1367,6 +1482,9 @@ export class EventsGateway
             playerInfo.playerId,
             data.action,
             data.amount,
+            {
+              actionId: actionId ?? null,
+            },
           );
 
           if (actionId) {
@@ -1450,7 +1568,7 @@ export class EventsGateway
             );
             if (nextPlayer) {
               updatedRoom.currentHand!.currentPlayerTurn = nextPlayer.id;
-              await this.storageService.saveRoom(updatedRoom);
+              await this.storageService.persistRoom(updatedRoom);
               this.logger.debug(`Turn advanced to ${nextPlayer.name}`);
               this.emitPlayerTurn(updatedRoom, nextPlayer);
             }
@@ -1527,7 +1645,7 @@ export class EventsGateway
 
           if (room) {
             this.syncRoomReadyState(room);
-            await this.storageService.saveRoom(room);
+            await this.storageService.persistRoom(room);
             this.server.to(playerInfo.roomId).emit('PLAYER_LEFT', {
               playerId: playerInfo.playerId,
               playerName: leavingPlayer?.name ?? '',
@@ -1557,7 +1675,7 @@ export class EventsGateway
                   const nextPlayer = this.handService.getNextPlayer(room);
                   if (nextPlayer) {
                     room.currentHand.currentPlayerTurn = nextPlayer.id;
-                    await this.storageService.saveRoom(room);
+                    await this.storageService.persistRoom(room);
                     this.emitPlayerTurn(room, nextPlayer);
                   }
                 }
@@ -1910,7 +2028,23 @@ export class EventsGateway
       room.currentHand.nextStreetReadyPlayerIds = [];
       room.currentHand.nextStreetRequiredPlayerIds = requiredPlayerIds;
       room.lastActivityAt = Date.now();
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'STREET_REVEAL_UPDATED',
+            actor: { source: 'EVENTS_GATEWAY' },
+            handNumber: room.currentHand?.handNumber ?? null,
+            street: nextRound,
+            payload: {
+              nextRound,
+              awaitingPlayerStreetReveal: true,
+              requiredPlayerIds,
+            },
+          }),
+        ),
+      );
 
       this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
         nextRound,
@@ -2099,7 +2233,22 @@ export class EventsGateway
     revealedSet.add(playerId);
     hand.revealedPlayerIds = [...revealedSet];
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'SHOWDOWN_DECISION_UPDATED',
+          actor: { source: 'EVENTS_GATEWAY', playerId },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: {
+            action: 'REVEAL',
+            revealedPlayerIds: hand.revealedPlayerIds,
+          },
+        }),
+      ),
+    );
 
     const revealData: PlayerHandRevealedData = {
       playerId,
@@ -2143,7 +2292,23 @@ export class EventsGateway
     }
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'SHOWDOWN_DECISION_UPDATED',
+          actor: { source: 'EVENTS_GATEWAY', playerId },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: {
+            action: 'MUCK',
+            activePlayers: hand.activePlayers,
+            revealedPlayerIds: hand.revealedPlayerIds,
+          },
+        }),
+      ),
+    );
 
     const muckData: PlayerHandMuckedData = {
       playerId,
@@ -2219,7 +2384,24 @@ export class EventsGateway
       if (contenderIds.length <= 1) {
         this.clearShowdownDecisionState(hand);
         room.lastActivityAt = Date.now();
-        await this.storageService.saveRoom(room);
+        await this.storageService.persistRoom(
+          room,
+          roomWrite(
+            roomEvent({
+              roomId: room.id,
+              type: 'SHOWDOWN_DECISION_UPDATED',
+              actor: { source: 'EVENTS_GATEWAY' },
+              handNumber: hand.handNumber,
+              street: hand.bettingRound,
+              payload: {
+                orderedPlayerIds: hand.showdownDecisionOrder,
+                currentPlayerId: hand.showdownDecisionPlayerId,
+                forcedRevealPlayerIds: hand.showdownForcedRevealPlayerIds,
+                resolved: true,
+              },
+            }),
+          ),
+        );
         this.emitShowdownDecisionState(room);
         const queuedResultReveal = await this.queueHandResultRevealGate(room);
         if (!queuedResultReveal) {
@@ -2235,7 +2417,24 @@ export class EventsGateway
       if (nextIndex === -1) {
         this.clearShowdownDecisionState(hand);
         room.lastActivityAt = Date.now();
-        await this.storageService.saveRoom(room);
+        await this.storageService.persistRoom(
+          room,
+          roomWrite(
+            roomEvent({
+              roomId: room.id,
+              type: 'SHOWDOWN_DECISION_UPDATED',
+              actor: { source: 'EVENTS_GATEWAY' },
+              handNumber: hand.handNumber,
+              street: hand.bettingRound,
+              payload: {
+                orderedPlayerIds: hand.showdownDecisionOrder,
+                currentPlayerId: hand.showdownDecisionPlayerId,
+                forcedRevealPlayerIds: hand.showdownForcedRevealPlayerIds,
+                resolved: true,
+              },
+            }),
+          ),
+        );
         this.emitShowdownDecisionState(room);
         const queuedResultReveal = await this.queueHandResultRevealGate(room);
         if (!queuedResultReveal) {
@@ -2248,7 +2447,23 @@ export class EventsGateway
       hand.showdownDecisionIndex = nextIndex;
       hand.showdownDecisionPlayerId = nextPlayerId;
       room.lastActivityAt = Date.now();
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'SHOWDOWN_DECISION_UPDATED',
+            actor: { source: 'EVENTS_GATEWAY' },
+            handNumber: hand.handNumber,
+            street: hand.bettingRound,
+            payload: {
+              orderedPlayerIds: hand.showdownDecisionOrder,
+              currentPlayerId: hand.showdownDecisionPlayerId,
+              forcedRevealPlayerIds: hand.showdownForcedRevealPlayerIds,
+            },
+          }),
+        ),
+      );
       this.emitShowdownDecisionState(room);
 
       if (!(hand.showdownForcedRevealPlayerIds ?? []).includes(nextPlayerId)) {
@@ -2281,7 +2496,23 @@ export class EventsGateway
     hand.nextStreetReadyPlayerIds = [];
     hand.nextStreetRequiredPlayerIds = requiredPlayerIds;
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'STREET_REVEAL_UPDATED',
+          actor: { source: 'EVENTS_GATEWAY' },
+          handNumber: hand.handNumber,
+          street: 'SHOWDOWN',
+          payload: {
+            nextRound: 'SHOWDOWN',
+            requiredPlayerIds,
+            readyPlayerIds: [],
+          },
+        }),
+      ),
+    );
 
     this.server.to(room.id).emit('NEXT_STREET_REVEAL_STATE', {
       nextRound: 'SHOWDOWN',
@@ -2308,7 +2539,24 @@ export class EventsGateway
     room.currentHand.showdownLastAggressorPlayerId = null;
     room.readyPhase = 'NEXT_HAND';
     room.readyPlayerIds = [];
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'HAND_SETTLED',
+          actor: { source: 'EVENTS_GATEWAY' },
+          handNumber: room.currentHand.handNumber,
+          street: room.currentHand.bettingRound,
+          payload: {
+            handNumber: room.currentHand.handNumber,
+            isShowdown,
+            result,
+            revealedPlayerIds,
+          },
+        }),
+      ),
+    );
 
     const handCompleteData: HandCompleteData = {
       result: this.sanitizeHandResult(result)!,
@@ -2377,7 +2625,7 @@ export class EventsGateway
         updatedRoom.currentHand.showdownDecisionPlayerId = null;
         updatedRoom.currentHand.showdownForcedRevealPlayerIds = [];
         updatedRoom.lastActivityAt = Date.now();
-        await this.storageService.saveRoom(updatedRoom);
+        await this.storageService.persistRoom(updatedRoom);
       }
       await this.initializeShowdownDecisionState(updatedRoom);
       return;
@@ -2496,7 +2744,7 @@ export class EventsGateway
               await this.gameService.markPlayerDisconnected(roomId, playerId);
             if (disconnectedRoom) {
               this.syncRoomReadyState(disconnectedRoom);
-              await this.storageService.saveRoom(disconnectedRoom);
+              await this.storageService.persistRoom(disconnectedRoom);
               const started = await this.maybeStartReadyPhaseIfAllReady(
                 roomId,
                 disconnectedRoom,
@@ -2514,7 +2762,7 @@ export class EventsGateway
             const nextPlayer = this.handService.getNextPlayer(updatedRoom);
             if (nextPlayer) {
               updatedRoom.currentHand.currentPlayerTurn = nextPlayer.id;
-              await this.storageService.saveRoom(updatedRoom);
+              await this.storageService.persistRoom(updatedRoom);
               this.emitPlayerTurn(updatedRoom, nextPlayer);
             }
           }
@@ -2526,7 +2774,7 @@ export class EventsGateway
         );
         if (disconnectedRoom) {
           this.syncRoomReadyState(disconnectedRoom);
-          await this.storageService.saveRoom(disconnectedRoom);
+          await this.storageService.persistRoom(disconnectedRoom);
           const started = await this.maybeStartReadyPhaseIfAllReady(
             roomId,
             disconnectedRoom,

@@ -17,7 +17,7 @@ describe('ChatService', () => {
           },
         ],
       }),
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(),
       roomExists: jest.fn(),

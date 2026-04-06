@@ -27,8 +27,22 @@ export interface AuthSessionRecord {
 }
 
 export interface IAuthStorageService {
+  /**
+   * Return the current bounded user projection.
+   */
   getUsers(): Promise<AuthUserRecord[]>;
-  saveUsers(users: AuthUserRecord[]): Promise<void>;
+  /**
+   * Replace the bounded user projection while appending canonical auth-log
+   * records for each mutation.
+   */
+  replaceUsers(users: AuthUserRecord[]): Promise<void>;
+  /**
+   * Return the current bounded session projection.
+   */
   getSessions(): Promise<AuthSessionRecord[]>;
-  saveSessions(sessions: AuthSessionRecord[]): Promise<void>;
+  /**
+   * Replace the bounded session projection while appending canonical auth-log
+   * records for each mutation.
+   */
+  replaceSessions(sessions: AuthSessionRecord[]): Promise<void>;
 }

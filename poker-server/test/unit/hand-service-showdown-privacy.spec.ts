@@ -9,7 +9,7 @@ describe('HandService showdown privacy', () => {
 
   beforeEach(() => {
     storageService = {
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
       getRoom: jest.fn().mockResolvedValue(null),
       deleteRoom: jest.fn().mockResolvedValue(undefined),
       getAllRooms: jest.fn().mockResolvedValue([]),
