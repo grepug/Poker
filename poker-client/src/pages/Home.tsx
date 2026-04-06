@@ -2,26 +2,23 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { HomePanel } from "@/components/poker/home-panel";
 import { PLAYER_EMOJI_OPTIONS, getRandomPlayerEmoji } from "@/constants/player-emojis";
+import { useAuth } from "@/contexts/AuthContext";
 import { useGame } from "@/contexts/GameContext";
 import { useLocalization } from "@/contexts/LocalizationContext";
 import { useSocket } from "@/contexts/SocketContext";
-import {
-  readLastPlayerName,
-  writeLastPlayerEmoji,
-  writeLastPlayerName,
-} from "@/utils/player-name-storage";
 
 interface HomeProps {
   prefilledRoomId?: string;
   forceJoinMode?: boolean;
 }
 
-export const Home: React.FC<HomeProps> = ({
+const useHomeElement = ({
   prefilledRoomId,
   forceJoinMode = false,
-}) => {
+}: HomeProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, updateProfile, logout } = useAuth();
   const { connected } = useSocket();
   const { createRoom, joinRoom, isRecoveringSession, lastError, clearError } = useGame();
   const { t } = useLocalization();
@@ -36,8 +33,10 @@ export const Home: React.FC<HomeProps> = ({
   );
   const inferredRoomId = normalizedPrefilledRoomId || queryRoomId;
   const defaultJoinMode = forceJoinMode || Boolean(inferredRoomId);
-  const [playerName, setPlayerName] = useState(() => readLastPlayerName());
-  const [playerEmoji, setPlayerEmoji] = useState(() => getRandomPlayerEmoji());
+  const [playerName, setPlayerName] = useState(() => user?.displayName ?? "");
+  const [playerEmoji, setPlayerEmoji] = useState(() => user?.avatarEmoji ?? getRandomPlayerEmoji());
+  const [useShortDeckRules, setUseShortDeckRules] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(10);
   const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
@@ -54,6 +53,14 @@ export const Home: React.FC<HomeProps> = ({
       clearError();
     }
   };
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    setPlayerName(user.displayName);
+    setPlayerEmoji(user.avatarEmoji);
+  }, [user]);
 
   useEffect(() => {
     if (!isEmojiPopoverOpen) {
@@ -78,13 +85,14 @@ export const Home: React.FC<HomeProps> = ({
       }
     };
 
+    const passiveTouchOptions: AddEventListenerOptions = { passive: true };
     document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener("touchstart", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick, passiveTouchOptions);
     document.addEventListener("keydown", handleEscape);
 
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener("touchstart", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick, passiveTouchOptions);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isEmojiPopoverOpen]);
@@ -100,6 +108,14 @@ export const Home: React.FC<HomeProps> = ({
     clearFeedback();
   };
 
+  const handleLogout = () => {
+    void logout()
+      .catch(() => undefined)
+      .finally(() => {
+        navigate("/auth", { replace: true });
+      });
+  };
+
   const handleCreateRoom = () => {
     if (isRecoveringSession) {
       return;
@@ -111,10 +127,17 @@ export const Home: React.FC<HomeProps> = ({
       return;
     }
 
-    clearFeedback();
-    writeLastPlayerName(trimmedName);
-    writeLastPlayerEmoji(playerEmoji);
-    createRoom(trimmedName, playerEmoji);
+    void (async () => {
+      try {
+        clearFeedback();
+        if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
+          await updateProfile(trimmedName, playerEmoji);
+        }
+        createRoom(undefined, undefined, { useShortDeckRules, maxPlayers });
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : t("home.nameRequired"));
+      }
+    })();
   };
 
   const handleJoinRoom = () => {
@@ -131,10 +154,17 @@ export const Home: React.FC<HomeProps> = ({
       return;
     }
 
-    clearFeedback();
-    writeLastPlayerName(trimmedName);
-    writeLastPlayerEmoji(playerEmoji);
-    joinRoom(normalizedRoomId, trimmedName, playerEmoji);
+    void (async () => {
+      try {
+        clearFeedback();
+        if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
+          await updateProfile(trimmedName, playerEmoji);
+        }
+        joinRoom(normalizedRoomId);
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : t("home.nameAndRoomRequired"));
+      }
+    })();
   };
 
   return (
@@ -145,48 +175,78 @@ export const Home: React.FC<HomeProps> = ({
       </div>
 
       <div className="relative mx-auto flex min-h-[85vh] max-w-5xl items-center justify-center">
-        <HomePanel
-          connected={connected}
-          isRecoveringSession={isRecoveringSession}
-          isJoining={isJoining}
-          inferredRoomId={inferredRoomId}
-          effectiveRoomId={effectiveRoomId}
-          playerName={playerName}
-          playerEmoji={playerEmoji}
-          isEmojiPopoverOpen={isEmojiPopoverOpen}
-          feedback={feedback}
-          lastError={lastError}
-          emojiOptions={PLAYER_EMOJI_OPTIONS}
-          emojiPickerRef={emojiPickerRef}
-          t={t}
-          onPlayerNameChange={(value) => {
-            setPlayerName(value);
-            clearFeedback();
-          }}
-          onToggleEmojiPopover={() => setIsEmojiPopoverOpen((open) => !open)}
-          onRandomEmoji={handleRandomEmoji}
-          onEmojiPick={handleEmojiPick}
-          onCreateRoom={handleCreateRoom}
-          onEnableJoinMode={() => {
-            if (isRecoveringSession) {
-              return;
-            }
-            setJoinModeOverride(true);
-            clearFeedback();
-          }}
-          onRoomIdChange={(value) => {
-            setRoomId(value);
-            clearFeedback();
-          }}
-          onJoinRoom={handleJoinRoom}
-          onBack={() => {
-            setJoinModeOverride(false);
-            setRoomId("");
-            clearFeedback();
-            navigate("/", { replace: true });
-          }}
-        />
+        <div className="w-full max-w-md space-y-3">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => navigate("/settings")}
+              className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+            >
+              {t("home.accountSettings")}
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg border border-rose-500/60 bg-rose-900/35 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-800/45"
+            >
+              {t("home.logout")}
+            </button>
+          </div>
+          <HomePanel
+            connected={connected}
+            isRecoveringSession={isRecoveringSession}
+            isJoining={isJoining}
+            inferredRoomId={inferredRoomId}
+            effectiveRoomId={effectiveRoomId}
+            playerName={playerName}
+            playerEmoji={playerEmoji}
+            isEmojiPopoverOpen={isEmojiPopoverOpen}
+            feedback={feedback}
+            lastError={lastError}
+            useShortDeckRules={useShortDeckRules}
+            maxPlayers={maxPlayers}
+            emojiOptions={PLAYER_EMOJI_OPTIONS}
+            emojiPickerRef={emojiPickerRef}
+            t={t}
+            onPlayerNameChange={(value) => {
+              setPlayerName(value);
+              clearFeedback();
+            }}
+            onToggleEmojiPopover={() => setIsEmojiPopoverOpen((open) => !open)}
+            onRandomEmoji={handleRandomEmoji}
+            onEmojiPick={handleEmojiPick}
+            onUseShortDeckRulesChange={(enabled) => {
+              setUseShortDeckRules(enabled);
+              clearFeedback();
+            }}
+            onMaxPlayersChange={(value) => {
+              setMaxPlayers(value);
+              clearFeedback();
+            }}
+            onCreateRoom={handleCreateRoom}
+            onEnableJoinMode={() => {
+              if (isRecoveringSession) {
+                return;
+              }
+              setJoinModeOverride(true);
+              clearFeedback();
+            }}
+            onRoomIdChange={(value) => {
+              setRoomId(value);
+              clearFeedback();
+            }}
+            onJoinRoom={handleJoinRoom}
+            onBack={() => {
+              setJoinModeOverride(false);
+              setRoomId("");
+              clearFeedback();
+              navigate("/", { replace: true });
+            }}
+          />
+        </div>
       </div>
     </main>
   );
 };
+
+export const Home: React.FC<HomeProps> = (props) => useHomeElement(props);

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import {
   BrowserRouter as Router,
+  Navigate,
   useLocation,
   Routes,
   Route,
@@ -9,7 +10,10 @@ import {
 import { SocketProvider } from "./contexts/SocketContext";
 import { GameProvider, useGame } from "./contexts/GameContext";
 import { LocalizationProvider } from "./contexts/LocalizationContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Home } from "./pages/Home";
+import { AuthPage } from "./pages/Auth";
+import { SettingsPage } from "./pages/Settings";
 import { GameRoom } from "./components/GameRoom";
 import { IosInstallPrompt } from "./components/IosInstallPrompt";
 
@@ -19,8 +23,21 @@ const UrlStateSync: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { room, player, isRecoveringSession } = useGame();
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
+    if (isAuthenticated) {
+      return;
+    }
+    if (location.pathname !== "/auth") {
+      navigate("/auth", { replace: true });
+    }
+  }, [isAuthenticated, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     const activeRoomId = room?.id?.toUpperCase();
     const hasActiveSession = Boolean(activeRoomId && player?.id);
 
@@ -60,6 +77,7 @@ const UrlStateSync: React.FC = () => {
       navigate(targetPath, { replace: true });
     }
   }, [
+    isAuthenticated,
     isRecoveringSession,
     location.pathname,
     location.search,
@@ -72,7 +90,12 @@ const UrlStateSync: React.FC = () => {
 };
 
 const RoomRoute: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const { room, player } = useGame();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
 
   if (!room || !player) {
     return <Home />;
@@ -81,21 +104,60 @@ const RoomRoute: React.FC = () => {
   return <GameRoom />;
 };
 
+const AppRoutes: React.FC = () => {
+  const { isAuthenticated, isInitializing } = useAuth();
+
+  if (isInitializing) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-emerald-950 text-emerald-100">
+        Loading...
+      </main>
+    );
+  }
+
+  return (
+    <SocketProvider isAuthenticated={isAuthenticated}>
+      <GameProvider>
+        <UrlStateSync />
+        <IosInstallPrompt />
+        <Routes>
+          <Route
+            path="/auth"
+            element={
+              isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
+            }
+          />
+          <Route
+            path="/"
+            element={
+              isAuthenticated ? <Home /> : <Navigate to="/auth" replace />
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              isAuthenticated ? (
+                <SettingsPage />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route path="/room" element={<RoomRoute />} />
+          <Route path="/room/:roomId" element={<RoomRoute />} />
+        </Routes>
+      </GameProvider>
+    </SocketProvider>
+  );
+};
+
 function App() {
   return (
     <LocalizationProvider>
       <Router>
-        <SocketProvider>
-          <GameProvider>
-            <UrlStateSync />
-            <IosInstallPrompt />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/room" element={<RoomRoute />} />
-              <Route path="/room/:roomId" element={<RoomRoute />} />
-            </Routes>
-          </GameProvider>
-        </SocketProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
       </Router>
     </LocalizationProvider>
   );

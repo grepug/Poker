@@ -17,13 +17,21 @@ const RANKS: Rank[] = [
   'A',
 ];
 
+const SHORT_DECK_RANKS: Rank[] = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+export interface DeckOptions {
+  useShortDeckRules?: boolean;
+}
+
 /**
- * Create a standard 52-card deck
+ * Create a deck (52-card standard, or 36-card short deck when enabled)
  */
-export function createDeck(): Card[] {
+export function createDeck(options: DeckOptions = {}): Card[] {
+  const { useShortDeckRules = false } = options;
+  const ranks = useShortDeckRules ? SHORT_DECK_RANKS : RANKS;
   const deck: Card[] = [];
   for (const suit of SUITS) {
-    for (const rank of RANKS) {
+    for (const rank of ranks) {
       deck.push({ suit, rank });
     }
   }

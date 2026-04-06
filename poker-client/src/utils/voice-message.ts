@@ -1,6 +1,6 @@
 import { resolveServerResourceUrl } from "../services/socket.service";
 
-export const normalizeVoiceDurationSeconds = (durationMs: number): number => {
+const normalizeVoiceDurationSeconds = (durationMs: number): number => {
   if (!Number.isFinite(durationMs)) {
     return 1;
   }

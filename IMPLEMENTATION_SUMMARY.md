@@ -105,7 +105,7 @@ The full-stack online poker application has been successfully implemented and co
 
 ### Texas Hold'em Rules
 
-✅ 2-10 player support
+✅ 2-15 player support
 ✅ Small blind and big blind
 ✅ Dealer button rotation
 ✅ All betting rounds (PRE_FLOP, FLOP, TURN, RIVER, SHOWDOWN)
@@ -230,7 +230,7 @@ The full-stack online poker application has been successfully implemented and co
 ✅ **Full betting system** - All actions supported
 ✅ **Host migration** - Automatic on host leave
 ✅ **Reconnection** - 30s grace period
-✅ **2-10 players** - Configurable
+✅ **2-15 players** - Configurable
 ✅ **Compiles and runs** - Both projects build successfully
 ✅ **Browser compatible** - React SPA works in modern browsers
 ✅ **Unit tests** - Comprehensive backend testing

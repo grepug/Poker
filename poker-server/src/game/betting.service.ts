@@ -263,6 +263,7 @@ export class BettingService {
 
     // Track the raise size for minimum raise calculations
     hand.lastRaiseSize = raiseAmount;
+    hand.showdownLastAggressorPlayerId = player.id;
 
     player.lastAction = 'raise';
 
@@ -286,6 +287,7 @@ export class BettingService {
     // If all-in is more than current bet, it becomes the new bet
     if (player.currentBet > hand.currentBet) {
       hand.currentBet = player.currentBet;
+      hand.showdownLastAggressorPlayerId = player.id;
       // Reset round actions
       hand.roundActions = { [player.id]: true };
     }

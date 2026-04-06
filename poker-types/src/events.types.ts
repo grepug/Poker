@@ -15,20 +15,20 @@ import {
 // ============================================
 
 export interface CreateRoomData {
-  playerName: string;
+  playerName?: string;
   playerEmoji?: string;
   config?: Partial<RoomConfig>;
 }
 
 export interface JoinRoomData {
   roomId: string;
-  playerName: string;
+  playerName?: string;
   playerEmoji?: string;
 }
 
 export interface ReconnectData {
   roomId: string;
-  playerName: string;
+  playerName?: string;
   playerId?: string;
 }
 
@@ -43,6 +43,7 @@ export interface RequestRebuyData {
 }
 
 export interface ShowMyHandData {}
+export interface MuckMyHandData {}
 export interface RevealNextStreetData {}
 
 export interface UpdateRoomConfigData {
@@ -50,6 +51,11 @@ export interface UpdateRoomConfigData {
 }
 
 export interface PlayerReadyData {}
+
+export interface UpdateProfileData {
+  displayName: string;
+  avatarEmoji: string;
+}
 
 export interface GetChatHistoryAck extends ChatHistorySyncData {
   success: boolean;
@@ -69,6 +75,10 @@ export interface ClientToServerEvents {
     data: ShowMyHandData,
     callback: (response: any) => void,
   ) => void;
+  MUCK_MY_HAND: (
+    data: MuckMyHandData,
+    callback: (response: any) => void,
+  ) => void;
   REVEAL_NEXT_STREET: (
     data: RevealNextStreetData,
     callback: (response: any) => void,
@@ -79,6 +89,10 @@ export interface ClientToServerEvents {
   ) => void;
   PLAYER_READY: (
     data: PlayerReadyData,
+    callback: (response: any) => void,
+  ) => void;
+  UPDATE_PROFILE: (
+    data: UpdateProfileData,
     callback: (response: any) => void,
   ) => void;
   PLAYER_ACTION: (
@@ -195,7 +209,23 @@ export interface HandCompleteData {
 export interface PlayerHandRevealedData {
   playerId: string;
   playerName: string;
+  cards: Card[];
   handNumber: number;
+  showdownOrderIndex: number;
+}
+
+export interface PlayerHandMuckedData {
+  playerId: string;
+  playerName: string;
+  handNumber: number;
+}
+
+export interface ShowdownDecisionStateData {
+  handNumber: number;
+  orderedPlayerIds: string[];
+  currentPlayerId: string | null;
+  currentPlayerName: string | null;
+  forcedRevealPlayerIds: string[];
 }
 
 export interface NextStreetRevealStateData {
@@ -214,6 +244,12 @@ export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
   status?: PlayerStatus;
+}
+
+export interface PlayerProfileUpdatedData {
+  playerId: string;
+  playerName: string;
+  playerEmoji?: string;
 }
 
 export interface PlayerAutoFoldedData {
@@ -306,11 +342,14 @@ export interface ServerToClientEvents {
   BETTING_ROUND_COMPLETE: (data: BettingRoundCompleteData) => void;
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
+  SHOWDOWN_DECISION_STATE: (data: ShowdownDecisionStateData) => void;
   PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
+  PLAYER_HAND_MUCKED: (data: PlayerHandMuckedData) => void;
   NEXT_STREET_REVEAL_STATE: (data: NextStreetRevealStateData) => void;
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
+  PLAYER_PROFILE_UPDATED: (data: PlayerProfileUpdatedData) => void;
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;
   ROOM_CONFIG_UPDATED: (data: RoomConfigUpdatedData) => void;

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toPng } from "html-to-image";
+import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
+import { useAuth } from "@/contexts/AuthContext";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
@@ -8,6 +10,7 @@ import type { Locale, MessageKey } from "../i18n/messages";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
+import { Card } from "@/components/Card";
 import {
   ActionCenterAlertOverlay,
   ChatPanel,
@@ -15,8 +18,10 @@ import {
   EndGameConfirmModal,
   FinalSummaryModal,
   HandResultsContent,
-  HandResultsPanel,
+  LeaveRoomConfirmModal,
+  HandResultsModal,
   NextHandActionArea,
+  OperationActionBar,
   RankingsModal,
   RulesModal,
   SettingsModal,
@@ -27,6 +32,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import type { SeatBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -166,6 +172,23 @@ type RulesCopy = {
   rankingTitle: string;
   rankingHint: string;
 };
+type RuleVariant = "standard" | "shortDeck";
+
+type HandScopedUiState = {
+  key: string;
+  showRankingsModal: boolean;
+  showRulesModal: boolean;
+  showEndGameConfirmModal: boolean;
+  isCardsFlyoutOpen: boolean;
+};
+
+const createDefaultHandScopedUiState = (key: string): HandScopedUiState => ({
+  key,
+  showRankingsModal: false,
+  showRulesModal: false,
+  showEndGameConfirmModal: false,
+  isCardsFlyoutOpen: true,
+});
 
 const EMPTY_DRAG_STATE: DragState = {
   active: false,
@@ -276,7 +299,7 @@ const formatHandDescription = (
   return text;
 };
 
-const HAND_RANK_ORDER: HandEvaluation["rank"][] = [
+const STANDARD_HAND_RANK_ORDER: HandEvaluation["rank"][] = [
   "ROYAL_FLUSH",
   "STRAIGHT_FLUSH",
   "FOUR_OF_A_KIND",
@@ -289,7 +312,25 @@ const HAND_RANK_ORDER: HandEvaluation["rank"][] = [
   "HIGH_CARD",
 ];
 
-const HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+const SHORT_DECK_HAND_RANK_ORDER: HandEvaluation["rank"][] = [
+  "ROYAL_FLUSH",
+  "STRAIGHT_FLUSH",
+  "FOUR_OF_A_KIND",
+  "FLUSH",
+  "FULL_HOUSE",
+  "STRAIGHT",
+  "THREE_OF_A_KIND",
+  "TWO_PAIR",
+  "ONE_PAIR",
+  "HIGH_CARD",
+];
+
+const HAND_RANK_ORDER_BY_VARIANT: Record<RuleVariant, HandEvaluation["rank"][]> = {
+  standard: STANDARD_HAND_RANK_ORDER,
+  shortDeck: SHORT_DECK_HAND_RANK_ORDER,
+};
+
+const STANDARD_HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
   en: {
     ROYAL_FLUSH: "A-K-Q-J-10, all same suit.",
     STRAIGHT_FLUSH: "Five consecutive cards, all same suit.",
@@ -316,7 +357,26 @@ const HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> 
   },
 };
 
-const RULES_COPY: Record<Locale, RulesCopy> = {
+const SHORT_DECK_HAND_RANK_DETAILS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
+  en: {
+    ...STANDARD_HAND_RANK_DETAILS.en,
+    STRAIGHT: "Five consecutive ranks; A can be high or low (A-6-7-8-9).",
+  },
+  zh_hans: {
+    ...STANDARD_HAND_RANK_DETAILS.zh_hans,
+    STRAIGHT: "任意连续五张；A 可作最大或最小（A-6-7-8-9）。",
+  },
+};
+
+const HAND_RANK_DETAILS_BY_VARIANT: Record<
+  RuleVariant,
+  Record<Locale, Record<HandEvaluation["rank"], string>>
+> = {
+  standard: STANDARD_HAND_RANK_DETAILS,
+  shortDeck: SHORT_DECK_HAND_RANK_DETAILS,
+};
+
+const STANDARD_RULES_COPY: Record<Locale, RulesCopy> = {
   en: {
     buttonLabel: "Game Rules",
     modalTitle: "Texas Hold'em Rules",
@@ -346,6 +406,11 @@ const RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4) Showdown & Pots",
     showdownBullets: [
       "At showdown, always use the best 5-card combination out of 7 cards.",
+      "Showdown decisions are sequential, not simultaneous: only the current player can choose Show/Fold; other players wait.",
+      "Decision order starts from the last player who made the final aggressive action on the river (bet/raise, including an all-in that increased the bet). If no river aggression occurred, order starts from the first eligible player to the left of the dealer, then proceeds clockwise.",
+      "If a player shows, later players can see those revealed hole cards before making their own decision.",
+      "All-in players are forced to show and cannot fold at showdown.",
+      "Choosing Fold at showdown forfeits any claim to the pot.",
       "If multiple players tie exactly, the pot (or side pot) is split equally.",
       "Players can only win the pots they contributed to.",
     ],
@@ -386,6 +451,11 @@ const RULES_COPY: Record<Locale, RulesCopy> = {
     showdownTitle: "4）摊牌与奖池",
     showdownBullets: [
       "摊牌时从 7 张牌中取最佳 5 张进行比较。",
+      "摊牌决策按顺序进行（不是同时进行）：只有当前轮到的玩家可以选择亮牌/弃牌，其他玩家需等待。",
+      "决策顺序从河牌最后一次主动进攻玩家开始（下注/加注；包括把当前下注抬高的全下）。若河牌无人主动进攻，则从庄家左手边第一位仍在争池的玩家开始，按顺时针进行。",
+      "前位玩家一旦亮牌，后位玩家在自己决策前可以看到其已亮出的手牌。",
+      "全下（All-in）玩家在摊牌阶段必须亮牌，不能选择弃牌。",
+      "在摊牌阶段选择弃牌，等同于放弃争夺底池。",
       "完全同牌则平分对应底池（主池/边池）。",
       "玩家只能赢取自己参与过的底池。",
     ],
@@ -398,6 +468,37 @@ const RULES_COPY: Record<Locale, RulesCopy> = {
     rankingTitle: "6）牌型大小排序（从大到小）",
     rankingHint: "高一级牌型永远大于低一级牌型。",
   },
+};
+
+const SHORT_DECK_RULES_COPY: Record<Locale, RulesCopy> = {
+  en: {
+    ...STANDARD_RULES_COPY.en,
+    modalTitle: "Short-Deck Hold'em Rules",
+    modalSubtitle:
+      "No-Limit Short-Deck Hold'em quick reference for this table, including hand rankings.",
+    tiebreakBullets: [
+      "Same hand type: compare key ranks first (for example, pair value, then kickers).",
+      "For straights, compare highest card in the straight (A-6-7-8-9 is the lowest straight).",
+      "For flush/high card, compare highest cards from top to bottom.",
+    ],
+    rankingHint: "Short-deck note: flush beats full house.",
+  },
+  zh_hans: {
+    ...STANDARD_RULES_COPY.zh_hans,
+    modalTitle: "短牌德州扑克规则",
+    modalSubtitle: "本桌为无限注短牌德州。以下为完整流程、操作说明与牌型大小排序。",
+    tiebreakBullets: [
+      "同一牌型先比主体牌值（如对子点数），再比踢脚牌。",
+      "顺子比较最大那张（A-6-7-8-9 为最小顺子）。",
+      "同花/高牌按从大到小逐张比较。",
+    ],
+    rankingHint: "短牌规则补充：同花大于葫芦。",
+  },
+};
+
+const RULES_COPY_BY_VARIANT: Record<RuleVariant, Record<Locale, RulesCopy>> = {
+  standard: STANDARD_RULES_COPY,
+  shortDeck: SHORT_DECK_RULES_COPY,
 };
 
 const resolveDropIntent = ({
@@ -701,13 +802,9 @@ const solveSeatDistanceToEdge = ({
   }
 
   const maxDistance = Math.hypot(halfTableWidth, halfTableHeight);
-  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
-  let farthestSampleFit = -1;
-
-  for (let index = 0; index <= sampleCount; index += 1) {
-    const sampleDistance = (maxDistance * index) / sampleCount;
-    const canFitAtSample = canFitSeatAtDistance({
-      distance: sampleDistance,
+  const canFitDistance = (distance: number) =>
+    canFitSeatAtDistance({
+      distance,
       cosine,
       sine,
       leftExtent,
@@ -720,6 +817,54 @@ const solveSeatDistanceToEdge = ({
       cornerRadiusY,
       obstacleRects,
     });
+
+  if (obstacleRects.length > 0) {
+    const obstacleSampleCount = Math.max(
+      DISTANCE_SOLVER_SAMPLE_COUNT * DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER,
+      Math.ceil(maxDistance),
+    );
+
+    for (let index = 0; index <= obstacleSampleCount; index += 1) {
+      const sampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * index) / obstacleSampleCount,
+      );
+      if (!canFitDistance(sampleDistance)) {
+        continue;
+      }
+
+      if (index === 0) {
+        return sampleDistance;
+      }
+
+      const previousSampleDistance = Math.max(
+        0,
+        maxDistance - (maxDistance * (index - 1)) / obstacleSampleCount,
+      );
+      let low = sampleDistance;
+      let high = previousSampleDistance;
+
+      for (let refineIndex = 0; refineIndex < DISTANCE_SOLVER_REFINE_STEPS; refineIndex += 1) {
+        const mid = (low + high) / 2;
+        if (canFitDistance(mid)) {
+          low = mid;
+          continue;
+        }
+        high = mid;
+      }
+
+      return low;
+    }
+
+    return 0;
+  }
+
+  const sampleCount = DISTANCE_SOLVER_SAMPLE_COUNT;
+  let farthestSampleFit = -1;
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const sampleDistance = (maxDistance * index) / sampleCount;
+    const canFitAtSample = canFitDistance(sampleDistance);
     if (canFitAtSample) {
       farthestSampleFit = sampleDistance;
     }
@@ -739,20 +884,7 @@ const solveSeatDistanceToEdge = ({
       continue;
     }
 
-    const canFitAtCandidate = canFitSeatAtDistance({
-      distance: candidateDistance,
-      cosine,
-      sine,
-      leftExtent,
-      rightExtent,
-      topExtent,
-      bottomExtent,
-      halfTableWidth,
-      halfTableHeight,
-      cornerRadiusX,
-      cornerRadiusY,
-      obstacleRects,
-    });
+    const canFitAtCandidate = canFitDistance(candidateDistance);
 
     if (canFitAtCandidate) {
       bestDistance = candidateDistance;
@@ -770,6 +902,7 @@ const MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX = 700;
 const MOBILE_BALANCED_ORBIT_SAMPLE_COUNT = 960;
 const DISTANCE_SOLVER_SAMPLE_COUNT = 72;
 const DISTANCE_SOLVER_REFINE_STEPS = 16;
+const DISTANCE_SOLVER_OBSTACLE_SAMPLE_MULTIPLIER = 4;
 
 const getOrbitAnchors = ({
   totalSeats,
@@ -1185,12 +1318,28 @@ const resolveSeatSlotWidthPixels = ({
   return Math.max(minValue, Math.min(maxValue, preferredValue));
 };
 
-const getSeatSlotWidth = (occupiedSeats: number) => {
+const getSeatSlotWidth = ({
+  occupiedSeats,
+}: {
+  occupiedSeats: number;
+}) => {
   if (occupiedSeats <= 2) return "clamp(4.7rem, 18.8vw, 6.2rem)";
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
   if (occupiedSeats <= 8) return "clamp(3.72rem, 13.5vw, 5.08rem)";
-  return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 10) return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 12) return "clamp(3.18rem, 11.2vw, 4.3rem)";
+  if (occupiedSeats <= 16) return "clamp(2.86rem, 9.8vw, 3.86rem)";
+  return "clamp(2.58rem, 8.5vw, 3.38rem)";
+};
+
+const normalizeOrbitCapacity = (maxPlayers: number) => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (!Number.isFinite(parsedMaxPlayers)) {
+    return 6;
+  }
+
+  return Math.min(15, Math.max(6, Math.floor(parsedMaxPlayers)));
 };
 
 const getSeatDensityClass = ({
@@ -1239,6 +1388,34 @@ const getSeatRoleIcon = (
   return null;
 };
 
+const buildSeatBadge = (
+  roleIcon: ReturnType<typeof getSeatRoleIcon>,
+  seatPositionLabel: string | null,
+): SeatBadge | null => {
+  if (roleIcon && seatPositionLabel) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (seatPositionLabel) {
+    return {
+      tone: "position",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (roleIcon) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: roleIcon === "dealer" ? "D" : "SB",
+    };
+  }
+
+  return null;
+};
+
 const resolveSeatMainState = ({
   isCurrentTurnSeat,
   isDisconnected,
@@ -1271,15 +1448,22 @@ const resolveSeatPrimaryActionLabel = ({
   latestSeatActionEvent: PlayerActionFlashEvent | null;
   t: Translate;
 }): SeatActionLabel | null => {
-  if (seatPlayer.currentBet <= 0) {
-    return null;
-  }
-
   if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
     return null;
   }
 
-  if (seatPlayer.lastAction === "check" || seatPlayer.lastAction === "fold") {
+  if (latestSeatActionEvent?.displayKind === "check") {
+    return {
+      text: t("common.check"),
+      tone: "call",
+    };
+  }
+
+  if (seatPlayer.currentBet <= 0) {
+    return null;
+  }
+
+  if (seatPlayer.lastAction === "fold") {
     return null;
   }
 
@@ -1450,7 +1634,7 @@ const toActionCenterAlert = (
   }
 };
 
-export const GameRoom: React.FC = () => {
+const useGameRoomElement = () => {
   const navigate = useNavigate();
   const {
     room,
@@ -1460,12 +1644,16 @@ export const GameRoom: React.FC = () => {
     finalGameResult,
     lastPlayerActionEvent,
     revealedHandPlayerIds,
+    showdownDecisionState,
+    revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     isHost,
     lastError,
     clearError,
     markReady,
     endGame,
+    showMyHand,
+    muckMyHand,
     revealNextStreet,
     performAction,
     leaveRoom,
@@ -1477,6 +1665,7 @@ export const GameRoom: React.FC = () => {
     clearChatUnread,
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
+  const { user, updateProfile } = useAuth();
 
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
@@ -1484,10 +1673,13 @@ export const GameRoom: React.FC = () => {
   );
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
-  const [showRankingsModal, setShowRankingsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showRulesModal, setShowRulesModal] = useState(false);
-  const [showEndGameConfirmModal, setShowEndGameConfirmModal] = useState(false);
+  const [profileDisplayNameDraft, setProfileDisplayNameDraft] = useState("");
+  const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
+  const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+  const [showHandResultsModal, setShowHandResultsModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -1495,8 +1687,7 @@ export const GameRoom: React.FC = () => {
   const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
-  const [isCardsFlyoutOpen, setIsCardsFlyoutOpen] = useState(true);
-  const [turnOverlayHeight, setTurnOverlayHeight] = useState(0);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
   const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [tableObstacleRects, setTableObstacleRects] = useState<RectBounds[]>([]);
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
@@ -1511,8 +1702,8 @@ export const GameRoom: React.FC = () => {
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
-  const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
-  const turnOverlayRef = useRef<HTMLElement | null>(null);
+  const lastDisplayedHandResultRef = useRef<HandResult | null>(null);
+  const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const boardCenterStackRef = useRef<HTMLDivElement | null>(null);
@@ -1522,6 +1713,14 @@ export const GameRoom: React.FC = () => {
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
   const previousIsYourTurnRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    setProfileDisplayNameDraft(user.displayName);
+    setProfileAvatarEmojiDraft(user.avatarEmoji);
+  }, [user]);
 
   const currentHand = room?.currentHand ?? null;
   const tablePlayers = useMemo(
@@ -1556,9 +1755,6 @@ export const GameRoom: React.FC = () => {
   const [potAnimationTick, setPotAnimationTick] = useState(0);
   const animatedPotRef = useRef(displayPot);
   const potAnimationFrameRef = useRef<number | null>(null);
-  const currentTableBet = currentHand?.currentBet ?? 0;
-  const myCommittedBet = currentPlayer?.currentBet ?? 0;
-
   const maxStack = currentPlayer?.chips ?? 0;
   const clampTrayAmount = useCallback(
     (value: number) => Math.max(0, Math.min(maxStack, Math.round(value))),
@@ -1581,8 +1777,84 @@ export const GameRoom: React.FC = () => {
       resolvedPlayerId &&
       currentHand.currentPlayerTurn === resolvedPlayerId,
   );
-  const shouldAnchorCardsFlyoutToTurnDock = isYourTurn && !isDesktopSideDock;
   const currentHandNumber = currentHand?.handNumber ?? null;
+  const handScopedUiStateKey = `${room?.id ?? "no-room"}:${currentHandNumber ?? "no-hand"}`;
+  const [handScopedUiState, setHandScopedUiState] = useState<HandScopedUiState>(() =>
+    createDefaultHandScopedUiState(handScopedUiStateKey),
+  );
+  const resolvedHandScopedUiState =
+    handScopedUiState.key === handScopedUiStateKey
+      ? handScopedUiState
+      : createDefaultHandScopedUiState(handScopedUiStateKey);
+
+  useEffect(() => {
+    setHandScopedUiState((previous) =>
+      previous.key === handScopedUiStateKey
+        ? previous
+        : createDefaultHandScopedUiState(handScopedUiStateKey),
+    );
+  }, [handScopedUiStateKey]);
+
+  const updateHandScopedUiState = useCallback(
+    (updater: (state: HandScopedUiState) => HandScopedUiState) => {
+      setHandScopedUiState((previous) => {
+        const baseState =
+          previous.key === handScopedUiStateKey
+            ? previous
+            : createDefaultHandScopedUiState(handScopedUiStateKey);
+        return updater(baseState);
+      });
+    },
+    [handScopedUiStateKey],
+  );
+
+  const showRankingsModal = resolvedHandScopedUiState.showRankingsModal;
+  const showRulesModal = resolvedHandScopedUiState.showRulesModal;
+  const showEndGameConfirmModal = resolvedHandScopedUiState.showEndGameConfirmModal;
+  const isCardsFlyoutOpen = resolvedHandScopedUiState.isCardsFlyoutOpen;
+
+  const setShowRankingsModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showRankingsModal:
+          typeof nextValue === "function" ? nextValue(state.showRankingsModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setShowRulesModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showRulesModal: typeof nextValue === "function" ? nextValue(state.showRulesModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setShowEndGameConfirmModal = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        showEndGameConfirmModal:
+          typeof nextValue === "function" ? nextValue(state.showEndGameConfirmModal) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
+
+  const setIsCardsFlyoutOpen = useCallback(
+    (nextValue: React.SetStateAction<boolean>) => {
+      updateHandScopedUiState((state) => ({
+        ...state,
+        isCardsFlyoutOpen:
+          typeof nextValue === "function" ? nextValue(state.isCardsFlyoutOpen) : nextValue,
+      }));
+    },
+    [updateHandScopedUiState],
+  );
 
   const latestUnreadIncomingChatMessage = useMemo(() => {
     if (chatUnreadCount <= 0) {
@@ -1680,19 +1952,101 @@ export const GameRoom: React.FC = () => {
     () => new Set(nextStreetRevealState?.requiredPlayerIds ?? []),
     [nextStreetRevealState?.requiredPlayerIds],
   );
+  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
   const canRevealNextStreet = Boolean(
     !lastHandResult &&
       nextStreetRevealState &&
       player?.id &&
       nextStreetRequiredPlayerIdSet.has(player.id) &&
-      isPlayerStreetRevealEnabled,
+      (isResultRevealStep || isPlayerStreetRevealEnabled),
   );
   const hasRevealedNextStreet = player?.id
     ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
-  const isResultRevealStep = nextStreetRevealState?.nextRound === "SHOWDOWN";
-  const isAwaitingStreetReveal = showNextStreetActionArea;
+  const revealedHandPlayerIdSet = useMemo(
+    () => new Set(revealedHandPlayerIds),
+    [revealedHandPlayerIds],
+  );
+  const showdownForcedRevealPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.forcedRevealPlayerIds ?? []),
+    [showdownDecisionState?.forcedRevealPlayerIds],
+  );
+  const showdownOrderedPlayerIdSet = useMemo(
+    () => new Set(showdownDecisionState?.orderedPlayerIds ?? []),
+    [showdownDecisionState?.orderedPlayerIds],
+  );
+  const revealedShowdownHands = useMemo(
+    () =>
+      Object.values(revealedShowdownHandsByPlayerId).sort((left, right) => {
+        if (left.showdownOrderIndex !== right.showdownOrderIndex) {
+          return left.showdownOrderIndex - right.showdownOrderIndex;
+        }
+        return left.playerName.localeCompare(right.playerName);
+      }),
+    [revealedShowdownHandsByPlayerId],
+  );
+  const isShowdownDecisionStep = Boolean(
+    !lastHandResult &&
+      room?.currentHand?.bettingRound === "SHOWDOWN" &&
+      showdownDecisionState?.currentPlayerId,
+  );
+  const isMyShowdownDecisionTurn = Boolean(
+    player?.id &&
+      showdownDecisionState?.currentPlayerId &&
+      showdownDecisionState.currentPlayerId === player.id,
+  );
+  const showdownDecisionWaitingPlayerName = isMyShowdownDecisionTurn
+    ? null
+    : showdownDecisionState?.currentPlayerName ?? null;
+  const isShowdownForcedRevealTurn = Boolean(
+    player?.id && showdownForcedRevealPlayerIdSet.has(player.id),
+  );
+  const showdownActivePlayerIds = room?.currentHand?.activePlayers;
+  const isShowdownContender = Boolean(
+    player?.id &&
+      (showdownOrderedPlayerIdSet.has(player.id) ||
+        (Array.isArray(showdownActivePlayerIds) &&
+          showdownActivePlayerIds.includes(player.id)) ||
+        (!Array.isArray(showdownActivePlayerIds) &&
+          hasHoleCards &&
+          player.status !== "folded" &&
+          player.status !== "left" &&
+          player.status !== "waiting" &&
+          player.status !== "disconnected")),
+  );
+  const hasShownMyHandAtShowdown = Boolean(
+    player?.id && revealedHandPlayerIdSet.has(player.id),
+  );
+  const hasFoldedMyHandAtShowdown = Boolean(
+    isShowdownDecisionStep && !hasShownMyHandAtShowdown && player?.status === "folded",
+  );
+  const canShowMyHandAtShowdown = Boolean(
+    isShowdownDecisionStep &&
+      isShowdownContender &&
+      isMyShowdownDecisionTurn &&
+      !hasShownMyHandAtShowdown &&
+      !hasFoldedMyHandAtShowdown,
+  );
+  const showShowdownDecisionArea = isShowdownDecisionStep;
+  const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
+  const showNextHandActionArea = canReadyNextHand;
+  const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
+  const operationBarMode = showShowdownDecisionArea
+    ? "showdown"
+    : showNextStreetActionArea
+      ? "streetReveal"
+      : null;
+  const showTurnActionDock = isYourTurn && !showOperationBar && !showNextHandActionArea;
+  const shouldAnchorCardsFlyoutToBottomBar =
+    showOperationBar || showNextHandActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const activeBottomBarMode = showOperationBar
+    ? "operation"
+    : showNextHandActionArea
+      ? "nextHand"
+      : showTurnActionDock
+        ? "turn"
+        : null;
 
   const winnersByPlayerId = useMemo(
     () =>
@@ -1702,14 +2056,7 @@ export const GameRoom: React.FC = () => {
     [lastHandResult],
   );
   const netByPlayerId = useMemo(() => lastHandResult?.netByPlayerId ?? {}, [lastHandResult]);
-  const hasNetByPlayerId = useMemo(
-    () => Object.keys(netByPlayerId).length > 0,
-    [netByPlayerId],
-  );
-  const revealedHandPlayerIdSet = useMemo(
-    () => new Set(revealedHandPlayerIds),
-    [revealedHandPlayerIds],
-  );
+  const hasNetByPlayerId = Object.keys(netByPlayerId).length > 0;
   const myHandNetChange = useMemo(() => {
     if (!player?.id || !lastHandResult || !hasNetByPlayerId) return null;
     if (!Object.prototype.hasOwnProperty.call(netByPlayerId, player.id)) {
@@ -1724,14 +2071,45 @@ export const GameRoom: React.FC = () => {
 
   const handResultRows = useMemo(() => {
     if (!lastHandResult) return [];
-    return lastHandResult.playerHands.map((entry, idx) => ({
+    const rows = lastHandResult.playerHands.map((entry, idx) => ({
       ...entry,
+      sourceOrder: idx,
       amountWon: winnersByPlayerId.get(entry.playerId)?.amountWon ?? 0,
       netChange:
         hasNetByPlayerId && Object.prototype.hasOwnProperty.call(netByPlayerId, entry.playerId)
           ? netByPlayerId[entry.playerId]
           : null,
       isWinner: winnersByPlayerId.has(entry.playerId),
+    }));
+
+    rows.sort((left, right) => {
+      if (right.amountWon !== left.amountWon) {
+        return right.amountWon - left.amountWon;
+      }
+
+      const leftNet = typeof left.netChange === "number" ? left.netChange : null;
+      const rightNet = typeof right.netChange === "number" ? right.netChange : null;
+      if (leftNet !== null && rightNet !== null && rightNet !== leftNet) {
+        return rightNet - leftNet;
+      }
+
+      if (left.isWinner !== right.isWinner) {
+        return left.isWinner ? -1 : 1;
+      }
+
+      const leftSeatPosition =
+        typeof left.seatPosition === "number" ? left.seatPosition : Number.MAX_SAFE_INTEGER;
+      const rightSeatPosition =
+        typeof right.seatPosition === "number" ? right.seatPosition : Number.MAX_SAFE_INTEGER;
+      if (leftSeatPosition !== rightSeatPosition) {
+        return leftSeatPosition - rightSeatPosition;
+      }
+
+      return left.sourceOrder - right.sourceOrder;
+    });
+
+    return rows.map(({ sourceOrder: _sourceOrder, ...entry }, idx) => ({
+      ...entry,
       rankOrder: idx + 1,
     }));
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
@@ -1790,11 +2168,11 @@ export const GameRoom: React.FC = () => {
 
   const orbitCapacity = useMemo(() => {
     if (!room) return 6;
-    return room.config.maxPlayers > 6 ? 10 : 6;
+    return normalizeOrbitCapacity(room.config.maxPlayers);
   }, [room]);
 
   const seatSlotWidth = useMemo(
-    () => getSeatSlotWidth(tablePlayers.length),
+    () => getSeatSlotWidth({ occupiedSeats: tablePlayers.length }),
     [tablePlayers.length],
   );
   const seatSlotWidthPx = useMemo(() => {
@@ -1811,10 +2189,7 @@ export const GameRoom: React.FC = () => {
       viewportWidth,
     });
   }, [seatSlotWidth, feltSize.width]);
-  const seatSlotHeightPx = useMemo(
-    () => seatSlotWidthPx / SEAT_POD_WIDTH_TO_HEIGHT_RATIO,
-    [seatSlotWidthPx],
-  );
+  const seatSlotHeightPx = seatSlotWidthPx / SEAT_POD_WIDTH_TO_HEIGHT_RATIO;
 
   const tableCornerRadiusPx = useMemo(() => {
     if (typeof window === "undefined") {
@@ -1979,7 +2354,19 @@ export const GameRoom: React.FC = () => {
         })),
     [finalGameResult, locale],
   );
-  const rulesCopy = useMemo(() => RULES_COPY[locale], [locale]);
+  const isShortDeckRules = Boolean(room?.config.useShortDeckRules);
+  const rulesVariant: RuleVariant = isShortDeckRules ? "shortDeck" : "standard";
+  const rulesCopy = useMemo(
+    () => RULES_COPY_BY_VARIANT[rulesVariant][locale],
+    [locale, rulesVariant],
+  );
+  const ruleVariantLabel = useMemo(
+    () =>
+      isShortDeckRules
+        ? t("game.ruleVariant.shortDeck")
+        : t("game.ruleVariant.standard"),
+    [isShortDeckRules, t],
+  );
 
   const finalSummaryCards = useMemo(() => {
     if (!finalGameResult) return [];
@@ -2089,6 +2476,9 @@ export const GameRoom: React.FC = () => {
         );
 
         const seatPlayerId = seatPlayer.id;
+        const seatPositionLabel =
+          currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
+        const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2167,8 +2557,7 @@ export const GameRoom: React.FC = () => {
           playerEmoji: seatPlayer.emoji || "🎲",
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
-          roleIcon,
-          roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
+          badge: seatBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
@@ -2208,20 +2597,10 @@ export const GameRoom: React.FC = () => {
 
   const trayPresetButtons = useMemo<TrayPresetButton[]>(() => {
     const clampToStack = (value: number) => clampTrayAmount(value);
-    const commitToTargetTotalBet = (targetTotalBet: number) =>
-      clampToStack(Math.max(0, targetTotalBet - myCommittedBet));
     const continueCommit = clampToStack(callAmount > 0 ? callAmount : minRaise);
     const continueLabel = callAmount > 0 ? t("game.preset.call") : t("game.preset.minBet");
-    const frequentRaiseCommit = (() => {
-      const baseline =
-        callAmount > 0 ? commitToTargetTotalBet(currentTableBet * 3) : clampToStack(minRaise * 3);
-      if (baseline > continueCommit && baseline < maxStack) return baseline;
-
-      const steppedUp = clampToStack(continueCommit + Math.max(minRaise, 1));
-      if (steppedUp > continueCommit && steppedUp < maxStack) return steppedUp;
-
-      return maxStack;
-    })();
+    const raiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise * 2);
+    const raiseLabel = callAmount > 0 ? t("game.preset.raise") : t("game.preset.bet");
 
     const presets: TrayPresetButton[] = [
       {
@@ -2233,10 +2612,10 @@ export const GameRoom: React.FC = () => {
         enabled: false,
       },
       {
-        key: "frequent-raise",
-        label: t("game.preset.threeBet"),
-        amount: frequentRaiseCommit,
-        testId: "chip-load-3bet",
+        key: "raise",
+        label: raiseLabel,
+        amount: raiseCommit,
+        testId: "chip-load-raise",
         tone: "raise",
         enabled: false,
       },
@@ -2258,19 +2637,24 @@ export const GameRoom: React.FC = () => {
         stack: maxStack,
         t,
       });
+      const resolvedIntent = resolution.intent;
+      const resolvesToAllIn = resolvedIntent?.action === "all-in";
+      const isAllInPreset = preset.key === "all-in";
       return {
         ...preset,
-        enabled: isYourTurn && preset.amount > 0 && Boolean(resolution.intent),
+        enabled:
+          isYourTurn &&
+          preset.amount > 0 &&
+          Boolean(resolvedIntent) &&
+          (isAllInPreset || !resolvesToAllIn),
       };
     });
   }, [
     callAmount,
     clampTrayAmount,
-    currentTableBet,
     isYourTurn,
     maxStack,
     minRaise,
-    myCommittedBet,
     t,
   ]);
 
@@ -2385,21 +2769,17 @@ export const GameRoom: React.FC = () => {
 
   useEffect(() => {
     if (!lastHandResult) {
-      lastAutoScrolledResultRef.current = null;
+      lastDisplayedHandResultRef.current = null;
+      setShowHandResultsModal(false);
       return;
     }
 
-    if (lastAutoScrolledResultRef.current === lastHandResult) {
+    if (lastDisplayedHandResultRef.current === lastHandResult) {
       return;
     }
 
-    lastAutoScrolledResultRef.current = lastHandResult;
-    window.requestAnimationFrame(() => {
-      handResultsPanelRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+    lastDisplayedHandResultRef.current = lastHandResult;
+    setShowHandResultsModal(true);
   }, [lastHandResult]);
 
   useEffect(() => {
@@ -2409,28 +2789,32 @@ export const GameRoom: React.FC = () => {
     });
   }, [maxStack]);
 
-  useEffect(() => {
-    if (!isYourTurn) {
-      setTrayAmount(0);
-      setQuickConfirmAction(null);
-      setDragState(EMPTY_DRAG_STATE);
-    }
-  }, [isYourTurn]);
+  const resetTurnInteractionState = useCallback(() => {
+    setTrayAmount(0);
+    setQuickConfirmAction(null);
+    setDragState(EMPTY_DRAG_STATE);
+  }, []);
 
   useEffect(() => {
-    if (!shouldAnchorCardsFlyoutToTurnDock) {
-      setTurnOverlayHeight(0);
+    if (!showTurnActionDock) {
+      resetTurnInteractionState();
+    }
+  }, [resetTurnInteractionState, showTurnActionDock]);
+
+  useEffect(() => {
+    if (!shouldAnchorCardsFlyoutToBottomBar) {
+      setBottomBarHeight(0);
       return;
     }
 
-    const overlayNode = turnOverlayRef.current;
+    const overlayNode = bottomBarOverlayRef.current;
     if (!overlayNode) {
       return;
     }
 
     const updateOverlayHeight = () => {
       const nextHeight = Math.ceil(overlayNode.getBoundingClientRect().height);
-      setTurnOverlayHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      setBottomBarHeight((prev) => (prev === nextHeight ? prev : nextHeight));
     };
 
     updateOverlayHeight();
@@ -2447,13 +2831,7 @@ export const GameRoom: React.FC = () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateOverlayHeight);
     };
-  }, [shouldAnchorCardsFlyoutToTurnDock]);
-
-  useEffect(() => {
-    if (!quickConfirmAction || isAutomationMode) return;
-    const timer = window.setTimeout(() => setQuickConfirmAction(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [isAutomationMode, quickConfirmAction]);
+  }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
@@ -2463,7 +2841,7 @@ export const GameRoom: React.FC = () => {
     animatedPotRef.current = animatedPotValue;
   }, [animatedPotValue]);
 
-  useEffect(() => {
+  const runPotAnimationToDisplayPot = useCallback(() => {
     if (displayPot === animatedPotRef.current) {
       return;
     }
@@ -2505,6 +2883,10 @@ export const GameRoom: React.FC = () => {
   }, [displayPot]);
 
   useEffect(() => {
+    runPotAnimationToDisplayPot();
+  }, [runPotAnimationToDisplayPot]);
+
+  useEffect(() => {
     if (turnAlertTimeoutRef.current) {
       window.clearTimeout(turnAlertTimeoutRef.current);
       turnAlertTimeoutRef.current = null;
@@ -2515,21 +2897,16 @@ export const GameRoom: React.FC = () => {
   }, [room?.id, currentHandNumber]);
 
   useEffect(() => {
-    // Reset hand-level UI state for each new hand.
-    setShowRankingsModal(false);
-    setShowRulesModal(false);
-    setIsCardsFlyoutOpen(true);
-    setShowEndGameConfirmModal(false);
-  }, [room?.id, currentHandNumber]);
-
-  useEffect(() => {
     if (!finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowEndGameConfirmModal(false);
+    setShowLeaveConfirmModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult]);
 
   useEffect(() => {
     if (!isGameEnded || !finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult, isGameEnded]);
 
@@ -2549,7 +2926,7 @@ export const GameRoom: React.FC = () => {
     previousIsYourTurnRef.current = isYourTurn;
   }, [isYourTurn, triggerTurnAlert]);
 
-  useEffect(() => {
+  const syncActionCenterAlertWithLatestAction = useCallback(() => {
     if (!lastPlayerActionEvent) return;
 
     const alert = toActionCenterAlert(lastPlayerActionEvent, t);
@@ -2572,6 +2949,10 @@ export const GameRoom: React.FC = () => {
       clearActionAlertTimers();
     }, ACTION_ALERT_TOTAL_MS);
   }, [clearActionAlertTimers, lastPlayerActionEvent, t]);
+
+  useEffect(() => {
+    syncActionCenterAlertWithLatestAction();
+  }, [syncActionCenterAlertWithLatestAction]);
 
   useEffect(() => {
     if (!actionCenterAlert) {
@@ -2613,13 +2994,46 @@ export const GameRoom: React.FC = () => {
     [clearActionAlertTimers],
   );
 
+  const dismissTransientOverlays = useCallback(() => {
+    if (showLeaveConfirmModal) {
+      setShowLeaveConfirmModal(false);
+      return;
+    }
+    if (lastError) clearError();
+    if (showRankingsModal) setShowRankingsModal(false);
+    if (showRulesModal) setShowRulesModal(false);
+    if (showSettingsModal) setShowSettingsModal(false);
+    if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
+    if (showHandResultsModal) setShowHandResultsModal(false);
+    if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
+    if (quickConfirmAction) setQuickConfirmAction(null);
+  }, [
+    clearError,
+    isGameEnded,
+    lastError,
+    quickConfirmAction,
+    setShowLeaveConfirmModal,
+    setShowEndGameConfirmModal,
+    showHandResultsModal,
+    setShowRankingsModal,
+    setShowRulesModal,
+    showLeaveConfirmModal,
+    showEndGameConfirmModal,
+    showFinalSummaryModal,
+    showRankingsModal,
+    showRulesModal,
+    showSettingsModal,
+  ]);
+
   useEffect(() => {
     if (
       !lastError &&
       !showRankingsModal &&
       !showRulesModal &&
       !showSettingsModal &&
+      !showLeaveConfirmModal &&
       !showEndGameConfirmModal &&
+      !showHandResultsModal &&
       !showFinalSummaryModal &&
       !quickConfirmAction
     ) {
@@ -2628,24 +3042,18 @@ export const GameRoom: React.FC = () => {
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (lastError) clearError();
-      if (showRankingsModal) setShowRankingsModal(false);
-      if (showRulesModal) setShowRulesModal(false);
-      if (showSettingsModal) setShowSettingsModal(false);
-      if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
-      if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
-      if (quickConfirmAction) setQuickConfirmAction(null);
+      dismissTransientOverlays();
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [
-    clearError,
+    dismissTransientOverlays,
     lastError,
-    quickConfirmAction,
+    showLeaveConfirmModal,
     showEndGameConfirmModal,
+    showHandResultsModal,
     showFinalSummaryModal,
-    isGameEnded,
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
@@ -2790,13 +3198,13 @@ export const GameRoom: React.FC = () => {
 
   const saveShareablePanelScreenshot = async ({
     panel,
-    hiddenControlTestId,
+    hiddenControlTestIds,
     fileSuffix,
     successMessageKey,
     failureMessageKey,
   }: {
     panel: HTMLElement;
-    hiddenControlTestId: string;
+    hiddenControlTestIds: string[];
     fileSuffix: string;
     successMessageKey: MessageKey;
     failureMessageKey: MessageKey;
@@ -2804,13 +3212,14 @@ export const GameRoom: React.FC = () => {
     if (!room) return;
 
     try {
+      const hiddenControlTestIdSet = new Set(hiddenControlTestIds);
       const screenshotDataUrl = await toPng(panel, {
         cacheBust: true,
         pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
         backgroundColor: "#032b26",
         filter: (node) => {
           if (!(node instanceof HTMLElement)) return true;
-          return node.dataset.testid !== hiddenControlTestId;
+          return !hiddenControlTestIdSet.has(node.dataset.testid ?? "");
         },
       });
 
@@ -2874,7 +3283,10 @@ export const GameRoom: React.FC = () => {
 
     await saveShareablePanelScreenshot({
       panel: handResultsPanelRef.current,
-      hiddenControlTestId: "save-result-screenshot-button",
+      hiddenControlTestIds: [
+        "save-result-screenshot-button",
+        "close-hand-results-button",
+      ],
       fileSuffix: `hand-${currentHandNumber ?? "result"}`,
       successMessageKey: "game.resultScreenshotSaved",
       failureMessageKey: "game.resultScreenshotFailed",
@@ -2886,7 +3298,7 @@ export const GameRoom: React.FC = () => {
 
     await saveShareablePanelScreenshot({
       panel: finalSummaryPanelRef.current,
-      hiddenControlTestId: "save-final-summary-screenshot-button",
+      hiddenControlTestIds: ["save-final-summary-screenshot-button"],
       fileSuffix: "final-results",
       successMessageKey: "game.final.screenshotSaved",
       failureMessageKey: "game.final.screenshotFailed",
@@ -2899,9 +3311,32 @@ export const GameRoom: React.FC = () => {
     endGame();
   };
 
-  const handleLeave = () => {
+  const handleRequestLeave = () => {
+    setShowLeaveConfirmModal(true);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowLeaveConfirmModal(false);
     leaveRoom();
     navigate("/");
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) {
+      return;
+    }
+    setIsSavingProfile(true);
+    setProfileFeedback(null);
+    try {
+      await updateProfile(profileDisplayNameDraft, profileAvatarEmojiDraft);
+      setProfileFeedback(t("game.profile.updateSuccess"));
+    } catch (error) {
+      setProfileFeedback(
+        error instanceof Error ? error.message : t("game.profile.updateFailure"),
+      );
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleLegacyAction = (action: PlayerAction) => {
@@ -2984,13 +3419,13 @@ export const GameRoom: React.FC = () => {
 
   const rulesRankingRows = useMemo(
     () =>
-      HAND_RANK_ORDER.map((rank, idx) => ({
+      HAND_RANK_ORDER_BY_VARIANT[rulesVariant].map((rank, idx) => ({
         key: rank,
         order: idx + 1,
         title: formatHandRank(rank, locale),
-        detail: HAND_RANK_DETAILS[locale][rank],
+        detail: HAND_RANK_DETAILS_BY_VARIANT[rulesVariant][locale][rank],
       })),
-    [locale],
+    [locale, rulesVariant],
   );
 
   if (!room || !player) {
@@ -3014,8 +3449,9 @@ export const GameRoom: React.FC = () => {
 
   return (
     <TableShell
-      isYourTurn={isYourTurn}
-      isDesktopSideDock={isDesktopSideDock}
+      showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
+      showDesktopOperationDock={(showOperationBar || showNextHandActionArea) && isDesktopSideDock}
+      desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
       <TableTopBar
@@ -3024,6 +3460,7 @@ export const GameRoom: React.FC = () => {
           count: tablePlayers.length,
           max: room.config.maxPlayers,
         })}
+        ruleVariantLabel={ruleVariantLabel}
         inviteCopyLabel={t("game.copyInvite")}
         inviteCopyStatus={inviteCopyStatus}
         inviteCopyStatusTone={inviteCopyStatusTone}
@@ -3066,8 +3503,15 @@ export const GameRoom: React.FC = () => {
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
         showStartGameButton={showPreGameReadyButton}
         onCopyInvite={handleCopyInviteLink}
-        onLeave={handleLeave}
-        onOpenSettings={() => setShowSettingsModal(true)}
+        onLeave={handleRequestLeave}
+        onOpenSettings={() => {
+          if (user) {
+            setProfileDisplayNameDraft(user.displayName);
+            setProfileAvatarEmojiDraft(user.avatarEmoji);
+          }
+          setProfileFeedback(null);
+          setShowSettingsModal(true);
+        }}
         onOpenRules={() => setShowRulesModal(true)}
         onOpenRankings={() => setShowRankingsModal(true)}
         onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
@@ -3103,8 +3547,8 @@ export const GameRoom: React.FC = () => {
           isOpen={isCardsFlyoutOpen}
           hasHoleCards={hasHoleCards}
           cards={displayHoleCards ?? []}
-          shouldAnchorToTurnDock={shouldAnchorCardsFlyoutToTurnDock}
-          turnOverlayHeight={turnOverlayHeight}
+          shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
+          bottomBarHeight={bottomBarHeight}
           title={t("game.yourCards")}
           emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
           emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
@@ -3145,8 +3589,28 @@ export const GameRoom: React.FC = () => {
         seatOrbitItems={seatOrbitItems}
       />
 
-      {lastHandResult && (
-        <HandResultsPanel ref={handResultsPanelRef}>
+      {showHandResultsModal && lastHandResult && !finalGameResult && (
+        <HandResultsModal
+          ref={handResultsPanelRef}
+          ariaLabel={t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
+          footer={
+            showNextHandActionArea ? (
+              <NextHandActionArea
+                canReadyNextHand={canReadyNextHand}
+                hasReadiedNextHand={hasReadiedCurrentPhase}
+                canEndGame={canHostEndGame}
+                onReadyNextHand={markReady}
+                onOpenEndGameConfirm={() => {
+                  if (!canHostEndGame) return;
+                  setShowEndGameConfirmModal(true);
+                }}
+                t={t}
+              />
+            ) : null
+          }
+          onClose={() => setShowHandResultsModal(false)}
+          t={t}
+        >
           <HandResultsContent
             currentHandNumber={currentHandNumber}
             totalPot={lastHandResult.totalPot}
@@ -3170,28 +3634,86 @@ export const GameRoom: React.FC = () => {
             }
             t={t}
           />
-        </HandResultsPanel>
+        </HandResultsModal>
       )}
 
-      <NextHandActionArea
-        canReadyNextHand={canReadyNextHand}
-        hasReadiedNextHand={hasReadiedCurrentPhase}
-        canEndGame={canHostEndGame}
-        showNextStreetActionArea={showNextStreetActionArea}
-        isResultRevealStep={isResultRevealStep}
-        canRevealNextStreet={canRevealNextStreet}
-        hasRevealedNextStreet={hasRevealedNextStreet}
-        onReadyNextHand={markReady}
-        onOpenEndGameConfirm={() => {
-          if (!canHostEndGame) return;
-          setShowEndGameConfirmModal(true);
-        }}
-        onRevealNextStreet={revealNextStreet}
-        t={t}
-      />
+      {operationBarMode !== null && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
+            <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
+              <div className="showdown-revealed-hands__header">
+                <h4 className="showdown-revealed-hands__title">{t("game.showdown.revealedHandsTitle")}</h4>
+              </div>
+              <div className="showdown-revealed-hands__list">
+                {revealedShowdownHands.map((entry) => (
+                  <div
+                    key={entry.playerId}
+                    className="showdown-revealed-hands__item"
+                    data-testid={`showdown-revealed-hand-${entry.playerId}`}
+                  >
+                    <span className="showdown-revealed-hands__name">{entry.playerName}</span>
+                    <div className="showdown-revealed-hands__cards">
+                      {entry.cards.map((card, cardIndex) => (
+                        <Card
+                          key={`${entry.playerId}-${card.suit}-${card.rank}-${cardIndex}`}
+                          card={card}
+                          size="small"
+                          dataTestId={`showdown-revealed-card-${entry.playerId}-${cardIndex}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          <OperationActionBar
+            mode={operationBarMode}
+            isAutomationMode={isAutomationMode}
+            isResultRevealStep={isResultRevealStep}
+            canRevealNextStreet={canRevealNextStreet}
+            hasRevealedNextStreet={hasRevealedNextStreet}
+            canShowMyHand={canShowMyHandAtShowdown}
+            hasShownMyHand={hasShownMyHandAtShowdown}
+            canFoldMyHand={canFoldMyHandAtShowdown}
+            hasFoldedMyHand={hasFoldedMyHandAtShowdown}
+            showdownIsDecisionTurn={isMyShowdownDecisionTurn}
+            showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
+            showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
+            onRevealNextStreet={revealNextStreet}
+            onShowMyHand={showMyHand}
+            onFoldMyHand={muckMyHand}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
 
-      {isYourTurn && !isAwaitingStreetReveal && (
-        <ChipComposerDock ref={turnOverlayRef}>
+      {showNextHandActionArea && !showHandResultsModal && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <NextHandActionArea
+            canReadyNextHand={canReadyNextHand}
+            hasReadiedNextHand={hasReadiedCurrentPhase}
+            canEndGame={canHostEndGame}
+            onReadyNextHand={markReady}
+            onOpenEndGameConfirm={() => {
+              if (!canHostEndGame) return;
+              setShowEndGameConfirmModal(true);
+            }}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showTurnActionDock && (
+        <ChipComposerDock ref={bottomBarOverlayRef}>
           <TurnActionDock
             callAmount={callAmount}
             minRaise={minRaise}
@@ -3213,6 +3735,12 @@ export const GameRoom: React.FC = () => {
             onTrayInputBlur={handleCustomTrayInputBlur}
             onClearTray={clearTray}
             onQuickDecisionAction={handleQuickDecisionAction}
+            quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
+            onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
+            onQuickConfirmAccept={(action) => {
+              setQuickConfirmAction(null);
+              performAction(action);
+            }}
             onLegacyAction={handleLegacyAction}
             onLegacyRaiseAmountChange={setLegacyRaiseAmount}
             t={t}
@@ -3236,6 +3764,14 @@ export const GameRoom: React.FC = () => {
         <SettingsModal
           locale={locale}
           onLocaleChange={setLocale}
+          profileDisplayName={profileDisplayNameDraft}
+          profileAvatarEmoji={profileAvatarEmojiDraft}
+          profileEmojiOptions={PLAYER_EMOJI_OPTIONS}
+          onProfileDisplayNameChange={setProfileDisplayNameDraft}
+          onProfileAvatarEmojiChange={setProfileAvatarEmojiDraft}
+          onSaveProfile={handleSaveProfile}
+          isSavingProfile={isSavingProfile}
+          profileFeedback={profileFeedback}
           isHost={isHost}
           isPlayerStreetRevealEnabled={isPlayerStreetRevealEnabled}
           onStreetRevealChange={(enabled) =>
@@ -3272,6 +3808,14 @@ export const GameRoom: React.FC = () => {
         />
       )}
 
+      {showLeaveConfirmModal && (
+        <LeaveRoomConfirmModal
+          onCancel={() => setShowLeaveConfirmModal(false)}
+          onConfirm={handleConfirmLeave}
+          t={t}
+        />
+      )}
+
       {showFinalSummaryModal && finalGameResult && (
         <FinalSummaryModal
           ref={finalSummaryPanelRef}
@@ -3281,48 +3825,10 @@ export const GameRoom: React.FC = () => {
           currentPlayerId={player.id}
           isGameEnded={isGameEnded}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
-          onLeave={handleLeave}
+          onLeave={handleRequestLeave}
           onClose={() => setShowFinalSummaryModal(false)}
           t={t}
         />
-      )}
-
-      {!isAutomationMode && quickConfirmAction && (
-        <div
-          className="fixed inset-0 z-[84] flex items-center justify-center bg-emerald-950/80 p-4 backdrop-blur-sm"
-          data-testid="action-quick-confirm-modal"
-        >
-          <div className="surface-panel w-full max-w-xs p-4">
-            <p className="text-sm font-semibold text-white">
-              {t("game.quickConfirm.prompt", {
-                action:
-                  quickConfirmAction === "check"
-                    ? t("common.check")
-                    : t("common.fold"),
-              })}
-            </p>
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={() => setQuickConfirmAction(null)}
-                data-testid="action-quick-confirm-cancel"
-                className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={() => {
-                  const actionToApply = quickConfirmAction;
-                  setQuickConfirmAction(null);
-                  performAction(actionToApply);
-                }}
-                data-testid="action-quick-confirm-accept"
-                className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-300"
-              >
-                {t("common.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {feedbackInsight && (
@@ -3390,3 +3896,5 @@ export const GameRoom: React.FC = () => {
     </TableShell>
   );
 };
+
+export const GameRoom: React.FC = () => useGameRoomElement();

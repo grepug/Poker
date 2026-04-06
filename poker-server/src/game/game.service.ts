@@ -10,6 +10,27 @@ import {
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
 
+type ServerPlayer = Player & { userId?: string };
+
+const MIN_ROOM_PLAYERS = 2;
+const MAX_ROOM_PLAYERS = 15;
+
+const normalizeMaxPlayers = (maxPlayers: unknown): number => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (
+    !Number.isFinite(parsedMaxPlayers) ||
+    !Number.isInteger(parsedMaxPlayers) ||
+    parsedMaxPlayers < MIN_ROOM_PLAYERS ||
+    parsedMaxPlayers > MAX_ROOM_PLAYERS
+  ) {
+    throw new Error(
+      `maxPlayers must be an integer between ${MIN_ROOM_PLAYERS} and ${MAX_ROOM_PLAYERS}`,
+    );
+  }
+
+  return parsedMaxPlayers;
+};
+
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
@@ -27,6 +48,7 @@ export class GameService {
     hostName: string,
     hostEmoji?: string,
     config?: Partial<RoomConfig>,
+    hostUserId?: string,
   ): Promise<Room> {
     const roomId = generateRoomId();
     const hostId = generatePlayerId();
@@ -36,12 +58,18 @@ export class GameService {
       smallBlind: 5,
       bigBlind: 10,
       maxPlayers: 10,
+      useShortDeckRules: false,
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
+    const normalizedConfig =
+      config && Object.prototype.hasOwnProperty.call(config, 'maxPlayers')
+        ? { ...config, maxPlayers: normalizeMaxPlayers(config.maxPlayers) }
+        : config;
 
-    const host: Player = {
+    const host: ServerPlayer = {
       id: hostId,
+      userId: hostUserId,
       socketId: hostSocketId,
       name: hostName,
       emoji: hostEmoji,
@@ -61,7 +89,7 @@ export class GameService {
     const room: Room = {
       id: roomId,
       hostId,
-      config: { ...defaultConfig, ...config },
+      config: { ...defaultConfig, ...normalizedConfig },
       players: [host],
       gameState: 'WAITING',
       currentHand: null,
@@ -85,7 +113,13 @@ export class GameService {
     socketId: string,
     playerName: string,
     playerEmoji?: string,
+    userId?: string,
   ): Promise<{ room: Room; player: Player; rejoined: boolean }> {
+    const normalizedPlayerName = playerName.trim();
+    if (!normalizedPlayerName) {
+      throw new Error('Player name cannot be empty');
+    }
+
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
@@ -96,7 +130,13 @@ export class GameService {
       throw new Error('Cannot join room - game has ended');
     }
 
-    const existingPlayer = room.players.find((p) => p.name === playerName);
+    const playersWithUserId = room.players as ServerPlayer[];
+    const existingPlayerByUserId = userId
+      ? playersWithUserId.find((player) => player.userId === userId)
+      : undefined;
+    const existingPlayer =
+      existingPlayerByUserId ??
+      playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
       if (
         existingPlayer.status !== 'disconnected' &&
@@ -141,10 +181,16 @@ export class GameService {
       if (playerEmoji !== undefined) {
         existingPlayer.emoji = playerEmoji;
       }
+      if (userId) {
+        existingPlayer.userId = userId;
+      }
+      existingPlayer.name = normalizedPlayerName;
       room.lastActivityAt = Date.now();
 
       await this.storageService.saveRoom(room);
-      this.logger.log(`Player ${playerName} reclaimed seat in room ${roomId}`);
+      this.logger.log(
+        `Player ${normalizedPlayerName} reclaimed seat in room ${roomId}`,
+      );
 
       return { room, player: existingPlayer, rejoined: true };
     }
@@ -164,10 +210,11 @@ export class GameService {
     const initialChips = joinsDuringActiveGame ? room.config.startingChips : 0;
     const initialBuyIn = joinsDuringActiveGame ? room.config.startingChips : 0;
 
-    const player: Player = {
+    const player: ServerPlayer = {
       id: playerId,
+      userId,
       socketId,
-      name: playerName,
+      name: normalizedPlayerName,
       emoji: playerEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,
@@ -186,7 +233,7 @@ export class GameService {
     room.lastActivityAt = Date.now();
 
     await this.storageService.saveRoom(room);
-    this.logger.log(`Player ${playerName} joined room ${roomId}`);
+    this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
   }
@@ -265,16 +312,21 @@ export class GameService {
     playerName: string,
     newSocketId: string,
     playerId?: string,
+    userId?: string,
   ): Promise<Player | null> {
+    const normalizedPlayerName = playerName.trim();
     const room = await this.storageService.getRoom(roomId);
 
     if (!room) {
       return null;
     }
 
+    const playersWithUserId = room.players as ServerPlayer[];
     const player = playerId
-      ? room.players.find((p) => p.id === playerId)
-      : room.players.find((p) => p.name === playerName);
+      ? playersWithUserId.find((p) => p.id === playerId)
+      : userId
+        ? playersWithUserId.find((p) => p.userId === userId)
+        : playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (!player) {
       return null;
     }

@@ -30,14 +30,37 @@ export const useSocket = () => {
 
 interface SocketProviderProps {
   children: ReactNode;
+  isAuthenticated: boolean;
 }
 
-export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
-  const [socket] = useState<Socket<
+export const SocketProvider: React.FC<SocketProviderProps> = ({
+  children,
+  isAuthenticated,
+}) => {
+  const [socket, setSocket] = useState<Socket<
     ServerToClientEvents,
     ClientToServerEvents
-  > | null>(() => socketService.connect());
-  const [connected, setConnected] = useState(() => socketService.isConnected());
+  > | null>(null);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      socketService.disconnect();
+      setSocket(null);
+      setConnected(false);
+      return;
+    }
+
+    const nextSocket = socketService.connect();
+    setSocket(nextSocket);
+    setConnected(socketService.isConnected());
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    return () => {
+      socketService.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -51,7 +74,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
-      socketService.disconnect();
     };
   }, [socket]);
 

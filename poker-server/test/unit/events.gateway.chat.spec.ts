@@ -67,6 +67,7 @@ describe('EventsGateway chat events', () => {
       {} as any,
       {} as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      { getUserByToken: jest.fn() } as any,
       storageService,
       chatStorageService,
       chatMediaStorageService,
@@ -81,6 +82,10 @@ describe('EventsGateway chat events', () => {
       roomId: 'ROOM1',
       playerId: 'player-1',
     });
+  });
+
+  afterEach(() => {
+    gateway.onModuleDestroy();
   });
 
   it('broadcasts chat message and deduplicates repeated clientMessageId', async () => {

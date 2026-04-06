@@ -84,14 +84,14 @@ const resolveSocketUrl = (explicitUrl?: string) => {
   return `${protocol}://${host}:${port}`;
 };
 
-export const resolveServerBaseUrl = (explicitUrl?: string) =>
-  resolveSocketUrl(explicitUrl);
-
 export const resolveServerResourceUrl = (
   resourcePath: string,
   explicitUrl?: string,
 ): string => {
-  if (resourcePath.startsWith("http://") || resourcePath.startsWith("https://")) {
+  if (
+    resourcePath.startsWith("http://") ||
+    resourcePath.startsWith("https://")
+  ) {
     return resourcePath;
   }
 
@@ -99,14 +99,16 @@ export const resolveServerResourceUrl = (
     ? resourcePath
     : `/${resourcePath}`;
 
-  const baseUrl = resolveServerBaseUrl(explicitUrl).trim();
+  const baseUrl = resolveSocketUrl(explicitUrl).trim();
   if (!baseUrl || baseUrl === "/") {
     return normalizedPath;
   }
 
   if (baseUrl.startsWith("/")) {
     const normalizedBase = baseUrl.replace(/\/+$/, "");
-    return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
+    return normalizedBase
+      ? `${normalizedBase}${normalizedPath}`
+      : normalizedPath;
   }
 
   try {
@@ -123,7 +125,10 @@ class SocketService {
     null;
 
   connect(url?: string) {
-    if (this.socket?.connected) {
+    if (this.socket) {
+      if (!this.socket.connected) {
+        this.socket.connect();
+      }
       return this.socket;
     }
 
@@ -132,6 +137,7 @@ class SocketService {
     this.socket = io(socketUrl, {
       transports: ["websocket"],
       autoConnect: true,
+      withCredentials: true,
     });
 
     this.socket.on("connect", () => {

@@ -95,7 +95,7 @@ export const PLAYER_EMOJI_OPTIONS = [
   "👾",
 ] as const;
 
-export const FALLBACK_PLAYER_EMOJI = "😀";
+const FALLBACK_PLAYER_EMOJI = "😀";
 
 export function getRandomPlayerEmoji(excludeEmoji?: string): string {
   const pool = excludeEmoji

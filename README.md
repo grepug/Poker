@@ -6,7 +6,7 @@ A full-stack Texas Hold'em poker web application built with React, NestJS, and W
 
 - **Texas Hold'em Rules**: Full implementation with all betting rounds (Pre-flop, Flop, Turn, River, Showdown)
 - **Real-time Multiplayer**: WebSocket-based communication for instant updates
-- **2-10 Players**: Support for multiplayer games
+- **2-15 Players**: Support for multiplayer games
 - **Full Betting System**: Fold, Check, Call, Raise, All-in
 - **Host Migration**: Automatic host transfer when current host leaves
 - **Reconnection Support**: 30-second grace period for disconnected players
@@ -136,7 +136,19 @@ This repository includes a production Docker setup where:
 
 - NestJS serves both API/WebSocket traffic and the built SPA
 - Room state is persisted with JSON files under `/app/data`
-- `/app/data` is mounted as a Docker volume so data survives container restarts
+- `/app/data` is mounted as a Docker volume so data survives container restarts and redeploys
+- The physical Docker volume defaults to `poker_data` so persistence does not depend on the Compose project name
+
+### Zeabur
+
+Zeabur does not use this repository's `docker-compose.yml` when deploying `PREBUILT_V2` services. For Zeabur deployments, persistence must be configured in the Zeabur service itself by mounting a Zeabur Volume at `/app/data`.
+
+Recommended Zeabur setup:
+
+- Mount a Zeabur Volume such as `poker-staging-data` to `/app/data`
+- Keep `DATA_DIR=/app/data`
+
+Without that Zeabur volume mount, users, sessions, rooms, chat history, and uploaded chat audio will be lost on redeploy because the container filesystem is ephemeral.
 
 ### Run with Docker Compose
 
@@ -152,17 +164,34 @@ If port `3000` is already used locally, choose another host port:
 HOST_PORT=3300 docker compose up --build -d
 ```
 
+To use a custom persistent volume name, set `POKER_DATA_VOLUME`:
+
+```bash
+POKER_DATA_VOLUME=poker_prod_data docker compose up --build -d
+```
+
+If you already deployed an older version of this stack and your data lives in a
+project-scoped volume such as `myapp_poker_data`, point the new deployment at
+that existing volume to keep the data:
+
+```bash
+POKER_DATA_VOLUME=myapp_poker_data docker compose up --build -d
+```
+
 ### Stop
 
 ```bash
 docker compose down
 ```
 
-### Reset stored room data
+### Reset stored persistent app data
 
 ```bash
 docker compose down -v
 ```
+
+`docker compose down -v` removes the configured Docker volume and permanently
+deletes stored users, sessions, rooms, chat history, and uploaded chat audio.
 
 ## 🎮 How to Play
 
@@ -261,10 +290,18 @@ Current test coverage:
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
 CLIENT_URL=http://localhost:5173
+AUTH_DOMAIN=localhost:5173
+WEBAUTHN_RP_ID=localhost
+WEBAUTHN_ORIGIN=http://localhost:5173
 NODE_ENV=development
 DATA_DIR=./data
 FRONTEND_DIST_PATH=../poker-client/dist
 ```
+
+Auth passkey domain configuration:
+- `AUTH_DOMAIN` accepts either host/port (`poker.example.com`, `localhost:5173`) or full origin (`https://poker.example.com`).
+- If `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` are set, they take precedence over `AUTH_DOMAIN`.
+- Localhost-like hosts default to `http`, non-local hosts default to `https` when `AUTH_DOMAIN` has no scheme.
 
 ### Frontend
 

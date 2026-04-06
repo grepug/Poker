@@ -1,4 +1,4 @@
-export type OrbitPoint = {
+type OrbitPoint = {
   x: number;
   y: number;
 };

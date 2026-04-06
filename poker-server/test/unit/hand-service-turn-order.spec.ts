@@ -42,14 +42,24 @@ describe('HandService turn order', () => {
   });
 
   it('advances clockwise from folded actor position', () => {
-    const playerAt7 = buildPlayer({ id: 'p7', position: 7, status: 'connected', chips: 500 });
+    const playerAt7 = buildPlayer({
+      id: 'p7',
+      position: 7,
+      status: 'connected',
+      chips: 500,
+    });
     const foldedPlayerAt0 = buildPlayer({
       id: 'p0',
       position: 0,
       status: 'folded',
       chips: 500,
     });
-    const playerAt3 = buildPlayer({ id: 'p3', position: 3, status: 'connected', chips: 500 });
+    const playerAt3 = buildPlayer({
+      id: 'p3',
+      position: 3,
+      status: 'connected',
+      chips: 500,
+    });
 
     const room: Room = {
       id: 'ROOM-ORDER',
@@ -119,11 +129,119 @@ describe('HandService turn order', () => {
     expect(hand.smallBlindPosition).toBe(3);
     expect(hand.bigBlindPosition).toBe(0);
     expect(hand.currentPlayerTurn).toBe('p3');
+    expect(hand.positionLabelsByPlayerId).toEqual({
+      p0: 'BTN/BB',
+      p3: 'SB',
+    });
 
     const playerAt3 = room.players.find((player) => player.id === 'p3');
     const playerAt0 = room.players.find((player) => player.id === 'p0');
     expect(playerAt3?.chips).toBe(995);
     expect(playerAt0?.chips).toBe(990);
   });
-});
 
+  it('assigns multi-player position labels from the hand-start seat order', async () => {
+    const room: Room = {
+      id: 'ROOM-SIXMAX',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        buildPlayer({ id: 'p8', position: 8 }),
+        buildPlayer({ id: 'p0', position: 0 }),
+        buildPlayer({ id: 'p4', position: 4 }),
+        buildPlayer({ id: 'p9', position: 9 }),
+        buildPlayer({ id: 'p2', position: 2 }),
+        buildPlayer({ id: 'p6', position: 6 }),
+      ],
+      gameState: 'WAITING',
+      currentHand: {
+        handNumber: 7,
+        dealerPosition: 4,
+        smallBlindPosition: 6,
+        bigBlindPosition: 8,
+        currentPlayerTurn: null,
+        pot: 0,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 10,
+        activePlayers: [],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {},
+        startedAt: Date.now(),
+      },
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const hand = await handService.startNewHand(room);
+
+    expect(hand.dealerPosition).toBe(6);
+    expect(hand.smallBlindPosition).toBe(8);
+    expect(hand.bigBlindPosition).toBe(9);
+    expect(hand.positionLabelsByPlayerId).toEqual({
+      p6: 'BTN',
+      p8: 'SB',
+      p9: 'BB',
+      p0: 'UTG',
+      p2: 'HJ',
+      p4: 'CO',
+    });
+  });
+
+  it('assigns deterministic fallback position labels for tables above ten players', async () => {
+    const room: Room = {
+      id: 'ROOM-ELEVEN',
+      hostId: 'p0',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 15,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [
+        buildPlayer({ id: 'p8', position: 8 }),
+        buildPlayer({ id: 'p0', position: 0 }),
+        buildPlayer({ id: 'p4', position: 4 }),
+        buildPlayer({ id: 'p9', position: 9 }),
+        buildPlayer({ id: 'p2', position: 2 }),
+        buildPlayer({ id: 'p6', position: 6 }),
+        buildPlayer({ id: 'p1', position: 1 }),
+        buildPlayer({ id: 'p3', position: 3 }),
+        buildPlayer({ id: 'p5', position: 5 }),
+        buildPlayer({ id: 'p7', position: 7 }),
+        buildPlayer({ id: 'p10', position: 10 }),
+      ],
+      gameState: 'WAITING',
+      currentHand: null,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    const hand = await handService.startNewHand(room);
+
+    expect(hand.positionLabelsByPlayerId).toMatchObject({
+      p0: 'BTN',
+      p1: 'SB',
+      p2: 'BB',
+      p3: 'UTG',
+      p4: 'UTG+1',
+      p5: 'UTG+2',
+      p6: 'UTG+3',
+      p7: 'MP',
+      p8: 'LJ',
+      p9: 'HJ',
+      p10: 'CO',
+    });
+  });
+});

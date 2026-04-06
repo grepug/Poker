@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
@@ -16,6 +17,7 @@ type TrayPresetButton = {
 
 type QuickDecisionAction = "check" | "fold";
 type LegacyAction = "check" | "call" | "all-in" | "raise";
+const QUICK_DECISION_SAFETY_LOCK_MS = 2000;
 
 type TurnActionDockProps = {
   callAmount: number;
@@ -38,6 +40,9 @@ type TurnActionDockProps = {
   onTrayInputBlur: React.FocusEventHandler<HTMLInputElement>;
   onClearTray: () => void;
   onQuickDecisionAction: (action: QuickDecisionAction) => void;
+  quickConfirmAction: QuickDecisionAction | null;
+  onQuickConfirmDismiss: () => void;
+  onQuickConfirmAccept: (action: QuickDecisionAction) => void;
   onLegacyAction: (action: LegacyAction) => void;
   onLegacyRaiseAmountChange: (amount: number) => void;
   t: Translate;
@@ -64,10 +69,56 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onTrayInputBlur,
   onClearTray,
   onQuickDecisionAction,
+  quickConfirmAction,
+  onQuickConfirmDismiss,
+  onQuickConfirmAccept,
   onLegacyAction,
   onLegacyRaiseAmountChange,
   t,
 }) => {
+  const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
+  const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
+  const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
+    React.useState(isQuickDecisionAvailable);
+  const quickConfirmAnchorRef =
+    quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
+  const quickConfirmStyle = useAnchoredPopover({
+    isOpen: !isAutomationMode && Boolean(quickConfirmAction),
+    anchorRef: quickConfirmAnchorRef,
+    popoverRef: quickConfirmPopoverRef,
+    preferredPlacement: "top",
+    align: "start",
+  });
+  const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
+
+  React.useLayoutEffect(() => {
+    if (quickDecisionLockTimeoutRef.current !== null) {
+      window.clearTimeout(quickDecisionLockTimeoutRef.current);
+      quickDecisionLockTimeoutRef.current = null;
+    }
+
+    if (!isQuickDecisionAvailable) {
+      setIsQuickDecisionTemporarilyLocked(false);
+      return;
+    }
+
+    setIsQuickDecisionTemporarilyLocked(true);
+    quickDecisionLockTimeoutRef.current = window.setTimeout(() => {
+      setIsQuickDecisionTemporarilyLocked(false);
+      quickDecisionLockTimeoutRef.current = null;
+    }, QUICK_DECISION_SAFETY_LOCK_MS);
+
+    return () => {
+      if (quickDecisionLockTimeoutRef.current !== null) {
+        window.clearTimeout(quickDecisionLockTimeoutRef.current);
+        quickDecisionLockTimeoutRef.current = null;
+      }
+    };
+  }, [isQuickDecisionAvailable]);
+
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
       <div className="chip-composer-dock__header">
@@ -138,22 +189,65 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
             </button>
           </div>
 
-          <div className="chip-composer-dock__footer">
-            <button
-              onClick={() => onQuickDecisionAction("check")}
-              disabled={!canCheck}
-              data-testid={canCheck ? "action-check" : "action-check-disabled"}
-              className="chip-action chip-action--check"
-            >
-              {t("common.check")}
-            </button>
-            <button
-              onClick={() => onQuickDecisionAction("fold")}
-              data-testid="action-fold"
-              className="chip-action chip-action--fold"
-            >
-              {t("common.fold")}
-            </button>
+          <div className="relative">
+            {!isAutomationMode && quickConfirmAction && (
+              <div
+                ref={quickConfirmPopoverRef}
+                role="dialog"
+                aria-label={t("game.confirmAction.title")}
+                data-testid="action-quick-confirm-popover"
+                className="action-quick-confirm-popover action-quick-confirm-popover--wide"
+                style={quickConfirmStyle}
+              >
+                <p className="text-xs font-semibold text-emerald-50">
+                  {t("game.quickConfirm.prompt", {
+                    action:
+                      quickConfirmAction === "check"
+                        ? t("common.check")
+                        : t("common.fold"),
+                  })}
+                </p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={onQuickConfirmDismiss}
+                    data-testid="action-quick-confirm-cancel"
+                    className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onQuickConfirmAccept(quickConfirmAction)}
+                    data-testid="action-quick-confirm-accept"
+                    className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-300"
+                  >
+                    {t("common.confirm")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="chip-composer-dock__footer">
+              <button
+                ref={checkActionButtonRef}
+                onClick={() => onQuickDecisionAction("check")}
+                disabled={!canCheck || isQuickDecisionLocked}
+                data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                className="chip-action chip-action--check"
+              >
+                {t("common.check")}
+              </button>
+              <button
+                ref={foldActionButtonRef}
+                onClick={() => onQuickDecisionAction("fold")}
+                disabled={isQuickDecisionLocked}
+                data-testid="action-fold"
+                className="chip-action chip-action--fold"
+              >
+                {t("common.fold")}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -9,6 +9,14 @@ type Translate = (
 type SettingsModalProps = {
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
+  profileDisplayName: string;
+  profileAvatarEmoji: string;
+  profileEmojiOptions: readonly string[];
+  onProfileDisplayNameChange: (value: string) => void;
+  onProfileAvatarEmojiChange: (emoji: string) => void;
+  onSaveProfile: () => void;
+  isSavingProfile: boolean;
+  profileFeedback?: string | null;
   isHost: boolean;
   isPlayerStreetRevealEnabled: boolean;
   onStreetRevealChange: (value: boolean) => void;
@@ -19,6 +27,14 @@ type SettingsModalProps = {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   locale,
   onLocaleChange,
+  profileDisplayName,
+  profileAvatarEmoji,
+  profileEmojiOptions,
+  onProfileDisplayNameChange,
+  onProfileAvatarEmojiChange,
+  onSaveProfile,
+  isSavingProfile,
+  profileFeedback,
   isHost,
   isPlayerStreetRevealEnabled,
   onStreetRevealChange,
@@ -63,6 +79,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <option value="en">{t("game.settings.english")}</option>
             <option value="zh_hans">{t("game.settings.chineseSimplified")}</option>
           </select>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+            {t("game.settings.profileTitle")}
+          </p>
+          <p className="mt-1 text-xs text-emerald-100/70">
+            {t("game.settings.profileHelp")}
+          </p>
+          <label
+            htmlFor="settings-profile-display-name"
+            className="mt-3 block text-xs font-semibold uppercase tracking-wide text-emerald-100/70"
+          >
+            {t("game.settings.profileDisplayName")}
+          </label>
+          <input
+            id="settings-profile-display-name"
+            value={profileDisplayName}
+            onChange={(event) => onProfileDisplayNameChange(event.target.value)}
+            aria-label={t("game.settings.profileDisplayName")}
+            className="mt-2 w-full rounded-xl border border-emerald-700/60 bg-emerald-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+            placeholder={t("game.settings.profileDisplayNamePlaceholder")}
+          />
+          <div className="mt-3 grid max-h-36 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-emerald-700/60 bg-emerald-950/50 p-2">
+            {profileEmojiOptions.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => onProfileAvatarEmojiChange(emoji)}
+                aria-label={t("game.settings.profileSelectAvatar", { emoji })}
+                aria-pressed={profileAvatarEmoji === emoji}
+                className={`h-8 rounded-md text-lg transition ${
+                  profileAvatarEmoji === emoji
+                    ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
+                    : "hover:bg-emerald-500/15"
+                }`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          {profileFeedback && (
+            <div className="mt-3 rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              {profileFeedback}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onSaveProfile}
+            disabled={isSavingProfile}
+            className="mt-3 w-full rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("game.settings.profileSave")}
+          </button>
         </div>
 
         {isHost && (

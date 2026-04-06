@@ -3,7 +3,7 @@ import type { Card as PokerCard } from "poker-types";
 import { Card } from "@/components/Card";
 import { CommunityCardsLane } from "@/components/poker/community-cards-lane";
 import { PotDropZone } from "@/components/poker/pot-drop-zone";
-import { SeatPod } from "@/components/poker/seat-pod";
+import { SeatPod, type SeatBadge } from "@/components/poker/seat-pod";
 
 type SeatMainState = "turn" | "disconnected" | "all-in" | "folded" | "waiting" | "default";
 
@@ -21,8 +21,7 @@ type SeatOrbitItem = {
   playerEmoji: string;
   playerName: string;
   isYou: boolean;
-  roleIcon: "dealer" | "small-blind" | null;
-  roleLabel: string | null;
+  badge?: SeatBadge | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -66,6 +65,37 @@ const SEAT_WIDTH_MAX_EXPANSION_RATIO = 1.4;
 const SEAT_WIDTH_EXPANSION_MULTIPLIER = 1.22;
 const SEAT_WIDTH_EXPANSION_PROBE_STEPS = 10;
 const SEAT_WIDTH_MAX_FELT_RATIO = 0.22;
+const COMMUNITY_SLOT_META = [
+  { id: "flop-1", position: 0, revealDelayMs: 0, revealedTestId: "community-card-0", hiddenTestId: "board-back-0" },
+  {
+    id: "flop-2",
+    position: 1,
+    revealDelayMs: 70,
+    revealedTestId: "community-card-1",
+    hiddenTestId: "board-back-1",
+  },
+  {
+    id: "flop-3",
+    position: 2,
+    revealDelayMs: 140,
+    revealedTestId: "community-card-2",
+    hiddenTestId: "board-back-2",
+  },
+  {
+    id: "turn",
+    position: 3,
+    revealDelayMs: 210,
+    revealedTestId: "community-card-3",
+    hiddenTestId: "board-back-3",
+  },
+  {
+    id: "river",
+    position: 4,
+    revealDelayMs: 280,
+    revealedTestId: "community-card-4",
+    hiddenTestId: "board-back-4",
+  },
+] as const;
 
 const parseLengthToPixels = ({
   token,
@@ -421,19 +451,20 @@ export const TableBoard: React.FC<TableBoardProps> = ({
         <div ref={boardCenterStackRef} className="board-center-stack">
           <div ref={communityLaneRef}>
             <CommunityCardsLane>
-              {communitySlots.map((card, idx) => {
+              {COMMUNITY_SLOT_META.map((slotMeta) => {
+                const card = communitySlots[slotMeta.position] ?? null;
                 const isRevealed = Boolean(card);
                 return (
                   <div
-                    key={`community-slot-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                    key={`community-slot-${slotMeta.id}-${card ? `${card.suit}-${card.rank}` : "back"}`}
                     className={isRevealed ? "community-reveal" : ""}
-                    style={isRevealed ? { animationDelay: `${idx * 70}ms` } : undefined}
+                    style={isRevealed ? { animationDelay: `${slotMeta.revealDelayMs}ms` } : undefined}
                   >
                     <Card
                       card={card}
                       size="medium"
                       faceDown={!isRevealed}
-                      dataTestId={isRevealed ? `community-card-${idx}` : `board-back-${idx}`}
+                      dataTestId={isRevealed ? slotMeta.revealedTestId : slotMeta.hiddenTestId}
                     />
                   </div>
                 );
@@ -471,8 +502,7 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                   playerEmoji={item.playerEmoji}
                   playerName={item.playerName}
                   isYou={item.isYou}
-                  roleIcon={item.roleIcon}
-                  roleLabel={item.roleLabel}
+                  badge={item.badge}
                   externalStatusLabel={item.externalStatusLabel}
                   externalStatusToneClass={item.externalStatusToneClass}
                   internalStatusLabel={item.internalStatusLabel}

@@ -72,6 +72,61 @@ describe('GameService addPlayerToRoom', () => {
     };
   }
 
+  it('creates room with standard rules by default', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice');
+
+    expect(room.config.useShortDeckRules).toBe(false);
+    expect(room.config.maxPlayers).toBe(10);
+    expect(room.players[0].name).toBe('Alice');
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
+  it('respects explicit max player overrides when creating a room', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
+      maxPlayers: 4,
+    });
+
+    expect(room.config.maxPlayers).toBe(4);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
+  it('rejects out-of-range max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 16,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 1,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+  });
+
+  it('rejects non-integer max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: Number.NaN as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 7.5 as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+  });
+
+  it('creates room with short-deck rules when requested', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
+      useShortDeckRules: true,
+    });
+
+    expect(room.config.useShortDeckRules).toBe(true);
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+  });
+
   it('adds joiner with zero chips while table is waiting', async () => {
     const room = createRoom({
       gameState: 'WAITING',
@@ -132,7 +187,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.status).toBe('waiting');
@@ -342,7 +401,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.position).toBe(1);

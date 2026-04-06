@@ -13,6 +13,7 @@ describe('EventsGateway membership mutation serialization', () => {
   let storageService: any;
   let chatStorageService: any;
   let chatMediaStorageService: any;
+  let authService: any;
 
   const createPlayer = (params: {
     id: string;
@@ -37,12 +38,20 @@ describe('EventsGateway membership mutation serialization', () => {
     lastConnectedAt: Date.now(),
   });
 
-  const createClient = (socketId: string) => ({
+  const createClient = (
+    socketId: string,
+    options: { token?: string; cookieToken?: string },
+  ) => ({
     id: socketId,
     join: jest.fn(),
     leave: jest.fn(),
     emit: jest.fn(),
-    handshake: { headers: {} },
+    handshake: {
+      headers: options.cookieToken
+        ? { cookie: `poker_session=${options.cookieToken}` }
+        : {},
+      auth: options.token ? { token: options.token } : {},
+    },
   });
 
   beforeEach(() => {
@@ -139,45 +148,50 @@ describe('EventsGateway membership mutation serialization', () => {
           return updatedPlayer;
         },
       ),
-      removePlayerFromRoom: jest.fn(async (roomId: string, playerId: string) => {
-        if (roomId !== 'ROOM1') {
-          return null;
-        }
-
-        let updatedRoom: any = null;
-        await persistViaStaleSnapshot((draft) => {
-          const player = draft.players.find((entry: any) => entry.id === playerId);
-          if (!player) {
-            return;
+      removePlayerFromRoom: jest.fn(
+        async (roomId: string, playerId: string) => {
+          if (roomId !== 'ROOM1') {
+            return null;
           }
 
-          player.status = 'left';
-          player.socketId = '';
-          player.cards = null;
-          player.currentBet = 0;
-          player.lastAction = null;
-          player.lastConnectedAt = Date.now();
-
-          if (draft.currentHand) {
-            draft.currentHand.activePlayers = draft.currentHand.activePlayers.filter(
-              (activePlayerId: string) => activePlayerId !== playerId,
+          let updatedRoom: any = null;
+          await persistViaStaleSnapshot((draft) => {
+            const player = draft.players.find(
+              (entry: any) => entry.id === playerId,
             );
-
-            if (draft.currentHand.roundActions?.[playerId]) {
-              delete draft.currentHand.roundActions[playerId];
+            if (!player) {
+              return;
             }
 
-            if (draft.currentHand.currentPlayerTurn === playerId) {
-              draft.currentHand.currentPlayerTurn = null;
+            player.status = 'left';
+            player.socketId = '';
+            player.cards = null;
+            player.currentBet = 0;
+            player.lastAction = null;
+            player.lastConnectedAt = Date.now();
+
+            if (draft.currentHand) {
+              draft.currentHand.activePlayers =
+                draft.currentHand.activePlayers.filter(
+                  (activePlayerId: string) => activePlayerId !== playerId,
+                );
+
+              if (draft.currentHand.roundActions?.[playerId]) {
+                delete draft.currentHand.roundActions[playerId];
+              }
+
+              if (draft.currentHand.currentPlayerTurn === playerId) {
+                draft.currentHand.currentPlayerTurn = null;
+              }
             }
-          }
 
-          draft.lastActivityAt = Date.now();
-          updatedRoom = deepClone(draft);
-        });
+            draft.lastActivityAt = Date.now();
+            updatedRoom = deepClone(draft);
+          });
 
-        return updatedRoom;
-      }),
+          return updatedRoom;
+        },
+      ),
     };
 
     handService = {
@@ -211,7 +225,9 @@ describe('EventsGateway membership mutation serialization', () => {
       hasChatData: jest.fn(),
       deleteRoomChat: jest.fn(),
       listRoomsWithChatData: jest.fn().mockResolvedValue([]),
-      pruneRoomMessages: jest.fn().mockResolvedValue({ deleted: 0, remaining: 0 }),
+      pruneRoomMessages: jest
+        .fn()
+        .mockResolvedValue({ deleted: 0, remaining: 0 }),
     };
 
     chatMediaStorageService = {
@@ -219,12 +235,34 @@ describe('EventsGateway membership mutation serialization', () => {
       deleteRoomMedia: jest.fn(),
       pruneOrphanMedia: jest.fn().mockResolvedValue({ deleted: 0 }),
     };
+    authService = {
+      getUserByToken: jest.fn(async (token: string) => {
+        if (token === 'token-alice') {
+          return {
+            id: 'user-alice',
+            accountId: 'alice',
+            displayName: 'Alice',
+            avatarEmoji: '🦊',
+          };
+        }
+        if (token === 'token-bob') {
+          return {
+            id: 'user-bob',
+            accountId: 'bob',
+            displayName: 'Bob',
+            avatarEmoji: '🐻',
+          };
+        }
+        return null;
+      }),
+    };
 
     gateway = new EventsGateway(
       gameService,
       handService,
       bettingService,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      authService,
       storageService,
       chatStorageService,
       chatMediaStorageService,
@@ -237,9 +275,17 @@ describe('EventsGateway membership mutation serialization', () => {
     } as any;
   });
 
+  afterEach(() => {
+    gateway.onModuleDestroy();
+  });
+
   it('does not drop players when JOIN_ROOM and RECONNECT happen concurrently', async () => {
-    const joinClient = createClient('socket-join');
-    const reconnectClient = createClient('socket-reconnect');
+    const joinClient = createClient('socket-join', {
+      cookieToken: 'token-alice',
+    });
+    const reconnectClient = createClient('socket-reconnect', {
+      cookieToken: 'token-bob',
+    });
 
     const [joinResult, reconnectResult] = await Promise.all([
       gateway.handleJoinRoom(joinClient as any, {
@@ -307,7 +353,9 @@ describe('EventsGateway membership mutation serialization', () => {
       .spyOn(gateway as any, 'handleBettingRoundComplete')
       .mockResolvedValue(undefined);
 
-    const leavingClient = createClient('socket-bob-old');
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
     (gateway as any).socketToPlayer.set('socket-bob-old', {
       roomId: 'ROOM1',
       playerId: 'p-bob',
@@ -316,7 +364,10 @@ describe('EventsGateway membership mutation serialization', () => {
     const result = await gateway.handleLeaveRoom(leavingClient as any);
 
     expect(result).toEqual({ success: true });
-    expect(gameService.removePlayerFromRoom).toHaveBeenCalledWith('ROOM1', 'p-bob');
+    expect(gameService.removePlayerFromRoom).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-bob',
+    );
     expect(bettingService.isBettingRoundComplete).toHaveBeenCalledTimes(1);
     expect(handleBettingRoundCompleteSpy).toHaveBeenCalledTimes(1);
     expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');

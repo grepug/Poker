@@ -11,6 +11,7 @@ const meta = {
   args: {
     roomTitle: "Room #ABC123",
     playerCountLabel: "4 / 8 players",
+    ruleVariantLabel: "Standard Rules",
     inviteCopyLabel: "Copy Invite",
     inviteCopyStatus: "Copied room link",
     inviteCopyStatusTone: "success",

@@ -6,8 +6,8 @@ type YourCardsFlyoutProps = {
   isOpen: boolean;
   hasHoleCards: boolean;
   cards: PokerCard[];
-  shouldAnchorToTurnDock: boolean;
-  turnOverlayHeight: number;
+  shouldAnchorToBottomBar: boolean;
+  bottomBarHeight: number;
   title: string;
   emptyOpenStateLabel: string;
   emptyClosedStateLabel: string;
@@ -20,8 +20,8 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
   isOpen,
   hasHoleCards,
   cards,
-  shouldAnchorToTurnDock,
-  turnOverlayHeight,
+  shouldAnchorToBottomBar,
+  bottomBarHeight,
   title,
   emptyOpenStateLabel,
   emptyClosedStateLabel,
@@ -33,11 +33,11 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
     <section
       className={`your-cards-flyout ${
         isOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-      } ${shouldAnchorToTurnDock ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
+      } ${shouldAnchorToBottomBar ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
       style={
-        shouldAnchorToTurnDock
+        shouldAnchorToBottomBar
           ? {
-              bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${turnOverlayHeight}px + 16px)`,
+              bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${bottomBarHeight}px + 16px)`,
             }
           : undefined
       }
@@ -51,7 +51,12 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
         {isOpen && hasHoleCards ? (
           <div className="your-cards-flyout__cards">
             {cards.map((card, idx) => (
-              <Card key={idx} card={card} size="small" dataTestId={`your-card-${idx}`} />
+              <Card
+                key={`your-card-${card.suit}-${card.rank}`}
+                card={card}
+                size="small"
+                dataTestId={`your-card-${idx}`}
+              />
             ))}
           </div>
         ) : (

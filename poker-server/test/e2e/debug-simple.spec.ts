@@ -3,6 +3,44 @@ import { test, expect, Page } from '@playwright/test';
 const FRONTEND_URL =
   process.env.PW_FRONTEND_URL ??
   `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
+const BACKEND_URL =
+  process.env.PW_BACKEND_URL ??
+  `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.PW_BACKEND_PORT ?? '3001'}`;
+const DEFAULT_TEST_PASSWORD = 'test1234';
+
+async function authenticateTestUser(
+  page: Page,
+  accountId: string,
+  displayName: string,
+  avatarEmoji: string,
+) {
+  const loginResponse = await page
+    .context()
+    .request.post(`${BACKEND_URL}/api/auth/password/login`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: {
+        accountId,
+        password: DEFAULT_TEST_PASSWORD,
+      },
+    });
+  expect(loginResponse.ok()).toBeTruthy();
+
+  const profileResponse = await page
+    .context()
+    .request.patch(`${BACKEND_URL}/api/auth/me/profile`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: {
+        displayName,
+        avatarEmoji,
+      },
+    });
+  expect(profileResponse.ok()).toBeTruthy();
+
+  await page.goto(FRONTEND_URL);
+  await page.waitForSelector('[data-testid="connection-status"]', {
+    timeout: 5000,
+  });
+}
 
 test('Debug - Two players room creation and game', async ({ browser }) => {
   const context1 = await browser.newContext();
@@ -15,8 +53,8 @@ test('Debug - Two players room creation and game', async ({ browser }) => {
   alice.on('console', (msg) => console.log('ALICE:', msg.text()));
   bob.on('console', (msg) => console.log('BOB:', msg.text()));
 
-  await alice.goto(FRONTEND_URL);
-  await bob.goto(FRONTEND_URL);
+  await authenticateTestUser(alice, 'test1', 'Alice', '🦊');
+  await authenticateTestUser(bob, 'test2', 'Bob', '🐻');
 
   // Wait for pokerDebug
   await alice.waitForFunction(() => window.pokerDebug !== undefined, {

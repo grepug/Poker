@@ -26,6 +26,9 @@ type HandResultRow = {
   netChange: number | null;
   cards: PokerCard[];
   hand: HandEvaluation | null;
+  resultStatus: "shown" | "folded_pre_showdown" | "folded_at_showdown" | "hidden_contender";
+  cardsVisibility: "shown" | "hidden";
+  seatPosition: number;
 };
 
 type HandResultsContentProps = {
@@ -44,6 +47,38 @@ type HandResultsContentProps = {
   t: Translate;
 };
 
+const HAND_RESULT_COMMUNITY_SLOT_META = [
+  { id: "flop-1", position: 0, revealedTestId: "hand-results-community-card-0", hiddenTestId: "hand-results-community-back-0" },
+  {
+    id: "flop-2",
+    position: 1,
+    revealedTestId: "hand-results-community-card-1",
+    hiddenTestId: "hand-results-community-back-1",
+  },
+  {
+    id: "flop-3",
+    position: 2,
+    revealedTestId: "hand-results-community-card-2",
+    hiddenTestId: "hand-results-community-back-2",
+  },
+  {
+    id: "turn",
+    position: 3,
+    revealedTestId: "hand-results-community-card-3",
+    hiddenTestId: "hand-results-community-back-3",
+  },
+  {
+    id: "river",
+    position: 4,
+    revealedTestId: "hand-results-community-card-4",
+    hiddenTestId: "hand-results-community-back-4",
+  },
+] as const;
+const HIDDEN_HOLE_CARD_META = [
+  { id: "left", testIndex: 0 },
+  { id: "right", testIndex: 1 },
+] as const;
+
 export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   currentHandNumber,
   totalPot,
@@ -60,6 +95,17 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   t,
 }) => {
   const formatNet = (amount: number) => `${amount >= 0 ? "+" : "-"}$${Math.abs(amount)}`;
+  const getResultStatusLabel = (
+    resultStatus: HandResultRow["resultStatus"],
+  ): string => {
+    if (resultStatus === "shown") {
+      return t("game.resultStatus.shown");
+    }
+    if (resultStatus === "folded_pre_showdown" || resultStatus === "folded_at_showdown") {
+      return t("game.resultStatus.folded");
+    }
+    return t("game.resultStatus.hidden");
+  };
 
   return (
     <>
@@ -111,15 +157,18 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
           {t("game.communityCards")}
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-sm text-emerald-50">
-          {communityCards.map((card, idx) => (
-            <Card
-              key={`hand-results-community-card-${idx}-${card ? `${card.suit}-${card.rank}` : "back"}`}
-              card={card}
-              size="small"
-              faceDown={!card}
-              dataTestId={card ? `hand-results-community-card-${idx}` : `hand-results-community-back-${idx}`}
-            />
-          ))}
+          {HAND_RESULT_COMMUNITY_SLOT_META.map((slotMeta) => {
+            const card = communityCards[slotMeta.position] ?? null;
+            return (
+              <Card
+                key={`hand-results-community-card-${slotMeta.id}-${card ? `${card.suit}-${card.rank}` : "back"}`}
+                card={card}
+                size="small"
+                faceDown={!card}
+                dataTestId={card ? slotMeta.revealedTestId : slotMeta.hiddenTestId}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -174,7 +223,14 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
         <div className="mt-3 grid grid-cols-1 gap-3" data-testid="hand-results-rows">
           {handResultRows.map((entry) => {
             const isSelf = entry.playerId === currentPlayerId;
-            const showCards = revealedHandPlayerIdSet.has(entry.playerId);
+            const showCards =
+              entry.cardsVisibility === "shown" || revealedHandPlayerIdSet.has(entry.playerId);
+            const resultStatusLabel = showCards
+              ? t("game.resultStatus.shown")
+              : getResultStatusLabel(entry.resultStatus);
+            const isFoldedResultStatus =
+              entry.resultStatus === "folded_pre_showdown" ||
+              entry.resultStatus === "folded_at_showdown";
 
             return (
               <article
@@ -191,6 +247,9 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                     <p className="text-sm font-semibold text-white">
                       #{entry.rankOrder} {entry.playerName}
                       {isSelf ? ` (${t("common.you")})` : ""}
+                    </p>
+                    <p className="text-xs text-emerald-100/70" data-testid={`hand-result-status-${entry.playerId}`}>
+                      {resultStatusLabel}
                     </p>
                     <p className="text-xs text-emerald-100/70">
                       {showNetChange && typeof entry.netChange === "number"
@@ -211,19 +270,19 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                   {showCards
                     ? entry.cards.map((card, idx) => (
                         <Card
-                          key={`${entry.playerId}-shown-${idx}`}
+                          key={`${entry.playerId}-shown-${card.suit}-${card.rank}`}
                           card={card}
                           size="small"
                           dataTestId={`hand-result-card-${entry.playerId}-${idx}`}
                         />
                       ))
-                    : [0, 1].map((idx) => (
+                    : HIDDEN_HOLE_CARD_META.map((slotMeta) => (
                         <Card
-                          key={`${entry.playerId}-hidden-${idx}`}
+                          key={`${entry.playerId}-hidden-${slotMeta.id}`}
                           card={null}
                           size="small"
                           faceDown
-                          dataTestId={`hand-result-hidden-card-${entry.playerId}-${idx}`}
+                          dataTestId={`hand-result-hidden-card-${entry.playerId}-${slotMeta.testIndex}`}
                         />
                       ))}
                 </div>
@@ -236,7 +295,9 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                     ? entry.hand
                       ? describeEvaluatedHand(entry.hand)
                       : t("game.cardsShownNoEvaluated")
-                    : t("game.handHidden")}
+                    : isFoldedResultStatus
+                      ? `${t("game.resultStatus.folded")} · ${t("game.handHidden")}`
+                      : t("game.handHidden")}
                 </p>
               </article>
             );
