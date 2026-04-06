@@ -32,7 +32,10 @@ const prepareFrontendCommand = `node ./test/e2e/scripts/prepare-frontend-dist.cj
 const projects = [
   {
     name: 'comprehensive-e2e',
-    testMatch: 'comprehensive-poker.spec.ts',
+    testMatch: [
+      'comprehensive-poker.spec.ts',
+      'persistence-storage.spec.ts',
+    ],
     use: {
       ...devices['Desktop Chrome'],
       headless: true,
@@ -43,7 +46,7 @@ const projects = [
 if (includeDebugProject) {
   projects.push({
     name: 'debug',
-    testMatch: 'debug-*.spec.ts',
+    testMatch: ['debug-*.spec.ts'],
     use: {
       ...devices['Desktop Chrome'],
       headless: false,
