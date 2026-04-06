@@ -1376,6 +1376,34 @@ const getSeatRoleIcon = (
   return null;
 };
 
+const buildSeatBadge = (
+  roleIcon: ReturnType<typeof getSeatRoleIcon>,
+  seatPositionLabel: string | null,
+): SeatBadge | null => {
+  if (roleIcon && seatPositionLabel) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (seatPositionLabel) {
+    return {
+      tone: "position",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (roleIcon) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: roleIcon === "dealer" ? "D" : "SB",
+    };
+  }
+
+  return null;
+};
+
 const resolveSeatMainState = ({
   isCurrentTurnSeat,
   isDisconnected,
@@ -2438,23 +2466,7 @@ const useGameRoomElement = () => {
         const seatPlayerId = seatPlayer.id;
         const seatPositionLabel =
           currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
-        const seatBadge: SeatBadge | null =
-          roleIcon && seatPositionLabel
-            ? {
-                tone: roleIcon === "dealer" ? "dealer" : "small-blind",
-                text: seatPositionLabel,
-              }
-          : seatPositionLabel
-              ? {
-                  tone: "position",
-                  text: seatPositionLabel,
-                }
-              : roleIcon
-                ? {
-                    tone: roleIcon === "dealer" ? "dealer" : "small-blind",
-                    text: roleIcon === "dealer" ? "D" : "SB",
-                  }
-                : null;
+        const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";

@@ -1030,6 +1030,7 @@ body {
   right: 0.1rem;
   transform: translate(32%, -52%);
   min-width: 1.02rem;
+  max-width: calc(100% - 0.55rem);
   height: 0.8rem;
   padding: 0 0.2rem;
   border-radius: 9999px;
@@ -1046,6 +1047,8 @@ body {
   z-index: 6;
   box-shadow: 0 6px 14px rgba(2, 6, 23, 0.36);
   pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .seat-pod__role-icon--dealer {
