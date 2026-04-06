@@ -339,7 +339,10 @@ describe('GameService addPlayerToRoom', () => {
       expect(player.status).toBe(status);
       expect(player.connectionStatus).toBe('connected');
       expect(player.socketId).toBe('s-new-bob');
-      expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+      expect(storageService.persistRoom).toHaveBeenCalledWith(
+        room,
+        expect.anything(),
+      );
     },
   );
 
@@ -401,7 +404,7 @@ describe('GameService addPlayerToRoom', () => {
       expect(reconnectedPlayer?.status).toBe(status);
       expect(reconnectedPlayer?.socketId).toBe('s-bob-new');
       expect((reconnectedPlayer as any)?.connectionStatus).toBe('connected');
-      expect(storageService.saveRoom).toHaveBeenCalledTimes(2);
+      expect(storageService.persistRoom).toHaveBeenCalledTimes(2);
     },
   );
 

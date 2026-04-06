@@ -441,12 +441,12 @@ describe('EventsGateway membership mutation serialization', () => {
     const result = await gateway.handleEndGame(hostClient as any);
 
     expect(result).toEqual({ success: true });
-    const savedRoom = storageService.saveRoom.mock.calls.at(-1)?.[0];
+    const savedRoom = storageService.persistRoom.mock.calls.at(-1)?.[0];
     expect(savedRoom?.gameState).toBe('ENDED');
     const leftSeat = savedRoom?.players.find((player: any) => player.id === 'p-bob');
     const hostSeat = savedRoom?.players.find((player: any) => player.id === 'p-host');
     expect(leftSeat?.status).toBe('left');
     expect(hostSeat?.status).toBe('waiting');
-    expect(storageService.saveRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 });
