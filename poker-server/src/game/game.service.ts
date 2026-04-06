@@ -13,6 +13,25 @@ import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 type ServerPlayer = Player & { userId?: string };
 
+const MIN_ROOM_PLAYERS = 2;
+const MAX_ROOM_PLAYERS = 15;
+
+const normalizeMaxPlayers = (maxPlayers: unknown): number => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (
+    !Number.isFinite(parsedMaxPlayers) ||
+    !Number.isInteger(parsedMaxPlayers) ||
+    parsedMaxPlayers < MIN_ROOM_PLAYERS ||
+    parsedMaxPlayers > MAX_ROOM_PLAYERS
+  ) {
+    throw new Error(
+      `maxPlayers must be an integer between ${MIN_ROOM_PLAYERS} and ${MAX_ROOM_PLAYERS}`,
+    );
+  }
+
+  return parsedMaxPlayers;
+};
+
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
@@ -44,6 +63,10 @@ export class GameService {
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
+    const normalizedConfig =
+      config && Object.prototype.hasOwnProperty.call(config, 'maxPlayers')
+        ? { ...config, maxPlayers: normalizeMaxPlayers(config.maxPlayers) }
+        : config;
 
     const host: ServerPlayer = {
       id: hostId,
@@ -67,7 +90,7 @@ export class GameService {
     const room: Room = {
       id: roomId,
       hostId,
-      config: { ...defaultConfig, ...config },
+      config: { ...defaultConfig, ...normalizedConfig },
       players: [host],
       gameState: 'WAITING',
       currentHand: null,

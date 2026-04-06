@@ -81,6 +81,46 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
   });
 
+  it('respects explicit max player overrides when creating a room', async () => {
+    const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
+      maxPlayers: 4,
+    });
+
+    expect(room.config.maxPlayers).toBe(4);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.anything(),
+    );
+  });
+
+  it('rejects out-of-range max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 16,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 1,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+  });
+
+  it('rejects non-integer max player overrides when creating a room', async () => {
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: Number.NaN as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+
+    await expect(
+      gameService.createRoom('socket-host', 'Alice', '🦊', {
+        maxPlayers: 7.5 as unknown as number,
+      }),
+    ).rejects.toThrow('maxPlayers must be an integer between 2 and 15');
+  });
+
   it('creates room with short-deck rules when requested', async () => {
     const room = await gameService.createRoom('socket-host', 'Alice', '🦊', {
       useShortDeckRules: true,
@@ -150,7 +190,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.status).toBe('waiting');
@@ -360,7 +404,11 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    const { player } = await gameService.addPlayerToRoom('ROOM01', 's-charlie', 'Charlie');
+    const { player } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-charlie',
+      'Charlie',
+    );
 
     expect(player.name).toBe('Charlie');
     expect(player.position).toBe(1);

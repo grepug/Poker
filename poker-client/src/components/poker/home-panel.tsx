@@ -13,6 +13,7 @@ type HomePanelProps = {
   feedback: string | null;
   lastError: string | null;
   useShortDeckRules: boolean;
+  maxPlayers: number;
   emojiOptions: readonly string[];
   emojiPickerRef?: RefObject<HTMLDivElement | null>;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -21,6 +22,7 @@ type HomePanelProps = {
   onRandomEmoji: () => void;
   onEmojiPick: (emoji: string) => void;
   onUseShortDeckRulesChange: (enabled: boolean) => void;
+  onMaxPlayersChange: (value: number) => void;
   onCreateRoom: () => void;
   onEnableJoinMode: () => void;
   onRoomIdChange: (value: string) => void;
@@ -40,6 +42,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   feedback,
   lastError,
   useShortDeckRules,
+  maxPlayers,
   emojiOptions,
   emojiPickerRef,
   t,
@@ -48,6 +51,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   onRandomEmoji,
   onEmojiPick,
   onUseShortDeckRulesChange,
+  onMaxPlayersChange,
   onCreateRoom,
   onEnableJoinMode,
   onRoomIdChange,
@@ -180,18 +184,45 @@ export const HomePanel: React.FC<HomePanelProps> = ({
 
       {!isJoining ? (
         <>
-          <label
-            className="flex cursor-pointer items-center gap-3 rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-500/80"
-            data-testid="short-deck-toggle"
-          >
-            <input
-              type="checkbox"
-              checked={useShortDeckRules}
-              onChange={(event) => onUseShortDeckRulesChange(event.target.checked)}
-              className="h-4 w-4 rounded border-emerald-500/70 bg-emerald-950/60 text-emerald-400 focus:ring-emerald-500/50"
-            />
-            <span className="font-semibold">{t("home.shortDeckRules")}</span>
-          </label>
+          <div className="space-y-3 rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-4 py-3">
+            <label
+              className="flex cursor-pointer items-center gap-3 text-sm text-emerald-100 transition hover:border-emerald-500/80"
+              data-testid="short-deck-toggle"
+            >
+              <input
+                type="checkbox"
+                checked={useShortDeckRules}
+                onChange={(event) => onUseShortDeckRulesChange(event.target.checked)}
+                className="h-4 w-4 rounded border-emerald-500/70 bg-emerald-950/60 text-emerald-400 focus:ring-emerald-500/50"
+              />
+              <span className="font-semibold">{t("home.shortDeckRules")}</span>
+            </label>
+
+            <div>
+              <label
+                htmlFor="max-players-select"
+                className="mb-2 block text-sm font-semibold text-emerald-100"
+              >
+                {t("home.maxPlayers")}
+              </label>
+              <p className="mb-2 text-xs text-emerald-100/70">
+                {t("home.maxPlayersHelp")}
+              </p>
+              <select
+                id="max-players-select"
+                value={maxPlayers}
+                onChange={(event) => onMaxPlayersChange(Number(event.target.value))}
+                data-testid="max-players-select"
+                className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
+              >
+                {Array.from({ length: 14 }, (_, index) => index + 2).map((value) => (
+                  <option key={value} value={value}>
+                    {t("home.maxPlayersOption", { count: value })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           <button
             onClick={onCreateRoom}

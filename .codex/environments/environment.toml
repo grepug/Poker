@@ -1,0 +1,15 @@
+version = 1
+name = "poker local"
+
+[setup]
+script = "./.codex/setup/bootstrap-worktree.sh"
+
+[[actions]]
+name = "Run Backend"
+icon = "run"
+command = "cd poker-server && FRONTEND_URL=${PW_FRONTEND_URL:-http://localhost:${PW_FRONTEND_PORT:-5174}}; PORT=${PW_BACKEND_PORT:-3001} HOST=0.0.0.0 CORS_ORIGIN=$FRONTEND_URL CLIENT_URL=$FRONTEND_URL npm run start:dev"
+
+[[actions]]
+name = "Run Frontend"
+icon = "run"
+command = "cd poker-client && VITE_SERVER_PROTOCOL=${VITE_SERVER_PROTOCOL:-http} VITE_SERVER_HOST=${VITE_SERVER_HOST:-${PW_BACKEND_HOST:-localhost}} VITE_SERVER_PORT=${VITE_SERVER_PORT:-${PW_BACKEND_PORT:-3001}} npm run dev -- --host ${PW_FRONTEND_BIND_HOST:-localhost} --port ${PW_FRONTEND_PORT:-5174}"

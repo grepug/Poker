@@ -7,6 +7,15 @@ export type BettingRound = "PRE_FLOP" | "FLOP" | "TURN" | "RIVER" | "SHOWDOWN";
 // Game state
 export type GameStateType = "WAITING" | "IN_PROGRESS" | "ENDED";
 
+type EarlyPositionOffsetLabel =
+  | "UTG+1"
+  | "UTG+2"
+  | "UTG+3"
+  | "UTG+4"
+  | "UTG+5"
+  | "UTG+6"
+  | "UTG+7";
+
 export type HandPositionLabel =
   | "BTN"
   | "BTN/SB"
@@ -14,8 +23,7 @@ export type HandPositionLabel =
   | "SB"
   | "BB"
   | "UTG"
-  | "UTG+1"
-  | "UTG+2"
+  | EarlyPositionOffsetLabel
   | "MP"
   | "LJ"
   | "HJ"

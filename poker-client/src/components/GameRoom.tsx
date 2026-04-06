@@ -32,6 +32,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import type { SeatBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -1326,7 +1327,19 @@ const getSeatSlotWidth = ({
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
   if (occupiedSeats <= 8) return "clamp(3.72rem, 13.5vw, 5.08rem)";
-  return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 10) return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 12) return "clamp(3.18rem, 11.2vw, 4.3rem)";
+  if (occupiedSeats <= 16) return "clamp(2.86rem, 9.8vw, 3.86rem)";
+  return "clamp(2.58rem, 8.5vw, 3.38rem)";
+};
+
+const normalizeOrbitCapacity = (maxPlayers: number) => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (!Number.isFinite(parsedMaxPlayers)) {
+    return 6;
+  }
+
+  return Math.min(15, Math.max(6, Math.floor(parsedMaxPlayers)));
 };
 
 const getSeatDensityClass = ({
@@ -1372,6 +1385,34 @@ const getSeatRoleIcon = (
   if (handMeta.smallBlindPosition === playerPosition) {
     return "small-blind" as const;
   }
+  return null;
+};
+
+const buildSeatBadge = (
+  roleIcon: ReturnType<typeof getSeatRoleIcon>,
+  seatPositionLabel: string | null,
+): SeatBadge | null => {
+  if (roleIcon && seatPositionLabel) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (seatPositionLabel) {
+    return {
+      tone: "position",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (roleIcon) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: roleIcon === "dealer" ? "D" : "SB",
+    };
+  }
+
   return null;
 };
 
@@ -2127,7 +2168,7 @@ const useGameRoomElement = () => {
 
   const orbitCapacity = useMemo(() => {
     if (!room) return 6;
-    return room.config.maxPlayers > 6 ? 10 : 6;
+    return normalizeOrbitCapacity(room.config.maxPlayers);
   }, [room]);
 
   const seatSlotWidth = useMemo(
@@ -2437,6 +2478,7 @@ const useGameRoomElement = () => {
         const seatPlayerId = seatPlayer.id;
         const seatPositionLabel =
           currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
+        const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2515,9 +2557,7 @@ const useGameRoomElement = () => {
           playerEmoji: seatPlayer.emoji || "🎲",
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
-          roleIcon,
-          roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
-          positionLabel: seatPositionLabel,
+          badge: seatBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
