@@ -203,9 +203,15 @@ export class JsonAuthStorageService implements IAuthStorageService {
   }
 
   private async readAuthState(): Promise<PersistedAuthState | null> {
-    const state = await readJsonFile<PersistedAuthState>(this.authStatePath);
-    if (state) {
-      return state;
+    try {
+      const state = await readJsonFile<PersistedAuthState>(this.authStatePath);
+      if (state) {
+        return state;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read auth state, rebuilding from log: ${(error as Error).message}`,
+      );
     }
 
     return await this.rebuildAuthStateFromLog();
@@ -257,7 +263,17 @@ export class JsonAuthStorageService implements IAuthStorageService {
     const hasSessionsLegacy = await pathExists(this.sessionsLegacyFilePath);
     const hasState = await pathExists(this.authStatePath);
     const hasLog = await pathExists(this.authLogPath);
-    if ((!hasUsersLegacy && !hasSessionsLegacy) || hasState || hasLog) {
+    if (!hasUsersLegacy && !hasSessionsLegacy) {
+      return;
+    }
+
+    if (hasState || hasLog) {
+      const cleanedUp = await this.cleanupLegacyAuthIfJsonlReady(hasState, hasLog);
+      if (!cleanedUp) {
+        this.logger.warn(
+          'Skipping legacy auth cleanup because the JSONL layout is only partially present',
+        );
+      }
       return;
     }
 
@@ -302,5 +318,26 @@ export class JsonAuthStorageService implements IAuthStorageService {
     await fs.rm(this.usersLegacyFilePath, { force: true });
     await fs.rm(this.sessionsLegacyFilePath, { force: true });
     this.logger.log('Migrated legacy auth JSON files to JSONL auth ledger');
+  }
+
+  private async cleanupLegacyAuthIfJsonlReady(
+    hasState: boolean,
+    hasLog: boolean,
+  ): Promise<boolean> {
+    if (!hasLog) {
+      return false;
+    }
+
+    await readJsonlRecords<PersistedAuthLogRecord>(this.authLogPath);
+    if (hasState) {
+      await readJsonFile<PersistedAuthState>(this.authStatePath);
+    } else {
+      await this.rebuildAuthStateFromLog();
+    }
+
+    await fs.rm(this.usersLegacyFilePath, { force: true });
+    await fs.rm(this.sessionsLegacyFilePath, { force: true });
+    this.logger.log('Removed legacy auth JSON files after confirming JSONL auth storage');
+    return true;
   }
 }

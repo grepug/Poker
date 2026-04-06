@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { JsonAuthStorageService } from '../../src/storage/json-auth-storage.service';
@@ -147,5 +147,78 @@ describe('JsonAuthStorageService', () => {
         expiresAt: 999999,
       },
     ]);
+  });
+
+  it('rebuilds auth state from the auth log when the state snapshot is corrupt', async () => {
+    await service.replaceUsers([
+      {
+        id: 'user-1',
+        accountId: 'test1',
+        displayName: 'Alice',
+        avatarEmoji: 'A',
+        passkeys: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+
+    await writeFile(path.join(tempDir, 'auth', 'auth.state.json'), '{broken', 'utf-8');
+
+    const users = await service.getUsers();
+    expect(users.map((user) => user.id)).toEqual(['user-1']);
+  });
+
+  it('removes legacy auth JSON after confirming JSONL auth storage is usable', async () => {
+    await writeFile(
+      path.join(tempDir, 'auth', 'users.json'),
+      JSON.stringify([
+        {
+          id: 'legacy-user',
+          accountId: 'legacy',
+          displayName: 'Legacy',
+          avatarEmoji: 'L',
+          passkeys: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+      'utf-8',
+    );
+    await writeFile(
+      path.join(tempDir, 'auth', 'sessions.json'),
+      JSON.stringify([]),
+      'utf-8',
+    );
+    await writeFile(
+      path.join(tempDir, 'auth', 'auth.jsonl'),
+      `${JSON.stringify({
+        recordId: 'r1',
+        seq: 1,
+        timestamp: 1,
+        type: 'AUTH_MIGRATED',
+        userCount: 1,
+        sessionCount: 0,
+      })}\n${JSON.stringify({
+        recordId: 'r2',
+        seq: 2,
+        timestamp: 1,
+        type: 'USER_UPSERTED',
+        user: {
+          id: 'legacy-user',
+          accountId: 'legacy',
+          displayName: 'Legacy',
+          avatarEmoji: 'L',
+          passkeys: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })}\n`,
+      'utf-8',
+    );
+
+    const users = await service.getUsers();
+    expect(users.map((user) => user.id)).toEqual(['legacy-user']);
+    await expect(readFile(path.join(tempDir, 'auth', 'users.json'), 'utf-8')).rejects.toThrow();
+    await expect(readFile(path.join(tempDir, 'auth', 'sessions.json'), 'utf-8')).rejects.toThrow();
   });
 });

@@ -310,7 +310,22 @@ export class JsonStorageService implements IStorageService {
     const hasLegacy = await pathExists(legacyPath);
     const hasProjection = await pathExists(this.getProjectionPath(roomId));
     const hasLog = await pathExists(this.getRoomEventsPath(roomId));
-    if (!hasLegacy || hasProjection || hasLog) {
+    if (!hasLegacy) {
+      return;
+    }
+
+    if (hasProjection || hasLog) {
+      const cleanedUp = await this.cleanupLegacyRoomIfJsonlReady(
+        roomId,
+        legacyPath,
+        hasProjection,
+        hasLog,
+      );
+      if (!cleanedUp) {
+        this.logger.warn(
+          `Skipping legacy room migration for ${roomId} because the JSONL layout is only partially present`,
+        );
+      }
       return;
     }
 
@@ -362,5 +377,27 @@ export class JsonStorageService implements IStorageService {
     });
     await fs.rm(legacyPath, { force: true });
     this.logger.log(`Migrated legacy room snapshot ${roomId} to JSONL layout`);
+  }
+
+  private async cleanupLegacyRoomIfJsonlReady(
+    roomId: string,
+    legacyPath: string,
+    hasProjection: boolean,
+    hasLog: boolean,
+  ): Promise<boolean> {
+    if (!hasLog) {
+      return false;
+    }
+
+    await readJsonlRecords<PersistedRoomEventRecord>(this.getRoomEventsPath(roomId));
+    if (hasProjection) {
+      await readJsonFile<StoredRoomProjection>(this.getProjectionPath(roomId));
+    } else {
+      await this.rebuildProjectionFromLog(roomId);
+    }
+
+    await fs.rm(legacyPath, { force: true });
+    this.logger.log(`Removed legacy room snapshot ${roomId} after confirming JSONL layout`);
+    return true;
   }
 }

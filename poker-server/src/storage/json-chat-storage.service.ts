@@ -349,13 +349,12 @@ export class JsonChatStorageService implements IChatStorageService {
         roomId,
         createdAt: index.createdAt,
         updatedAt: now,
-        nextSeq:
+        nextSeq: Math.max(
+          index.nextSeq,
           nextMessages.length === 0
-            ? 1
-            : Math.max(
-                index.nextSeq,
-                nextMessages[nextMessages.length - 1].seq + 1,
-              ),
+            ? index.nextSeq
+            : nextMessages[nextMessages.length - 1].seq + 1,
+        ),
         logSeq: logRecord.seq,
         latestMessages: nextMessages,
       });
@@ -457,9 +456,15 @@ export class JsonChatStorageService implements IChatStorageService {
   }
 
   private async readChatIndex(roomId: string): Promise<PersistedChatIndex | null> {
-    const index = await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
-    if (index) {
-      return index;
+    try {
+      const index = await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
+      if (index) {
+        return index;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read chat index ${roomId}, rebuilding from log: ${(error as Error).message}`,
+      );
     }
 
     return await this.rebuildChatIndexFromLog(roomId);
@@ -519,10 +524,12 @@ export class JsonChatStorageService implements IChatStorageService {
         }
 
         index.latestMessages = nextMessages;
-        index.nextSeq =
+        index.nextSeq = Math.max(
+          index.nextSeq,
           nextMessages.length === 0
-            ? 1
-            : Math.max(index.nextSeq, nextMessages[nextMessages.length - 1].seq + 1);
+            ? index.nextSeq
+            : nextMessages[nextMessages.length - 1].seq + 1,
+        );
         continue;
       }
 
@@ -555,7 +562,22 @@ export class JsonChatStorageService implements IChatStorageService {
     const hasLegacy = await pathExists(legacyPath);
     const hasLog = await pathExists(this.getChatLogPath(roomId));
     const hasIndex = await pathExists(this.getChatIndexPath(roomId));
-    if (!hasLegacy || hasLog || hasIndex) {
+    if (!hasLegacy) {
+      return;
+    }
+
+    if (hasLog || hasIndex) {
+      const cleanedUp = await this.cleanupLegacyChatIfJsonlReady(
+        roomId,
+        legacyPath,
+        hasLog,
+        hasIndex,
+      );
+      if (!cleanedUp) {
+        this.logger.warn(
+          `Skipping legacy chat migration for ${roomId} because the JSONL layout is only partially present`,
+        );
+      }
       return;
     }
 
@@ -563,6 +585,17 @@ export class JsonChatStorageService implements IChatStorageService {
     if (!legacy) {
       return;
     }
+
+    const normalizedMessages = [...legacy.messages].sort((left, right) => {
+      if (left.seq !== right.seq) {
+        return left.seq - right.seq;
+      }
+      return left.createdAt - right.createdAt;
+    });
+    const highestSeq = normalizedMessages.reduce(
+      (max, message) => Math.max(max, message.seq),
+      0,
+    );
 
     let seq = 0;
     const migratedAt = Number(legacy.updatedAt || legacy.createdAt || Date.now());
@@ -573,9 +606,9 @@ export class JsonChatStorageService implements IChatStorageService {
         roomId,
         timestamp: migratedAt,
         type: 'CHAT_MIGRATED',
-        messageCount: legacy.messages.length,
+        messageCount: normalizedMessages.length,
       },
-      ...legacy.messages.map((message) => ({
+      ...normalizedMessages.map((message) => ({
         recordId: randomUUID(),
         seq: ++seq,
         roomId,
@@ -590,14 +623,38 @@ export class JsonChatStorageService implements IChatStorageService {
       roomId,
       createdAt: legacy.createdAt,
       updatedAt: legacy.updatedAt,
-      nextSeq:
+      nextSeq: Math.max(
         typeof legacy.nextSeq === 'number' && legacy.nextSeq > 0
           ? legacy.nextSeq
-          : legacy.messages.length + 1,
+          : 1,
+        highestSeq + 1,
+      ),
       logSeq: seq,
-      latestMessages: legacy.messages,
+      latestMessages: normalizedMessages,
     });
     await fs.rm(legacyPath, { force: true });
     this.logger.log(`Migrated legacy chat history ${roomId} to JSONL layout`);
+  }
+
+  private async cleanupLegacyChatIfJsonlReady(
+    roomId: string,
+    legacyPath: string,
+    hasLog: boolean,
+    hasIndex: boolean,
+  ): Promise<boolean> {
+    if (!hasLog) {
+      return false;
+    }
+
+    await readJsonlRecords<PersistedChatLogRecord>(this.getChatLogPath(roomId));
+    if (hasIndex) {
+      await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
+    } else {
+      await this.rebuildChatIndexFromLog(roomId);
+    }
+
+    await fs.rm(legacyPath, { force: true });
+    this.logger.log(`Removed legacy chat history ${roomId} after confirming JSONL layout`);
+    return true;
   }
 }

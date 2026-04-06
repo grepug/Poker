@@ -185,6 +185,49 @@ describe('JsonStorageService', () => {
       expect(records[2].type).toBe('ROOM_CONFIG_UPDATED');
       expect((await service.getRoom('ROOMLOG'))?.config.startingChips).toBe(2000);
     });
+
+    it('removes a legacy room snapshot once the JSONL room layout is already usable', async () => {
+      const room = createMockRoom('ROOMCLEAN');
+      await fs.mkdir(path.join(testRoomsDir, 'ROOMCLEAN'), { recursive: true });
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEAN.json'),
+        JSON.stringify(room),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEAN', 'room-events.jsonl'),
+        [
+          JSON.stringify({
+            recordId: 'r1',
+            seq: 1,
+            roomId: 'ROOMCLEAN',
+            handNumber: null,
+            street: null,
+            timestamp: room.createdAt,
+            type: 'ROOM_MIGRATED',
+            actor: { source: 'MIGRATION' },
+            payload: { legacyPath: path.join(testRoomsDir, 'ROOMCLEAN.json') },
+          }),
+          JSON.stringify({
+            recordId: 'r2',
+            seq: 2,
+            roomId: 'ROOMCLEAN',
+            handNumber: null,
+            street: null,
+            timestamp: room.lastActivityAt,
+            type: 'ROOM_STATE_UPDATED',
+            actor: { source: 'SYSTEM' },
+            payload: { room },
+          }),
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const loaded = await service.getRoom('ROOMCLEAN');
+      expect(loaded?.id).toBe('ROOMCLEAN');
+      await expect(fs.readFile(path.join(testRoomsDir, 'ROOMCLEAN.json'), 'utf-8')).rejects.toThrow();
+    });
   });
 
   describe('getRoom', () => {

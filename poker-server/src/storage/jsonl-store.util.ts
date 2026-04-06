@@ -3,8 +3,6 @@ import * as path from 'path';
 
 type JsonValue = Record<string, unknown>;
 
-const INCOMPLETE_JSON_SUFFIXES = ['{', '[', ',', ':', '"'];
-
 export async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
 }
@@ -90,7 +88,7 @@ export function parseJsonlRecords<T extends JsonValue>(raw: string): T[] {
       records.push(JSON.parse(line) as T);
     } catch (error) {
       const isLastNonEmptyLine = isLastMeaningfulLine(lines, index);
-      if (isLastNonEmptyLine && looksLikeIncompleteJsonLine(line)) {
+      if (isLastNonEmptyLine && !raw.endsWith('\n')) {
         break;
       }
       throw error;
@@ -107,9 +105,4 @@ function isLastMeaningfulLine(lines: string[], index: number): boolean {
     }
   }
   return true;
-}
-
-function looksLikeIncompleteJsonLine(line: string): boolean {
-  const trimmed = line.trimEnd();
-  return INCOMPLETE_JSON_SUFFIXES.some((suffix) => trimmed.endsWith(suffix));
 }
