@@ -85,6 +85,7 @@ export interface RevealedShowdownHand {
 
 interface CreateRoomOptions {
   useShortDeckRules?: boolean;
+  maxPlayers?: number;
 }
 
 type DebugApi = {
@@ -1293,12 +1294,15 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       const payload: {
         playerName?: string;
         playerEmoji?: string;
-        config: { useShortDeckRules: boolean };
+        config: { useShortDeckRules: boolean; maxPlayers?: number };
       } = {
         config: {
           useShortDeckRules: Boolean(options.useShortDeckRules),
         },
       };
+      if (options.maxPlayers !== undefined) {
+        payload.config.maxPlayers = options.maxPlayers;
+      }
       if (playerName) {
         payload.playerName = playerName;
       }

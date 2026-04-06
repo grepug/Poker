@@ -26,6 +26,31 @@ const POSITION_LABELS_BY_PLAYER_COUNT: Record<number, HandPositionLabel[]> = {
   10: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'UTG+2', 'MP', 'LJ', 'HJ', 'CO'],
 };
 
+const buildPositionLabels = (
+  playerCount: number,
+): HandPositionLabel[] | null => {
+  const mappedLabels = POSITION_LABELS_BY_PLAYER_COUNT[playerCount];
+  if (mappedLabels) {
+    return mappedLabels;
+  }
+
+  if (playerCount < 3) {
+    return null;
+  }
+
+  const earlyPositionCount = playerCount - 7;
+  if (earlyPositionCount < 1) {
+    return null;
+  }
+
+  const earlyPositionLabels = Array.from(
+    { length: earlyPositionCount },
+    (_, index) => (index === 0 ? 'UTG' : `UTG+${index}`) as HandPositionLabel,
+  );
+
+  return ['BTN', 'SB', 'BB', ...earlyPositionLabels, 'MP', 'LJ', 'HJ', 'CO'];
+};
+
 @Injectable()
 export class HandService {
   private readonly logger = new Logger(HandService.name);
@@ -41,7 +66,9 @@ export class HandService {
    */
   async startNewHand(room: Room): Promise<Hand> {
     const useShortDeckRules = Boolean(room.config.useShortDeckRules);
-    const seatedPlayers = room.players.filter((player) => player.status !== 'left');
+    const seatedPlayers = room.players.filter(
+      (player) => player.status !== 'left',
+    );
     if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
     }
@@ -50,7 +77,8 @@ export class HandService {
     for (const player of seatedPlayers) {
       if (player.chips === 0) {
         player.chips = room.config.startingChips;
-        player.totalBuyIn = (player.totalBuyIn ?? 0) + room.config.startingChips;
+        player.totalBuyIn =
+          (player.totalBuyIn ?? 0) + room.config.startingChips;
       }
     }
 
@@ -68,7 +96,10 @@ export class HandService {
       throw new Error('Need at least 2 players with chips');
     }
 
-    const smallBlindPlayer = this.getNextPlayerByPosition(activePlayers, dealerPosition);
+    const smallBlindPlayer = this.getNextPlayerByPosition(
+      activePlayers,
+      dealerPosition,
+    );
     const bigBlindPlayer = smallBlindPlayer
       ? this.getNextPlayerByPosition(activePlayers, smallBlindPlayer.position)
       : null;
@@ -303,7 +334,10 @@ export class HandService {
 
     // Set first to act (first active player after dealer)
     const activePlayers = this.getActivePlayers(room);
-    const nextPlayer = this.getNextPlayerByPosition(activePlayers, hand.dealerPosition);
+    const nextPlayer = this.getNextPlayerByPosition(
+      activePlayers,
+      hand.dealerPosition,
+    );
     if (nextPlayer) {
       hand.currentPlayerTurn = nextPlayer.id;
     }
@@ -347,7 +381,8 @@ export class HandService {
 
       // Don't evaluate hand if won by fold (may not have enough community cards)
       const winnerCards = winner.cards ?? [];
-      const hasEnoughCards = winnerCards.length + hand.communityCards.length >= 5;
+      const hasEnoughCards =
+        winnerCards.length + hand.communityCards.length >= 5;
       const winnerHand = hasEnoughCards
         ? evaluateHand(winnerCards.concat(hand.communityCards), {
             useShortDeckRules: Boolean(room.config.useShortDeckRules),
@@ -387,7 +422,10 @@ export class HandService {
             uncontested: activePlayers.length === 1,
           },
         ],
-        netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
+        netByPlayerId: this.buildNetByPlayerId(
+          contributions,
+          new Map([[winner.id, hand.pot]]),
+        ),
       };
 
       this.captureSettledPlayerCards(room);
@@ -398,9 +436,12 @@ export class HandService {
     // Evaluate all hands
     const evaluations = activePlayers.map((player) => ({
       player,
-      evaluation: evaluateHand((player.cards ?? []).concat(hand.communityCards), {
-        useShortDeckRules: Boolean(room.config.useShortDeckRules),
-      }),
+      evaluation: evaluateHand(
+        (player.cards ?? []).concat(hand.communityCards),
+        {
+          useShortDeckRules: Boolean(room.config.useShortDeckRules),
+        },
+      ),
     }));
 
     const evaluationsByPlayerId = new Map<
@@ -535,7 +576,9 @@ export class HandService {
       .sort((a, b) => b.amountWon - a.amountWon);
 
     for (const winnerEntry of winners) {
-      const winnerPlayer = room.players.find((p) => p.id === winnerEntry.playerId);
+      const winnerPlayer = room.players.find(
+        (p) => p.id === winnerEntry.playerId,
+      );
       if (!winnerPlayer) continue;
       winnerPlayer.handsWonCount = (winnerPlayer.handsWonCount ?? 0) + 1;
     }
@@ -562,7 +605,9 @@ export class HandService {
     hand.settledPlayerCardsByPlayerId = Object.fromEntries(
       room.players
         .filter(
-          (player): player is Player & { cards: NonNullable<Player['cards']> } =>
+          (
+            player,
+          ): player is Player & { cards: NonNullable<Player['cards']> } =>
             Array.isArray(player.cards) && player.cards.length > 0,
         )
         .map((player) => [player.id, [...player.cards]]),
@@ -602,24 +647,25 @@ export class HandService {
       const isShowdownContender = showdownContenderIdSet.has(player.id);
       const isActiveAtSettlement = activePlayerIdSet.has(player.id);
 
-      const resultStatus: HandResult['playerHands'][number]['resultStatus'] = isShown
-        ? 'shown'
-        : isShowdownContender
-          ? isActiveAtSettlement
-            ? 'hidden_contender'
-            : 'folded_at_showdown'
-          : isActiveAtSettlement
-            ? 'hidden_contender'
-            : 'folded_pre_showdown';
-      const cardsVisibility: HandResult['playerHands'][number]['cardsVisibility'] = isShown
-        ? 'shown'
-        : 'hidden';
-      const evaluation = evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
+      const resultStatus: HandResult['playerHands'][number]['resultStatus'] =
+        isShown
+          ? 'shown'
+          : isShowdownContender
+            ? isActiveAtSettlement
+              ? 'hidden_contender'
+              : 'folded_at_showdown'
+            : isActiveAtSettlement
+              ? 'hidden_contender'
+              : 'folded_pre_showdown';
+      const cardsVisibility: HandResult['playerHands'][number]['cardsVisibility'] =
+        isShown ? 'shown' : 'hidden';
+      const evaluation =
+        evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
 
       return {
         playerId: player.id,
         playerName: player.name,
-        cards: cardsVisibility === 'shown' ? player.cards ?? [] : [],
+        cards: cardsVisibility === 'shown' ? (player.cards ?? []) : [],
         hand: cardsVisibility === 'shown' ? evaluation : null,
         resultStatus,
         cardsVisibility,
@@ -755,7 +801,10 @@ export class HandService {
       return activePlayers[0];
     }
 
-    return this.getNextPlayerByPosition(activePlayers, currentTurnPlayer.position);
+    return this.getNextPlayerByPosition(
+      activePlayers,
+      currentTurnPlayer.position,
+    );
   }
 
   /**
@@ -810,7 +859,10 @@ export class HandService {
     }
 
     const currentDealer = room.currentHand.dealerPosition;
-    const nextDealer = this.getNextPlayerByPosition(activePlayers, currentDealer);
+    const nextDealer = this.getNextPlayerByPosition(
+      activePlayers,
+      currentDealer,
+    );
     return nextDealer?.position ?? activePlayers[0].position;
   }
 
@@ -846,7 +898,7 @@ export class HandService {
       activePlayers,
       dealerPosition,
     );
-    const labels = POSITION_LABELS_BY_PLAYER_COUNT[orderedFromButton.length];
+    const labels = buildPositionLabels(orderedFromButton.length);
     if (!labels || labels.length !== orderedFromButton.length) {
       return {};
     }
@@ -996,7 +1048,9 @@ export class HandService {
     if (delta > 0) {
       const recipient =
         room.players.find((player) => player.id === preferredPlayerId) ??
-        [...room.players].sort((a, b) => b.chips - a.chips || a.position - b.position)[0];
+        [...room.players].sort(
+          (a, b) => b.chips - a.chips || a.position - b.position,
+        )[0];
       if (!recipient) {
         return;
       }
