@@ -391,7 +391,16 @@ export class JsonStorageService implements IStorageService {
 
     await readJsonlRecords<PersistedRoomEventRecord>(this.getRoomEventsPath(roomId));
     if (hasProjection) {
-      await readJsonFile<StoredRoomProjection>(this.getProjectionPath(roomId));
+      try {
+        await readJsonFile<StoredRoomProjection>(this.getProjectionPath(roomId));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.warn(
+          `Projection for room ${roomId} is unreadable during legacy cleanup; rebuilding from room log: ${message}`,
+        );
+        await this.rebuildProjectionFromLog(roomId);
+      }
     } else {
       await this.rebuildProjectionFromLog(roomId);
     }

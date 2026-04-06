@@ -85,6 +85,28 @@ describe('JsonChatStorageService', () => {
     expect(page.messages).toHaveLength(1);
   });
 
+  it('bounds the persisted chat projection by default when maxMessages is omitted', async () => {
+    const roomId = 'ROOM-DEFAULT-BOUND';
+
+    for (let index = 0; index < 205; index += 1) {
+      await service.appendMessage({
+        roomId,
+        kind: 'TEXT',
+        text: `message-${index}`,
+        clientMessageId: `default-${index}`,
+        sender: {
+          playerId: 'p1',
+          playerName: 'Alice',
+        },
+      });
+    }
+
+    const page = await service.getMessagePage(roomId, { limit: 500 });
+    expect(page.messages).toHaveLength(200);
+    expect(page.messages[0].seq).toBe(6);
+    expect(page.messages[199].seq).toBe(205);
+  });
+
   it('supports paginated history with hasMore + nextBeforeSeq', async () => {
     const roomId = 'ROOMPAGE';
 
@@ -269,6 +291,42 @@ describe('JsonChatStorageService', () => {
       })}\n`,
       'utf-8',
     );
+
+    await service.getMessagePage(roomId, { limit: 10 });
+
+    await expect(readFile(path.join(tempDir, 'chat', `${roomId}.json`), 'utf-8')).rejects.toThrow();
+    const indexRaw = await readFile(path.join(roomDir, 'chat.index.json'), 'utf-8');
+    expect(JSON.parse(indexRaw).logSeq).toBe(1);
+  });
+
+  it('rebuilds a corrupt chat index during legacy cleanup before removing the legacy file', async () => {
+    const roomId = 'ROOM-CLEANUP-CORRUPT';
+    const roomDir = path.join(tempDir, 'chat', roomId);
+    await writeFile(
+      path.join(tempDir, 'chat', `${roomId}.json`),
+      JSON.stringify({
+        roomId,
+        createdAt: 10,
+        updatedAt: 20,
+        nextSeq: 2,
+        messages: [],
+      }),
+      'utf-8',
+    );
+    await mkdir(roomDir, { recursive: true });
+    await writeFile(
+      path.join(roomDir, 'messages.jsonl'),
+      `${JSON.stringify({
+        recordId: 'r1',
+        seq: 1,
+        roomId,
+        timestamp: 20,
+        type: 'CHAT_MIGRATED',
+        messageCount: 0,
+      })}\n`,
+      'utf-8',
+    );
+    await writeFile(path.join(roomDir, 'chat.index.json'), '{broken', 'utf-8');
 
     await service.getMessagePage(roomId, { limit: 10 });
 

@@ -228,6 +228,56 @@ describe('JsonStorageService', () => {
       expect(loaded?.id).toBe('ROOMCLEAN');
       await expect(fs.readFile(path.join(testRoomsDir, 'ROOMCLEAN.json'), 'utf-8')).rejects.toThrow();
     });
+
+    it('rebuilds a corrupt room projection during legacy cleanup before removing the legacy file', async () => {
+      const room = createMockRoom('ROOMCLEANBROKEN');
+      await fs.mkdir(path.join(testRoomsDir, 'ROOMCLEANBROKEN'), { recursive: true });
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN.json'),
+        JSON.stringify(room),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN', 'room-events.jsonl'),
+        [
+          JSON.stringify({
+            recordId: 'r1',
+            seq: 1,
+            roomId: 'ROOMCLEANBROKEN',
+            handNumber: null,
+            street: null,
+            timestamp: room.createdAt,
+            type: 'ROOM_MIGRATED',
+            actor: { source: 'MIGRATION' },
+            payload: { legacyPath: path.join(testRoomsDir, 'ROOMCLEANBROKEN.json') },
+          }),
+          JSON.stringify({
+            recordId: 'r2',
+            seq: 2,
+            roomId: 'ROOMCLEANBROKEN',
+            handNumber: null,
+            street: null,
+            timestamp: room.lastActivityAt,
+            type: 'ROOM_STATE_UPDATED',
+            actor: { source: 'SYSTEM' },
+            payload: { room },
+          }),
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(testRoomsDir, 'ROOMCLEANBROKEN', 'room.snapshot.json'),
+        '{broken',
+        'utf-8',
+      );
+
+      const loaded = await service.getRoom('ROOMCLEANBROKEN');
+      expect(loaded?.id).toBe('ROOMCLEANBROKEN');
+      await expect(
+        fs.readFile(path.join(testRoomsDir, 'ROOMCLEANBROKEN.json'), 'utf-8'),
+      ).rejects.toThrow();
+    });
   });
 
   describe('getRoom', () => {

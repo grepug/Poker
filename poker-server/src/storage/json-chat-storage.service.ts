@@ -43,6 +43,7 @@ export class JsonChatStorageService implements IChatStorageService {
   private readonly roomWriteQueues: Map<string, Promise<void>> = new Map();
   private readonly defaultPageSize: number;
   private readonly maxPageSize: number;
+  private readonly defaultMaxMessages: number;
   private readonly defaultDedupeWindowMs: number;
 
   constructor(private readonly configService: ConfigService) {
@@ -53,6 +54,11 @@ export class JsonChatStorageService implements IChatStorageService {
     );
     this.maxPageSize = Number(
       this.configService.get<string>('CHAT_PAGE_MAX_SIZE') || '200',
+    );
+    this.defaultMaxMessages = Number(
+      this.configService.get<string>('CHAT_MAX_MESSAGES') ||
+        this.configService.get<string>('CHAT_PAGE_MAX_SIZE') ||
+        '200',
     );
     this.defaultDedupeWindowMs = Number(
       this.configService.get<string>('CHAT_DEDUPE_WINDOW_MS') ||
@@ -171,14 +177,8 @@ export class JsonChatStorageService implements IChatStorageService {
             };
 
       const nextMessages = [...index.latestMessages, message];
-      const maxMessages = options?.maxMessages;
-      const boundedMessages =
-        maxMessages !== undefined &&
-        Number.isFinite(maxMessages) &&
-        maxMessages > 0 &&
-        nextMessages.length > maxMessages
-          ? nextMessages.slice(-Math.floor(maxMessages))
-          : nextMessages;
+      const maxMessages = this.resolveMaxMessages(options?.maxMessages);
+      const boundedMessages = this.boundMessages(nextMessages, maxMessages);
 
       let nextLogSeq = index.logSeq;
       const logRecords: PersistedChatLogRecord[] = [];
@@ -202,7 +202,7 @@ export class JsonChatStorageService implements IChatStorageService {
           deleted: nextMessages.length - boundedMessages.length,
           remaining: boundedMessages.length,
           olderThanMs: null,
-          keepLatest: maxMessages ?? null,
+          keepLatest: maxMessages,
         });
       }
 
@@ -400,6 +400,29 @@ export class JsonChatStorageService implements IChatStorageService {
     return Math.min(this.maxPageSize, Math.max(1, Math.floor(limit)));
   }
 
+  private resolveMaxMessages(maxMessages?: number): number {
+    if (maxMessages !== undefined && Number.isFinite(maxMessages)) {
+      return Math.max(0, Math.floor(maxMessages));
+    }
+
+    return Math.max(1, Math.floor(this.defaultMaxMessages));
+  }
+
+  private boundMessages(
+    messages: ChatMessage[],
+    maxMessages: number,
+  ): ChatMessage[] {
+    if (maxMessages <= 0) {
+      return [];
+    }
+
+    if (messages.length <= maxMessages) {
+      return messages;
+    }
+
+    return messages.slice(-maxMessages);
+  }
+
   private async ensureDirectories(): Promise<void> {
     await ensureDir(this.chatDir);
   }
@@ -494,6 +517,10 @@ export class JsonChatStorageService implements IChatStorageService {
 
       if (record.type === 'MESSAGE_APPENDED') {
         index.latestMessages.push(record.message);
+        index.latestMessages = this.boundMessages(
+          index.latestMessages,
+          this.resolveMaxMessages(),
+        );
         index.nextSeq = Math.max(index.nextSeq, record.message.seq + 1);
         continue;
       }
@@ -542,6 +569,10 @@ export class JsonChatStorageService implements IChatStorageService {
       }
     }
 
+    index.latestMessages = this.boundMessages(
+      index.latestMessages,
+      this.resolveMaxMessages(),
+    );
     await this.writeChatIndex(roomId, index);
     return index;
   }
@@ -630,7 +661,10 @@ export class JsonChatStorageService implements IChatStorageService {
         highestSeq + 1,
       ),
       logSeq: seq,
-      latestMessages: normalizedMessages,
+      latestMessages: this.boundMessages(
+        normalizedMessages,
+        this.resolveMaxMessages(),
+      ),
     });
     await fs.rm(legacyPath, { force: true });
     this.logger.log(`Migrated legacy chat history ${roomId} to JSONL layout`);
@@ -648,7 +682,16 @@ export class JsonChatStorageService implements IChatStorageService {
 
     await readJsonlRecords<PersistedChatLogRecord>(this.getChatLogPath(roomId));
     if (hasIndex) {
-      await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
+      try {
+        await readJsonFile<PersistedChatIndex>(this.getChatIndexPath(roomId));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.warn(
+          `Chat index for ${roomId} is unreadable during legacy cleanup; rebuilding from JSONL log: ${message}`,
+        );
+        await this.rebuildChatIndexFromLog(roomId);
+      }
     } else {
       await this.rebuildChatIndexFromLog(roomId);
     }

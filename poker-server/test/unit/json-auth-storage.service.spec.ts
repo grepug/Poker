@@ -221,4 +221,104 @@ describe('JsonAuthStorageService', () => {
     await expect(readFile(path.join(tempDir, 'auth', 'users.json'), 'utf-8')).rejects.toThrow();
     await expect(readFile(path.join(tempDir, 'auth', 'sessions.json'), 'utf-8')).rejects.toThrow();
   });
+
+  it('rebuilds a corrupt auth state snapshot during legacy cleanup before removing legacy files', async () => {
+    await writeFile(
+      path.join(tempDir, 'auth', 'users.json'),
+      JSON.stringify([]),
+      'utf-8',
+    );
+    await writeFile(
+      path.join(tempDir, 'auth', 'sessions.json'),
+      JSON.stringify([]),
+      'utf-8',
+    );
+    await writeFile(
+      path.join(tempDir, 'auth', 'auth.jsonl'),
+      `${JSON.stringify({
+        recordId: 'r1',
+        seq: 1,
+        timestamp: 1,
+        type: 'AUTH_MIGRATED',
+        userCount: 0,
+        sessionCount: 0,
+      })}\n`,
+      'utf-8',
+    );
+    await writeFile(path.join(tempDir, 'auth', 'auth.state.json'), '{broken', 'utf-8');
+
+    expect(await service.getUsers()).toEqual([]);
+    await expect(readFile(path.join(tempDir, 'auth', 'users.json'), 'utf-8')).rejects.toThrow();
+    await expect(readFile(path.join(tempDir, 'auth', 'sessions.json'), 'utf-8')).rejects.toThrow();
+  });
+
+  it('does not append duplicate user events when record field order differs', async () => {
+    const firstUser = {
+      id: 'user-1',
+      accountId: 'test1',
+      displayName: 'Alice',
+      avatarEmoji: 'A',
+      passwordHash: 'hash',
+      passkeys: [
+        {
+          credentialId: 'cred-1',
+          publicKey: 'pk',
+          counter: 1,
+          transports: ['usb', 'nfc'],
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const reorderedUser = {
+      accountId: 'test1',
+      id: 'user-1',
+      avatarEmoji: 'A',
+      displayName: 'Alice',
+      passkeys: [
+        {
+          publicKey: 'pk',
+          credentialId: 'cred-1',
+          transports: ['usb', 'nfc'],
+          counter: 1,
+          updatedAt: 2,
+          createdAt: 1,
+        },
+      ],
+      updatedAt: 2,
+      passwordHash: 'hash',
+      createdAt: 1,
+    };
+
+    await service.replaceUsers([firstUser]);
+    await service.replaceUsers([reorderedUser as typeof firstUser]);
+
+    const logRaw = await readFile(path.join(tempDir, 'auth', 'auth.jsonl'), 'utf-8');
+    expect(logRaw.trim().split('\n')).toHaveLength(1);
+  });
+
+  it('does not append duplicate session events when record field order differs', async () => {
+    const firstSession = {
+      tokenHash: 'token-hash-1',
+      userId: 'user-1',
+      expiresAt: 10,
+      lastUsedAt: 5,
+      createdAt: 1,
+    };
+    const reorderedSession = {
+      userId: 'user-1',
+      tokenHash: 'token-hash-1',
+      createdAt: 1,
+      lastUsedAt: 5,
+      expiresAt: 10,
+    };
+
+    await service.replaceSessions([firstSession]);
+    await service.replaceSessions([reorderedSession]);
+
+    const logRaw = await readFile(path.join(tempDir, 'auth', 'auth.jsonl'), 'utf-8');
+    expect(logRaw.trim().split('\n')).toHaveLength(1);
+  });
 });

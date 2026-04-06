@@ -64,7 +64,7 @@ export class JsonAuthStorageService implements IAuthStorageService {
 
       for (const user of users) {
         const previous = previousUsersById.get(user.id);
-        if (JSON.stringify(previous) === JSON.stringify(user)) {
+        if (previous && this.authUserRecordsEqual(previous, user)) {
           continue;
         }
 
@@ -128,7 +128,7 @@ export class JsonAuthStorageService implements IAuthStorageService {
 
       for (const session of sessions) {
         const previous = previousSessionsByTokenHash.get(session.tokenHash);
-        if (JSON.stringify(previous) === JSON.stringify(session)) {
+        if (previous && this.authSessionRecordsEqual(previous, session)) {
           continue;
         }
 
@@ -200,6 +200,59 @@ export class JsonAuthStorageService implements IAuthStorageService {
       users: [],
       sessions: [],
     };
+  }
+
+  private authUserRecordsEqual(
+    left: AuthUserRecord,
+    right: AuthUserRecord,
+  ): boolean {
+    if (
+      left.id !== right.id ||
+      left.accountId !== right.accountId ||
+      left.displayName !== right.displayName ||
+      left.avatarEmoji !== right.avatarEmoji ||
+      left.passwordHash !== right.passwordHash ||
+      left.createdAt !== right.createdAt ||
+      left.updatedAt !== right.updatedAt ||
+      left.passkeys.length !== right.passkeys.length
+    ) {
+      return false;
+    }
+
+    return left.passkeys.every((passkey, index) =>
+      this.authPasskeysEqual(passkey, right.passkeys[index]),
+    );
+  }
+
+  private authPasskeysEqual(
+    left: AuthUserRecord['passkeys'][number],
+    right: AuthUserRecord['passkeys'][number],
+  ): boolean {
+    const leftTransports = left.transports ?? [];
+    const rightTransports = right.transports ?? [];
+
+    return (
+      left.credentialId === right.credentialId &&
+      left.publicKey === right.publicKey &&
+      left.counter === right.counter &&
+      left.createdAt === right.createdAt &&
+      left.updatedAt === right.updatedAt &&
+      leftTransports.length === rightTransports.length &&
+      leftTransports.every((transport, index) => transport === rightTransports[index])
+    );
+  }
+
+  private authSessionRecordsEqual(
+    left: AuthSessionRecord,
+    right: AuthSessionRecord,
+  ): boolean {
+    return (
+      left.tokenHash === right.tokenHash &&
+      left.userId === right.userId &&
+      left.expiresAt === right.expiresAt &&
+      left.lastUsedAt === right.lastUsedAt &&
+      left.createdAt === right.createdAt
+    );
   }
 
   private async readAuthState(): Promise<PersistedAuthState | null> {
@@ -330,9 +383,24 @@ export class JsonAuthStorageService implements IAuthStorageService {
 
     await readJsonlRecords<PersistedAuthLogRecord>(this.authLogPath);
     if (hasState) {
-      await readJsonFile<PersistedAuthState>(this.authStatePath);
+      try {
+        await readJsonFile<PersistedAuthState>(this.authStatePath);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.warn(
+          `Failed to read auth state snapshot at ${this.authStatePath}; rebuilding from auth log instead: ${message}`,
+        );
+        const rebuiltState = await this.rebuildAuthStateFromLog();
+        if (!rebuiltState) {
+          return false;
+        }
+      }
     } else {
-      await this.rebuildAuthStateFromLog();
+      const rebuiltState = await this.rebuildAuthStateFromLog();
+      if (!rebuiltState) {
+        return false;
+      }
     }
 
     await fs.rm(this.usersLegacyFilePath, { force: true });
