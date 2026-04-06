@@ -81,7 +81,6 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
-  const previousQuickDecisionAvailableRef = React.useRef(false);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
     React.useState(isQuickDecisionAvailable);
   const quickConfirmAnchorRef =
@@ -96,35 +95,29 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
 
   React.useLayoutEffect(() => {
+    if (quickDecisionLockTimeoutRef.current !== null) {
+      window.clearTimeout(quickDecisionLockTimeoutRef.current);
+      quickDecisionLockTimeoutRef.current = null;
+    }
+
     if (!isQuickDecisionAvailable) {
-      if (quickDecisionLockTimeoutRef.current !== null) {
-        window.clearTimeout(quickDecisionLockTimeoutRef.current);
-        quickDecisionLockTimeoutRef.current = null;
-      }
-      previousQuickDecisionAvailableRef.current = false;
       setIsQuickDecisionTemporarilyLocked(false);
       return;
     }
 
-    if (!previousQuickDecisionAvailableRef.current) {
-      previousQuickDecisionAvailableRef.current = true;
-      setIsQuickDecisionTemporarilyLocked(true);
-      quickDecisionLockTimeoutRef.current = window.setTimeout(() => {
-        setIsQuickDecisionTemporarilyLocked(false);
-        quickDecisionLockTimeoutRef.current = null;
-      }, QUICK_DECISION_SAFETY_LOCK_MS);
-    }
-  }, [isQuickDecisionAvailable]);
+    setIsQuickDecisionTemporarilyLocked(true);
+    quickDecisionLockTimeoutRef.current = window.setTimeout(() => {
+      setIsQuickDecisionTemporarilyLocked(false);
+      quickDecisionLockTimeoutRef.current = null;
+    }, QUICK_DECISION_SAFETY_LOCK_MS);
 
-  React.useEffect(
-    () => () => {
+    return () => {
       if (quickDecisionLockTimeoutRef.current !== null) {
         window.clearTimeout(quickDecisionLockTimeoutRef.current);
         quickDecisionLockTimeoutRef.current = null;
       }
-    },
-    [],
-  );
+    };
+  }, [isQuickDecisionAvailable]);
 
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
