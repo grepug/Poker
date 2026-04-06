@@ -32,6 +32,13 @@ const normalizeMaxPlayers = (maxPlayers: unknown): number => {
   return parsedMaxPlayers;
 };
 
+const isDisconnected = (player: Player): boolean =>
+  player.connectionStatus === 'disconnected' ||
+  player.status === 'disconnected';
+
+const resolveReconnectStatus = (status: PlayerStatus): PlayerStatus =>
+  status === 'disconnected' ? 'connected' : status;
+
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
@@ -81,6 +88,7 @@ export class GameService {
       vpipHandsCount: 0,
       position: 0,
       status: 'waiting' as PlayerStatus,
+      connectionStatus: 'connected',
       cards: null,
       currentBet: 0,
       lastAction: null,
@@ -153,10 +161,7 @@ export class GameService {
       existingPlayerByUserId ??
       playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
-      if (
-        existingPlayer.status !== 'disconnected' &&
-        existingPlayer.status !== 'left'
-      ) {
+      if (!isDisconnected(existingPlayer) && existingPlayer.status !== 'left') {
         throw new Error('Name already taken');
       }
 
@@ -186,7 +191,10 @@ export class GameService {
 
       existingPlayer.socketId = socketId;
       existingPlayer.status =
-        priorStatus === 'left' ? ('waiting' as PlayerStatus) : 'connected';
+        priorStatus === 'left'
+          ? ('waiting' as PlayerStatus)
+          : resolveReconnectStatus(priorStatus);
+      existingPlayer.connectionStatus = 'connected';
       existingPlayer.lastConnectedAt = Date.now();
       if (priorStatus === 'left') {
         existingPlayer.cards = null;
@@ -258,6 +266,7 @@ export class GameService {
       vpipHandsCount: 0,
       position,
       status: 'waiting' as PlayerStatus,
+      connectionStatus: 'connected',
       cards: null,
       currentBet: 0,
       lastAction: null,
@@ -316,6 +325,7 @@ export class GameService {
       return room;
     }
     player.status = 'left';
+    player.connectionStatus = 'connected';
     player.socketId = '';
     player.cards = null;
     player.currentBet = 0;
@@ -420,7 +430,8 @@ export class GameService {
     }
 
     player.socketId = newSocketId;
-    player.status = 'connected';
+    player.status = resolveReconnectStatus(player.status);
+    player.connectionStatus = 'connected';
     player.lastConnectedAt = Date.now();
     room.lastActivityAt = Date.now();
 
@@ -469,7 +480,7 @@ export class GameService {
       return room;
     }
 
-    player.status = 'disconnected';
+    player.connectionStatus = 'disconnected';
     room.lastActivityAt = Date.now();
 
     await this.storageService.persistRoom(

@@ -155,6 +155,12 @@ type SeatActionLabel = {
   tone: "blind" | "aggressive" | "call" | "allin" | "pending";
 };
 
+const getConnectionStatus = (
+  seatPlayer: Pick<Player, "status" | "connectionStatus">,
+) =>
+  seatPlayer.connectionStatus ??
+  (seatPlayer.status === "disconnected" ? "disconnected" : "connected");
+
 type RulesCopy = {
   buttonLabel: string;
   modalTitle: string;
@@ -1430,25 +1436,27 @@ const resolveSeatMainState = ({
   isWaiting: boolean;
 }): SeatMainState => {
   if (isCurrentTurnSeat) return "turn";
-  if (isDisconnected) return "disconnected";
   if (isAllIn) return "all-in";
   if (isFolded) return "folded";
+  if (isDisconnected) return "disconnected";
   if (isWaiting) return "waiting";
   return "default";
 };
 
 const resolveSeatPrimaryActionLabel = ({
   seatPlayer,
+  isDisconnected,
   isForcedBlind,
   latestSeatActionEvent,
   t,
 }: {
   seatPlayer: Player;
+  isDisconnected: boolean;
   isForcedBlind: boolean;
   latestSeatActionEvent: PlayerActionFlashEvent | null;
   t: Translate;
 }): SeatActionLabel | null => {
-  if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
+  if (seatPlayer.status === "folded" || isDisconnected) {
     return null;
   }
 
@@ -1531,10 +1539,12 @@ const resolveSeatPrimaryActionLabel = ({
 
 const resolveSeatPendingActionLabel = ({
   seatPlayer,
+  isDisconnected,
   isCurrentTurnSeat,
   t,
 }: {
   seatPlayer: Player;
+  isDisconnected: boolean;
   isCurrentTurnSeat: boolean;
   t: Translate;
 }): SeatActionLabel | null => {
@@ -1544,7 +1554,7 @@ const resolveSeatPendingActionLabel = ({
 
   if (
     seatPlayer.status === "folded" ||
-    seatPlayer.status === "disconnected" ||
+    isDisconnected ||
     seatPlayer.status === "waiting" ||
     seatPlayer.status === "all-in"
   ) {
@@ -1728,7 +1738,10 @@ const useGameRoomElement = () => {
     [room?.players],
   );
   const readyEligiblePlayers = useMemo(
-    () => tablePlayers.filter((entry) => entry.status !== "disconnected"),
+    () =>
+      tablePlayers.filter(
+        (entry) => getConnectionStatus(entry) !== "disconnected",
+      ),
     [tablePlayers],
   );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
@@ -2013,7 +2026,7 @@ const useGameRoomElement = () => {
           player.status !== "folded" &&
           player.status !== "left" &&
           player.status !== "waiting" &&
-          player.status !== "disconnected")),
+          getConnectionStatus(player) !== "disconnected")),
   );
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
@@ -2483,7 +2496,8 @@ const useGameRoomElement = () => {
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
         const isAllIn = seatPlayer.status === "all-in";
-        const isDisconnected = seatPlayer.status === "disconnected";
+        const isDisconnected =
+          getConnectionStatus(seatPlayer) === "disconnected";
         const isWaiting = seatPlayer.status === "waiting";
         const seatMainState = resolveSeatMainState({
           isCurrentTurnSeat,
@@ -2493,21 +2507,25 @@ const useGameRoomElement = () => {
           isWaiting,
         });
         const seatInlineStatusLabel =
-          seatMainState === "disconnected"
-            ? t("game.status.disconnected")
-            : seatMainState === "all-in"
+          seatMainState === "all-in"
               ? t("game.status.allIn")
               : seatMainState === "folded"
                 ? t("game.status.folded")
+                : seatMainState === "disconnected"
+                  ? t("game.status.disconnected")
                 : null;
         const seatExternalStatusLabel =
-          seatMainState === "turn"
+          isDisconnected && seatMainState !== "disconnected"
+            ? t("game.status.disconnected")
+            : seatMainState === "turn"
             ? t("game.status.acting")
             : seatMainState === "waiting"
               ? t("game.status.waiting")
               : null;
         const seatExternalStatusToneClass =
-          seatMainState === "turn"
+          isDisconnected && seatMainState !== "disconnected"
+            ? "seat-pod__status-badge--disconnected"
+            : seatMainState === "turn"
             ? "seat-pod__status-badge--turn"
             : seatMainState === "waiting"
               ? "seat-pod__status-badge--waiting"
@@ -2531,12 +2549,14 @@ const useGameRoomElement = () => {
           lastPlayerActionEvent?.playerId === seatPlayer.id ? lastPlayerActionEvent : null;
         const seatPrimaryActionLabel = resolveSeatPrimaryActionLabel({
           seatPlayer,
+          isDisconnected,
           isForcedBlind,
           latestSeatActionEvent,
           t,
         });
         const seatPendingActionLabel = resolveSeatPendingActionLabel({
           seatPlayer,
+          isDisconnected,
           isCurrentTurnSeat,
           t,
         });

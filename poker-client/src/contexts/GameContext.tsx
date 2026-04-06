@@ -589,31 +589,44 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           return {
             ...prev,
             players: prev.players.map((p) =>
-              p.id === data.playerId ? { ...p, status: "disconnected" } : p,
+              p.id === data.playerId
+                ? { ...p, connectionStatus: "disconnected" }
+                : p,
             ),
           };
         });
         setPlayer((prev) =>
           prev && prev.id === data.playerId
-            ? { ...prev, status: "disconnected" }
+            ? { ...prev, connectionStatus: "disconnected" }
             : prev,
         );
       });
 
       socket.on("PLAYER_RECONNECTED", (data) => {
-        const nextStatus = data.status || "connected";
+        const nextStatus = data.status;
+        const nextConnectionStatus = data.connectionStatus ?? "connected";
         setRoom((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
             players: prev.players.map((p) =>
-              p.id === data.playerId ? { ...p, status: nextStatus } : p,
+              p.id === data.playerId
+                ? {
+                    ...p,
+                    ...(nextStatus ? { status: nextStatus } : {}),
+                    connectionStatus: nextConnectionStatus,
+                  }
+                : p,
             ),
           };
         });
         setPlayer((prev) =>
           prev && prev.id === data.playerId
-            ? { ...prev, status: nextStatus }
+            ? {
+                ...prev,
+                ...(nextStatus ? { status: nextStatus } : {}),
+                connectionStatus: nextConnectionStatus,
+              }
             : prev,
         );
       });
