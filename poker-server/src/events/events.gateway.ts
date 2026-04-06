@@ -1003,7 +1003,7 @@ export class EventsGateway
           cards: null,
           currentBet: 0,
           lastAction: null,
-          status: 'waiting',
+          status: seatPlayer.status === 'left' ? 'left' : 'waiting',
         };
       });
       await this.storageService.saveRoom(room);

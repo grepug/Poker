@@ -3,8 +3,8 @@ import { Card } from "./card.types";
 // Player status
 export type PlayerStatus =
   | "waiting" // In room, waiting for game to start
-  | "connected" // In game, connected
-  | "disconnected" // In game, temporarily disconnected
+  | "connected" // Gameplay state for an active in-hand player; use connectionStatus for transport connectivity
+  | "disconnected" // Legacy/back-compat gameplay value; prefer connectionStatus for disconnect handling
   | "folded" // Folded current hand
   | "all-in" // All chips in pot
   | "left"; // Permanently left room
