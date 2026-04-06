@@ -119,6 +119,24 @@ export class EventsGateway
     string,
     { timestamp: number; message: ChatMessage }
   > = new Map();
+  private isPlayerDisconnected(
+    player:
+      | {
+          status?: string;
+          connectionStatus?: string;
+        }
+      | null
+      | undefined,
+  ): boolean {
+    if (!player) {
+      return false;
+    }
+
+    return (
+      player.connectionStatus === 'disconnected' ||
+      player.status === 'disconnected'
+    );
+  }
   private readonly processedChatMessageTtlMs = Number(
     process.env.CHAT_DEDUPE_WINDOW_MS || '600000',
   );
@@ -269,10 +287,8 @@ export class EventsGateway
 
   private getReadyEligiblePlayerIds(room: any): string[] {
     return (room?.players ?? [])
-      .filter(
-        (player: any) =>
-          player.status !== 'left' && player.status !== 'disconnected',
-      )
+      .filter((player: any) => player.status !== 'left')
+      .filter((player: any) => !this.isPlayerDisconnected(player))
       .map((player: any) => player.id);
   }
 
@@ -557,6 +573,7 @@ export class EventsGateway
             playerId: player.id,
             playerName: player.name,
             status: player.status,
+            connectionStatus: player.connectionStatus ?? 'connected',
           });
         } else {
           // Notify all in room
@@ -638,6 +655,7 @@ export class EventsGateway
           playerId: player.id,
           playerName: player.name,
           status: player.status,
+          connectionStatus: player.connectionStatus ?? 'connected',
         });
         this.emitReadyStateUpdated(data.roomId, room);
 
@@ -980,14 +998,12 @@ export class EventsGateway
       room.readyPlayerIds = [];
       room.lastActivityAt = Date.now();
       room.players = room.players.map((seatPlayer) => {
-        const nextStatus =
-          seatPlayer.status === 'disconnected' ? 'disconnected' : 'waiting';
         return {
           ...seatPlayer,
           cards: null,
           currentBet: 0,
           lastAction: null,
-          status: nextStatus,
+          status: 'waiting',
         };
       });
       await this.storageService.saveRoom(room);
@@ -1965,7 +1981,7 @@ export class EventsGateway
           Boolean(player.cards) &&
           player.status !== 'waiting' &&
           player.status !== 'left' &&
-          player.status !== 'disconnected',
+          !this.isPlayerDisconnected(player),
       )
       .map((player: any) => player.id);
   }
@@ -2459,7 +2475,7 @@ export class EventsGateway
         }
 
         const player = room.players.find((p) => p.id === playerId);
-        if (!player || player.status !== 'disconnected') {
+        if (!player || !this.isPlayerDisconnected(player)) {
           // Player already reconnected (or left); stale timeout should do nothing.
           return;
         }

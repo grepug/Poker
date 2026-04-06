@@ -7053,6 +7053,100 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12f: Reconnect Restores Folded Status Mid-Hand', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        bobPage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        charliePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+      ]);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+
+      const bobIdentity = await getPagePlayerIdentity(bobPage);
+      if (!bobIdentity) {
+        throw new Error('Missing Bob identity for reconnect status assertion');
+      }
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${bobIdentity.id}"]`),
+      ).toHaveClass(/seat-pod--folded/);
+
+      const disconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const reconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_RECONNECTED',
+        10000,
+      );
+
+      await forceSocketReconnect(bobPage);
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerId).toBe(bobIdentity.id);
+
+      const reconnectedEvent = await reconnectedPromise;
+      expect(reconnectedEvent.playerId).toBe(bobIdentity.id);
+      expect(reconnectedEvent.status).toBe('folded');
+
+      await alicePage.waitForFunction(
+        (playerId) => {
+          const room = (window as any).pokerDebug?.getRoom?.();
+          return (
+            room?.players?.find((player: any) => player.id === playerId)
+              ?.status === 'folded'
+          );
+        },
+        bobIdentity.id,
+        { timeout: 5000 },
+      );
+      await bobPage.waitForFunction(
+        (playerId) => {
+          const room = (window as any).pokerDebug?.getRoom?.();
+          return (
+            room?.players?.find((player: any) => player.id === playerId)
+              ?.status === 'folded'
+          );
+        },
+        bobIdentity.id,
+        { timeout: 5000 },
+      );
+
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${bobIdentity.id}"]`),
+      ).toHaveClass(/seat-pod--folded/);
+      await expect(
+        bobPage.locator(`[data-testid="player-seat-${bobIdentity.id}"]`),
+      ).toHaveClass(/seat-pod--folded/);
+
+      const afterReconnect = await getRoomSnapshot(alicePage);
+      expect(afterReconnect.currentPlayerName).toBe('Charlie');
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {

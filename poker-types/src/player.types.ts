@@ -9,6 +9,8 @@ export type PlayerStatus =
   | "all-in" // All chips in pot
   | "left"; // Permanently left room
 
+export type PlayerConnectionStatus = "connected" | "disconnected";
+
 // Player actions during betting
 export type PlayerAction = "fold" | "check" | "call" | "raise" | "all-in";
 
@@ -24,6 +26,7 @@ export interface Player {
   vpipHandsCount: number; // Voluntarily Put Money In Pot (pre-flop, excludes forced blinds)
   position: number; // Seat position 0-9
   status: PlayerStatus;
+  connectionStatus?: PlayerConnectionStatus;
   cards: Card[] | null; // null if not in active hand
   currentBet: number; // Current bet in active betting round
   lastAction: PlayerAction | null;

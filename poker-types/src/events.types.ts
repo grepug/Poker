@@ -1,5 +1,10 @@
 import { Card } from "./card.types";
-import { Player, PlayerAction, PlayerStatus } from "./player.types";
+import {
+  Player,
+  PlayerAction,
+  PlayerConnectionStatus,
+  PlayerStatus,
+} from "./player.types";
 import { RoomConfig, ReadyPhase, SanitizedRoom } from "./room.types";
 import { Hand, HandResult, BettingRound } from "./game.types";
 import {
@@ -244,6 +249,7 @@ export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
   status?: PlayerStatus;
+  connectionStatus?: PlayerConnectionStatus;
 }
 
 export interface PlayerProfileUpdatedData {

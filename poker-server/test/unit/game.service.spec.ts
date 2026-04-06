@@ -289,6 +289,119 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
+  it.each([
+    ['folded', 'fold'],
+    ['all-in', 'all-in'],
+  ] as const)(
+    'reclaims disconnected seat and preserves %s gameplay status',
+    async (status, lastAction) => {
+      const room = createRoom({
+        gameState: 'IN_PROGRESS',
+        players: [
+          createPlayer({
+            id: 'p-host',
+            socketId: 's-host',
+            name: 'Alice',
+            position: 0,
+            chips: 1000,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          {
+            ...createPlayer({
+              id: 'p-bob',
+              socketId: 's-old-bob',
+              name: 'Bob',
+              position: 1,
+              chips: status === 'all-in' ? 0 : 850,
+              totalBuyIn: 1000,
+              status,
+            }),
+            connectionStatus: 'disconnected',
+            currentBet: status === 'all-in' ? 1000 : 150,
+            lastAction,
+          },
+        ],
+      });
+      storageService.getRoom.mockResolvedValue(room);
+
+      const { player, rejoined } = await gameService.addPlayerToRoom(
+        'ROOM01',
+        's-new-bob',
+        'Bob',
+      );
+
+      expect(rejoined).toBe(true);
+      expect(player.id).toBe('p-bob');
+      expect(player.status).toBe(status);
+      expect(player.connectionStatus).toBe('connected');
+      expect(player.socketId).toBe('s-new-bob');
+      expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    },
+  );
+
+  it.each([
+    ['folded', 'fold'],
+    ['all-in', 'all-in'],
+  ] as const)(
+    'preserves %s status across disconnect and reconnect',
+    async (status, lastAction) => {
+      const room = createRoom({
+        gameState: 'IN_PROGRESS',
+        players: [
+          createPlayer({
+            id: 'p-host',
+            socketId: 's-host',
+            name: 'Alice',
+            position: 0,
+            chips: 1000,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          {
+            ...createPlayer({
+              id: 'p-bob',
+              socketId: 's-bob',
+              name: 'Bob',
+              position: 1,
+              chips: status === 'all-in' ? 0 : 850,
+              totalBuyIn: 1000,
+              status,
+            }),
+            currentBet: status === 'all-in' ? 1000 : 150,
+            lastAction,
+          },
+        ],
+      });
+      storageService.getRoom.mockResolvedValue(room);
+
+      const disconnectedRoom = await gameService.markPlayerDisconnected(
+        'ROOM01',
+        'p-bob',
+      );
+      const disconnectedBob = disconnectedRoom?.players.find(
+        (player) => player.id === 'p-bob',
+      );
+
+      expect(disconnectedBob?.status).toBe(status);
+      expect((disconnectedBob as any)?.connectionStatus).toBe('disconnected');
+
+      storageService.getRoom.mockResolvedValue(disconnectedRoom);
+
+      const reconnectedPlayer = await gameService.updatePlayerSocket(
+        'ROOM01',
+        'Bob',
+        's-bob-new',
+        'p-bob',
+      );
+
+      expect(reconnectedPlayer?.status).toBe(status);
+      expect(reconnectedPlayer?.socketId).toBe('s-bob-new');
+      expect((reconnectedPlayer as any)?.connectionStatus).toBe('connected');
+      expect(storageService.saveRoom).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('reclaims left player record when joining with same name', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',

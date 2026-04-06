@@ -51,6 +51,10 @@ const buildPositionLabels = (
   return ['BTN', 'SB', 'BB', ...earlyPositionLabels, 'MP', 'LJ', 'HJ', 'CO'];
 };
 
+const isDisconnected = (player: Player): boolean =>
+  player.connectionStatus === 'disconnected' ||
+  player.status === 'disconnected';
+
 @Injectable()
 export class HandService {
   private readonly logger = new Logger(HandService.name);
@@ -67,7 +71,7 @@ export class HandService {
   async startNewHand(room: Room): Promise<Hand> {
     const useShortDeckRules = Boolean(room.config.useShortDeckRules);
     const seatedPlayers = room.players.filter(
-      (player) => player.status !== 'left',
+      (player) => player.status !== 'left' && !isDisconnected(player),
     );
     if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
@@ -86,7 +90,9 @@ export class HandService {
 
     // Determine positions
     const activePlayers = this.getPlayersInSeatOrder(
-      room.players.filter((p) => p.chips > 0 && p.status !== 'left'),
+      room.players.filter(
+        (p) => p.chips > 0 && p.status !== 'left' && !isDisconnected(p),
+      ),
     );
     const dealerPosition = this.getNextDealerPosition(room, activePlayers);
     const activePlayerIds = activePlayers.map((p) => p.id);
