@@ -7204,10 +7204,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         '[data-testid="chip-load-all-in"]',
       );
       await expect(bobFoldButton).toBeVisible();
-      expect(await bobFoldButton.isEnabled()).toBe(true);
+      await expect(bobFoldButton).toBeDisabled();
       await expect(bobContinuePreset).toBeEnabled();
       await expect(bobRaisePreset).toBeEnabled();
       await expect(bobAllInPreset).toBeEnabled();
+      await expect(bobFoldButton).toBeEnabled({ timeout: 3000 });
       await bobFoldButton.click();
 
       await expect(
@@ -7230,8 +7231,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       );
       const aliceFoldButton = alicePage.locator('[data-testid="action-fold"]');
       await expect(aliceCheckButton).toBeVisible();
-      expect(await aliceCheckButton.isEnabled()).toBe(true);
-      expect(await aliceFoldButton.isEnabled()).toBe(true);
+      await expect(aliceCheckButton).toBeDisabled();
+      await expect(aliceFoldButton).toBeDisabled();
+      await expect(aliceCheckButton).toBeEnabled({ timeout: 3000 });
+      await expect(aliceFoldButton).toBeEnabled();
 
       await aliceCheckButton.click();
       await expect(

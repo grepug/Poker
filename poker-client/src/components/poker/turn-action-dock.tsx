@@ -17,6 +17,7 @@ type TrayPresetButton = {
 
 type QuickDecisionAction = "check" | "fold";
 type LegacyAction = "check" | "call" | "all-in" | "raise";
+const QUICK_DECISION_SAFETY_LOCK_MS = 2000;
 
 type TurnActionDockProps = {
   callAmount: number;
@@ -75,9 +76,13 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onLegacyRaiseAmountChange,
   t,
 }) => {
+  const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
   const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
+  const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
+    React.useState(isQuickDecisionAvailable);
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
   const quickConfirmStyle = useAnchoredPopover({
@@ -87,6 +92,32 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     preferredPlacement: "top",
     align: "start",
   });
+  const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
+
+  React.useLayoutEffect(() => {
+    if (quickDecisionLockTimeoutRef.current !== null) {
+      window.clearTimeout(quickDecisionLockTimeoutRef.current);
+      quickDecisionLockTimeoutRef.current = null;
+    }
+
+    if (!isQuickDecisionAvailable) {
+      setIsQuickDecisionTemporarilyLocked(false);
+      return;
+    }
+
+    setIsQuickDecisionTemporarilyLocked(true);
+    quickDecisionLockTimeoutRef.current = window.setTimeout(() => {
+      setIsQuickDecisionTemporarilyLocked(false);
+      quickDecisionLockTimeoutRef.current = null;
+    }, QUICK_DECISION_SAFETY_LOCK_MS);
+
+    return () => {
+      if (quickDecisionLockTimeoutRef.current !== null) {
+        window.clearTimeout(quickDecisionLockTimeoutRef.current);
+        quickDecisionLockTimeoutRef.current = null;
+      }
+    };
+  }, [isQuickDecisionAvailable]);
 
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
@@ -201,7 +232,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               <button
                 ref={checkActionButtonRef}
                 onClick={() => onQuickDecisionAction("check")}
-                disabled={!canCheck}
+                disabled={!canCheck || isQuickDecisionLocked}
                 data-testid={canCheck ? "action-check" : "action-check-disabled"}
                 className="chip-action chip-action--check"
               >
@@ -210,6 +241,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               <button
                 ref={foldActionButtonRef}
                 onClick={() => onQuickDecisionAction("fold")}
+                disabled={isQuickDecisionLocked}
                 data-testid="action-fold"
                 className="chip-action chip-action--fold"
               >
