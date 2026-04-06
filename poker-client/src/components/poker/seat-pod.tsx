@@ -234,6 +234,9 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   densityClass,
   readyOverlayLabel,
 }) => {
+  const cornerBadgeLabel = roleIcon ? positionLabel ?? roleLabel : roleLabel;
+  const showCornerBadge = Boolean(roleIcon && cornerBadgeLabel);
+  const showInlinePositionBadge = Boolean(positionLabel && !showCornerBadge);
   const floatingStatusLabel = externalStatusLabel ?? internalStatusLabel;
   const floatingStatusToneClass = externalStatusLabel
     ? externalStatusToneClass
@@ -304,13 +307,13 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   }, [
     scheduleFit,
     actionLabel?.text,
+    cornerBadgeLabel,
     densityClass,
     floatingStatusLabel,
     playerName,
     positionLabel,
     readyOverlayLabel,
     remainingLabel,
-    roleLabel,
   ]);
 
   return (
@@ -320,7 +323,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
       className={cn(
         "seat-pod",
         isYou && "seat-pod--you",
-        Boolean(roleIcon && roleLabel) && "seat-pod--has-role-icon",
+        showCornerBadge && "seat-pod--has-role-icon",
         Boolean(floatingStatusLabel) && "seat-pod--has-status-badge",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
@@ -330,12 +333,15 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         densityClass,
       )}
     >
-      {roleIcon && roleLabel && (
+      {showCornerBadge && roleIcon && (
         <div
-          className={`seat-pod__role-icon seat-pod__role-icon--${roleIcon}`}
+          className={cn(
+            "seat-pod__role-icon",
+            `seat-pod__role-icon--${roleIcon}`,
+          )}
           data-testid={`${testId}-${roleIcon}-icon`}
         >
-          {roleLabel}
+          {cornerBadgeLabel}
         </div>
       )}
 
@@ -373,7 +379,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           {playerEmoji}
         </span>
         <span className="seat-pod__name">{playerName}</span>
-        {positionLabel && (
+        {showInlinePositionBadge && positionLabel && (
           <span
             className="seat-pod__position-badge"
             data-testid={`${testId}-position-badge`}
