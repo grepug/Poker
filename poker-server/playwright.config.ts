@@ -20,12 +20,36 @@ const FRONTEND_PORT =
   FRONTEND_TARGET.port || (FRONTEND_TARGET.protocol === 'https:' ? '443' : '80');
 const BACKEND_PORT =
   BACKEND_TARGET.port || (BACKEND_TARGET.protocol === 'https:' ? '443' : '80');
+const E2E_DATA_DIR = `./.e2e-data/${BACKEND_PORT}`;
 const FRONTEND_BIND_HOST =
   process.env.E2E_FRONTEND_BIND_HOST ??
   process.env.PW_FRONTEND_BIND_HOST ??
   FRONTEND_TARGET.hostname;
+const includeDebugProject = process.env.PW_INCLUDE_DEBUG_PROJECT === 'true';
 
 const prepareFrontendCommand = `node ./test/e2e/scripts/prepare-frontend-dist.cjs ${BACKEND_URL}`;
+
+const projects = [
+  {
+    name: 'comprehensive-e2e',
+    testMatch: 'comprehensive-poker.spec.ts',
+    use: {
+      ...devices['Desktop Chrome'],
+      headless: true,
+    },
+  },
+];
+
+if (includeDebugProject) {
+  projects.push({
+    name: 'debug',
+    testMatch: 'debug-*.spec.ts',
+    use: {
+      ...devices['Desktop Chrome'],
+      headless: false,
+    },
+  });
+}
 
 export default defineConfig({
   testDir: './test/e2e',
@@ -44,24 +68,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
-    {
-      name: 'comprehensive-e2e',
-      testMatch: 'comprehensive-poker.spec.ts',
-      use: {
-        ...devices['Desktop Chrome'],
-        headless: true,
-      },
-    },
-    {
-      name: 'debug',
-      testMatch: 'debug-*.spec.ts',
-      use: {
-        ...devices['Desktop Chrome'],
-        headless: false, // Show browser for debugging
-      },
-    },
-  ],
+  projects,
 
   // Start both frontend and backend before tests
   webServer: [
@@ -75,18 +82,21 @@ export default defineConfig({
     },
     {
       // Avoid watch mode restarts during long e2e runs.
-      command: `PORT=${BACKEND_PORT} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true CHAT_RATE_LIMIT_COUNT=500 CHAT_RATE_LIMIT_WINDOW_MS=10000 CHAT_PAGE_SIZE=20 npm run start`,
+      command: `rm -rf ${E2E_DATA_DIR} && PORT=${BACKEND_PORT} DATA_DIR=${E2E_DATA_DIR} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true CHAT_RATE_LIMIT_COUNT=500 CHAT_RATE_LIMIT_WINDOW_MS=10000 CHAT_PAGE_SIZE=20 AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT=1000 AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS=1000 npm run start`,
       url: BACKEND_URL,
       reuseExistingServer: false,
       timeout: 60000,
       env: {
         PORT: BACKEND_PORT,
+        DATA_DIR: E2E_DATA_DIR,
         CORS_ORIGIN: FRONTEND_URL,
         CLIENT_URL: FRONTEND_URL,
         TEST_MODE: 'true',
         CHAT_RATE_LIMIT_COUNT: '500',
         CHAT_RATE_LIMIT_WINDOW_MS: '10000',
         CHAT_PAGE_SIZE: '20',
+        AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT: '1000',
+        AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS: '1000',
       },
     },
   ],

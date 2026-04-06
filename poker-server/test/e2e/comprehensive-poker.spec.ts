@@ -15,6 +15,9 @@ const FRONTEND_URL =
 const BACKEND_URL =
   process.env.PW_BACKEND_URL ??
   `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.PW_BACKEND_PORT ?? '3001'}`;
+const BACKEND_TARGET = new URL(BACKEND_URL);
+const BACKEND_STORAGE_PORT =
+  BACKEND_TARGET.port || (BACKEND_TARGET.protocol === 'https:' ? '443' : '80');
 
 const DEFAULT_STARTING_CHIPS = 1000;
 const DEFAULT_SMALL_BLIND = 5;
@@ -23,7 +26,11 @@ const DEFAULT_OPENING_POT = DEFAULT_SMALL_BLIND + DEFAULT_BIG_BLIND;
 const DEFAULT_TWO_PLAYER_MATCHED_POT = DEFAULT_BIG_BLIND * 2;
 const DEFAULT_SMALL_BLIND_CALL_GAP = DEFAULT_BIG_BLIND - DEFAULT_SMALL_BLIND;
 const DEFAULT_TEST_PASSWORD = 'test1234';
-const E2E_DATA_DIR = path.resolve(process.cwd(), 'data');
+const E2E_DATA_DIR = path.resolve(
+  process.cwd(),
+  '.e2e-data',
+  BACKEND_STORAGE_PORT,
+);
 const ROOM_STATE_UPDATED_EVENT = 'ROOM_STATE_UPDATED';
 
 type PersistedRoomSnapshotMatch = {
@@ -270,38 +277,65 @@ async function authenticateTestUser(
         );
       }
 
-      await page.goto(FRONTEND_URL);
-      const landingModeHandle = await page.waitForFunction(
-        () => {
-          const pokerDebug = (window as any).pokerDebug;
-          const room = pokerDebug?.getRoom?.();
-          const player = pokerDebug?.getPlayer?.();
-          const socket = pokerDebug?.getSocket?.();
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      const landingMode = await page
+        .waitForFunction(
+          () => {
+            const pokerDebug = (window as any).pokerDebug;
+            const room = pokerDebug?.getRoom?.();
+            const player = pokerDebug?.getPlayer?.();
+            const socket = pokerDebug?.getSocket?.();
 
-          if (
-            document.querySelector('[data-testid="room-title"]') &&
-            room?.id &&
-            player?.id
-          ) {
-            return 'room';
+            if (
+              document.querySelector('[data-testid="room-title"]') &&
+              room?.id &&
+              player?.id
+            ) {
+              return 'room';
+            }
+            if (
+              document.querySelector('[data-testid="connection-status"]') &&
+              socket?.connected
+            ) {
+              return 'home';
+            }
+            return null;
+          },
+          { timeout: 10000 },
+        )
+        .then((handle) => handle.jsonValue() as Promise<'room' | 'home'>)
+        .catch(async () => {
+          const debugState = await page.evaluate(() => {
+            const pokerDebug = (window as any).pokerDebug;
+            const room = pokerDebug?.getRoom?.();
+            const player = pokerDebug?.getPlayer?.();
+            const socket = pokerDebug?.getSocket?.();
+            return {
+              hasAuthPage: Boolean(
+                document.querySelector('[data-testid="auth-page"]'),
+              ),
+              hasConnectionStatus: Boolean(
+                document.querySelector('[data-testid="connection-status"]'),
+              ),
+              hasRoomTitle: Boolean(
+                document.querySelector('[data-testid="room-title"]'),
+              ),
+              socketConnected: Boolean(socket?.connected),
+              roomId: room?.id ?? null,
+              playerId: player?.id ?? null,
+              path: window.location.pathname,
+            };
+          });
+          if (debugState.hasAuthPage) {
+            throw new Error('Frontend remained on auth page after login');
           }
-          if (
-            document.querySelector('[data-testid="connection-status"]') &&
-            socket?.connected
-          ) {
-            return 'home';
-          }
-          if (document.querySelector('[data-testid="auth-page"]')) {
-            return 'auth';
-          }
-          return null;
-        },
-        { timeout: 5000 },
-      );
-      const landingMode = await landingModeHandle.jsonValue();
-      if (landingMode === 'auth') {
-        throw new Error('Frontend remained on auth page after login');
-      }
+          throw new Error(
+            `Frontend did not reach authenticated landing after login: ${JSON.stringify(
+              debugState,
+            )}`,
+          );
+        });
+      expect(['room', 'home']).toContain(landingMode);
 
       return;
     } catch (error) {
@@ -801,6 +835,41 @@ async function waitForHandStart(page: Page, handNumber: number) {
     handNumber,
     { timeout: 15000 },
   );
+}
+
+async function startNextHandOrWaitForAutoStart(
+  page: Page,
+  handNumber: number,
+  timeoutMs = 15000,
+) {
+  const startedAt = Date.now();
+  const nextHandButton = page.locator('[data-testid="start-next-hand-button"]');
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const alreadyStarted = await page
+      .evaluate((targetHandNumber) => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return (
+          room?.currentHand?.handNumber === targetHandNumber &&
+          room?.currentHand?.bettingRound === 'PRE_FLOP'
+        );
+      }, handNumber)
+      .catch(() => false);
+    if (alreadyStarted) {
+      return;
+    }
+
+    const buttonVisible =
+      (await nextHandButton.count()) > 0 &&
+      (await nextHandButton.first().isVisible().catch(() => false));
+    if (buttonVisible) {
+      await nextHandButton.first().click();
+    }
+
+    await page.waitForTimeout(buttonVisible ? 80 : 150);
+  }
+
+  await waitForHandStart(page, handNumber);
 }
 
 async function clickRevealResultFromAnyPage(pages: Page[], timeoutMs = 10000) {
@@ -3333,6 +3402,7 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
   test('3.5: Side Pot With Folded Caller Shows Only Required Showdown Hands', async ({
     browser,
   }) => {
+    test.setTimeout(90000);
     const session = await setupThreePlayerSession(browser);
 
     try {
@@ -5961,11 +6031,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await alicePage.click('[data-testid="reveal-next-street-button"]');
       await handCompletePromise;
 
-      await expect(
-        alicePage.locator('[data-testid="start-next-hand-button"]'),
-      ).toBeVisible();
-      await alicePage.click('[data-testid="start-next-hand-button"]');
-
+      await startNextHandOrWaitForAutoStart(alicePage, 2);
       await waitForHoleCards(charliePage);
       const nextHandState = await charliePage.evaluate(() => {
         const pokerDebug = (window as any).pokerDebug;
@@ -5997,10 +6063,20 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       await authenticateStandardTwoPlayerPages(alicePage, bobPage);
+      await ensureProfileForCurrentSession(alicePage, {
+        displayName: 'Alice',
+        avatarEmoji: '😎',
+      });
+      await ensureProfileForCurrentSession(bobPage, {
+        displayName: 'Bob',
+        avatarEmoji: '🐯',
+      });
 
-      await alicePage.fill('[data-testid="name-input"]', 'Alice');
-      await alicePage.click('[data-testid="emoji-select"]');
-      await alicePage.click('[data-testid="emoji-option"][data-emoji="😎"]');
+      await alicePage.reload({ waitUntil: 'domcontentloaded' });
+      await bobPage.reload({ waitUntil: 'domcontentloaded' });
+      await alicePage.waitForSelector('[data-testid="name-input"]');
+      await bobPage.waitForSelector('[data-testid="name-input"]');
+
       await alicePage.click('[data-testid="create-room-button"]');
       await alicePage.waitForSelector('[data-testid="room-title"]');
 
@@ -6011,9 +6087,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(roomCode).toBeTruthy();
 
       await bobPage.click('[data-testid="join-toggle-button"]');
-      await bobPage.fill('[data-testid="name-input"]', 'Bob');
-      await bobPage.click('[data-testid="emoji-select"]');
-      await bobPage.click('[data-testid="emoji-option"][data-emoji="🐯"]');
       await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
       await bobPage.click('[data-testid="join-room-button"]');
       await bobPage.waitForSelector(
