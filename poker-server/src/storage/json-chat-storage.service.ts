@@ -301,27 +301,12 @@ export class JsonChatStorageService implements IChatStorageService {
         };
       }
 
-      let nextMessages = [...index.latestMessages];
-      if (
-        options?.olderThanMs !== undefined &&
-        Number.isFinite(options.olderThanMs)
-      ) {
-        nextMessages = nextMessages.filter(
-          (message) => message.createdAt >= Number(options.olderThanMs),
-        );
-      }
-
-      if (
-        options?.keepLatest !== undefined &&
-        Number.isFinite(options.keepLatest)
-      ) {
-        const safeKeepLatest = Math.max(0, Math.floor(options.keepLatest));
-        if (safeKeepLatest === 0) {
-          nextMessages = [];
-        } else if (nextMessages.length > safeKeepLatest) {
-          nextMessages = nextMessages.slice(-safeKeepLatest);
-        }
-      }
+      const now = Date.now();
+      const nextMessages = this.applyPrunePolicy(
+        index.latestMessages,
+        options,
+        now,
+      );
 
       const deleted = index.latestMessages.length - nextMessages.length;
       if (deleted <= 0) {
@@ -331,7 +316,6 @@ export class JsonChatStorageService implements IChatStorageService {
         };
       }
 
-      const now = Date.now();
       const logRecord: PersistedChatLogRecord = {
         recordId: randomUUID(),
         seq: index.logSeq + 1,
@@ -421,6 +405,43 @@ export class JsonChatStorageService implements IChatStorageService {
     }
 
     return messages.slice(-maxMessages);
+  }
+
+  private applyPrunePolicy(
+    messages: ChatMessage[],
+    options: {
+      olderThanMs?: number | null;
+      keepLatest?: number | null;
+    } | undefined,
+    pruneTimestamp: number,
+  ): ChatMessage[] {
+    let nextMessages = [...messages];
+
+    if (
+      options?.olderThanMs !== undefined &&
+      options.olderThanMs !== null &&
+      Number.isFinite(options.olderThanMs)
+    ) {
+      const cutoffTimestamp = pruneTimestamp - Number(options.olderThanMs);
+      nextMessages = nextMessages.filter(
+        (message) => message.createdAt >= cutoffTimestamp,
+      );
+    }
+
+    if (
+      options?.keepLatest !== undefined &&
+      options.keepLatest !== null &&
+      Number.isFinite(options.keepLatest)
+    ) {
+      const safeKeepLatest = Math.max(0, Math.floor(options.keepLatest));
+      if (safeKeepLatest === 0) {
+        nextMessages = [];
+      } else if (nextMessages.length > safeKeepLatest) {
+        nextMessages = nextMessages.slice(-safeKeepLatest);
+      }
+    }
+
+    return nextMessages;
   }
 
   private async ensureDirectories(): Promise<void> {
@@ -526,29 +547,11 @@ export class JsonChatStorageService implements IChatStorageService {
       }
 
       if (record.type === 'MESSAGES_PRUNED') {
-        let nextMessages = [...index.latestMessages];
-        if (
-          record.olderThanMs !== undefined &&
-          record.olderThanMs !== null &&
-          Number.isFinite(record.olderThanMs)
-        ) {
-          nextMessages = nextMessages.filter(
-            (message) => message.createdAt >= Number(record.olderThanMs),
-          );
-        }
-
-        if (
-          record.keepLatest !== undefined &&
-          record.keepLatest !== null &&
-          Number.isFinite(record.keepLatest)
-        ) {
-          const safeKeepLatest = Math.max(0, Math.floor(record.keepLatest));
-          if (safeKeepLatest === 0) {
-            nextMessages = [];
-          } else if (nextMessages.length > safeKeepLatest) {
-            nextMessages = nextMessages.slice(-safeKeepLatest);
-          }
-        }
+        const nextMessages = this.applyPrunePolicy(
+          index.latestMessages,
+          record,
+          record.timestamp,
+        );
 
         index.latestMessages = nextMessages;
         index.nextSeq = Math.max(

@@ -186,6 +186,57 @@ describe('JsonChatStorageService', () => {
     expect(rebuilt.messages.map((message) => message.seq)).toEqual([1]);
   });
 
+  it('prunes by message age using the prune timestamp and replays that deterministically', async () => {
+    const roomId = 'ROOM-PRUNE-AGE';
+    const nowSpy = jest.spyOn(Date, 'now');
+    let pruneResult;
+
+    try {
+      nowSpy.mockReturnValue(1000);
+      await service.appendMessage({
+        roomId,
+        kind: 'TEXT',
+        text: 'stale',
+        clientMessageId: 'msg-1',
+        sender: {
+          playerId: 'p1',
+          playerName: 'Alice',
+        },
+      });
+
+      nowSpy.mockReturnValue(8000);
+      await service.appendMessage({
+        roomId,
+        kind: 'TEXT',
+        text: 'fresh',
+        clientMessageId: 'msg-2',
+        sender: {
+          playerId: 'p1',
+          playerName: 'Alice',
+        },
+      });
+
+      nowSpy.mockReturnValue(10000);
+      pruneResult = await service.pruneRoomMessages(roomId, {
+        olderThanMs: 3000,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(pruneResult).toEqual({ deleted: 1, remaining: 1 });
+    expect(
+      (await service.getMessagePage(roomId, { limit: 10 })).messages.map(
+        (message) => message.seq,
+      ),
+    ).toEqual([2]);
+
+    await unlink(path.join(tempDir, 'chat', roomId, 'chat.index.json'));
+
+    const rebuilt = await service.getMessagePage(roomId, { limit: 10 });
+    expect(rebuilt.messages.map((message) => message.seq)).toEqual([2]);
+  });
+
   it('keeps nextSeq monotonic after pruning the bounded projection to empty', async () => {
     const roomId = 'ROOM-PRUNE-SEQ';
     await service.appendMessage({

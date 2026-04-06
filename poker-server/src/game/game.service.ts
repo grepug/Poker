@@ -325,6 +325,8 @@ export class GameService {
       return null;
     }
 
+    const previousHostId = room.hostId;
+
     // If host left, transfer to next player
     if (room.hostId === playerId) {
       const newHost = seatedPlayers[0];
@@ -348,7 +350,7 @@ export class GameService {
         },
       }),
     ];
-    if (room.hostId !== playerId) {
+    if (room.hostId !== previousHostId) {
       events.push(
         roomEvent({
           roomId,

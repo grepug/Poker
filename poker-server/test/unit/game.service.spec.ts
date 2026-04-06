@@ -405,7 +405,7 @@ describe('GameService addPlayerToRoom', () => {
   it('marks player as left instead of removing player state', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',
-      hostId: 'p-bob',
+      hostId: 'p-alice',
       players: [
         createPlayer({
           id: 'p-alice',
@@ -461,5 +461,44 @@ describe('GameService addPlayerToRoom', () => {
     expect(updated?.currentHand?.activePlayers).toEqual(['p-alice']);
     expect(updated?.currentHand?.currentPlayerTurn).toBeNull();
     expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_LEFT',
+    ]);
+  });
+
+  it('emits HOST_CHANGED only when the host actually changes', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-alice',
+      players: [
+        createPlayer({
+          id: 'p-alice',
+          socketId: 's-alice',
+          name: 'Alice',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-bob',
+          socketId: 's-bob',
+          name: 'Bob',
+          position: 1,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-alice');
+
+    expect(updated?.hostId).toBe('p-bob');
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_LEFT',
+      'HOST_CHANGED',
+    ]);
   });
 });
