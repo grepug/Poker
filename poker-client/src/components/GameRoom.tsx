@@ -32,6 +32,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import type { SeatBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -1375,6 +1376,34 @@ const getSeatRoleIcon = (
   return null;
 };
 
+const buildSeatBadge = (
+  roleIcon: ReturnType<typeof getSeatRoleIcon>,
+  seatPositionLabel: string | null,
+): SeatBadge | null => {
+  if (roleIcon && seatPositionLabel) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (seatPositionLabel) {
+    return {
+      tone: "position",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (roleIcon) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: roleIcon === "dealer" ? "D" : "SB",
+    };
+  }
+
+  return null;
+};
+
 const resolveSeatMainState = ({
   isCurrentTurnSeat,
   isDisconnected,
@@ -2437,6 +2466,7 @@ const useGameRoomElement = () => {
         const seatPlayerId = seatPlayer.id;
         const seatPositionLabel =
           currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
+        const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2515,9 +2545,7 @@ const useGameRoomElement = () => {
           playerEmoji: seatPlayer.emoji || "🎲",
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
-          roleIcon,
-          roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
-          positionLabel: seatPositionLabel,
+          badge: seatBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
