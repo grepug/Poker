@@ -234,9 +234,6 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   densityClass,
   readyOverlayLabel,
 }) => {
-  const cornerBadgeLabel = roleIcon ? positionLabel ?? roleLabel : roleLabel;
-  const showCornerBadge = Boolean(roleIcon && cornerBadgeLabel);
-  const showInlinePositionBadge = Boolean(positionLabel && !showCornerBadge);
   const floatingStatusLabel = externalStatusLabel ?? internalStatusLabel;
   const floatingStatusToneClass = externalStatusLabel
     ? externalStatusToneClass
@@ -307,7 +304,6 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   }, [
     scheduleFit,
     actionLabel?.text,
-    cornerBadgeLabel,
     densityClass,
     floatingStatusLabel,
     playerName,
@@ -323,7 +319,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
       className={cn(
         "seat-pod",
         isYou && "seat-pod--you",
-        showCornerBadge && "seat-pod--has-role-icon",
+        Boolean(roleIcon && roleLabel) && "seat-pod--has-role-icon",
         Boolean(floatingStatusLabel) && "seat-pod--has-status-badge",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
@@ -333,7 +329,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         densityClass,
       )}
     >
-      {showCornerBadge && roleIcon && (
+      {roleIcon && roleLabel && (
         <div
           className={cn(
             "seat-pod__role-icon",
@@ -341,7 +337,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           )}
           data-testid={`${testId}-${roleIcon}-icon`}
         >
-          {cornerBadgeLabel}
+          {roleLabel}
         </div>
       )}
 
@@ -379,7 +375,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           {playerEmoji}
         </span>
         <span className="seat-pod__name">{playerName}</span>
-        {showInlinePositionBadge && positionLabel && (
+        {positionLabel && (
           <span
             className="seat-pod__position-badge"
             data-testid={`${testId}-position-badge`}
