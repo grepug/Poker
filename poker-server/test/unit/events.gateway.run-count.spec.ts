@@ -109,7 +109,7 @@ describe('EventsGateway run-count decision flow', () => {
         }
         return deepClone(roomState);
       }),
-      saveRoom: jest.fn(async (room: any) => {
+      persistRoom: jest.fn(async (room: any) => {
         roomState = deepClone(room);
       }),
       deleteRoom: jest.fn(),
@@ -160,7 +160,7 @@ describe('EventsGateway run-count decision flow', () => {
                   { suit: 'clubs', rank: 'J' },
                 ],
               ];
-        await storageService.saveRoom(room);
+        await storageService.persistRoom(room);
         return 'SHOWDOWN';
       }),
       startNewHand: jest.fn(),

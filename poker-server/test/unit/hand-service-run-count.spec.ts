@@ -12,7 +12,7 @@ describe('HandService run-count support', () => {
   beforeEach(() => {
     process.env.TEST_MODE = 'true';
     storageService = {
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
       getRoom: jest.fn().mockResolvedValue(null),
       deleteRoom: jest.fn().mockResolvedValue(undefined),
       getAllRooms: jest.fn().mockResolvedValue([]),
