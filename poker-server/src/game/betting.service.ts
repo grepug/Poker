@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import {
   PersistedPlayerActionPayload,
+  PersistedRobotDecisionMetadata,
   PersistedRoomPlayerStateSnapshot,
   Player,
   PlayerAction,
@@ -98,6 +99,7 @@ export class BettingService {
     amount?: number,
     options?: {
       actionId?: string | null;
+      robotDecision?: PersistedRobotDecisionMetadata;
     },
   ): Promise<void> {
     const hand = room.currentHand;
@@ -169,6 +171,9 @@ export class BettingService {
       playerCurrentBet: player.currentBet,
       pot: hand.pot,
       currentBet: hand.currentBet,
+      ...(player.isRobot && options?.robotDecision
+        ? { robotDecision: options.robotDecision }
+        : {}),
       request: actionContext.request,
       decision: actionContext.decision,
       result: {

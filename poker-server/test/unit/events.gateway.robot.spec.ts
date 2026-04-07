@@ -1,4 +1,5 @@
 import { EventsGateway } from '../../src/events/events.gateway';
+import { RobotDecisionError } from '../../src/game/robot-agent.service';
 
 describe('EventsGateway robot player controls', () => {
   let gateway: EventsGateway;
@@ -63,6 +64,8 @@ describe('EventsGateway robot player controls', () => {
 
     bettingService = {
       calculateMinRaise: jest.fn().mockReturnValue(20),
+      processAction: jest.fn().mockResolvedValue(undefined),
+      isBettingRoundComplete: jest.fn().mockReturnValue(true),
       validateAction: jest.fn((room: any, playerId: string, action: string) => {
         void room;
         void playerId;
@@ -349,7 +352,132 @@ describe('EventsGateway robot player controls', () => {
     expect(room.readyPlayerIds).toEqual(['p-host', 'p-robot']);
   });
 
-  it('falls back to a deterministic legal action when robot provider execution fails', async () => {
+  it('passes provider-backed robot decision metadata into persisted player actions', async () => {
+    const robot = {
+      ...createPlayer({
+        id: 'p-robot',
+        socketId: '',
+        name: 'Robot 1',
+        status: 'connected',
+        position: 0,
+      }),
+      isRobot: true,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'hearts' },
+      ],
+      currentBet: 10,
+    };
+    const human = {
+      ...createPlayer({
+        id: 'p-human',
+        socketId: 'socket-human',
+        name: 'Human',
+        status: 'connected',
+        position: 1,
+      }),
+      currentBet: 20,
+      cards: [
+        { rank: '2', suit: 'clubs' },
+        { rank: '2', suit: 'diamonds' },
+      ],
+    };
+    const room = {
+      id: 'ROOM1',
+      hostId: 'p-human',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [robot, human],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 9,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-robot',
+        pot: 15,
+        communityCards: [
+          { rank: 'Q', suit: 'spades' },
+          { rank: 'J', suit: 'spades' },
+          { rank: '3', suit: 'clubs' },
+        ],
+        bettingRound: 'FLOP',
+        currentBet: 10,
+        lastRaiseSize: 10,
+        activePlayers: ['p-robot', 'p-human'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: { 'p-robot': 5, 'p-human': 10 },
+        vpipPlayerIds: ['p-robot', 'p-human'],
+        revealedPlayerIds: [],
+      },
+      readyPhase: null,
+      readyPlayerIds: [],
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+    const updatedRoom = {
+      ...room,
+      players: [
+        { ...robot, lastAction: 'raise', currentBet: 30, chips: 970 },
+        human,
+      ],
+      currentHand: {
+        ...room.currentHand,
+        pot: 35,
+        currentBet: 30,
+      },
+    };
+
+    storageService.getRoom
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(updatedRoom);
+    robotAgentService.isConfigured.mockReturnValue(true);
+    robotAgentService.decideAction.mockResolvedValue({
+      action: 'raise',
+      amount: 20,
+      persistedDecision: {
+        source: 'provider-output',
+        summary: 'Provider final output accepted.',
+        validationRetryCount: 0,
+      },
+    });
+    jest
+      .spyOn(gateway as any, 'handleBettingRoundComplete')
+      .mockResolvedValue(undefined);
+
+    await (gateway as any).executeRobotTurn('ROOM1', 'p-robot', 9);
+
+    expect(bettingService.processAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ROOM1',
+        currentHand: expect.objectContaining({
+          handNumber: 9,
+          currentPlayerTurn: 'p-robot',
+        }),
+      }),
+      'p-robot',
+      'raise',
+      20,
+      expect.objectContaining({
+        actionId: expect.stringMatching(/^robot-9-/),
+        robotDecision: {
+          source: 'provider-output',
+          summary: 'Provider final output accepted.',
+          validationRetryCount: 0,
+        },
+      }),
+    );
+  });
+
+  it('passes fallback robot decision metadata into persisted player actions when provider execution fails', async () => {
     const robot = {
       ...createPlayer({
         id: 'p-robot',
@@ -418,22 +546,50 @@ describe('EventsGateway robot player controls', () => {
       lastActivityAt: Date.now(),
     };
 
-    storageService.getRoom.mockResolvedValue(room);
+    const updatedRoom = {
+      ...room,
+      players: [{ ...robot, lastAction: 'check' }, human],
+    };
+
+    storageService.getRoom
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(updatedRoom);
     robotAgentService.isConfigured.mockReturnValue(true);
-    robotAgentService.decideAction.mockRejectedValue(new Error('provider down'));
-    const handlePlayerActionSpy = jest
-      .spyOn(gateway as any, 'handlePlayerAction')
-      .mockResolvedValue({ success: true });
+    robotAgentService.decideAction.mockRejectedValue(
+      new RobotDecisionError(
+        'invalid-final-action',
+        'Robot agent produced an invalid final action',
+        2,
+      ),
+    );
+    jest
+      .spyOn(gateway as any, 'handleBettingRoundComplete')
+      .mockResolvedValue(undefined);
 
     await (gateway as any).executeRobotTurn('ROOM1', 'p-robot', 9);
 
     expect(robotAgentService.decideAction).toHaveBeenCalled();
-    expect(handlePlayerActionSpy).toHaveBeenCalledWith(
+    expect(bettingService.processAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: expect.stringMatching(/^robot:ROOM1:p-robot:/),
+        id: 'ROOM1',
+        currentHand: expect.objectContaining({
+          handNumber: 9,
+          currentPlayerTurn: 'p-robot',
+        }),
       }),
+      'p-robot',
+      'check',
+      undefined,
       expect.objectContaining({
-        action: 'check',
+        actionId: expect.stringMatching(/^robot-9-/),
+        robotDecision: {
+          source: 'deterministic-fallback',
+          fallbackCause: 'invalid-final-action',
+          summary:
+            'Deterministic fallback check because invalid final action after 2 validation retries.',
+          validationRetryCount: 2,
+        },
       }),
     );
   });

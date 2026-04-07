@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import {
   buildChipRanking,
@@ -21,8 +21,15 @@ import {
   teardownTwoPlayerSession,
   waitForPersistedRoomSnapshot,
   waitForPlayerTurn,
+  waitForPokerDebug,
   waitForVoicePlaybackSource,
 } from './helpers/persistence-e2e.helpers';
+
+const liveRobotConfigured = Boolean(
+  process.env.AI_ROBOT_API_KEY?.trim() &&
+    process.env.AI_ROBOT_BASE_URL?.trim() &&
+    process.env.AI_ROBOT_MODEL_ID?.trim(),
+);
 
 async function waitForJsonFileMatch<T>(
   filePath: string,
@@ -43,6 +50,124 @@ async function waitForJsonFileMatch<T>(
   }
 
   throw new Error(`Timed out waiting for ${filePath}`);
+}
+
+async function createRoomViaSocket(page: Page, playerName: string) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async (requestedName) => {
+    const socket = (window as any).pokerDebug?.getSocket?.();
+    if (!socket) {
+      throw new Error('Unable to create room: socket unavailable');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      socket.emit(
+        'CREATE_ROOM',
+        { playerName: requestedName },
+        (response: { success?: boolean; error?: string }) => {
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(response?.error || 'Unknown CREATE_ROOM failure'));
+        },
+      );
+    });
+  }, playerName);
+
+  await page.waitForSelector('[data-testid="room-title"]');
+  const roomIdText = await page.textContent('[data-testid="room-title"]');
+  const roomCode = roomIdText?.match(/Room: (.+)/)?.[1];
+  if (!roomCode) {
+    throw new Error('Failed to resolve room code');
+  }
+
+  return roomCode;
+}
+
+async function setTestDeckForCurrentRoom(
+  page: Page,
+  deck: Array<{ suit: string; rank: string }>,
+) {
+  await waitForPokerDebug(page);
+  await page.evaluate(async (testDeck) => {
+    const pokerDebug = (window as any).pokerDebug;
+    const roomId = pokerDebug?.getRoom?.()?.id;
+    const socket = pokerDebug?.getSocket?.();
+
+    if (!roomId || !socket) {
+      throw new Error('Unable to set test deck: room/socket unavailable');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      socket.emit(
+        'setTestDeck',
+        { roomId, deck: testDeck },
+        (response: { success: boolean; error?: string }) => {
+          if (response?.success) {
+            resolve();
+            return;
+          }
+
+          reject(
+            new Error(response?.error || 'Unknown setTestDeck failure from server'),
+          );
+        },
+      );
+    });
+  }, deck);
+}
+
+async function playSafeHumanAction(page: Page) {
+  const checkButton = page.locator('[data-testid="action-check"]');
+  if ((await checkButton.count()) > 0 && (await checkButton.first().isVisible())) {
+    await checkButton.first().click();
+    return;
+  }
+
+  const callButton = page.locator('[data-testid="action-call"]');
+  if ((await callButton.count()) > 0 && (await callButton.first().isVisible())) {
+    await callButton.first().click();
+    return;
+  }
+
+  throw new Error('No safe human action available to hand control to the robot');
+}
+
+async function waitForRobotProgress(
+  page: Page,
+  params: {
+    robotId: string;
+    baselineActionId: string | null;
+    baselineCurrentBet: number;
+    timeout: number;
+  },
+) {
+  await page.waitForFunction(
+    ({ robotId, baselineActionId, baselineCurrentBet }) => {
+      const pokerDebug = (window as any).pokerDebug;
+      const room = pokerDebug?.getRoom?.();
+      const event = pokerDebug?.getLastPlayerActionEvent?.();
+      const robot = (room?.players ?? []).find(
+        (player: any) => player.id === robotId,
+      );
+
+      if (!robot || !room?.currentHand) {
+        return false;
+      }
+
+      const actionEventChanged =
+        !!event && event.playerId === robotId && event.id !== baselineActionId;
+      const robotStateChanged =
+        robot.lastAction !== null || robot.currentBet !== baselineCurrentBet;
+      const turnMovedAway = room.currentHand.currentPlayerTurn !== robotId;
+
+      return actionEventChanged || (robotStateChanged && turnMovedAway);
+    },
+    params,
+    { timeout: params.timeout },
+  );
 }
 
 test.describe('Poker E2E - Persistence Storage', () => {
@@ -173,6 +298,148 @@ test.describe('Poker E2E - Persistence Storage', () => {
       ).toBe(true);
     } finally {
       await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('1.1b: robot fallback decisions are persisted in room history JSONL', async ({
+    browser,
+  }) => {
+    test.skip(
+      liveRobotConfigured,
+      'Fallback persistence path requires robot provider env to be unset',
+    );
+
+    const hostContext = await browser.newContext();
+    const hostPage = await hostContext.newPage();
+
+    try {
+      await authenticateTestUser(hostPage, 'test3', {
+        displayName: 'Charlie',
+        avatarEmoji: '🎯',
+      });
+      const roomCode = await createRoomViaSocket(hostPage, 'Charlie');
+      await setTestDeckForCurrentRoom(hostPage, [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'clubs' },
+        { rank: 'Q', suit: 'hearts' },
+        { rank: '7', suit: 'diamonds' },
+        { rank: '2', suit: 'clubs' },
+        { rank: '9', suit: 'spades' },
+        { rank: '4', suit: 'hearts' },
+        { rank: 'J', suit: 'diamonds' },
+        { rank: '3', suit: 'spades' },
+        { rank: '8', suit: 'clubs' },
+        { rank: '5', suit: 'diamonds' },
+      ]);
+
+      await hostPage.click('[data-testid="add-robot-button"]');
+      await hostPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getRoom?.()?.players ?? []).some(
+            (player: any) => player.isRobot && player.status !== 'left',
+          ),
+        { timeout: 10000 },
+      );
+
+      const identities = await hostPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const robot = (room?.players ?? []).find(
+          (candidate: any) => candidate.isRobot && candidate.status !== 'left',
+        );
+        return {
+          playerId: player?.id ?? null,
+          robotId: robot?.id ?? null,
+        };
+      });
+
+      expect(identities.robotId).toBeTruthy();
+      expect(identities.playerId).toBeTruthy();
+
+      await hostPage.click('[data-testid="start-game-button"]');
+      await hostPage.waitForSelector('[data-testid="round-value"]', {
+        timeout: 15000,
+      });
+
+      const baselineActionId = await hostPage.evaluate(
+        () => window.pokerDebug?.getLastPlayerActionEvent?.()?.id ?? null,
+      );
+      const baselineRobotState = await hostPage.evaluate((robotId) => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const robot = (room?.players ?? []).find(
+          (candidate: any) => candidate.id === robotId,
+        );
+        return {
+          currentBet: robot?.currentBet ?? null,
+        };
+      }, identities.robotId);
+
+      expect(baselineRobotState.currentBet).not.toBeNull();
+
+      try {
+        await waitForRobotProgress(hostPage, {
+          robotId: identities.robotId!,
+          baselineActionId,
+          baselineCurrentBet: baselineRobotState.currentBet,
+          timeout: 25000,
+        });
+      } catch {
+        const isHumanTurn = await hostPage.evaluate(
+          (playerId) =>
+            (window as any).pokerDebug?.getRoom?.()?.currentHand?.currentPlayerTurn ===
+            playerId,
+          identities.playerId,
+        );
+        expect(isHumanTurn).toBe(true);
+        await playSafeHumanAction(hostPage);
+        await waitForRobotProgress(hostPage, {
+          robotId: identities.robotId!,
+          baselineActionId,
+          baselineCurrentBet: baselineRobotState.currentBet,
+          timeout: 25000,
+        });
+      }
+
+      const roomEventsPath = path.join(
+        E2E_DATA_DIR,
+        'rooms',
+        roomCode,
+        'room-events.jsonl',
+      );
+      const startedAt = Date.now();
+      let persistedRobotAction: any = null;
+
+      while (Date.now() - startedAt < 10000) {
+        if (await pathExists(roomEventsPath)) {
+          const roomEvents = await readJsonlFile<any>(roomEventsPath);
+          persistedRobotAction = roomEvents.find(
+            (record) =>
+              record.type === 'PLAYER_ACTION' &&
+              record.actor?.playerId === identities.robotId &&
+              record.payload?.robotDecision?.source === 'deterministic-fallback',
+          );
+          if (persistedRobotAction) {
+            break;
+          }
+        }
+
+        await hostPage.waitForTimeout(100);
+      }
+
+      expect(persistedRobotAction).toBeTruthy();
+      expect(persistedRobotAction.payload.robotDecision).toEqual(
+        expect.objectContaining({
+          source: 'deterministic-fallback',
+          fallbackCause: 'provider-unavailable',
+          validationRetryCount: 0,
+          summary: expect.stringMatching(
+            /^Deterministic fallback (check|fold) because provider unavailable\.$/,
+          ),
+        }),
+      );
+    } finally {
+      await hostContext.close();
     }
   });
 

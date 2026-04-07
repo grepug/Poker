@@ -186,6 +186,99 @@ describe('JsonStorageService', () => {
       expect((await service.getRoom('ROOMLOG'))?.config.startingChips).toBe(2000);
     });
 
+    it('preserves additive robot decision metadata in persisted room events', async () => {
+      const room = createMockRoom('ROOMROBOT');
+      room.lastActivityAt = 321;
+
+      await service.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'PLAYER_ACTION',
+            actor: {
+              source: 'BETTING_SERVICE',
+              playerId: 'robot-1',
+              playerName: 'Robot 1',
+            },
+            payload: {
+              action: 'check',
+              amount: null,
+              playerStatus: 'connected',
+              playerChips: 1000,
+              playerCurrentBet: 0,
+              pot: 15,
+              currentBet: 10,
+              request: {
+                action: 'check',
+                actionId: 'robot-action-1',
+              },
+              decision: {
+                currentPlayerTurnBefore: 'robot-1',
+                playerStatusBefore: 'connected',
+                playerChipsBefore: 1000,
+                playerCurrentBetBefore: 0,
+                potBefore: 15,
+                currentBetBefore: 10,
+                lastRaiseSizeBefore: 10,
+                callAmountBefore: 10,
+                minimumRaiseBy: 10,
+                minimumRaiseTo: 20,
+                maximumBetTo: 1000,
+                facingBet: true,
+                legalActions: ['fold', 'call', 'raise', 'all-in'],
+                activePlayerIds: ['robot-1', 'human-1'],
+                communityCards: [],
+                potContributions: { 'robot-1': 5, 'human-1': 10 },
+                players: [],
+              },
+              result: {
+                resolvedAction: 'check',
+                displayKind: 'check',
+                committedAmount: 0,
+                totalBetAfterAction: 0,
+                playerStatusAfter: 'connected',
+                playerChipsAfter: 1000,
+                playerCurrentBetAfter: 0,
+                potAfter: 15,
+                currentBetAfter: 10,
+                lastRaiseSizeAfter: 10,
+                activePlayerIds: ['robot-1', 'human-1'],
+                potContributions: { 'robot-1': 5, 'human-1': 10 },
+                players: [],
+              },
+              robotDecision: {
+                source: 'deterministic-fallback',
+                fallbackCause: 'provider-error',
+                summary: 'Deterministic fallback check because provider error.',
+                validationRetryCount: 0,
+              },
+            },
+            handNumber: 1,
+            street: 'PRE_FLOP',
+          }),
+        ),
+      );
+
+      const raw = await fs.readFile(
+        path.join(testRoomsDir, 'ROOMROBOT', 'room-events.jsonl'),
+        'utf-8',
+      );
+      const records = raw
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const playerAction = records.find((record) => record.type === 'PLAYER_ACTION');
+
+      expect(playerAction.payload.robotDecision).toEqual({
+        source: 'deterministic-fallback',
+        fallbackCause: 'provider-error',
+        summary: 'Deterministic fallback check because provider error.',
+        validationRetryCount: 0,
+      });
+      expect((await service.getRoom('ROOMROBOT'))?.id).toBe('ROOMROBOT');
+    });
+
     it('removes a legacy room snapshot once the JSONL room layout is already usable', async () => {
       const room = createMockRoom('ROOMCLEAN');
       await fs.mkdir(path.join(testRoomsDir, 'ROOMCLEAN'), { recursive: true });

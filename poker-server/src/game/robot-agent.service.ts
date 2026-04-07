@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PlayerAction } from 'poker-types';
+import {
+  PersistedRobotDecisionMetadata,
+  PersistedRobotFallbackCause,
+  PlayerAction,
+} from 'poker-types';
 import { z } from 'zod';
 import {
   createVolcengineResponsesCompatFetch,
@@ -11,11 +15,31 @@ export type RobotActionCandidate = {
   amount?: number;
 };
 
+export type RobotActionDecision = RobotActionCandidate & {
+  persistedDecision: PersistedRobotDecisionMetadata;
+};
+
 export type RobotActionValidation = {
   valid: boolean;
   reason?: string;
   legalActions?: Record<string, unknown>;
 };
+
+export type RobotDecisionFailureCode =
+  | 'provider-error'
+  | 'invalid-final-action'
+  | 'exhausted-retries';
+
+export class RobotDecisionError extends Error {
+  constructor(
+    readonly code: RobotDecisionFailureCode,
+    message: string,
+    readonly validationRetryCount = 0,
+  ) {
+    super(message);
+    this.name = 'RobotDecisionError';
+  }
+}
 
 export type RobotTurnContext = {
   schemaVersion: '1.0';
@@ -155,7 +179,7 @@ export class RobotAgentService {
   async decideAction(params: {
     context: RobotTurnContext;
     validateAction: (candidate: RobotActionCandidate) => RobotActionValidation;
-  }): Promise<RobotActionCandidate> {
+  }): Promise<RobotActionDecision> {
     const configError = this.getConfigurationError();
     if (configError) {
       throw new Error(configError);
@@ -180,7 +204,7 @@ export class RobotAgentService {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
-      let finalizedAction: RobotActionCandidate | null = null;
+      let finalizedAction: RobotActionDecision | null = null;
       let latestValidAction: RobotActionCandidate | null = null;
       let retryCount = 0;
 
@@ -238,18 +262,25 @@ export class RobotAgentService {
         const normalizedError =
           error instanceof Error ? error : new Error(String(error));
         lastError = normalizedError;
+        const isTransientRetryable = this.isTransientResponsesError(
+          apiMode,
+          normalizedError,
+        );
 
-        if (
-          attempt < maxProviderAttempts &&
-          this.isTransientResponsesError(apiMode, normalizedError)
-        ) {
+        if (attempt < maxProviderAttempts && isTransientRetryable) {
           this.logger.warn(
             `Robot responses attempt ${attempt} failed with transient parse error; retrying`,
           );
           continue;
         }
 
-        throw normalizedError;
+        throw new RobotDecisionError(
+          isTransientRetryable ? 'exhausted-retries' : 'provider-error',
+          isTransientRetryable
+            ? 'Robot agent exhausted retries without a legal action'
+            : normalizedError.message || 'Robot provider request failed',
+          retryCount,
+        );
       }
 
       const outputCandidate = result?.output
@@ -258,10 +289,19 @@ export class RobotAgentService {
       if (outputCandidate) {
         const validation = params.validateAction(outputCandidate);
         if (validation.valid) {
-          finalizedAction = outputCandidate;
+          finalizedAction = {
+            ...outputCandidate,
+            persistedDecision: {
+              source: 'provider-output',
+              summary: this.buildProviderOutputSummary(retryCount),
+              validationRetryCount: retryCount,
+            },
+          };
         } else {
-          lastError = new Error(
+          lastError = new RobotDecisionError(
+            'invalid-final-action',
             validation.reason || 'Robot agent produced an invalid final action',
+            retryCount,
           );
         }
       }
@@ -270,17 +310,35 @@ export class RobotAgentService {
         return finalizedAction;
       }
       if (latestValidAction) {
-        return latestValidAction;
+        return {
+          ...latestValidAction,
+          persistedDecision: {
+            source: 'validated-tool-loop',
+            summary: this.buildValidatedToolLoopSummary(lastError, retryCount),
+            validationRetryCount: retryCount,
+          },
+        };
       }
       if (lastError && attempt < maxProviderAttempts) {
         continue;
       }
     }
 
-    if (lastError) {
+    if (lastError instanceof RobotDecisionError) {
       throw lastError;
     }
-    throw new Error('Robot agent failed to produce a legal action');
+    if (lastError) {
+      throw new RobotDecisionError(
+        'provider-error',
+        lastError.message || 'Robot provider request failed',
+        0,
+      );
+    }
+    throw new RobotDecisionError(
+      'exhausted-retries',
+      'Robot agent exhausted retries without a legal action',
+      0,
+    );
   }
 
   private createModel() {
@@ -348,4 +406,47 @@ export class RobotAgentService {
       amount: Number.isFinite(amount) ? Math.max(1, Math.floor(amount)) : 1,
     };
   }
+
+  private buildProviderOutputSummary(retryCount: number): string {
+    return retryCount > 0
+      ? `Provider final output accepted after ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}.`
+      : 'Provider final output accepted.';
+  }
+
+  private buildValidatedToolLoopSummary(
+    lastError: Error | null,
+    retryCount: number,
+  ): string {
+    const retrySummary =
+      retryCount > 0
+        ? ` with ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}`
+        : '';
+    if (lastError instanceof RobotDecisionError) {
+      switch (lastError.code) {
+        case 'invalid-final-action':
+          return `Used latest validated tool-loop action after invalid final output${retrySummary}.`;
+        case 'provider-error':
+          return `Used latest validated tool-loop action after provider finalization failed${retrySummary}.`;
+        case 'exhausted-retries':
+          return `Used latest validated tool-loop action after retry exhaustion${retrySummary}.`;
+      }
+    }
+    return `Used latest validated tool-loop action${retrySummary}.`;
+  }
+}
+
+export function toRobotFallbackCause(
+  error: unknown,
+): PersistedRobotFallbackCause {
+  if (error instanceof RobotDecisionError) {
+    switch (error.code) {
+      case 'provider-error':
+        return 'provider-error';
+      case 'invalid-final-action':
+        return 'invalid-final-action';
+      case 'exhausted-retries':
+        return 'exhausted-retries';
+    }
+  }
+  return 'provider-error';
 }
