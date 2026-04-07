@@ -3004,7 +3004,14 @@ export class EventsGateway
       );
       this.emitShowdownDecisionState(room);
 
-      if (!(hand.showdownForcedRevealPlayerIds ?? []).includes(nextPlayerId)) {
+      const nextPlayer = room.players.find(
+        (player: any) => player.id === nextPlayerId,
+      );
+      const shouldAutoReveal =
+        (hand.showdownForcedRevealPlayerIds ?? []).includes(nextPlayerId) ||
+        nextPlayer?.isRobot;
+
+      if (!shouldAutoReveal) {
         return;
       }
 
