@@ -1031,31 +1031,27 @@ export class HandService {
     smallBlindPosition: number;
     bigBlindPosition: number;
   }): Record<string, HandPositionLabel> {
-    const labelsByPlayerId: Record<string, HandPositionLabel> = {};
+    if (activePlayers.length !== 2) {
+      return {};
+    }
+
     const playerByPosition = new Map(
       activePlayers.map((player) => [player.position, player]),
     );
     const dealerPlayer = playerByPosition.get(dealerPosition);
-    const smallBlindPlayer = playerByPosition.get(smallBlindPosition);
-    const bigBlindPlayer = playerByPosition.get(bigBlindPosition);
+    const nonDealerPlayer =
+      activePlayers.find((player) => player.position !== dealerPosition) ?? null;
 
-    if (dealerPlayer && dealerPosition === smallBlindPosition) {
-      labelsByPlayerId[dealerPlayer.id] = 'BTN/SB';
-    } else if (dealerPlayer && dealerPosition === bigBlindPosition) {
-      labelsByPlayerId[dealerPlayer.id] = 'BTN/BB';
-    } else if (dealerPlayer) {
-      labelsByPlayerId[dealerPlayer.id] = 'BTN';
+    if (!dealerPlayer || !nonDealerPlayer) {
+      return {};
     }
 
-    if (smallBlindPlayer && !labelsByPlayerId[smallBlindPlayer.id]) {
-      labelsByPlayerId[smallBlindPlayer.id] = 'SB';
-    }
-
-    if (bigBlindPlayer && !labelsByPlayerId[bigBlindPlayer.id]) {
-      labelsByPlayerId[bigBlindPlayer.id] = 'BB';
-    }
-
-    return labelsByPlayerId;
+    // Heads-up blind mechanics stay unchanged here; this only aligns
+    // the exposed position badge with the agreed UX contract.
+    return {
+      [dealerPlayer.id]: 'BTN/SB',
+      [nonDealerPlayer.id]: 'BB',
+    };
   }
 
   private getPlayersClockwiseFromPosition(

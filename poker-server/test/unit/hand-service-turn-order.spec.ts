@@ -102,7 +102,7 @@ describe('HandService turn order', () => {
     expect(nextPlayer?.id).toBe('p3');
   });
 
-  it('uses seat positions for heads-up blind assignment even when player array is unsorted', async () => {
+  it('uses seat positions for heads-up blind assignment even when displayed badges follow the UX contract', async () => {
     const room: Room = {
       id: 'ROOM-HEADSUP',
       hostId: 'p0',
@@ -132,8 +132,8 @@ describe('HandService turn order', () => {
     expect(hand.bigBlindPosition).toBe(0);
     expect(hand.currentPlayerTurn).toBe('p3');
     expect(hand.positionLabelsByPlayerId).toEqual({
-      p0: 'BTN/BB',
-      p3: 'SB',
+      p0: 'BTN/SB',
+      p3: 'BB',
     });
 
     const playerAt3 = room.players.find((player) => player.id === 'p3');
@@ -145,8 +145,8 @@ describe('HandService turn order', () => {
     const payload = persistedWrite?.events[0].payload as any;
     expect(payload.activePlayerIds).toEqual(['p0', 'p3']);
     expect(payload.positionLabelsByPlayerId).toEqual({
-      p0: 'BTN/BB',
-      p3: 'SB',
+      p0: 'BTN/SB',
+      p3: 'BB',
     });
     expect(payload.currentBet).toBe(10);
     expect(payload.lastRaiseSize).toBe(10);
@@ -263,8 +263,11 @@ describe('HandService turn order', () => {
           p1: 5,
         },
         positionLabelsByPlayerId: {
-          p0: 'BTN/BB',
-          p1: 'SB',
+          // Intentional heads-up UX contract: displayed badges stay BTN/SB for
+          // the dealer and BB for the other player, even when blind mechanics
+          // differ in the underlying hand state.
+          p0: 'BTN/SB',
+          p1: 'BB',
         },
         dealtPlayerIds: ['p0', 'p1'],
         startedAt: Date.now(),
@@ -368,8 +371,8 @@ describe('HandService turn order', () => {
 
     expect(hand.activePlayers).toEqual(['p0', 'p2']);
     expect(hand.positionLabelsByPlayerId).toEqual({
-      p0: 'BTN/BB',
-      p2: 'SB',
+      p0: 'BTN/SB',
+      p2: 'BB',
     });
   });
 });
