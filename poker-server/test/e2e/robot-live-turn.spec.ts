@@ -121,6 +121,64 @@ async function waitForRobotProgress(
   );
 }
 
+async function installRobotShowdownStores(page: Page) {
+  await waitForPokerDebug(page);
+  await page.evaluate(() => {
+    const socket = (window as any).pokerDebug?.getSocket?.();
+    if (!socket) {
+      throw new Error('Unable to observe robot showdown: socket unavailable');
+    }
+
+    const showdownStore = ((window as any).__liveRobotShowdownStore ??= {
+      attached: false,
+      events: [] as any[],
+    });
+    if (!showdownStore.attached) {
+      socket.on('SHOWDOWN_DECISION_STATE', (payload: any) => {
+        showdownStore.events.push(payload);
+      });
+      showdownStore.attached = true;
+    }
+
+    const handCompleteStore = ((window as any).__liveRobotHandCompleteStore ??= {
+      attached: false,
+      events: [] as any[],
+    });
+    if (!handCompleteStore.attached) {
+      socket.on('HAND_COMPLETE', (payload: any) => {
+        handCompleteStore.events.push(payload?.result ?? payload);
+      });
+      handCompleteStore.attached = true;
+    }
+  });
+}
+
+async function hasVisibleButton(page: Page, testId: string) {
+  const locator = page.locator(`[data-testid="${testId}"]`);
+  return (
+    (await locator.count()) > 0 &&
+    (await locator.first().isVisible().catch(() => false))
+  );
+}
+
+async function getHandSnapshot(page: Page) {
+  return page.evaluate(() => {
+    const room = (window as any).pokerDebug?.getRoom?.();
+    const hand = room?.currentHand;
+    return {
+      handNumber: hand?.handNumber ?? null,
+      bettingRound: hand?.bettingRound ?? null,
+      currentPlayerTurn: hand?.currentPlayerTurn ?? null,
+      showdownDecisionPlayerId: hand?.showdownDecisionPlayerId ?? null,
+      pendingStreetRevealRound: hand?.pendingStreetRevealRound ?? null,
+      revealedPlayerIds: hand?.revealedPlayerIds ?? [],
+      handCompleteEvents:
+        (window as any).__liveRobotHandCompleteStore?.events ?? [],
+      showdownEvents: (window as any).__liveRobotShowdownStore?.events ?? [],
+    };
+  });
+}
+
 test.describe('Poker E2E - Live Robot Turn', () => {
   test.skip(
     !liveRobotConfigured,
@@ -250,6 +308,118 @@ test.describe('Poker E2E - Live Robot Turn', () => {
       await hostContext.close();
     }
   });
+
+  test('robot showdown decisions do not stall when the robot is not forced all-in', async ({
+    browser,
+  }) => {
+    test.setTimeout(120000);
+
+    const hostContext = await browser.newContext();
+    const hostPage = await hostContext.newPage();
+
+    try {
+      await authenticateTestUser(hostPage, 'test1', {
+        displayName: 'Alice',
+        avatarEmoji: '🐺',
+      });
+      await createRoomViaSocket(hostPage, 'Alice');
+      await installRobotShowdownStores(hostPage);
+      await setTestDeckForCurrentRoom(hostPage, [
+        { rank: '7', suit: 'diamonds' },
+        { rank: 'A', suit: 'spades' },
+        { rank: '5', suit: 'clubs' },
+        { rank: 'A', suit: 'hearts' },
+        { rank: '2', suit: 'clubs' },
+        { rank: '9', suit: 'spades' },
+        { rank: '4', suit: 'hearts' },
+        { rank: 'J', suit: 'diamonds' },
+        { rank: '3', suit: 'spades' },
+        { rank: '8', suit: 'clubs' },
+        { rank: '6', suit: 'diamonds' },
+      ]);
+
+      await hostPage.click('[data-testid="add-robot-button"]');
+      await hostPage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getRoom?.()?.players ?? []).some(
+            (player: any) => player.isRobot && player.status !== 'left',
+          ),
+        { timeout: 10000 },
+      );
+
+      const identities = await hostPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const room = pokerDebug?.getRoom?.();
+        const player = pokerDebug?.getPlayer?.();
+        const robot = (room?.players ?? []).find(
+          (candidate: any) => candidate.isRobot && candidate.status !== 'left',
+        );
+        return {
+          playerId: player?.id ?? null,
+          robotId: robot?.id ?? null,
+        };
+      });
+
+      expect(identities.robotId).toBeTruthy();
+      expect(identities.playerId).toBeTruthy();
+
+      await hostPage.click('[data-testid="start-game-button"]');
+      await hostPage.waitForSelector('[data-testid="round-value"]', {
+        timeout: 15000,
+      });
+
+      const startedAt = Date.now();
+      let result: any = null;
+      while (Date.now() - startedAt < 90000) {
+        const state = await getHandSnapshot(hostPage);
+        if (state.handCompleteEvents.length > 0) {
+          result = state.handCompleteEvents[state.handCompleteEvents.length - 1];
+          break;
+        }
+
+        if (state.pendingStreetRevealRound === 'SHOWDOWN') {
+          if (await hasVisibleButton(hostPage, 'reveal-next-street-button')) {
+            await hostPage.click('[data-testid="reveal-next-street-button"]');
+          }
+        } else if (
+          state.bettingRound === 'SHOWDOWN' &&
+          (await hasVisibleButton(hostPage, 'show-my-hand-button'))
+        ) {
+          await hostPage.click('[data-testid="show-my-hand-button"]');
+        } else if (state.currentPlayerTurn === identities.playerId) {
+          await playSafeHumanAction(hostPage);
+        }
+
+        await hostPage.waitForTimeout(200);
+      }
+
+      expect(result, 'Live robot showdown hand did not complete').toBeTruthy();
+
+      const finalState = await getHandSnapshot(hostPage);
+      const sawNonForcedRobotShowdownActor = finalState.showdownEvents.some(
+        (event: any) =>
+          event.currentPlayerId === identities.robotId &&
+          !((event.forcedRevealPlayerIds ?? []) as string[]).includes(
+            identities.robotId!,
+          ),
+      );
+
+      expect(
+        sawNonForcedRobotShowdownActor,
+        'Expected a non-forced robot showdown actor during the live hand',
+      ).toBe(true);
+      expect(result.playerHands).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            playerId: identities.robotId,
+            cardsVisibility: 'shown',
+          }),
+        ]),
+      );
+    } finally {
+      await hostContext.close();
+    }
+  });
 });
 
 declare global {
@@ -264,7 +434,16 @@ declare global {
           data: any,
           callback: (response: { success?: boolean; error?: string }) => void,
         ) => void;
+        on: (event: string, handler: (payload: any) => void) => void;
       };
+    };
+    __liveRobotShowdownStore?: {
+      attached: boolean;
+      events: any[];
+    };
+    __liveRobotHandCompleteStore?: {
+      attached: boolean;
+      events: any[];
     };
   }
 }

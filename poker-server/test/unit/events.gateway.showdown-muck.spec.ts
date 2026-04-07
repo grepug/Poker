@@ -725,4 +725,175 @@ describe('EventsGateway showdown reveal/muck flow', () => {
       ),
     ).toBe(true);
   });
+
+  it('auto-resolves robot showdown actors after a human folds out', async () => {
+    roomState.players = [
+      {
+        ...roomState.players[0],
+        name: 'Kai',
+        status: 'folded',
+        cards: null,
+        currentBet: 10,
+        lastAction: 'fold',
+      },
+      {
+        ...roomState.players[1],
+        id: 'p-robot-2',
+        socketId: '',
+        name: 'Robot 2',
+        isRobot: true,
+        position: 1,
+        status: 'connected',
+        cards: [
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'diamonds', rank: 'J' },
+        ],
+        currentBet: 10,
+        lastAction: 'check',
+      },
+      {
+        id: 'p-robot-1',
+        socketId: '',
+        name: 'Robot 1',
+        isRobot: true,
+        chips: 990,
+        totalBuyIn: 1000,
+        handsPlayedCount: 0,
+        handsWonCount: 0,
+        vpipHandsCount: 0,
+        position: 2,
+        status: 'connected',
+        cards: [
+          { suit: 'clubs', rank: '7' },
+          { suit: 'hearts', rank: '5' },
+        ],
+        currentBet: 10,
+        lastAction: 'check',
+        lastConnectedAt: Date.now(),
+      },
+    ];
+    roomState.currentHand.communityCards = [
+      { suit: 'clubs', rank: 'T' },
+      { suit: 'hearts', rank: 'Q' },
+      { suit: 'spades', rank: '7' },
+      { suit: 'hearts', rank: '4' },
+      { suit: 'spades', rank: 'T' },
+    ];
+    roomState.currentHand.activePlayers = ['p-robot-1', 'p-robot-2'];
+    roomState.currentHand.currentPlayerTurn = null;
+    roomState.currentHand.pendingStreetRevealRound = null;
+    roomState.currentHand.nextStreetReadyPlayerIds = [];
+    roomState.currentHand.nextStreetRequiredPlayerIds = [];
+    roomState.currentHand.revealedPlayerIds = [];
+    roomState.currentHand.showdownDecisionOrder = [];
+    roomState.currentHand.showdownDecisionIndex = undefined;
+    roomState.currentHand.showdownDecisionPlayerId = null;
+    roomState.currentHand.showdownForcedRevealPlayerIds = [];
+    roomState.currentHand.showdownLastAggressorPlayerId = 'p-robot-1';
+    handService.determineWinner.mockResolvedValueOnce({
+      winners: [
+        {
+          playerId: 'p-robot-2',
+          playerName: 'Robot 2',
+          hand: {
+            rank: 'two_pair',
+            cards: [],
+            kickers: [],
+            description: 'Two pair',
+          },
+          amountWon: 30,
+        },
+      ],
+      playerHands: [
+        {
+          playerId: 'p-robot-1',
+          playerName: 'Robot 1',
+          cards: [
+            { suit: 'clubs', rank: '7' },
+            { suit: 'hearts', rank: '5' },
+          ],
+          hand: {
+            rank: 'two_pair',
+            cards: [],
+            kickers: [],
+            description: 'Two pair',
+          },
+          resultStatus: 'shown',
+          cardsVisibility: 'shown',
+          seatPosition: 2,
+        },
+        {
+          playerId: 'p-robot-2',
+          playerName: 'Robot 2',
+          cards: [
+            { suit: 'spades', rank: 'Q' },
+            { suit: 'diamonds', rank: 'J' },
+          ],
+          hand: {
+            rank: 'full_house',
+            cards: [],
+            kickers: [],
+            description: 'Full house',
+          },
+          resultStatus: 'shown',
+          cardsVisibility: 'shown',
+          seatPosition: 1,
+        },
+      ],
+      totalPot: 30,
+      payouts: [
+        {
+          segmentIndex: 0,
+          potType: 'MAIN',
+          amount: 30,
+          eligiblePlayerIds: ['p-robot-1', 'p-robot-2'],
+          winnerShares: [{ playerId: 'p-robot-2', amountWon: 30 }],
+          uncontested: false,
+        },
+      ],
+      netByPlayerId: {
+        'p-alice': -10,
+        'p-robot-1': -10,
+        'p-robot-2': 20,
+      },
+    });
+
+    await (gateway as any).initializeShowdownDecisionState(roomState);
+
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    expect(roomState.currentHand.lastResult).toBeTruthy();
+    expect(roomState.currentHand.showdownDecisionPlayerId).toBeNull();
+    expect(roomState.currentHand.pendingStreetRevealRound).toBeNull();
+    expect(roomState.currentHand.revealedPlayerIds).toEqual([
+      'p-robot-1',
+      'p-robot-2',
+    ]);
+    expect(
+      roomEmitter.emit.mock.calls.filter(
+        ([eventName]) => eventName === 'PLAYER_HAND_REVEALED',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        [
+          'PLAYER_HAND_REVEALED',
+          expect.objectContaining({
+            playerId: 'p-robot-1',
+            showdownOrderIndex: 0,
+          }),
+        ],
+        [
+          'PLAYER_HAND_REVEALED',
+          expect.objectContaining({
+            playerId: 'p-robot-2',
+            showdownOrderIndex: 1,
+          }),
+        ],
+      ]),
+    );
+    expect(
+      roomEmitter.emit.mock.calls.some(
+        ([eventName]) => eventName === 'HAND_COMPLETE',
+      ),
+    ).toBe(true);
+  });
 });
