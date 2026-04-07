@@ -2634,6 +2634,7 @@ export class EventsGateway
       .filter(
         (player: any) =>
           Boolean(player.cards) &&
+          !player.isRobot &&
           player.status !== 'waiting' &&
           player.status !== 'left' &&
           !this.isPlayerDisconnected(player),
