@@ -16,7 +16,10 @@ import { TestDeckService } from '../game/test-deck.service';
 import {
   RobotAgentService,
   RobotActionCandidate,
+  RobotActionDecision,
+  RobotDecisionError,
   RobotTurnContext,
+  toRobotFallbackCause,
 } from '../game/robot-agent.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
@@ -69,6 +72,7 @@ import {
   SendChatMessageAck,
   Card,
   PlayerProfileUpdatedData,
+  PersistedRobotDecisionMetadata,
   UpdateProfileData,
   HandResult,
   Room,
@@ -137,6 +141,10 @@ export class EventsGateway
     new Map();
   private roomActionQueues: Map<string, Promise<void>> = new Map();
   private robotTurnTimers: Map<string, NodeJS.Timeout> = new Map();
+  private pendingRobotActionDecisions: Map<
+    string,
+    PersistedRobotDecisionMetadata
+  > = new Map();
   private processedActionFingerprints: Map<string, number> = new Map();
   private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
   private readonly maxProcessedActionFingerprints = 10000;
@@ -1732,6 +1740,12 @@ export class EventsGateway
   ) {
     const playerInfo = this.socketToPlayer.get(client.id);
     const requestActionId = data.actionId?.trim();
+    const pendingRobotDecisionKey = requestActionId
+      ? this.getPendingRobotActionDecisionKey(client.id, requestActionId)
+      : null;
+    const pendingRobotDecision = pendingRobotDecisionKey
+      ? this.pendingRobotActionDecisions.get(pendingRobotDecisionKey)
+      : undefined;
     const baseActionLog = {
       roomId: playerInfo?.roomId ?? null,
       playerId: playerInfo?.playerId ?? null,
@@ -1786,6 +1800,7 @@ export class EventsGateway
             data.amount,
             {
               actionId: actionId ?? null,
+              robotDecision: pendingRobotDecision,
             },
           );
 
@@ -1888,6 +1903,10 @@ export class EventsGateway
       );
       client.emit('ERROR', { message: error.message });
       return { success: false };
+    } finally {
+      if (pendingRobotDecisionKey) {
+        this.pendingRobotActionDecisions.delete(pendingRobotDecisionKey);
+      }
     }
   }
 
@@ -3447,11 +3466,12 @@ export class EventsGateway
     const roomSnapshot = JSON.parse(JSON.stringify(room));
     const context = this.buildRobotTurnContext(roomSnapshot, robotPlayerId);
 
-    let selectedAction: RobotActionCandidate;
+    let selectedAction: RobotActionDecision;
     if (!this.robotAgentService.isConfigured()) {
-      selectedAction = this.resolveRobotFallbackAction(
-        roomSnapshot,
-        robotPlayerId,
+      selectedAction = this.buildRobotFallbackDecision(
+        this.resolveRobotFallbackAction(roomSnapshot, robotPlayerId),
+        'provider-unavailable',
+        0,
       );
     } else {
       try {
@@ -3477,14 +3497,20 @@ export class EventsGateway
             error instanceof Error ? error.message : 'unknown error'
           }`,
         );
-        selectedAction = this.resolveRobotFallbackAction(
-          roomSnapshot,
-          robotPlayerId,
+        selectedAction = this.buildRobotFallbackDecision(
+          this.resolveRobotFallbackAction(roomSnapshot, robotPlayerId),
+          toRobotFallbackCause(error),
+          this.getRobotFallbackRetryCount(error),
         );
       }
     }
 
+    const actionId = `robot-${hand.handNumber}-${Date.now()}`;
     const tempSocketId = `robot:${roomId}:${robotPlayerId}:${Date.now()}`;
+    this.pendingRobotActionDecisions.set(
+      this.getPendingRobotActionDecisionKey(tempSocketId, actionId),
+      selectedAction.persistedDecision,
+    );
     this.socketToPlayer.set(tempSocketId, { roomId, playerId: robotPlayerId });
 
     try {
@@ -3496,12 +3522,50 @@ export class EventsGateway
         {
           action: selectedAction.action,
           amount: selectedAction.amount,
-          actionId: `robot-${hand.handNumber}-${Date.now()}`,
+          actionId,
         },
       );
     } finally {
+      this.pendingRobotActionDecisions.delete(
+        this.getPendingRobotActionDecisionKey(tempSocketId, actionId),
+      );
       this.socketToPlayer.delete(tempSocketId);
     }
+  }
+
+  private buildRobotFallbackDecision(
+    action: RobotActionCandidate,
+    fallbackCause:
+      | 'provider-unavailable'
+      | 'provider-error'
+      | 'invalid-final-action'
+      | 'exhausted-retries',
+    validationRetryCount = 0,
+  ): RobotActionDecision {
+    const retrySummary =
+      validationRetryCount > 0
+        ? ` after ${validationRetryCount} validation ${validationRetryCount === 1 ? 'retry' : 'retries'}`
+        : '';
+    return {
+      ...action,
+      persistedDecision: {
+        source: 'deterministic-fallback',
+        fallbackCause,
+        summary: `Deterministic fallback ${action.action} because ${fallbackCause.replace(/-/g, ' ')}${retrySummary}.`,
+        validationRetryCount,
+      },
+    };
+  }
+
+  private getPendingRobotActionDecisionKey(
+    socketId: string,
+    actionId: string,
+  ): string {
+    return `${socketId}:${actionId}`;
+  }
+
+  private getRobotFallbackRetryCount(error: unknown): number {
+    return error instanceof RobotDecisionError ? error.validationRetryCount : 0;
   }
 
   private emitPlayerTurn(room: any, player: any) {

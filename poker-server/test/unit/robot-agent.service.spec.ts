@@ -1,6 +1,7 @@
 import { PlayerAction } from 'poker-types';
 import {
   RobotAgentService,
+  RobotDecisionError,
   type RobotTurnContext,
 } from '../../src/game/robot-agent.service';
 
@@ -167,7 +168,14 @@ describe('RobotAgentService', () => {
       validateAction,
     });
 
-    expect(result).toEqual({ action: 'check' });
+    expect(result).toEqual({
+      action: 'check',
+      persistedDecision: {
+        source: 'provider-output',
+        summary: 'Provider final output accepted.',
+        validationRetryCount: 0,
+      },
+    });
     expect(mockStepCountIs).toHaveBeenCalledWith(7);
     expect(mockOutputObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -193,6 +201,7 @@ describe('RobotAgentService', () => {
     mockToolLoopAgent.mockImplementation((config) => ({
       generate: jest.fn().mockImplementation(async () => {
         const attemptAction = (config.tools as Record<string, any>).attempt_action;
+        await attemptAction.execute({ action: 'raise', amount: 999 });
         await attemptAction.execute({ action: 'check' });
         return {
           output: { action: 'raise', amount: 999 },
@@ -206,6 +215,58 @@ describe('RobotAgentService', () => {
       validateAction,
     });
 
-    expect(result).toEqual({ action: 'check' });
+    expect(result).toEqual({
+      action: 'check',
+      persistedDecision: {
+        source: 'validated-tool-loop',
+        summary:
+          'Used latest validated tool-loop action after invalid final output with 1 validation retry.',
+        validationRetryCount: 1,
+      },
+    });
+  });
+
+  it('throws a normalized error when the provider never produces a legal action', async () => {
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn().mockResolvedValue({
+        output: { action: 'raise', amount: 999 },
+      }),
+    }));
+
+    const service = new RobotAgentService();
+
+    await expect(
+      service.decideAction({
+        context: createContext(),
+        validateAction,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'invalid-final-action',
+        validationRetryCount: 0,
+      }),
+    );
+  });
+
+  it('normalizes exhausted transient provider retries for fallback handling', async () => {
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn().mockRejectedValue(new Error('Invalid JSON response')),
+    }));
+
+    const service = new RobotAgentService();
+
+    await expect(
+      service.decideAction({
+        context: createContext(),
+        validateAction,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'exhausted-retries',
+        validationRetryCount: 0,
+      }),
+    );
   });
 });

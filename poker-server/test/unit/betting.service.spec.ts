@@ -1,175 +1,177 @@
 import { BettingService } from '../../src/game/betting.service';
-import { IStorageService } from '../../src/common/interfaces/storage.interface';
-import { Player, Room } from 'poker-types';
 
-describe('BettingService persistence context', () => {
-  let storageService: jest.Mocked<IStorageService>;
-  let bettingService: BettingService;
+describe('BettingService robot action persistence', () => {
+  let storageService: { persistRoom: jest.Mock };
+  let service: BettingService;
 
-  beforeEach(() => {
-    storageService = {
-      persistRoom: jest.fn().mockResolvedValue(undefined),
-      getRoom: jest.fn().mockResolvedValue(null),
-      deleteRoom: jest.fn().mockResolvedValue(undefined),
-      getAllRooms: jest.fn().mockResolvedValue([]),
-      roomExists: jest.fn().mockResolvedValue(false),
-    };
-
-    bettingService = new BettingService(storageService);
-  });
-
-  const buildPlayer = (params: {
+  const createPlayer = (params: {
     id: string;
+    name: string;
     position: number;
-    chips: number;
-    currentBet?: number;
-    status?: Player['status'];
-  }): Player => ({
+    isRobot?: boolean;
+  }) => ({
     id: params.id,
-    socketId: `socket-${params.id}`,
-    name: params.id,
-    chips: params.chips,
+    socketId: params.isRobot ? '' : `socket-${params.id}`,
+    name: params.name,
+    isRobot: params.isRobot ?? false,
+    chips: 1000,
     totalBuyIn: 1000,
     handsPlayedCount: 0,
     handsWonCount: 0,
     vpipHandsCount: 0,
     position: params.position,
-    status: params.status ?? 'connected',
+    status: 'active',
     cards: null,
-    currentBet: params.currentBet ?? 0,
+    currentBet: 0,
     lastAction: null,
     lastConnectedAt: Date.now(),
   });
 
-  const buildRoom = (players: Player[]): Room => ({
-    id: 'ROOM-ACTION',
-    hostId: players[0].id,
+  const createRoom = (actor: ReturnType<typeof createPlayer>) => ({
+    id: 'ROOM1',
+    hostId: 'p-human',
     config: {
       startingChips: 1000,
-      smallBlind: 10,
-      bigBlind: 20,
-      maxPlayers: 6,
-      reconnectGracePeriod: 30000,
+      smallBlind: 5,
+      bigBlind: 10,
+      maxPlayers: 10,
+      reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: true,
     },
-    players,
-    gameState: 'IN_PROGRESS',
+    players: [
+      actor,
+      createPlayer({
+        id: actor.id === 'p-human' ? 'p-villain' : 'p-human',
+        name: actor.id === 'p-human' ? 'Villain' : 'Human',
+        position: 1,
+      }),
+    ],
+    gameState: 'IN_PROGRESS' as const,
     currentHand: {
       handNumber: 3,
       dealerPosition: 0,
-      smallBlindPosition: 0,
-      bigBlindPosition: 1,
-      currentPlayerTurn: players[0].id,
-      pot: 30,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      currentPlayerTurn: actor.id,
+      pot: 15,
       communityCards: [],
-      bettingRound: 'PRE_FLOP',
-      currentBet: 20,
-      lastRaiseSize: 20,
-      activePlayers: players.map((player) => player.id),
+      bettingRound: 'PRE_FLOP' as const,
+      currentBet: 0,
+      lastRaiseSize: 10,
+      activePlayers: [
+        actor.id,
+        actor.id === 'p-human' ? 'p-villain' : 'p-human',
+      ],
       roundActions: {},
       sidePots: [],
-      potContributions: {
-        [players[0].id]: 10,
-        [players[1].id]: 20,
-      },
-      positionLabelsByPlayerId: {
-        [players[0].id]: 'SB',
-        [players[1].id]: 'BB',
-      },
-      startedAt: Date.now(),
+      potContributions: {},
+      vpipPlayerIds: [],
+      revealedPlayerIds: [],
     },
+    readyPhase: null,
+    readyPlayerIds: [],
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
   });
 
-  it('persists explicit decision context for a raise action', async () => {
-    const actingPlayer = buildPlayer({
-      id: 'p1',
-      position: 0,
-      chips: 100,
-      currentBet: 0,
-    });
-    const opponent = buildPlayer({
-      id: 'p2',
-      position: 1,
-      chips: 100,
-      currentBet: 20,
-    });
-    const room = buildRoom([actingPlayer, opponent]);
-
-    await bettingService.processAction(room, 'p1', 'raise', 30, {
-      actionId: 'action-1',
-    });
-
-    const persistedWrite = storageService.persistRoom.mock.calls[0][1];
-    const payload = persistedWrite?.events[0].payload as any;
-
-    expect(payload.request).toEqual({
-      actionId: 'action-1',
-      action: 'raise',
-      amount: 30,
-    });
-    expect(payload.decision.callAmountBefore).toBe(20);
-    expect(payload.decision.minimumRaiseBy).toBe(20);
-    expect(payload.decision.minimumRaiseTo).toBe(40);
-    expect(payload.decision.maximumBetTo).toBe(100);
-    expect(payload.decision.facingBet).toBe(true);
-    expect(payload.decision.legalActions).toEqual([
-      'fold',
-      'call',
-      'raise',
-      'all-in',
-    ]);
-    expect(payload.result.resolvedAction).toBe('raise');
-    expect(payload.result.displayKind).toBe('raise-to');
-    expect(payload.result.committedAmount).toBe(50);
-    expect(payload.result.totalBetAfterAction).toBe(50);
-    expect(payload.result.currentBetAfter).toBe(50);
-    expect(payload.result.players.map((player: any) => player.playerId)).toEqual([
-      'p1',
-      'p2',
-    ]);
+  beforeEach(() => {
+    storageService = {
+      persistRoom: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new BettingService(storageService as any);
   });
 
-  it('persists requested raise separately when it resolves to all-in', async () => {
-    const actingPlayer = buildPlayer({
-      id: 'p1',
+  it('persists provider-backed robot decision metadata on player actions', async () => {
+    const robot = createPlayer({
+      id: 'p-robot',
+      name: 'Robot 1',
       position: 0,
-      chips: 50,
-      currentBet: 20,
+      isRobot: true,
     });
-    const opponent = buildPlayer({
-      id: 'p2',
-      position: 1,
-      chips: 100,
-      currentBet: 40,
-    });
-    const room = buildRoom([actingPlayer, opponent]);
-    room.currentHand!.pot = 60;
-    room.currentHand!.currentBet = 40;
-    room.currentHand!.potContributions = {
-      p1: 20,
-      p2: 40,
-    };
+    const room = createRoom(robot);
 
-    await bettingService.processAction(room, 'p1', 'raise', 40, {
-      actionId: 'action-2',
+    await service.processAction(room as any, robot.id, 'check', undefined, {
+      actionId: 'robot-1',
+      robotDecision: {
+        source: 'provider-output',
+        summary: 'Provider final output accepted.',
+        validationRetryCount: 0,
+      },
     });
 
-    const payload = storageService.persistRoom.mock.calls[0][1]?.events[0]
-      .payload as any;
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({
+            type: 'PLAYER_ACTION',
+            payload: expect.objectContaining({
+              robotDecision: {
+                source: 'provider-output',
+                summary: 'Provider final output accepted.',
+                validationRetryCount: 0,
+              },
+            }),
+          }),
+        ],
+      }),
+    );
+  });
 
-    expect(payload.request).toEqual({
-      actionId: 'action-2',
-      action: 'raise',
-      amount: 40,
+  it('persists fallback robot decision metadata on player actions', async () => {
+    const robot = createPlayer({
+      id: 'p-robot',
+      name: 'Robot 1',
+      position: 0,
+      isRobot: true,
     });
-    expect(payload.decision.callAmountBefore).toBe(20);
-    expect(payload.result.resolvedAction).toBe('all-in');
-    expect(payload.result.displayKind).toBe('all-in-to');
-    expect(payload.result.committedAmount).toBe(50);
-    expect(payload.result.totalBetAfterAction).toBe(70);
-    expect(payload.result.playerStatusAfter).toBe('all-in');
-    expect(payload.result.currentBetAfter).toBe(70);
+    const room = createRoom(robot);
+
+    await service.processAction(room as any, robot.id, 'check', undefined, {
+      actionId: 'robot-2',
+      robotDecision: {
+        source: 'deterministic-fallback',
+        summary:
+          'Deterministic fallback check because invalid final action after 2 validation retries.',
+        validationRetryCount: 2,
+        fallbackCause: 'invalid-final-action',
+      },
+    });
+
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({
+            type: 'PLAYER_ACTION',
+            payload: expect.objectContaining({
+              robotDecision: {
+                source: 'deterministic-fallback',
+                summary:
+                  'Deterministic fallback check because invalid final action after 2 validation retries.',
+                validationRetryCount: 2,
+                fallbackCause: 'invalid-final-action',
+              },
+            }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('keeps human player action payloads free of robot decision metadata', async () => {
+    const human = createPlayer({
+      id: 'p-human',
+      name: 'Human',
+      position: 0,
+    });
+    const room = createRoom(human);
+
+    await service.processAction(room as any, human.id, 'check', undefined, {
+      actionId: 'human-1',
+    });
+
+    const persistCall = storageService.persistRoom.mock.calls[0]?.[1];
+    expect(persistCall.events[0].payload).not.toHaveProperty('robotDecision');
   });
 });

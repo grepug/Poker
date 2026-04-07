@@ -117,6 +117,24 @@ export type PersistedPlayerActionResult = {
   players: PersistedRoomPlayerStateSnapshot[];
 };
 
+export type PersistedRobotDecisionSource =
+  | "provider-output"
+  | "validated-tool-loop"
+  | "deterministic-fallback";
+
+export type PersistedRobotFallbackCause =
+  | "provider-unavailable"
+  | "provider-error"
+  | "invalid-final-action"
+  | "exhausted-retries";
+
+export type PersistedRobotDecisionMetadata = {
+  source: PersistedRobotDecisionSource;
+  summary: string;
+  validationRetryCount: number;
+  fallbackCause?: PersistedRobotFallbackCause | null;
+};
+
 export type PersistedPlayerActionPayload = {
   action: PlayerAction;
   amount: number | null;
@@ -125,6 +143,7 @@ export type PersistedPlayerActionPayload = {
   playerCurrentBet: number;
   pot: number;
   currentBet: number;
+  robotDecision?: PersistedRobotDecisionMetadata;
   request: PersistedPlayerActionRequest;
   decision: PersistedPlayerActionDecisionContext;
   result: PersistedPlayerActionResult;
