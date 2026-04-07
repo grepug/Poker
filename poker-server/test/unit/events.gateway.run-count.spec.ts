@@ -281,4 +281,28 @@ describe('EventsGateway run-count decision flow', () => {
       }),
     );
   });
+
+  it('falls back to run once when a late run-twice vote arrives after expiry', async () => {
+    roomState.currentHand.runCountDecision = {
+      eligiblePlayerIds: ['p-alice', 'p-bob'],
+      twiceAgreedPlayerIds: [],
+      expiresAt: Date.now() - 1,
+    };
+    const aliceClient = { id: 'socket-alice', emit: jest.fn() } as any;
+
+    const response = await gateway.handleSetRunCount(aliceClient, {
+      runCount: 2,
+    });
+
+    expect(response).toEqual(
+      expect.objectContaining({ success: true, duplicate: true }),
+    );
+    expect(handService.resolveRunCount).toHaveBeenCalledTimes(1);
+    expect(handService.resolveRunCount).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+    );
+    expect(roomState.currentHand.runCount).toBe(1);
+    expect(roomState.currentHand.runCountDecision).toBeNull();
+  });
 });

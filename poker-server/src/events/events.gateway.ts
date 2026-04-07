@@ -1453,6 +1453,11 @@ export class EventsGateway
             return { success: true, duplicate: true };
           }
 
+          if (Date.now() >= decision.expiresAt) {
+            await this.resolveRunCountDecision(room, 1);
+            return { success: true, duplicate: true };
+          }
+
           if (!decision.eligiblePlayerIds.includes(playerInfo.playerId)) {
             throw new Error('You are not eligible to choose the run count');
           }
