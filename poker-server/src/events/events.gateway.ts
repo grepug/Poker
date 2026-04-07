@@ -2278,7 +2278,8 @@ export class EventsGateway
 
   private scheduleRunCountDecisionTimeout(room: any): void {
     const hand = room?.currentHand;
-    if (!hand) {
+    const decision = hand?.runCountDecision;
+    if (!hand || !decision) {
       return;
     }
 
@@ -2288,17 +2289,24 @@ export class EventsGateway
       clearTimeout(existingTimer);
     }
 
+    const remainingMs = Math.max(0, decision.expiresAt - Date.now());
     const timer = setTimeout(async () => {
+      this.runCountDecisionTimers.delete(timerKey);
       try {
         await this.runRoomActionSequentially(room.id, async () => {
           const latestRoom = await this.getRoom(room.id);
           const latestHand = latestRoom?.currentHand;
+          const latestDecision = latestHand?.runCountDecision;
           if (
             !latestRoom ||
             !latestHand ||
             latestHand.handNumber !== hand.handNumber ||
-            !latestHand.runCountDecision
+            !latestDecision
           ) {
+            return;
+          }
+
+          if (Date.now() < latestDecision.expiresAt) {
             return;
           }
 
@@ -2309,7 +2317,7 @@ export class EventsGateway
           error instanceof Error ? error.message : String(error);
         this.logger.error(`Run count decision timeout error: ${message}`);
       }
-    }, this.runCountDecisionWindowMs);
+    }, remainingMs);
 
     this.runCountDecisionTimers.set(timerKey, timer);
   }
@@ -2321,6 +2329,11 @@ export class EventsGateway
     }
 
     if (hand.runCountDecision?.eligiblePlayerIds?.length) {
+      if (Date.now() >= hand.runCountDecision.expiresAt) {
+        await this.resolveRunCountDecision(room, 1);
+        return true;
+      }
+
       this.scheduleRunCountDecisionTimeout(room);
       this.emitRunCountDecisionState(room);
       return true;

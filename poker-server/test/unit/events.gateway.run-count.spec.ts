@@ -216,6 +216,7 @@ describe('EventsGateway run-count decision flow', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     gateway.onModuleDestroy();
   });
 
@@ -304,5 +305,53 @@ describe('EventsGateway run-count decision flow', () => {
     );
     expect(roomState.currentHand.runCount).toBe(1);
     expect(roomState.currentHand.runCountDecision).toBeNull();
+  });
+
+  it('uses the remaining decision time when rescheduling an existing run-count prompt', async () => {
+    jest.useFakeTimers();
+
+    roomState.currentHand.runCountDecision = {
+      eligiblePlayerIds: ['p-alice', 'p-bob'],
+      twiceAgreedPlayerIds: [],
+      expiresAt: Date.now() + 50,
+    };
+
+    (gateway as any).scheduleRunCountDecisionTimeout(roomState);
+
+    await jest.advanceTimersByTimeAsync(49);
+    expect(handService.resolveRunCount).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(handService.resolveRunCount).toHaveBeenCalledTimes(1);
+    expect(handService.resolveRunCount).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+    );
+  });
+
+  it('immediately resolves an already expired persisted run-count decision', async () => {
+    roomState.currentHand.runCountDecision = {
+      eligiblePlayerIds: ['p-alice', 'p-bob'],
+      twiceAgreedPlayerIds: [],
+      expiresAt: Date.now() - 1,
+    };
+
+    const initialized = await (gateway as any).initializeRunCountDecision(
+      roomState,
+    );
+
+    expect(initialized).toBe(true);
+    expect(handService.resolveRunCount).toHaveBeenCalledTimes(1);
+    expect(handService.resolveRunCount).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+    );
+    expect(roomState.currentHand.runCountDecision).toBeNull();
+    expect(roomEmitter.emit).not.toHaveBeenCalledWith(
+      'RUN_COUNT_DECISION_STATE',
+      expect.objectContaining({
+        eligiblePlayerIds: ['p-alice', 'p-bob'],
+      }),
+    );
   });
 });
