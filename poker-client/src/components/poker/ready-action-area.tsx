@@ -40,9 +40,11 @@ export const ReadyActionArea: React.FC<ReadyActionAreaProps> = ({
 }) => {
   const readyButtonTestId =
     phase === "START_GAME" ? "start-game-button" : "start-next-hand-button";
+  const sectionTestId =
+    phase === "START_GAME" ? "ready-action-area" : "next-hand-action-area";
 
   return (
-    <section className="operation-action-bar" data-testid="ready-action-area">
+    <section className="operation-action-bar" data-testid={sectionTestId}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-emerald-100">

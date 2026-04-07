@@ -128,6 +128,30 @@ export class EventsGateway
     string,
     { timestamp: number; message: ChatMessage }
   > = new Map();
+  private getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    if (typeof error === 'string' && error.trim()) {
+      return error;
+    }
+
+    return fallback;
+  }
+
+  private parseRobotDelayMs(
+    value: string | undefined,
+    fallback: number,
+  ): number {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+
+    return Math.max(0, Math.floor(parsed));
+  }
+
   private isPlayerDisconnected(
     player:
       | {
@@ -1041,9 +1065,10 @@ export class EventsGateway
         },
       );
     } catch (error) {
-      this.logger.error(`Add robot error: ${error.message}`);
-      client.emit('ERROR', { message: error.message });
-      return { success: false, error: error.message };
+      const message = this.getErrorMessage(error, 'Failed to add robot');
+      this.logger.error(`Add robot error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
     }
   }
 
@@ -1107,9 +1132,10 @@ export class EventsGateway
         },
       );
     } catch (error) {
-      this.logger.error(`Remove robot error: ${error.message}`);
-      client.emit('ERROR', { message: error.message });
-      return { success: false, error: error.message };
+      const message = this.getErrorMessage(error, 'Failed to remove robot');
+      this.logger.error(`Remove robot error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
     }
   }
 
@@ -2860,11 +2886,13 @@ export class EventsGateway
   private scheduleRobotTurn(room: any, player: any): void {
     this.clearRobotTurnTimer(room.id);
 
-    const minDelayMs = Number(
-      process.env.AI_ROBOT_ACTION_DELAY_MIN_MS || '1000',
+    const minDelayMs = this.parseRobotDelayMs(
+      process.env.AI_ROBOT_ACTION_DELAY_MIN_MS,
+      1000,
     );
-    const maxDelayMs = Number(
-      process.env.AI_ROBOT_ACTION_DELAY_MAX_MS || '2500',
+    const maxDelayMs = this.parseRobotDelayMs(
+      process.env.AI_ROBOT_ACTION_DELAY_MAX_MS,
+      2500,
     );
     const upperBound = Math.max(minDelayMs, maxDelayMs);
     const delayMs = Math.max(
