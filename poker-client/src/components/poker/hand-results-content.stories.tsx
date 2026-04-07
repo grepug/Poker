@@ -53,6 +53,42 @@ const meta = {
     showNetChange: true,
     currentPlayerId: "p1",
     communityCards,
+    runouts: [
+      {
+        runIndex: 0,
+        board: [
+          { rank: "A", suit: "spades" },
+          { rank: "Q", suit: "spades" },
+          { rank: "J", suit: "spades" },
+          { rank: "10", suit: "spades" },
+          { rank: "2", suit: "hearts" },
+        ],
+        winners: [
+          {
+            playerId: "p1",
+            playerName: "Kai",
+            amountWon: 240,
+          },
+        ],
+      },
+      {
+        runIndex: 1,
+        board: [
+          { rank: "A", suit: "spades" },
+          { rank: "Q", suit: "spades" },
+          { rank: "J", suit: "spades" },
+          { rank: "4", suit: "clubs" },
+          { rank: "4", suit: "hearts" },
+        ],
+        winners: [
+          {
+            playerId: "p2",
+            playerName: "Maya",
+            amountWon: 240,
+          },
+        ],
+      },
+    ],
     payoutBreakdownRows: [
       {
         segmentIndex: 0,
@@ -84,6 +120,10 @@ const meta = {
         resultStatus: "shown",
         cardsVisibility: "shown",
         seatPosition: 0,
+        runHands: [
+          { runIndex: 0, hand: straightFlush },
+          { runIndex: 1, hand: pair },
+        ],
       },
       {
         playerId: "p2",
@@ -100,6 +140,10 @@ const meta = {
         resultStatus: "hidden_contender",
         cardsVisibility: "hidden",
         seatPosition: 1,
+        runHands: [
+          { runIndex: 0, hand: pair },
+          { runIndex: 1, hand: straightFlush },
+        ],
       },
     ],
     revealedHandPlayerIdSet: new Set(["p1"]),

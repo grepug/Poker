@@ -33,6 +33,7 @@ import {
   RequestRebuyData,
   MuckMyHandData,
   RevealNextStreetData,
+  SetRunCountData,
   ShowMyHandData,
   UpdateRoomConfigData,
   PlayerReadyData,
@@ -47,6 +48,7 @@ import {
   HandCompleteData,
   GameEndedData,
   NextStreetRevealStateData,
+  RunCountDecisionStateData,
   PlayerHandMuckedData,
   PlayerHandRevealedData,
   ShowdownDecisionStateData,
@@ -62,6 +64,8 @@ import {
   PlayerProfileUpdatedData,
   UpdateProfileData,
   HandResult,
+  Room,
+  RunCount,
 } from 'poker-types';
 import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
@@ -95,6 +99,18 @@ const resolveGatewayCorsOrigin = ():
   return origins;
 };
 
+const parsePositiveIntegerEnv = (
+  rawValue: string | undefined,
+  fallback: number,
+): number => {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+};
+
 @WebSocketGateway({
   cors: {
     origin: resolveGatewayCorsOrigin(),
@@ -109,12 +125,17 @@ export class EventsGateway
 
   private readonly logger = new Logger(EventsGateway.name);
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private runCountDecisionTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
   private roomActionQueues: Map<string, Promise<void>> = new Map();
   private processedActionFingerprints: Map<string, number> = new Map();
   private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
   private readonly maxProcessedActionFingerprints = 10000;
+  private readonly runCountDecisionWindowMs = parsePositiveIntegerEnv(
+    process.env.RUN_COUNT_DECISION_WINDOW_MS,
+    15000,
+  );
 
   private processedChatMessageFingerprints: Map<
     string,
@@ -224,6 +245,14 @@ export class EventsGateway
       this.profileUpdatedListenerKey,
       this.profileUpdatedListener,
     );
+    for (const timer of this.disconnectTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.disconnectTimers.clear();
+    for (const timer of this.runCountDecisionTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.runCountDecisionTimers.clear();
   }
 
   private extractSocketToken(client: Socket): string {
@@ -522,6 +551,19 @@ export class EventsGateway
           playerName,
           gracePeriod,
         });
+
+        const pendingDecision = updatedRoom?.currentHand?.runCountDecision;
+        const eligiblePlayerIds = pendingDecision?.eligiblePlayerIds ?? [];
+        const twiceAgreedPlayerIds = new Set(
+          pendingDecision?.twiceAgreedPlayerIds ?? [],
+        );
+        if (
+          updatedRoom?.currentHand &&
+          eligiblePlayerIds.includes(playerId) &&
+          !twiceAgreedPlayerIds.has(playerId)
+        ) {
+          await this.resolveRunCountDecision(updatedRoom, 1);
+        }
       });
     } catch (error) {
       this.logger.error(`Disconnect handling error: ${error.message}`);
@@ -1386,6 +1428,80 @@ export class EventsGateway
     }
   }
 
+  @SubscribeMessage('SET_RUN_COUNT')
+  async handleSetRunCount(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: SetRunCountData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      const requestedRunCount: RunCount = data?.runCount === 2 ? 2 : 1;
+
+      return await this.runRoomActionSequentially(
+        playerInfo.roomId,
+        async () => {
+          const room = await this.getRoom(playerInfo.roomId);
+          const hand = room?.currentHand;
+          if (!room || !hand) {
+            throw new Error('No active hand');
+          }
+
+          const decision = hand.runCountDecision;
+          if (!decision || decision.eligiblePlayerIds.length === 0) {
+            return { success: true, duplicate: true };
+          }
+
+          if (Date.now() >= decision.expiresAt) {
+            await this.resolveRunCountDecision(room, 1);
+            return { success: true, duplicate: true };
+          }
+
+          if (!decision.eligiblePlayerIds.includes(playerInfo.playerId)) {
+            throw new Error('You are not eligible to choose the run count');
+          }
+
+          if (requestedRunCount === 1) {
+            await this.resolveRunCountDecision(room, 1);
+            return { success: true };
+          }
+
+          const twiceAgreedPlayerIds = new Set(
+            decision.twiceAgreedPlayerIds ?? [],
+          );
+          const alreadyAgreed = twiceAgreedPlayerIds.has(playerInfo.playerId);
+          if (!alreadyAgreed) {
+            twiceAgreedPlayerIds.add(playerInfo.playerId);
+            hand.runCountDecision = {
+              ...decision,
+              twiceAgreedPlayerIds: [...twiceAgreedPlayerIds],
+            };
+            room.lastActivityAt = Date.now();
+            await this.storageService.persistRoom(room);
+          }
+
+          this.emitRunCountDecisionState(room);
+
+          const everyoneAgreedTwice = decision.eligiblePlayerIds.every(
+            (playerId) => twiceAgreedPlayerIds.has(playerId),
+          );
+          if (everyoneAgreedTwice) {
+            await this.resolveRunCountDecision(room, 2);
+          }
+
+          return { success: true, duplicate: alreadyAgreed };
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Set run count failed';
+      this.logger.error(`Set run count error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
+    }
+  }
+
   @SubscribeMessage('UPDATE_ROOM_CONFIG')
   async handleUpdateRoomConfig(
     @ConnectedSocket() client: Socket,
@@ -2077,7 +2193,221 @@ export class EventsGateway
       return;
     }
 
+    if (this.shouldOfferRunCountDecision(room)) {
+      const initialized = await this.initializeRunCountDecision(room);
+      if (initialized) {
+        return;
+      }
+    }
+
     await this.advanceRoundAndBroadcast(room);
+  }
+
+  private getRunCountDecisionTimerKey(roomId: string, handNumber: number): string {
+    return `${roomId}:${handNumber}`;
+  }
+
+  private clearRunCountDecisionTimer(roomId: string, handNumber: number): void {
+    const timerKey = this.getRunCountDecisionTimerKey(roomId, handNumber);
+    const existingTimer = this.runCountDecisionTimers.get(timerKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.runCountDecisionTimers.delete(timerKey);
+    }
+  }
+
+  private emitRunCountDecisionState(room: Room | null | undefined): void {
+    if (!room) {
+      return;
+    }
+
+    const hand = room.currentHand;
+    const decision = hand?.runCountDecision;
+    if (!hand || !decision || decision.eligiblePlayerIds.length === 0) {
+      this.server.to(room.id).emit('RUN_COUNT_DECISION_STATE', null);
+      return;
+    }
+
+    const payload: RunCountDecisionStateData = {
+      handNumber: hand.handNumber,
+      eligiblePlayerIds: decision.eligiblePlayerIds ?? [],
+      twiceAgreedPlayerIds: decision.twiceAgreedPlayerIds ?? [],
+      expiresAt: decision.expiresAt,
+    };
+
+    this.server.to(room.id).emit('RUN_COUNT_DECISION_STATE', payload);
+  }
+
+  private getRunCountEligiblePlayerIds(room: any): string[] {
+    const hand = room?.currentHand;
+    if (!hand) {
+      return [];
+    }
+
+    return [...(room.players ?? [])]
+      .filter(
+        (player: any) =>
+          hand.activePlayers.includes(player.id) &&
+          player.status !== 'left' &&
+          Boolean(player.cards),
+      )
+      .sort((left: any, right: any) => left.position - right.position)
+      .map((player: any) => player.id);
+  }
+
+  private shouldOfferRunCountDecision(room: any): boolean {
+    const hand = room?.currentHand;
+    if (!hand) {
+      return false;
+    }
+
+    if (hand.bettingRound === 'SHOWDOWN' || hand.communityCards.length >= 5) {
+      return false;
+    }
+
+    if (hand.runCountDecision?.eligiblePlayerIds?.length) {
+      return true;
+    }
+
+    if (!this.shouldAutoDealRemainingCommunityCards(room)) {
+      return false;
+    }
+
+    return this.getRunCountEligiblePlayerIds(room).length >= 2;
+  }
+
+  private scheduleRunCountDecisionTimeout(room: any): void {
+    const hand = room?.currentHand;
+    const decision = hand?.runCountDecision;
+    if (!hand || !decision) {
+      return;
+    }
+
+    const timerKey = this.getRunCountDecisionTimerKey(room.id, hand.handNumber);
+    const existingTimer = this.runCountDecisionTimers.get(timerKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const remainingMs = Math.max(0, decision.expiresAt - Date.now());
+    const timer = setTimeout(async () => {
+      this.runCountDecisionTimers.delete(timerKey);
+      try {
+        await this.runRoomActionSequentially(room.id, async () => {
+          const latestRoom = await this.getRoom(room.id);
+          const latestHand = latestRoom?.currentHand;
+          const latestDecision = latestHand?.runCountDecision;
+          if (
+            !latestRoom ||
+            !latestHand ||
+            latestHand.handNumber !== hand.handNumber ||
+            !latestDecision
+          ) {
+            return;
+          }
+
+          if (Date.now() < latestDecision.expiresAt) {
+            return;
+          }
+
+          await this.resolveRunCountDecision(latestRoom, 1);
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(`Run count decision timeout error: ${message}`);
+      }
+    }, remainingMs);
+
+    this.runCountDecisionTimers.set(timerKey, timer);
+  }
+
+  private async initializeRunCountDecision(room: any): Promise<boolean> {
+    const hand = room?.currentHand;
+    if (!hand) {
+      return false;
+    }
+
+    if (hand.runCountDecision?.eligiblePlayerIds?.length) {
+      if (Date.now() >= hand.runCountDecision.expiresAt) {
+        await this.resolveRunCountDecision(room, 1);
+        return true;
+      }
+
+      this.scheduleRunCountDecisionTimeout(room);
+      this.emitRunCountDecisionState(room);
+      return true;
+    }
+
+    const eligiblePlayerIds = this.getRunCountEligiblePlayerIds(room);
+    if (eligiblePlayerIds.length < 2) {
+      return false;
+    }
+
+    hand.currentPlayerTurn = null;
+    hand.pendingStreetRevealRound = null;
+    hand.nextStreetReadyPlayerIds = [];
+    hand.nextStreetRequiredPlayerIds = [];
+    hand.runCountDecision = {
+      eligiblePlayerIds,
+      twiceAgreedPlayerIds: [],
+      expiresAt: Date.now() + this.runCountDecisionWindowMs,
+    };
+    room.lastActivityAt = Date.now();
+    await this.storageService.persistRoom(room);
+
+    this.scheduleRunCountDecisionTimeout(room);
+    this.emitRunCountDecisionState(room);
+    return true;
+  }
+
+  private async prepareShowdownDecisionState(room: any): Promise<void> {
+    if (room.currentHand) {
+      room.currentHand.currentPlayerTurn = null;
+      room.currentHand.revealedPlayerIds = [];
+      room.currentHand.showdownDecisionOrder = [];
+      room.currentHand.showdownDecisionIndex = undefined;
+      room.currentHand.showdownDecisionPlayerId = null;
+      room.currentHand.showdownForcedRevealPlayerIds = [];
+      room.lastActivityAt = Date.now();
+      await this.storageService.persistRoom(room);
+    }
+
+    await this.initializeShowdownDecisionState(room);
+  }
+
+  private async resolveRunCountDecision(
+    room: any,
+    runCount: RunCount,
+  ): Promise<void> {
+    const hand = room?.currentHand;
+    if (!hand) {
+      return;
+    }
+
+    this.clearRunCountDecisionTimer(room.id, hand.handNumber);
+    await this.handService.resolveRunCount(room, runCount);
+
+    const updatedRoom = await this.getRoom(room.id);
+    if (!updatedRoom?.currentHand) {
+      return;
+    }
+
+    this.server.to(room.id).emit('RUN_COUNT_DECISION_STATE', null);
+    this.server.to(room.id).emit('BETTING_ROUND_COMPLETE', {
+      nextRound: 'SHOWDOWN',
+    } as BettingRoundCompleteData);
+    this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
+      cards: updatedRoom.currentHand.communityCards,
+      round: 'SHOWDOWN',
+      runCount,
+      runoutBoards:
+        updatedRoom.currentHand.runoutBoards ?? [
+          [...(updatedRoom.currentHand.communityCards ?? [])],
+        ],
+    } as CommunityCardsDealtData);
+
+    await this.prepareShowdownDecisionState(updatedRoom);
   }
 
   private getNextBettingRound(round: BettingRound): BettingRound {
@@ -2630,20 +2960,12 @@ export class EventsGateway
     this.server.to(room.id).emit('COMMUNITY_CARDS_DEALT', {
       cards: updatedRoom.currentHand!.communityCards,
       round: nextRound,
+      runCount: updatedRoom.currentHand?.runCount,
+      runoutBoards: updatedRoom.currentHand?.runoutBoards,
     } as CommunityCardsDealtData);
 
     if (nextRound === 'SHOWDOWN') {
-      if (updatedRoom.currentHand) {
-        updatedRoom.currentHand.currentPlayerTurn = null;
-        updatedRoom.currentHand.revealedPlayerIds = [];
-        updatedRoom.currentHand.showdownDecisionOrder = [];
-        updatedRoom.currentHand.showdownDecisionIndex = undefined;
-        updatedRoom.currentHand.showdownDecisionPlayerId = null;
-        updatedRoom.currentHand.showdownForcedRevealPlayerIds = [];
-        updatedRoom.lastActivityAt = Date.now();
-        await this.storageService.persistRoom(updatedRoom);
-      }
-      await this.initializeShowdownDecisionState(updatedRoom);
+      await this.prepareShowdownDecisionState(updatedRoom);
       return;
     }
 
@@ -2742,6 +3064,20 @@ export class EventsGateway
             await this.applyShowdownMuck(room, playerId);
           }
           await this.advanceShowdownDecision(room);
+        }
+
+        const pendingDecision = room.currentHand?.runCountDecision;
+        const eligiblePlayerIds = pendingDecision?.eligiblePlayerIds ?? [];
+        const twiceAgreedPlayerIds = new Set(
+          pendingDecision?.twiceAgreedPlayerIds ?? [],
+        );
+        if (
+          room.currentHand &&
+          eligiblePlayerIds.includes(playerId) &&
+          !twiceAgreedPlayerIds.has(playerId)
+        ) {
+          await this.resolveRunCountDecision(room, 1);
+          return;
         }
 
         // Auto-fold if it's their turn
@@ -2926,6 +3262,13 @@ export class EventsGateway
 
     return {
       ...result,
+      runouts: result.runouts?.map((runout) => ({
+        ...runout,
+        winners: runout.winners.map((winner) => ({
+          ...winner,
+          hand: null,
+        })),
+      })),
       playerHands: result.playerHands.map((entry) =>
         entry.cardsVisibility === 'shown'
           ? entry
@@ -2933,6 +3276,10 @@ export class EventsGateway
               ...entry,
               cards: [],
               hand: null,
+              runHands: entry.runHands?.map((runHand) => ({
+                ...runHand,
+                hand: null,
+              })),
             },
       ),
     };

@@ -29,6 +29,10 @@ type HandResultRow = {
   resultStatus: "shown" | "folded_pre_showdown" | "folded_at_showdown" | "hidden_contender";
   cardsVisibility: "shown" | "hidden";
   seatPosition: number;
+  runHands?: Array<{
+    runIndex: number;
+    hand: HandEvaluation | null;
+  }>;
 };
 
 type HandResultsContentProps = {
@@ -39,6 +43,15 @@ type HandResultsContentProps = {
   showNetChange: boolean;
   currentPlayerId: string;
   communityCards: Array<PokerCard | null>;
+  runouts?: Array<{
+    runIndex: number;
+    board: PokerCard[];
+    winners: Array<{
+      playerId: string;
+      playerName: string;
+      amountWon: number;
+    }>;
+  }>;
   payoutBreakdownRows: PayoutBreakdownRow[];
   handResultRows: HandResultRow[];
   revealedHandPlayerIdSet: Set<string>;
@@ -87,6 +100,7 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   showNetChange,
   currentPlayerId,
   communityCards,
+  runouts,
   payoutBreakdownRows,
   handResultRows,
   revealedHandPlayerIdSet,
@@ -171,6 +185,55 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
           })}
         </div>
       </div>
+
+      {runouts && runouts.length > 1 && (
+        <div
+          className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
+          data-testid="hand-results-runouts"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+            {t("game.runouts.title")}
+          </p>
+          <div className="mt-2 grid gap-3">
+            {runouts.map((runout) => (
+              <div
+                key={`hand-result-runout-${runout.runIndex}`}
+                className="rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-3"
+                data-testid={`hand-result-runout-${runout.runIndex}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-emerald-50">
+                    {t("game.runouts.runLabel", { index: runout.runIndex + 1 })}
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {runout.winners.map((winner) => (
+                      <span
+                        key={`hand-result-runout-winner-${runout.runIndex}-${winner.playerId}`}
+                        className="rounded-full border border-cyan-400/60 bg-cyan-900/35 px-2 py-1 text-xs font-semibold text-cyan-100"
+                        data-testid={`hand-result-runout-winner-${runout.runIndex}-${winner.playerId}`}
+                      >
+                        {winner.playerName}
+                        {winner.playerId === currentPlayerId ? ` (${t("common.you")})` : ""} +$
+                        {winner.amountWon}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {runout.board.map((card, cardIndex) => (
+                    <Card
+                      key={`hand-result-runout-card-${runout.runIndex}-${card.suit}-${card.rank}-${cardIndex}`}
+                      card={card}
+                      size="small"
+                      dataTestId={`hand-result-runout-card-${runout.runIndex}-${cardIndex}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {payoutBreakdownRows.length > 0 && (
         <div
@@ -299,6 +362,25 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                       ? `${t("game.resultStatus.folded")} · ${t("game.handHidden")}`
                       : t("game.handHidden")}
                 </p>
+                {showCards && entry.runHands && entry.runHands.length > 1 && (
+                  <div
+                    className="mt-2 flex flex-wrap gap-2 text-[11px] text-emerald-100/75"
+                    data-testid={`hand-result-run-hands-${entry.playerId}`}
+                  >
+                    {entry.runHands.map((runHand) => (
+                      <span
+                        key={`hand-result-run-hand-${entry.playerId}-${runHand.runIndex}`}
+                        className="rounded-full border border-emerald-700/60 bg-emerald-900/30 px-2 py-1"
+                      >
+                        {`${t("game.runouts.runLabel", { index: runHand.runIndex + 1 })}: ${
+                          runHand.hand
+                            ? describeEvaluatedHand(runHand.hand)
+                            : t("game.cardsShownNoEvaluated")
+                        }`}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </article>
             );
           })}

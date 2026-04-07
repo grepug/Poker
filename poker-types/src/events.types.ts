@@ -6,7 +6,13 @@ import {
   PlayerStatus,
 } from "./player.types";
 import { RoomConfig, ReadyPhase, SanitizedRoom } from "./room.types";
-import { Hand, HandResult, BettingRound } from "./game.types";
+import {
+  Hand,
+  HandResult,
+  BettingRound,
+  RunCount,
+  RunCountDecisionState,
+} from "./game.types";
 import {
   ChatHistorySyncData,
   ChatMessage,
@@ -50,6 +56,9 @@ export interface RequestRebuyData {
 export interface ShowMyHandData {}
 export interface MuckMyHandData {}
 export interface RevealNextStreetData {}
+export interface SetRunCountData {
+  runCount: RunCount;
+}
 
 export interface UpdateRoomConfigData {
   config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>;
@@ -86,6 +95,10 @@ export interface ClientToServerEvents {
   ) => void;
   REVEAL_NEXT_STREET: (
     data: RevealNextStreetData,
+    callback: (response: any) => void,
+  ) => void;
+  SET_RUN_COUNT: (
+    data: SetRunCountData,
     callback: (response: any) => void,
   ) => void;
   UPDATE_ROOM_CONFIG: (
@@ -202,6 +215,8 @@ export interface BettingRoundCompleteData {
 export interface CommunityCardsDealtData {
   cards: Card[];
   round: BettingRound;
+  runCount?: RunCount;
+  runoutBoards?: Card[][];
 }
 
 export interface HandCompleteData {
@@ -237,6 +252,10 @@ export interface NextStreetRevealStateData {
   nextRound: BettingRound;
   readyPlayerIds: string[];
   requiredPlayerIds: string[];
+}
+
+export interface RunCountDecisionStateData extends RunCountDecisionState {
+  handNumber: number;
 }
 
 export interface PlayerDisconnectedData {
@@ -349,6 +368,7 @@ export interface ServerToClientEvents {
   COMMUNITY_CARDS_DEALT: (data: CommunityCardsDealtData) => void;
   HAND_COMPLETE: (data: HandCompleteData) => void;
   SHOWDOWN_DECISION_STATE: (data: ShowdownDecisionStateData) => void;
+  RUN_COUNT_DECISION_STATE: (data: RunCountDecisionStateData | null) => void;
   PLAYER_HAND_REVEALED: (data: PlayerHandRevealedData) => void;
   PLAYER_HAND_MUCKED: (data: PlayerHandMuckedData) => void;
   NEXT_STREET_REVEAL_STATE: (data: NextStreetRevealStateData) => void;

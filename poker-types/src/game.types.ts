@@ -3,6 +3,7 @@ import { PlayerAction } from "./player.types";
 
 // Betting round phases
 export type BettingRound = "PRE_FLOP" | "FLOP" | "TURN" | "RIVER" | "SHOWDOWN";
+export type RunCount = 1 | 2;
 
 // Game state
 export type GameStateType = "WAITING" | "IN_PROGRESS" | "ENDED";
@@ -35,6 +36,12 @@ export interface SidePot {
   eligiblePlayers: string[]; // Player IDs who can win this pot
 }
 
+export interface RunCountDecisionState {
+  eligiblePlayerIds: string[];
+  twiceAgreedPlayerIds: string[];
+  expiresAt: number;
+}
+
 // Single poker hand
 export interface Hand {
   handNumber: number;
@@ -65,6 +72,9 @@ export interface Hand {
   showdownLastAggressorPlayerId?: string | null; // Runtime-only: last aggressor during river action
   dealtPlayerIds?: string[]; // Runtime-only: players who were dealt into this hand
   settledPlayerCardsByPlayerId?: Record<string, Card[]>; // Runtime-only: server-only cards retained for post-hand reveal actions
+  runCountDecision?: RunCountDecisionState | null; // Runtime-only: pending run-once/run-twice decision state
+  runCount?: RunCount; // Runtime-only: resolved run count for this hand
+  runoutBoards?: Card[][]; // Runtime-only: full board per run when the hand is run multiple times
   startedAt: number;
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }
@@ -83,6 +93,18 @@ export interface PotPayout {
 
 // Result of a completed hand
 export interface HandResult {
+  runCount?: RunCount;
+  runouts?: Array<{
+    runIndex: number;
+    board: Card[];
+    winners: Array<{
+      playerId: string;
+      playerName: string;
+      hand: HandEvaluation | null;
+      amountWon: number;
+    }>;
+    payouts: PotPayout[];
+  }>;
   winners: Array<{
     playerId: string;
     playerName: string;
@@ -101,6 +123,10 @@ export interface HandResult {
       | "hidden_contender";
     cardsVisibility: "shown" | "hidden";
     seatPosition: number;
+    runHands?: Array<{
+      runIndex: number;
+      hand: HandEvaluation | null;
+    }>;
   }>;
   totalPot: number;
   payouts: PotPayout[];

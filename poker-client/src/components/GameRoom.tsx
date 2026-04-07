@@ -1655,6 +1655,7 @@ const useGameRoomElement = () => {
     lastPlayerActionEvent,
     revealedHandPlayerIds,
     showdownDecisionState,
+    runCountDecisionState,
     revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     isHost,
@@ -1665,6 +1666,7 @@ const useGameRoomElement = () => {
     showMyHand,
     muckMyHand,
     revealNextStreet,
+    decideRunCount,
     performAction,
     leaveRoom,
     updateRoomConfig,
@@ -1977,6 +1979,40 @@ const useGameRoomElement = () => {
     ? nextStreetReadyPlayerIdSet.has(player.id)
     : false;
   const showNextStreetActionArea = Boolean(nextStreetRevealState) && !lastHandResult;
+  const runCountEligiblePlayerIdSet = useMemo(
+    () => new Set(runCountDecisionState?.eligiblePlayerIds ?? []),
+    [runCountDecisionState?.eligiblePlayerIds],
+  );
+  const runCountTwiceAgreedPlayerIdSet = useMemo(
+    () => new Set(runCountDecisionState?.twiceAgreedPlayerIds ?? []),
+    [runCountDecisionState?.twiceAgreedPlayerIds],
+  );
+  const isRunCountDecisionStep = Boolean(
+    !lastHandResult &&
+      runCountDecisionState &&
+      runCountDecisionState.eligiblePlayerIds.length > 0,
+  );
+  const canChooseRunCount = Boolean(
+    player?.id && runCountEligiblePlayerIdSet.has(player.id),
+  );
+  const hasChosenRunTwice = Boolean(
+    player?.id && runCountTwiceAgreedPlayerIdSet.has(player.id),
+  );
+  const runCountWaitingPlayerNames = useMemo(() => {
+    if (!room || !runCountDecisionState) return [];
+    return runCountDecisionState.eligiblePlayerIds
+      .filter((playerId) => !runCountTwiceAgreedPlayerIdSet.has(playerId))
+      .map(
+        (playerId) =>
+          room.players.find((seatPlayer) => seatPlayer.id === playerId)?.name ?? playerId,
+      );
+  }, [room, runCountDecisionState, runCountTwiceAgreedPlayerIdSet]);
+  const resolvedRunoutBoards = room?.currentHand?.runoutBoards ?? [];
+  const showResolvedRunoutBoardsPreview = Boolean(
+    !lastHandResult &&
+      room?.currentHand?.bettingRound === "SHOWDOWN" &&
+      resolvedRunoutBoards.length > 1,
+  );
   const revealedHandPlayerIdSet = useMemo(
     () => new Set(revealedHandPlayerIds),
     [revealedHandPlayerIds],
@@ -2044,8 +2080,11 @@ const useGameRoomElement = () => {
   const showShowdownDecisionArea = isShowdownDecisionStep;
   const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
   const showNextHandActionArea = canReadyNextHand;
-  const showOperationBar = showShowdownDecisionArea || showNextStreetActionArea;
-  const operationBarMode = showShowdownDecisionArea
+  const showOperationBar =
+    isRunCountDecisionStep || showShowdownDecisionArea || showNextStreetActionArea;
+  const operationBarMode = isRunCountDecisionStep
+    ? "runCount"
+    : showShowdownDecisionArea
     ? "showdown"
     : showNextStreetActionArea
       ? "streetReveal"
@@ -3653,6 +3692,15 @@ const useGameRoomElement = () => {
               { length: 5 },
               (_, idx) => currentHand?.communityCards[idx] ?? null,
             )}
+            runouts={lastHandResult.runouts?.map((runout) => ({
+              runIndex: runout.runIndex,
+              board: runout.board,
+              winners: runout.winners.map((winner) => ({
+                playerId: winner.playerId,
+                playerName: winner.playerName,
+                amountWon: winner.amountWon,
+              })),
+            }))}
             payoutBreakdownRows={payoutBreakdownRows}
             handResultRows={handResultRows.map((entry) => ({
               ...entry,
@@ -3674,6 +3722,36 @@ const useGameRoomElement = () => {
           className="chip-composer-dock--operation"
           testId="operation-overlay"
         >
+          {showResolvedRunoutBoardsPreview && (
+            <section className="showdown-revealed-hands" data-testid="showdown-runout-boards">
+              <div className="showdown-revealed-hands__header">
+                <h4 className="showdown-revealed-hands__title">{t("game.runouts.title")}</h4>
+              </div>
+              <div className="showdown-revealed-hands__list">
+                {resolvedRunoutBoards.map((board, runIndex) => (
+                  <div
+                    key={`showdown-runout-board-${runIndex}`}
+                    className="showdown-revealed-hands__item"
+                    data-testid={`showdown-runout-board-${runIndex}`}
+                  >
+                    <span className="showdown-revealed-hands__name">
+                      {t("game.runouts.runLabel", { index: runIndex + 1 })}
+                    </span>
+                    <div className="showdown-revealed-hands__cards">
+                      {board.map((card, cardIndex) => (
+                        <Card
+                          key={`showdown-runout-card-${runIndex}-${card.suit}-${card.rank}-${cardIndex}`}
+                          card={card}
+                          size="small"
+                          dataTestId={`showdown-runout-card-${runIndex}-${cardIndex}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
             <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
               <div className="showdown-revealed-hands__header">
@@ -3705,6 +3783,11 @@ const useGameRoomElement = () => {
           <OperationActionBar
             mode={operationBarMode}
             isAutomationMode={isAutomationMode}
+            runCountCanChoose={canChooseRunCount}
+            runCountHasChosenTwice={hasChosenRunTwice}
+            runCountReadyCount={runCountTwiceAgreedPlayerIdSet.size}
+            runCountTotalCount={runCountDecisionState?.eligiblePlayerIds.length ?? 0}
+            runCountWaitingPlayerNames={runCountWaitingPlayerNames}
             isResultRevealStep={isResultRevealStep}
             canRevealNextStreet={canRevealNextStreet}
             hasRevealedNextStreet={hasRevealedNextStreet}
@@ -3715,6 +3798,8 @@ const useGameRoomElement = () => {
             showdownIsDecisionTurn={isMyShowdownDecisionTurn}
             showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
             showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
+            onChooseRunOnce={() => decideRunCount(1)}
+            onChooseRunTwice={() => decideRunCount(2)}
             onRevealNextStreet={revealNextStreet}
             onShowMyHand={showMyHand}
             onFoldMyHand={muckMyHand}
