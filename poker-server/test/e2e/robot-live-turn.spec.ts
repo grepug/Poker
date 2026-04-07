@@ -146,7 +146,11 @@ async function installRobotShowdownStores(page: Page) {
     });
     if (!handCompleteStore.attached) {
       socket.on('HAND_COMPLETE', (payload: any) => {
-        handCompleteStore.events.push(payload?.result ?? payload);
+        const room = (window as any).pokerDebug?.getRoom?.();
+        handCompleteStore.events.push({
+          handNumber: room?.currentHand?.handNumber ?? null,
+          result: payload?.result ?? payload,
+        });
       });
       handCompleteStore.attached = true;
     }
@@ -177,6 +181,32 @@ async function getHandSnapshot(page: Page) {
       showdownEvents: (window as any).__liveRobotShowdownStore?.events ?? [],
     };
   });
+}
+
+const LIVE_SHOWDOWN_TEST_DECK = [
+  { rank: '7', suit: 'diamonds' },
+  { rank: 'A', suit: 'spades' },
+  { rank: '5', suit: 'clubs' },
+  { rank: 'A', suit: 'hearts' },
+  { rank: '2', suit: 'clubs' },
+  { rank: '9', suit: 'spades' },
+  { rank: '4', suit: 'hearts' },
+  { rank: 'J', suit: 'diamonds' },
+  { rank: '3', suit: 'spades' },
+  { rank: '8', suit: 'clubs' },
+  { rank: '6', suit: 'diamonds' },
+];
+
+async function readyNextHandWithDeck(page: Page) {
+  await setTestDeckForCurrentRoom(page, LIVE_SHOWDOWN_TEST_DECK);
+  await page.click('[data-testid="start-next-hand-button"]');
+  await page.waitForFunction(
+    () =>
+      (window as any).pokerDebug?.getRoom?.()?.currentHand?.bettingRound ===
+      'PRE_FLOP',
+    undefined,
+    { timeout: 15000 },
+  );
 }
 
 test.describe('Poker E2E - Live Robot Turn', () => {
@@ -324,19 +354,7 @@ test.describe('Poker E2E - Live Robot Turn', () => {
       });
       await createRoomViaSocket(hostPage, 'Alice');
       await installRobotShowdownStores(hostPage);
-      await setTestDeckForCurrentRoom(hostPage, [
-        { rank: '7', suit: 'diamonds' },
-        { rank: 'A', suit: 'spades' },
-        { rank: '5', suit: 'clubs' },
-        { rank: 'A', suit: 'hearts' },
-        { rank: '2', suit: 'clubs' },
-        { rank: '9', suit: 'spades' },
-        { rank: '4', suit: 'hearts' },
-        { rank: 'J', suit: 'diamonds' },
-        { rank: '3', suit: 'spades' },
-        { rank: '8', suit: 'clubs' },
-        { rank: '6', suit: 'diamonds' },
-      ]);
+      await setTestDeckForCurrentRoom(hostPage, LIVE_SHOWDOWN_TEST_DECK);
 
       await hostPage.click('[data-testid="add-robot-button"]');
       await hostPage.waitForFunction(
@@ -370,11 +388,44 @@ test.describe('Poker E2E - Live Robot Turn', () => {
 
       const startedAt = Date.now();
       let result: any = null;
+      let targetHandNumber: number | null = null;
+      let processedHandCompleteCount = 0;
       while (Date.now() - startedAt < 90000) {
         const state = await getHandSnapshot(hostPage);
-        if (state.handCompleteEvents.length > 0) {
-          result = state.handCompleteEvents[state.handCompleteEvents.length - 1];
-          break;
+        const matchingShowdownEvent = [...state.showdownEvents]
+          .reverse()
+          .find(
+          (event: any) =>
+            event.currentPlayerId === identities.robotId &&
+            !((event.forcedRevealPlayerIds ?? []) as string[]).includes(
+              identities.robotId!,
+            ),
+          );
+        if (matchingShowdownEvent) {
+          targetHandNumber = matchingShowdownEvent.handNumber ?? null;
+        }
+
+        if (state.handCompleteEvents.length > processedHandCompleteCount) {
+          const newHandCompleteEvents = state.handCompleteEvents.slice(
+            processedHandCompleteCount,
+          );
+          processedHandCompleteCount = state.handCompleteEvents.length;
+
+          const matchingHandCompleteEvent = newHandCompleteEvents.find(
+            (event: any) =>
+              targetHandNumber !== null &&
+              event?.handNumber === targetHandNumber,
+          );
+          if (matchingHandCompleteEvent) {
+            result = matchingHandCompleteEvent;
+            break;
+          }
+
+          if (await hasVisibleButton(hostPage, 'start-next-hand-button')) {
+            targetHandNumber = null;
+            await readyNextHandWithDeck(hostPage);
+            continue;
+          }
         }
 
         if (state.pendingStreetRevealRound === 'SHOWDOWN') {
@@ -393,22 +444,20 @@ test.describe('Poker E2E - Live Robot Turn', () => {
         await hostPage.waitForTimeout(200);
       }
 
-      expect(result, 'Live robot showdown hand did not complete').toBeTruthy();
-
-      const finalState = await getHandSnapshot(hostPage);
-      const sawNonForcedRobotShowdownActor = finalState.showdownEvents.some(
-        (event: any) =>
-          event.currentPlayerId === identities.robotId &&
-          !((event.forcedRevealPlayerIds ?? []) as string[]).includes(
-            identities.robotId!,
-          ),
-      );
+      expect(
+        result,
+        'Live robot showdown hand with a non-forced robot actor did not complete',
+      ).toBeTruthy();
+      expect(
+        targetHandNumber,
+        'Expected a non-forced robot showdown actor for the completed live hand',
+      ).not.toBeNull();
 
       expect(
-        sawNonForcedRobotShowdownActor,
-        'Expected a non-forced robot showdown actor during the live hand',
-      ).toBe(true);
-      expect(result.playerHands).toEqual(
+        result.handNumber,
+        'Expected the completed hand to match the observed robot showdown hand',
+      ).toBe(targetHandNumber);
+      expect(result.result.playerHands).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             playerId: identities.robotId,
