@@ -651,6 +651,35 @@ async function waitForRound(
   );
 }
 
+async function waitForRunCountDecision(
+  page: Page,
+  eligibleCount?: number,
+  communityCards?: number,
+  timeoutMs = 10000,
+) {
+  await page.waitForFunction(
+    ({ targetEligibleCount, targetCards }) => {
+      const room = (window as any).pokerDebug?.getRoom();
+      const hand = room?.currentHand;
+      if (!hand?.runCountDecision) return false;
+
+      const eligiblePlayerIds = hand.runCountDecision.eligiblePlayerIds ?? [];
+      const eligibleMatches =
+        typeof targetEligibleCount === 'number'
+          ? eligiblePlayerIds.length === targetEligibleCount
+          : eligiblePlayerIds.length > 0;
+      const cardsMatch =
+        typeof targetCards === 'number'
+          ? hand.communityCards?.length === targetCards
+          : true;
+
+      return eligibleMatches && cardsMatch;
+    },
+    { targetEligibleCount: eligibleCount, targetCards: communityCards },
+    { timeout: timeoutMs },
+  );
+}
+
 async function expectYourCardsFlyoutAboveActionArea(
   page: Page,
   actionAreaTestId: string,
@@ -1223,6 +1252,8 @@ async function waitForHandCompleteWithTerminalAutoProgress(
         handNumber: hand?.handNumber ?? null,
         bettingRound: hand?.bettingRound ?? null,
         pendingStreetRevealRound: hand?.pendingStreetRevealRound ?? null,
+        runCountDecisionEligiblePlayerIds:
+          hand?.runCountDecision?.eligiblePlayerIds ?? [],
         showdownDecisionPlayerId: hand?.showdownDecisionPlayerId ?? null,
         nextStreetRequiredPlayerIds: hand?.nextStreetRequiredPlayerIds ?? [],
         nextStreetReadyPlayerIds: hand?.nextStreetReadyPlayerIds ?? [],
@@ -2832,14 +2863,16 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log("Pre-flop Round 4 - Alice calling Bob's all-in...");
     await alicePage.click('[data-testid="action-call"]');
 
-    // Both players all-in - should go straight to showdown
-    await alicePage.waitForTimeout(1200);
+    // Betting is closed, so the table should offer a run-count decision
+    await waitForRunCountDecision(alicePage, 2, 3);
     const afterPreFlop = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
         pot: room?.currentHand?.pot,
         bettingRound: room?.currentHand?.bettingRound,
         communityCards: room?.currentHand?.communityCards?.length,
+        runCountDecisionEligiblePlayerIds:
+          room?.currentHand?.runCountDecision?.eligiblePlayerIds ?? [],
         alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
         bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
       };
@@ -2848,16 +2881,16 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       `After pre-flop: Pot $${afterPreFlop.pot}, Round: ${afterPreFlop.bettingRound}, Cards: ${afterPreFlop.communityCards}, Alice: ${afterPreFlop.alice}, Bob: ${afterPreFlop.bob}`,
     );
 
-    // Both all-in - should have gone to SHOWDOWN
-    expect(afterPreFlop.bettingRound).toBe('SHOWDOWN'); // Straight to showdown
-    expect(afterPreFlop.communityCards).toBe(5); // All 5 cards dealt immediately
+    expect(afterPreFlop.bettingRound).toBe('FLOP');
+    expect(afterPreFlop.communityCards).toBe(3);
+    expect(afterPreFlop.runCountDecisionEligiblePlayerIds).toHaveLength(2);
 
     const result = await handCompletePromise;
     expect(result.totalPot).toBe(2000);
 
-    // No need to check through rounds - both all-in means instant showdown
+    // The helper auto-selects run once, then progresses showdown to completion.
     console.log(
-      'Both players all-in - went straight to SHOWDOWN with all 5 cards',
+      'Both players all-in - run-count decision offered before showdown completed',
     );
 
     if (afterPreFlop.alice === afterPreFlop.bob) {
@@ -2970,9 +3003,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log('Pre-flop: Bob calling all-in...');
     await bobPage.click('[data-testid="action-call"]');
 
-    // Wait for all 5 community cards to be dealt immediately (both all-in)
-    await alicePage.waitForTimeout(3000);
-    console.log('Waiting for all cards to be dealt...');
+    // Betting is closed, so the table should offer a run-count decision.
+    await waitForRunCountDecision(alicePage, 2, 0);
+    console.log('Waiting for run-count decision...');
 
     // Verify all 5 community cards were dealt
     await waitForPokerDebug(alicePage);
@@ -2981,6 +3014,8 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       return {
         communityCards: room?.currentHand?.communityCards?.length,
         bettingRound: room?.currentHand?.bettingRound,
+        runCountDecisionEligiblePlayerIds:
+          room?.currentHand?.runCountDecision?.eligiblePlayerIds ?? [],
         alice: room?.players.find((p: any) => p.name === 'Alice')?.chips,
         bob: room?.players.find((p: any) => p.name === 'Bob')?.chips,
       };
@@ -2988,9 +3023,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     console.log('Game state after all-in:', gameState);
 
-    // When both players are all-in, all 5 cards should be dealt immediately
-    expect(gameState.communityCards).toBe(5);
-    expect(gameState.bettingRound).toBe('SHOWDOWN');
+    expect(gameState.communityCards).toBe(0);
+    expect(gameState.bettingRound).toBe('PRE_FLOP');
+    expect(gameState.runCountDecisionEligiblePlayerIds).toHaveLength(2);
 
     const result = await handCompletePromise;
     expect(result.totalPot).toBe(2000);
@@ -3104,14 +3139,16 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
     console.log('Pre-flop: Alice going all-in to match Bob...');
     await alicePage.click('[data-testid="action-all-in"]');
 
-    // Both all-in - wait for showdown
-    await alicePage.waitForTimeout(3000);
+    // Betting is closed, so the table should offer a run-count decision.
+    await waitForRunCountDecision(alicePage, 2, 0);
     const finalState = await alicePage.evaluate(() => {
       const room = (window as any).pokerDebug?.getRoom();
       return {
         pot: room?.currentHand?.pot,
         bettingRound: room?.currentHand?.bettingRound,
         communityCards: room?.currentHand?.communityCards?.length,
+        runCountDecisionEligiblePlayerIds:
+          room?.currentHand?.runCountDecision?.eligiblePlayerIds ?? [],
         alice: room?.players?.find((p: any) => p.name === 'Alice')?.chips,
         bob: room?.players?.find((p: any) => p.name === 'Bob')?.chips,
       };
@@ -3120,9 +3157,9 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       `Final state: Pot $${finalState.pot}, Round: ${finalState.bettingRound}, Cards: ${finalState.communityCards}, Alice: ${finalState.alice}, Bob: ${finalState.bob}`,
     );
 
-    // Verify both all-in triggered immediate showdown
-    expect(finalState.bettingRound).toBe('SHOWDOWN');
-    expect(finalState.communityCards).toBe(5); // All 5 cards dealt immediately
+    expect(finalState.bettingRound).toBe('PRE_FLOP');
+    expect(finalState.communityCards).toBe(0);
+    expect(finalState.runCountDecisionEligiblePlayerIds).toHaveLength(2);
 
     const result = await handCompletePromise;
     expect(result.totalPot).toBe(2000);
@@ -3167,10 +3204,10 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextSocketEvent(
+      const handCompletePromise = captureNextHandComplete(
         alicePage,
-        'HAND_COMPLETE',
         60000,
+        [alicePage, bobPage, charliePage],
       );
 
       await alicePage.click('[data-testid="start-game-button"]');
@@ -3219,42 +3256,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await waitForPlayerTurn(charliePage, 'Charlie');
       await charliePage.click('[data-testid="action-check"]');
 
-      await waitForRound(alicePage, 'SHOWDOWN', 5);
-      const showdownStartedAt = Date.now();
-      while (Date.now() - showdownStartedAt < 30000) {
-        const revealVisible = await Promise.any(
-          [alicePage, bobPage, charliePage].map(async (page) => {
-            const area = page.locator(
-              '[data-testid="reveal-next-street-action-area"]',
-            );
-            return (await area.count()) > 0 && (await area.first().isVisible());
-          }),
-        ).catch(() => false);
-        if (revealVisible) {
-          break;
-        }
-
-        let acted = false;
-        for (const page of [bobPage, charliePage, alicePage]) {
-          const showButton = page.locator(
-            '[data-testid="show-my-hand-button"]',
-          );
-          if (
-            (await showButton.count()) > 0 &&
-            (await showButton.first().isVisible())
-          ) {
-            await showButton.first().click();
-            acted = true;
-            break;
-          }
-        }
-        await alicePage.waitForTimeout(acted ? 120 : 200);
-      }
-
-      await clickRevealResultFromAnyPage(
-        [alicePage, bobPage, charliePage],
-        10000,
-      );
       const handCompletePayload = await handCompletePromise;
       const result = handCompletePayload?.result ?? handCompletePayload;
       expect(result.totalPot).toBe(4000);
@@ -3356,11 +3357,11 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await requestRebuy(bobPage, 2000);
       await requestRebuy(charliePage, 2000);
 
-      const handCompletePromise = captureNextSocketEvent(
+      const handCompletePromise = captureNextHandComplete(alicePage, 60000, [
         alicePage,
-        'HAND_COMPLETE',
-        60000,
-      );
+        bobPage,
+        charliePage,
+      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -3388,44 +3389,18 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       await waitForPlayerTurn(bobPage, 'Bob');
       await bobPage.click('[data-testid="action-fold"]');
 
+      await waitForRunCountDecision(alicePage, 2);
+      const runCountResponse = await emitSocketEventAck(alicePage, 'SET_RUN_COUNT', {
+        runCount: 1,
+      });
+      expect(runCountResponse.success || runCountResponse.duplicate).toBeTruthy();
       await waitForRound(alicePage, 'SHOWDOWN', 5);
-      const showdownStartedAt = Date.now();
-      while (Date.now() - showdownStartedAt < 30000) {
-        const revealVisible = await Promise.any(
-          [alicePage, bobPage, charliePage].map(async (page) => {
-            const area = page.locator(
-              '[data-testid="reveal-next-street-action-area"]',
-            );
-            return (await area.count()) > 0 && (await area.first().isVisible());
-          }),
-        ).catch(() => false);
-        if (revealVisible) {
-          break;
-        }
-
-        let acted = false;
-        for (const page of [charliePage, alicePage, bobPage]) {
-          const showButton = page.locator(
-            '[data-testid="show-my-hand-button"]',
-          );
-          if (
-            (await showButton.count()) > 0 &&
-            (await showButton.first().isVisible())
-          ) {
-            await showButton.first().click();
-            acted = true;
-            break;
-          }
-        }
-        await alicePage.waitForTimeout(acted ? 120 : 200);
-      }
 
       await clickRevealResultFromAnyPage(
         [alicePage, bobPage, charliePage],
         10000,
       );
-      const handCompletePayload = await handCompletePromise;
-      const result = handCompletePayload?.result ?? handCompletePayload;
+      const result = await handCompletePromise;
       expect(result.totalPot).toBe(3500);
       expect(result.playerHands).toHaveLength(3);
 
@@ -4951,13 +4926,10 @@ test.describe('Poker E2E - Test Suite 5: Turn/Round Advancement', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-all-in"]');
 
-      await waitForRound(alicePage, 'SHOWDOWN', 5);
       const handResult = await handCompletePromise;
       const finalState = await getRoomSnapshot(alicePage);
       const total = finalState.aliceChips + finalState.bobChips;
 
-      expect(finalState.bettingRound).toBe('SHOWDOWN');
-      expect(finalState.communityCards).toBe(5);
       expect(handResult.totalPot).toBe(2000);
       expect(total).toBe(2000);
       await verifyChipConservation(alicePage, 2000);
