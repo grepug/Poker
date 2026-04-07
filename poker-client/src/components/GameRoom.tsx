@@ -2112,10 +2112,6 @@ const useGameRoomElement = () => {
         return rightNet - leftNet;
       }
 
-      if (left.isWinner !== right.isWinner) {
-        return left.isWinner ? -1 : 1;
-      }
-
       const leftSeatPosition =
         typeof left.seatPosition === "number" ? left.seatPosition : Number.MAX_SAFE_INTEGER;
       const rightSeatPosition =
