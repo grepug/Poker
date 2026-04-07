@@ -73,6 +73,7 @@ import {
   Card,
   PlayerProfileUpdatedData,
   PersistedRobotDecisionMetadata,
+  PersistedRobotFallbackCause,
   UpdateProfileData,
   HandResult,
   Room,
@@ -3535,11 +3536,7 @@ export class EventsGateway
 
   private buildRobotFallbackDecision(
     action: RobotActionCandidate,
-    fallbackCause:
-      | 'provider-unavailable'
-      | 'provider-error'
-      | 'invalid-final-action'
-      | 'exhausted-retries',
+    fallbackCause: PersistedRobotFallbackCause,
     validationRetryCount = 0,
   ): RobotActionDecision {
     const retrySummary =
