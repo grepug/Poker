@@ -1333,8 +1333,8 @@ async function waitForHandCompleteWithTerminalAutoProgress(
       ).find((page): page is Page => Boolean(page));
 
       const showdownActionPage =
-        showButtonPage ??
-        (showdownActorId ? (pageByPlayerId.get(showdownActorId) ?? null) : null);
+        (showdownActorId ? (pageByPlayerId.get(showdownActorId) ?? null) : null) ??
+        showButtonPage;
 
       if (showdownActionPage && !showdownActionPage.isClosed()) {
         const response = await emitSocketEventAck(
@@ -1508,8 +1508,7 @@ async function completeCurrentHandWithPassiveActions(
       continue;
     }
 
-    const showdownActorId =
-      state.showdownDecisionPlayerId ?? state.currentPlayerTurn;
+    const showdownActorId = state.showdownDecisionPlayerId;
     if (state.bettingRound === 'SHOWDOWN' && showdownActorId) {
       const decisionPage = playerIdToPage.get(showdownActorId);
       if (decisionPage && !decisionPage.isClosed()) {
@@ -1522,11 +1521,18 @@ async function completeCurrentHandWithPassiveActions(
     }
 
     if (state.bettingRound === 'SHOWDOWN') {
+      const visibleShowPages = (
+        await Promise.all(
+          Object.values(pageByName).map(async (page) =>
+            (await hasVisibleActionButton(page, 'show-my-hand-button'))
+              ? page
+              : null,
+          ),
+        )
+      ).filter((page): page is Page => Boolean(page && !page.isClosed()));
+
       let showdownActionSucceeded = false;
-      for (const revealPage of Object.values(pageByName)) {
-        if (revealPage.isClosed()) {
-          continue;
-        }
+      for (const revealPage of visibleShowPages) {
         const response = await emitSocketEventAck(revealPage, 'SHOW_MY_HAND');
         if (response.success || response.duplicate) {
           showdownActionSucceeded = true;
