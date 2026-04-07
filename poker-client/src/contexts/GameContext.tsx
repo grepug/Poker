@@ -135,6 +135,8 @@ type DebugApi = {
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
+  addRobotPlayer: (name?: string, emoji?: string) => void;
+  removeRobotPlayer: (playerId: string) => void;
   getChatMessages: () => ChatMessage[];
   getChatUnreadCount: () => number;
   sendChatText: (text: string, clientMessageId?: string) => void;
@@ -192,6 +194,8 @@ interface GameContextType {
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
   ) => void;
+  addRobotPlayer: (name?: string, emoji?: string) => void;
+  removeRobotPlayer: (playerId: string) => void;
   sendChatText: (text: string, clientMessageId?: string) => void;
   sendChatVoice: (voice: VoiceMessagePayload, clientMessageId?: string) => void;
   loadOlderChatMessages: () => void;
@@ -1604,6 +1608,32 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     [socket],
   );
 
+  const addRobotPlayer = useCallback(
+    (name?: string, emoji?: string) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("ADD_ROBOT_PLAYER", { name, emoji }, (response) => {
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to add robot player");
+        }
+      });
+    },
+    [socket],
+  );
+
+  const removeRobotPlayer = useCallback(
+    (playerId: string) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("REMOVE_ROBOT_PLAYER", { playerId }, (response) => {
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to remove robot player");
+        }
+      });
+    },
+    [socket],
+  );
+
   const setChatPanelOpen = useCallback((open: boolean) => {
     setIsChatPanelOpenState(open);
     if (open) {
@@ -1748,6 +1778,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         leaveRoom,
         requestRebuy,
         updateRoomConfig,
+        addRobotPlayer,
+        removeRobotPlayer,
         getChatMessages: () => chatMessages,
         getChatUnreadCount: () => chatUnreadCount,
         sendChatText,
@@ -1799,6 +1831,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     leaveRoom,
     requestRebuy,
     updateRoomConfig,
+    addRobotPlayer,
+    removeRobotPlayer,
     chatMessages,
     chatUnreadCount,
     sendChatText,
@@ -1845,6 +1879,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         leaveRoom,
         requestRebuy,
         updateRoomConfig,
+        addRobotPlayer,
+        removeRobotPlayer,
         sendChatText,
         sendChatVoice,
         loadOlderChatMessages,

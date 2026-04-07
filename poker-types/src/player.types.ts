@@ -18,6 +18,7 @@ export interface Player {
   id: string;
   socketId: string;
   name: string;
+  isRobot?: boolean;
   emoji?: string;
   chips: number;
   totalBuyIn: number;

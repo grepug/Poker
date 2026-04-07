@@ -13,6 +13,11 @@ import { GameService } from '../game/game.service';
 import { HandService } from '../game/hand.service';
 import { BettingService } from '../game/betting.service';
 import { TestDeckService } from '../game/test-deck.service';
+import {
+  RobotAgentService,
+  RobotActionCandidate,
+  RobotTurnContext,
+} from '../game/robot-agent.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
@@ -37,6 +42,8 @@ import {
   ShowMyHandData,
   UpdateRoomConfigData,
   PlayerReadyData,
+  AddRobotPlayerData,
+  RemoveRobotPlayerData,
   RoomCreatedData,
   PlayerJoinedData,
   GameStartedData,
@@ -129,6 +136,7 @@ export class EventsGateway
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
   private roomActionQueues: Map<string, Promise<void>> = new Map();
+  private robotTurnTimers: Map<string, NodeJS.Timeout> = new Map();
   private processedActionFingerprints: Map<string, number> = new Map();
   private readonly processedActionTtlMs = 10 * 60 * 1000; // 10 minutes
   private readonly maxProcessedActionFingerprints = 10000;
@@ -141,6 +149,30 @@ export class EventsGateway
     string,
     { timestamp: number; message: ChatMessage }
   > = new Map();
+  private getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    if (typeof error === 'string' && error.trim()) {
+      return error;
+    }
+
+    return fallback;
+  }
+
+  private parseRobotDelayMs(
+    value: string | undefined,
+    fallback: number,
+  ): number {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+
+    return Math.max(0, Math.floor(parsed));
+  }
+
   private isPlayerDisconnected(
     player:
       | {
@@ -224,6 +256,7 @@ export class EventsGateway
     private readonly handService: HandService,
     private readonly bettingService: BettingService,
     private readonly testDeckService: TestDeckService,
+    private readonly robotAgentService: RobotAgentService,
     private readonly authService: AuthService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
@@ -325,6 +358,14 @@ export class EventsGateway
   private syncRoomReadyState(room: any): void {
     const phase = this.resolveRoomReadyPhase(room);
     const eligiblePlayerIds = this.getReadyEligiblePlayerIds(room);
+    const autoReadyRobotIds = (room?.players ?? [])
+      .filter(
+        (player: any) =>
+          player.isRobot &&
+          eligiblePlayerIds.includes(player.id) &&
+          player.status !== 'left',
+      )
+      .map((player: any) => player.id);
     const currentReady = Array.isArray(room?.readyPlayerIds)
       ? room.readyPlayerIds
       : [];
@@ -336,9 +377,12 @@ export class EventsGateway
     }
 
     room.readyPhase = phase;
-    room.readyPlayerIds = currentReady.filter((playerId: string) =>
+    const filteredReady = currentReady.filter((playerId: string) =>
       eligiblePlayerIds.includes(playerId),
     );
+    room.readyPlayerIds = [
+      ...new Set([...filteredReady, ...autoReadyRobotIds]),
+    ];
   }
 
   private emitReadyStateUpdated(roomId: string, room: any): void {
@@ -1008,6 +1052,132 @@ export class EventsGateway
       this.logger.error(`Player ready error: ${error.message}`);
       client.emit('ERROR', { message: error.message });
       return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('ADD_ROBOT_PLAYER')
+  async handleAddRobotPlayer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: AddRobotPlayerData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(
+        playerInfo.roomId,
+        async () => {
+          const { room, player } = await this.gameService.addRobotToRoom(
+            playerInfo.roomId,
+            playerInfo.playerId,
+            data?.name,
+            data?.emoji,
+          );
+
+          this.server.to(room.id).emit('PLAYER_JOINED', {
+            player: this.sanitizePlayer(player),
+          } as PlayerJoinedData);
+
+          this.syncRoomReadyState(room);
+          await this.storageService.persistRoom(
+            room,
+            roomWrite(
+              roomEvent({
+                roomId: room.id,
+                type: 'READY_STATE_UPDATED',
+                actor: {
+                  source: 'EVENTS_GATEWAY',
+                  playerId: playerInfo.playerId,
+                },
+                payload: {
+                  phase: room.readyPhase,
+                  readyPlayerIds: room.readyPlayerIds,
+                },
+              }),
+            ),
+          );
+          const started = await this.maybeStartReadyPhaseIfAllReady(
+            room.id,
+            room,
+          );
+          if (!started) {
+            this.emitReadyStateUpdated(room.id, room);
+          }
+          return { success: true, playerId: player.id };
+        },
+      );
+    } catch (error) {
+      const message = this.getErrorMessage(error, 'Failed to add robot');
+      this.logger.error(`Add robot error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
+    }
+  }
+
+  @SubscribeMessage('REMOVE_ROBOT_PLAYER')
+  async handleRemoveRobotPlayer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: RemoveRobotPlayerData,
+  ) {
+    try {
+      const playerInfo = this.socketToPlayer.get(client.id);
+      if (!playerInfo) throw new Error('Not in a room');
+
+      return await this.runRoomActionSequentially(
+        playerInfo.roomId,
+        async () => {
+          const room = await this.getRoom(playerInfo.roomId);
+          const robot = room?.players?.find(
+            (entry: any) => entry.id === data.playerId && entry.isRobot,
+          );
+          if (!robot) {
+            throw new Error('Robot player not found');
+          }
+
+          const updatedRoom = await this.gameService.removeRobotFromRoom(
+            playerInfo.roomId,
+            playerInfo.playerId,
+            data.playerId,
+          );
+
+          this.server.to(updatedRoom.id).emit('PLAYER_LEFT', {
+            playerId: data.playerId,
+            playerName: robot.name,
+          });
+
+          this.syncRoomReadyState(updatedRoom);
+          await this.storageService.persistRoom(
+            updatedRoom,
+            roomWrite(
+              roomEvent({
+                roomId: updatedRoom.id,
+                type: 'READY_STATE_UPDATED',
+                actor: {
+                  source: 'EVENTS_GATEWAY',
+                  playerId: playerInfo.playerId,
+                },
+                payload: {
+                  phase: updatedRoom.readyPhase,
+                  readyPlayerIds: updatedRoom.readyPlayerIds,
+                },
+              }),
+            ),
+          );
+          const started = await this.maybeStartReadyPhaseIfAllReady(
+            updatedRoom.id,
+            updatedRoom,
+          );
+          if (!started) {
+            this.emitReadyStateUpdated(updatedRoom.id, updatedRoom);
+          }
+          return { success: true };
+        },
+      );
+    } catch (error) {
+      const message = this.getErrorMessage(error, 'Failed to remove robot');
+      this.logger.error(`Remove robot error: ${message}`);
+      client.emit('ERROR', { message });
+      return { success: false, error: message };
     }
   }
 
@@ -1814,6 +1984,7 @@ export class EventsGateway
               }
             }
           } else {
+            this.clearRobotTurnTimer(playerInfo.roomId);
             await this.chatStorageService.deleteRoomChat(playerInfo.roomId);
             await this.chatMediaStorageService.deleteRoomMedia(
               playerInfo.roomId,
@@ -2870,6 +3041,7 @@ export class EventsGateway
   }
 
   private async completeAndBroadcastHand(room: any) {
+    this.clearRobotTurnTimer(room.id);
     const result = await this.handService.determineWinner(room);
     const isShowdown = room.currentHand.bettingRound === 'SHOWDOWN';
     const revealedPlayerIds = result.playerHands
@@ -2978,6 +3150,7 @@ export class EventsGateway
   }
 
   private async startAndBroadcastNewHand(roomId: string) {
+    this.clearRobotTurnTimer(roomId);
     const room = await this.getRoom(roomId);
     if (!room) {
       throw new Error(`Room ${roomId} not found for new hand`);
@@ -3023,7 +3196,317 @@ export class EventsGateway
     }
   }
 
+  private clearRobotTurnTimer(roomId: string): void {
+    const timer = this.robotTurnTimers.get(roomId);
+    if (!timer) {
+      return;
+    }
+    clearTimeout(timer);
+    this.robotTurnTimers.delete(roomId);
+  }
+
+  private scheduleRobotTurn(room: any, player: any): void {
+    this.clearRobotTurnTimer(room.id);
+
+    const minDelayMs = this.parseRobotDelayMs(
+      process.env.AI_ROBOT_ACTION_DELAY_MIN_MS,
+      1000,
+    );
+    const maxDelayMs = this.parseRobotDelayMs(
+      process.env.AI_ROBOT_ACTION_DELAY_MAX_MS,
+      2500,
+    );
+    const upperBound = Math.max(minDelayMs, maxDelayMs);
+    const delayMs = Math.max(
+      0,
+      Math.floor(Math.random() * (upperBound - minDelayMs + 1)) + minDelayMs,
+    );
+    const handNumber = room.currentHand?.handNumber;
+
+    const timer = setTimeout(async () => {
+      this.robotTurnTimers.delete(room.id);
+      try {
+        await this.executeRobotTurn(room.id, player.id, handNumber);
+      } catch (error) {
+        this.logger.warn(
+          `Robot turn execution failed in room ${room.id}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+      }
+    }, delayMs);
+
+    this.robotTurnTimers.set(room.id, timer);
+  }
+
+  private resolveRobotLegalActions(room: any, robotPlayerId: string) {
+    const hand = room.currentHand;
+    const robotPlayer = room.players.find(
+      (player: any) => player.id === robotPlayerId,
+    );
+    if (!hand || !robotPlayer) {
+      return null;
+    }
+
+    const amountToCall = Math.max(0, hand.currentBet - robotPlayer.currentBet);
+    const minRaiseIncrement = Math.max(
+      1,
+      Number(
+        this.bettingService.calculateMinRaise(room) ||
+          room.config.bigBlind ||
+          1,
+      ),
+    );
+    const maxRaiseIncrement = Math.max(0, robotPlayer.chips - amountToCall);
+    const raiseEnabled =
+      maxRaiseIncrement >= minRaiseIncrement &&
+      this.bettingService.validateAction(
+        room,
+        robotPlayerId,
+        'raise',
+        minRaiseIncrement,
+      ).valid;
+
+    const suggestedIncrements = [
+      minRaiseIncrement,
+      Math.floor(Math.max(minRaiseIncrement, maxRaiseIncrement) / 2),
+      maxRaiseIncrement,
+    ]
+      .filter(
+        (value, index, arr) =>
+          value >= minRaiseIncrement &&
+          value <= maxRaiseIncrement &&
+          arr.indexOf(value) === index,
+      )
+      .sort((a, b) => a - b);
+
+    return {
+      fold: {
+        enabled: this.bettingService.validateAction(room, robotPlayerId, 'fold')
+          .valid,
+      },
+      check: {
+        enabled: this.bettingService.validateAction(
+          room,
+          robotPlayerId,
+          'check',
+        ).valid,
+      },
+      call: {
+        enabled: this.bettingService.validateAction(room, robotPlayerId, 'call')
+          .valid,
+        amountToCall,
+      },
+      raise: {
+        enabled: raiseEnabled,
+        minIncrement: minRaiseIncrement,
+        maxIncrement: maxRaiseIncrement,
+        suggestedIncrements,
+      },
+      allIn: {
+        enabled: this.bettingService.validateAction(
+          room,
+          robotPlayerId,
+          'all-in',
+        ).valid,
+        increment: Math.max(0, robotPlayer.chips - amountToCall),
+      },
+    };
+  }
+
+  private buildRobotTurnContext(
+    room: any,
+    robotPlayerId: string,
+  ): RobotTurnContext {
+    const hand = room.currentHand;
+    const robotPlayer = room.players.find(
+      (player: any) => player.id === robotPlayerId,
+    );
+    if (!hand || !robotPlayer || !robotPlayer.cards) {
+      throw new Error('Cannot build robot turn context');
+    }
+
+    const legalActions = this.resolveRobotLegalActions(room, robotPlayerId);
+    if (!legalActions) {
+      throw new Error('Cannot resolve legal robot actions');
+    }
+
+    const revealedHoleCardsByPlayerId: Record<
+      string,
+      Array<{ rank: string; suit: string }>
+    > = {};
+    for (const playerId of hand.revealedPlayerIds ?? []) {
+      const revealedPlayer = room.players.find(
+        (player: any) => player.id === playerId,
+      );
+      if (revealedPlayer?.cards?.length) {
+        revealedHoleCardsByPlayerId[playerId] = revealedPlayer.cards;
+      }
+    }
+
+    const recentActions = (room.players ?? [])
+      .filter((player: any) => player.lastAction)
+      .map((player: any) => ({
+        playerId: player.id,
+        action: player.lastAction,
+        bettingRound: hand.bettingRound,
+      }));
+
+    return {
+      schemaVersion: '1.0',
+      roomId: room.id,
+      handNumber: hand.handNumber,
+      nowIso: new Date().toISOString(),
+      rules: {
+        variant: room.config.useShortDeckRules ? 'shortDeck' : 'standard',
+        smallBlind: room.config.smallBlind,
+        bigBlind: room.config.bigBlind,
+        bettingRound: hand.bettingRound,
+        raiseFormat: 'increment_over_call',
+      },
+      hero: {
+        playerId: robotPlayer.id,
+        name: robotPlayer.name,
+        seatPosition: robotPlayer.position,
+        chips: robotPlayer.chips,
+        currentBet: robotPlayer.currentBet,
+        status: robotPlayer.status,
+        holeCards: robotPlayer.cards,
+      },
+      table: {
+        pot: hand.pot,
+        currentBet: hand.currentBet,
+        minRaise: this.bettingService.calculateMinRaise(room),
+        communityCards: hand.communityCards ?? [],
+        playersPublic: (room.players ?? []).map((player: any) => ({
+          playerId: player.id,
+          name: player.name,
+          seatPosition: player.position,
+          chips: player.chips,
+          currentBet: player.currentBet,
+          status: player.status,
+          isDealer: player.position === hand.dealerPosition,
+          isSmallBlind: player.position === hand.smallBlindPosition,
+          isBigBlind: player.position === hand.bigBlindPosition,
+          lastAction: player.lastAction ?? null,
+        })),
+        revealedHoleCardsByPlayerId,
+      },
+      legalActions,
+      history: {
+        recentActions: recentActions.slice(-12),
+      },
+      constraints: {
+        maxAgentSteps: Number(process.env.AI_ROBOT_MAX_AGENT_STEPS || '6'),
+        toolRetryLimit: Number(process.env.AI_ROBOT_TOOL_RETRY_LIMIT || '4'),
+        actionDelayMsMin: Number(
+          process.env.AI_ROBOT_ACTION_DELAY_MIN_MS || '1000',
+        ),
+        actionDelayMsMax: Number(
+          process.env.AI_ROBOT_ACTION_DELAY_MAX_MS || '2500',
+        ),
+      },
+    };
+  }
+
+  private resolveRobotFallbackAction(
+    room: any,
+    robotPlayerId: string,
+  ): RobotActionCandidate {
+    const checkValidation = this.bettingService.validateAction(
+      room,
+      robotPlayerId,
+      'check',
+    );
+    if (checkValidation.valid) {
+      return { action: 'check' };
+    }
+    return { action: 'fold' };
+  }
+
+  private async executeRobotTurn(
+    roomId: string,
+    robotPlayerId: string,
+    expectedHandNumber?: number,
+  ): Promise<void> {
+    const room = await this.getRoom(roomId);
+    const hand = room?.currentHand;
+    const robotPlayer = room?.players?.find(
+      (player: any) => player.id === robotPlayerId,
+    );
+    if (!room || !hand || !robotPlayer?.isRobot) {
+      return;
+    }
+    if (expectedHandNumber && hand.handNumber !== expectedHandNumber) {
+      return;
+    }
+    if (hand.currentPlayerTurn !== robotPlayerId) {
+      return;
+    }
+
+    const roomSnapshot = JSON.parse(JSON.stringify(room));
+    const context = this.buildRobotTurnContext(roomSnapshot, robotPlayerId);
+
+    let selectedAction: RobotActionCandidate;
+    if (!this.robotAgentService.isConfigured()) {
+      selectedAction = this.resolveRobotFallbackAction(
+        roomSnapshot,
+        robotPlayerId,
+      );
+    } else {
+      try {
+        selectedAction = await this.robotAgentService.decideAction({
+          context,
+          validateAction: (candidate) => {
+            const validation = this.bettingService.validateAction(
+              roomSnapshot,
+              robotPlayerId,
+              candidate.action,
+              candidate.action === 'raise' ? candidate.amount : undefined,
+            );
+            return {
+              valid: validation.valid,
+              reason: validation.reason,
+              legalActions: context.legalActions,
+            };
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Robot agent fallback in room ${roomId}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+        selectedAction = this.resolveRobotFallbackAction(
+          roomSnapshot,
+          robotPlayerId,
+        );
+      }
+    }
+
+    const tempSocketId = `robot:${roomId}:${robotPlayerId}:${Date.now()}`;
+    this.socketToPlayer.set(tempSocketId, { roomId, playerId: robotPlayerId });
+
+    try {
+      await this.handlePlayerAction(
+        {
+          id: tempSocketId,
+          emit: () => undefined,
+        } as unknown as Socket,
+        {
+          action: selectedAction.action,
+          amount: selectedAction.amount,
+          actionId: `robot-${hand.handNumber}-${Date.now()}`,
+        },
+      );
+    } finally {
+      this.socketToPlayer.delete(tempSocketId);
+    }
+  }
+
   private emitPlayerTurn(room: any, player: any) {
+    this.clearRobotTurnTimer(room.id);
+
     const turnData: PlayerTurnData = {
       playerId: player.id,
       playerName: player.name,
@@ -3034,6 +3517,10 @@ export class EventsGateway
     };
 
     this.server.to(room.id).emit('PLAYER_TURN', turnData);
+
+    if (player.isRobot) {
+      this.scheduleRobotTurn(room, player);
+    }
   }
 
   private async handleDisconnectTimeout(roomId: string, playerId: string) {

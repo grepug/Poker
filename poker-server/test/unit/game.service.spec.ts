@@ -665,4 +665,363 @@ describe('GameService addPlayerToRoom', () => {
       'HOST_CHANGED',
     ]);
   });
+
+  it('transfers host to the next seated human instead of a robot', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+        createPlayer({
+          id: 'p-user',
+          socketId: 's-user',
+          name: 'User',
+          position: 2,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-host');
+
+    expect(updated).not.toBeNull();
+    expect(updated?.hostId).toBe('p-user');
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
+    expect(storageService.deleteRoom).not.toHaveBeenCalled();
+  });
+
+  it('deletes the room when the last human leaves and only robots remain', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-host');
+
+    expect(updated).toBeNull();
+    expect(storageService.deleteRoom).toHaveBeenCalledWith('ROOM01');
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
+  });
+
+  it('allows host to add robot while game is waiting', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const { player } = await gameService.addRobotToRoom('ROOM01', 'p-host');
+
+    expect(player.isRobot).toBe(true);
+    expect(player.socketId).toBe('');
+    expect(player.status).toBe('waiting');
+    expect(player.name).toContain('Robot');
+    expect(room.players).toHaveLength(2);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_JOINED',
+    ]);
+  });
+
+  it('rejects add robot for non-host player', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        createPlayer({
+          id: 'p-user',
+          socketId: 's-user',
+          name: 'User',
+          position: 1,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    await expect(
+      gameService.addRobotToRoom('ROOM01', 'p-user'),
+    ).rejects.toThrow('Only host can manage robots');
+  });
+
+  it('marks robot player as left when host removes it during waiting phase', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updatedRoom = await gameService.removeRobotFromRoom(
+      'ROOM01',
+      'p-host',
+      'p-robot',
+    );
+
+    const robot = updatedRoom.players.find((player) => player.id === 'p-robot');
+    expect(robot?.status).toBe('left');
+    expect(storageService.persistRoom).toHaveBeenCalled();
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'PLAYER_LEFT',
+    ]);
+  });
+
+  it('allows host to add robot between hands after result is shown', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 1200,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        createPlayer({
+          id: 'p-user',
+          socketId: 's-user',
+          name: 'User',
+          position: 1,
+          chips: 800,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+      currentHand: {
+        handNumber: 3,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: null,
+        pot: 0,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 20,
+        activePlayers: [],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {},
+        vpipPlayerIds: [],
+        lastResult: {
+          winners: [],
+          playerHands: [],
+          totalPot: 0,
+          payouts: [],
+          netByPlayerId: {},
+        },
+        startedAt: Date.now(),
+      },
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const { player } = await gameService.addRobotToRoom('ROOM01', 'p-host');
+
+    expect(player.isRobot).toBe(true);
+    expect(player.name).toContain('Robot');
+    expect(room.players).toHaveLength(3);
+  });
+
+  it('allows host to remove robot between hands after result is shown', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 1200,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 800,
+            totalBuyIn: 1000,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+      ],
+      currentHand: {
+        handNumber: 4,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: null,
+        pot: 0,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 20,
+        activePlayers: [],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {},
+        vpipPlayerIds: [],
+        lastResult: {
+          winners: [],
+          playerHands: [],
+          totalPot: 0,
+          payouts: [],
+          netByPlayerId: {},
+        },
+        startedAt: Date.now(),
+      },
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updatedRoom = await gameService.removeRobotFromRoom(
+      'ROOM01',
+      'p-host',
+      'p-robot',
+    );
+
+    expect(
+      updatedRoom.players.find((player) => player.id === 'p-robot')?.status,
+    ).toBe('left');
+  });
+
+  it('rejects robot changes during an active hand', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 1000,
+          totalBuyIn: 1000,
+          status: 'connected',
+        }),
+      ],
+      currentHand: {
+        handNumber: 5,
+        dealerPosition: 0,
+        smallBlindPosition: 0,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-host',
+        pot: 20,
+        communityCards: [],
+        bettingRound: 'PRE_FLOP',
+        currentBet: 20,
+        lastRaiseSize: 10,
+        activePlayers: ['p-host'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: { 'p-host': 20 },
+        vpipPlayerIds: ['p-host'],
+        startedAt: Date.now(),
+      },
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    await expect(
+      gameService.addRobotToRoom('ROOM01', 'p-host'),
+    ).rejects.toThrow(
+      'Robots can only be managed before game start or between hands',
+    );
+  });
 });

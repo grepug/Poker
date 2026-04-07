@@ -262,6 +262,13 @@ describe('EventsGateway membership mutation serialization', () => {
       handService,
       bettingService,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest
+          .fn()
+          .mockReturnValue('robot ai unavailable'),
+        decideAction: jest.fn(),
+      } as any,
       authService,
       storageService,
       chatStorageService,

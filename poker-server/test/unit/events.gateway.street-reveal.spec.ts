@@ -124,6 +124,13 @@ describe('EventsGateway reveal next street idempotency', () => {
         calculateMinRaise: jest.fn().mockReturnValue(10),
       } as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest
+          .fn()
+          .mockReturnValue('robot ai unavailable'),
+        decideAction: jest.fn(),
+      } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
       {
@@ -174,11 +181,12 @@ describe('EventsGateway reveal next street idempotency', () => {
     ]);
 
     expect(first).toEqual(expect.objectContaining({ success: true }));
-    expect(duplicate).toEqual(
-      expect.objectContaining({ success: true }),
-    );
+    expect(duplicate).toEqual(expect.objectContaining({ success: true }));
     expect(handService.advanceBettingRound).toHaveBeenCalledTimes(1);
-    expect(aliceClient.emit).not.toHaveBeenCalledWith('ERROR', expect.anything());
+    expect(aliceClient.emit).not.toHaveBeenCalledWith(
+      'ERROR',
+      expect.anything(),
+    );
     expect(bobClient.emit).not.toHaveBeenCalledWith('ERROR', expect.anything());
   });
 });

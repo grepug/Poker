@@ -22,6 +22,7 @@ import {
   HandResultsModal,
   NextHandActionArea,
   OperationActionBar,
+  ReadyActionArea,
   RankingsModal,
   RulesModal,
   SettingsModal,
@@ -1670,6 +1671,8 @@ const useGameRoomElement = () => {
     performAction,
     leaveRoom,
     updateRoomConfig,
+    addRobotPlayer,
+    removeRobotPlayer,
     chatMessages,
     chatUnreadCount,
     isChatPanelOpen,
@@ -1738,6 +1741,13 @@ const useGameRoomElement = () => {
   const tablePlayers = useMemo(
     () => room?.players.filter((entry) => entry.status !== "left") ?? [],
     [room?.players],
+  );
+  const robotPlayers = useMemo(
+    () =>
+      tablePlayers
+        .filter((entry) => Boolean(entry.isRobot))
+        .sort((left, right) => left.position - right.position),
+    [tablePlayers],
   );
   const readyEligiblePlayers = useMemo(
     () =>
@@ -1943,8 +1953,9 @@ const useGameRoomElement = () => {
     [currentReadyPhase, room?.readyPhase, room?.readyPlayerIds],
   );
   const hasReadiedCurrentPhase = Boolean(player?.id && readyPlayerIdSet.has(player.id));
-  const showPreGameReadyButton =
-    !isGameStarted && !isGameEnded && readyEligiblePlayers.length >= 2;
+  const isPreGamePhase = !isGameStarted && !isGameEnded;
+  const canReadyPreGame = isPreGamePhase && readyEligiblePlayers.length >= 2;
+  const showPreGameReadyArea = isPreGamePhase;
   const shouldShowSeatReadyOverlay =
     !isGameEnded && (!isGameStarted || isHandPausedForNextHand);
 
@@ -2080,6 +2091,10 @@ const useGameRoomElement = () => {
   const showShowdownDecisionArea = isShowdownDecisionStep;
   const canFoldMyHandAtShowdown = canShowMyHandAtShowdown && !isShowdownForcedRevealTurn;
   const showNextHandActionArea = canReadyNextHand;
+  const showReadyActionArea = showPreGameReadyArea || showNextHandActionArea;
+  const readyActionPhase = showNextHandActionArea ? "NEXT_HAND" : "START_GAME";
+  const canReadyInReadyActionArea =
+    readyActionPhase === "START_GAME" ? canReadyPreGame : canReadyNextHand;
   const showOperationBar =
     isRunCountDecisionStep || showShowdownDecisionArea || showNextStreetActionArea;
   const operationBarMode = isRunCountDecisionStep
@@ -2089,12 +2104,12 @@ const useGameRoomElement = () => {
     : showNextStreetActionArea
       ? "streetReveal"
       : null;
-  const showTurnActionDock = isYourTurn && !showOperationBar && !showNextHandActionArea;
+  const showTurnActionDock = isYourTurn && !showOperationBar && !showReadyActionArea;
   const shouldAnchorCardsFlyoutToBottomBar =
-    showOperationBar || showNextHandActionArea || (showTurnActionDock && !isDesktopSideDock);
+    showOperationBar || showReadyActionArea || (showTurnActionDock && !isDesktopSideDock);
   const activeBottomBarMode = showOperationBar
     ? "operation"
-    : showNextHandActionArea
+    : showReadyActionArea
       ? "nextHand"
       : showTurnActionDock
         ? "turn"
@@ -2162,10 +2177,14 @@ const useGameRoomElement = () => {
       return left.sourceOrder - right.sourceOrder;
     });
 
-    return rows.map(({ sourceOrder: _sourceOrder, ...entry }, idx) => ({
-      ...entry,
-      rankOrder: idx + 1,
-    }));
+    return rows.map((entry, idx) => {
+      const { sourceOrder, ...rest } = entry;
+      void sourceOrder;
+      return {
+        ...rest,
+        rankOrder: idx + 1,
+      };
+    });
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
 
   const handleReadyFromHandResultsModal = useCallback(() => {
@@ -3520,7 +3539,7 @@ const useGameRoomElement = () => {
   return (
     <TableShell
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
-      showDesktopOperationDock={(showOperationBar || showNextHandActionArea) && isDesktopSideDock}
+      showDesktopOperationDock={(showOperationBar || showReadyActionArea) && isDesktopSideDock}
       desktopBottomBarHeight={bottomBarHeight}
       isChatPanelOpen={isChatPanelOpen}
     >
@@ -3571,7 +3590,7 @@ const useGameRoomElement = () => {
               }
         }
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
-        showStartGameButton={showPreGameReadyButton}
+        showStartGameButton={false}
         onCopyInvite={handleCopyInviteLink}
         onLeave={handleRequestLeave}
         onOpenSettings={() => {
@@ -3803,6 +3822,35 @@ const useGameRoomElement = () => {
             onRevealNextStreet={revealNextStreet}
             onShowMyHand={showMyHand}
             onFoldMyHand={muckMyHand}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showPreGameReadyArea && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <ReadyActionArea
+            phase={readyActionPhase}
+            canReady={canReadyInReadyActionArea}
+            hasReadied={hasReadiedCurrentPhase}
+            canEndGame={canHostEndGame}
+            isHost={isHost}
+            robots={robotPlayers.map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              emoji: entry.emoji,
+            }))}
+            onReady={markReady}
+            onOpenEndGameConfirm={() => {
+              if (!canHostEndGame) return;
+              setShowEndGameConfirmModal(true);
+            }}
+            onAddRobot={() => addRobotPlayer()}
+            onRemoveRobot={(robotPlayerId) => removeRobotPlayer(robotPlayerId)}
             t={t}
           />
         </ChipComposerDock>

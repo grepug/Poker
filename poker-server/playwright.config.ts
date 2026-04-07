@@ -17,7 +17,8 @@ const BACKEND_TARGET = new URL(
 const FRONTEND_URL = FRONTEND_TARGET.origin;
 const BACKEND_URL = BACKEND_TARGET.origin;
 const FRONTEND_PORT =
-  FRONTEND_TARGET.port || (FRONTEND_TARGET.protocol === 'https:' ? '443' : '80');
+  FRONTEND_TARGET.port ||
+  (FRONTEND_TARGET.protocol === 'https:' ? '443' : '80');
 const BACKEND_PORT =
   BACKEND_TARGET.port || (BACKEND_TARGET.protocol === 'https:' ? '443' : '80');
 const E2E_DATA_DIR = `./.e2e-data/${BACKEND_PORT}`;
@@ -26,14 +27,50 @@ const FRONTEND_BIND_HOST =
   process.env.PW_FRONTEND_BIND_HOST ??
   FRONTEND_TARGET.hostname;
 const includeDebugProject = process.env.PW_INCLUDE_DEBUG_PROJECT === 'true';
+const liveRobotE2EEnabled = process.env.PW_LIVE_ROBOT_E2E === '1';
 
 const prepareFrontendCommand = `node ./test/e2e/scripts/prepare-frontend-dist.cjs ${BACKEND_URL}`;
+
+function definedEnv(
+  entries: Record<string, string | undefined>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(entries).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+}
+
+const backendEnv = {
+  PORT: BACKEND_PORT,
+  DATA_DIR: E2E_DATA_DIR,
+  CORS_ORIGIN: FRONTEND_URL,
+  CLIENT_URL: FRONTEND_URL,
+  TEST_MODE: 'true',
+  CHAT_RATE_LIMIT_COUNT: '500',
+  CHAT_RATE_LIMIT_WINDOW_MS: '10000',
+  CHAT_PAGE_SIZE: '20',
+  AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT: '1000',
+  AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS: '1000',
+  ...definedEnv({
+    AI_ROBOT_API_KEY: process.env.AI_ROBOT_API_KEY,
+    AI_ROBOT_BASE_URL: process.env.AI_ROBOT_BASE_URL,
+    AI_ROBOT_MODEL_ID: process.env.AI_ROBOT_MODEL_ID,
+    AI_ROBOT_API_MODE: process.env.AI_ROBOT_API_MODE,
+    AI_ROBOT_TEMPERATURE: process.env.AI_ROBOT_TEMPERATURE,
+    AI_ROBOT_MAX_AGENT_STEPS: process.env.AI_ROBOT_MAX_AGENT_STEPS,
+    AI_ROBOT_TOOL_RETRY_LIMIT: process.env.AI_ROBOT_TOOL_RETRY_LIMIT,
+    AI_ROBOT_ACTION_DELAY_MIN_MS: process.env.AI_ROBOT_ACTION_DELAY_MIN_MS,
+    AI_ROBOT_ACTION_DELAY_MAX_MS: process.env.AI_ROBOT_ACTION_DELAY_MAX_MS,
+  }),
+};
 
 const projects = [
   {
     name: 'comprehensive-e2e',
     testMatch: [
       'comprehensive-poker.spec.ts',
+      'robot-lobby-controls.spec.ts',
       'persistence-storage.spec.ts',
     ],
     use: {
@@ -50,6 +87,17 @@ if (includeDebugProject) {
     use: {
       ...devices['Desktop Chrome'],
       headless: false,
+    },
+  });
+}
+
+if (liveRobotE2EEnabled) {
+  projects.push({
+    name: 'live-robot-e2e',
+    testMatch: ['robot-live-turn.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      headless: true,
     },
   });
 }
@@ -89,18 +137,7 @@ export default defineConfig({
       url: BACKEND_URL,
       reuseExistingServer: false,
       timeout: 60000,
-      env: {
-        PORT: BACKEND_PORT,
-        DATA_DIR: E2E_DATA_DIR,
-        CORS_ORIGIN: FRONTEND_URL,
-        CLIENT_URL: FRONTEND_URL,
-        TEST_MODE: 'true',
-        CHAT_RATE_LIMIT_COUNT: '500',
-        CHAT_RATE_LIMIT_WINDOW_MS: '10000',
-        CHAT_PAGE_SIZE: '20',
-        AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT: '1000',
-        AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS: '1000',
-      },
+      env: backendEnv,
     },
   ],
 });

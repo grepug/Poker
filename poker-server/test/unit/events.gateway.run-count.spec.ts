@@ -179,6 +179,11 @@ describe('EventsGateway run-count decision flow', () => {
         isBettingRoundComplete: jest.fn(() => true),
       } as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
+      {
+        isConfigured: jest.fn().mockReturnValue(false),
+        getConfigurationError: jest.fn().mockReturnValue(null),
+        decideAction: jest.fn(),
+      } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
       {
