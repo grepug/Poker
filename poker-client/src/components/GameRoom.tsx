@@ -2096,6 +2096,12 @@ const useGameRoomElement = () => {
     }));
 
     rows.sort((left, right) => {
+      const leftSortBucket = left.isWinner ? 0 : left.cardsVisibility === "shown" ? 1 : 2;
+      const rightSortBucket = right.isWinner ? 0 : right.cardsVisibility === "shown" ? 1 : 2;
+      if (leftSortBucket !== rightSortBucket) {
+        return leftSortBucket - rightSortBucket;
+      }
+
       if (right.amountWon !== left.amountWon) {
         return right.amountWon - left.amountWon;
       }
@@ -2104,10 +2110,6 @@ const useGameRoomElement = () => {
       const rightNet = typeof right.netChange === "number" ? right.netChange : null;
       if (leftNet !== null && rightNet !== null && rightNet !== leftNet) {
         return rightNet - leftNet;
-      }
-
-      if (left.isWinner !== right.isWinner) {
-        return left.isWinner ? -1 : 1;
       }
 
       const leftSeatPosition =
@@ -2126,6 +2128,15 @@ const useGameRoomElement = () => {
       rankOrder: idx + 1,
     }));
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
+
+  const handleReadyFromHandResultsModal = useCallback(() => {
+    if (!canReadyNextHand || hasReadiedCurrentPhase) {
+      return;
+    }
+
+    markReady();
+    setShowHandResultsModal(false);
+  }, [canReadyNextHand, hasReadiedCurrentPhase, markReady]);
 
   const payoutBreakdownRows = useMemo(() => {
     if (!lastHandResult) return [];
@@ -3619,7 +3630,7 @@ const useGameRoomElement = () => {
                 canReadyNextHand={canReadyNextHand}
                 hasReadiedNextHand={hasReadiedCurrentPhase}
                 canEndGame={canHostEndGame}
-                onReadyNextHand={markReady}
+                onReadyNextHand={handleReadyFromHandResultsModal}
                 onOpenEndGameConfirm={() => {
                   if (!canHostEndGame) return;
                   setShowEndGameConfirmModal(true);

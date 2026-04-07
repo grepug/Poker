@@ -6204,7 +6204,24 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid$="-ready-overlay"]'),
       ).toHaveCount(0);
 
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+
       await alicePage.click('[data-testid="start-next-hand-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="next-hand-action-area"]'),
+      ).toBeVisible();
+
       await waitForHandStart(alicePage, 2);
 
       const secondHand = await getRoomSnapshot(alicePage);
@@ -8258,6 +8275,19 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         Bob: bobPage,
         Charlie: charliePage,
       };
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'clubs', rank: '2' }, // Alice
+        { suit: 'diamonds', rank: '7' }, // Alice
+        { suit: 'hearts', rank: '3' }, // Bob
+        { suit: 'spades', rank: '8' }, // Bob
+        { suit: 'spades', rank: 'A' }, // Charlie
+        { suit: 'hearts', rank: 'A' }, // Charlie
+        { suit: 'clubs', rank: 'K' }, // Flop 1
+        { suit: 'diamonds', rank: 'Q' }, // Flop 2
+        { suit: 'spades', rank: '9' }, // Flop 3
+        { suit: 'hearts', rank: '5' }, // Turn
+        { suit: 'diamonds', rank: '2' }, // River
+      ]);
 
       await setAllowPlayerStreetRevealAndWait(
         alicePage,
@@ -8303,17 +8333,21 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
         .map((entry: any) => entry.playerName)
         .sort();
       expect(shownNames).toEqual(['Alice', 'Charlie']);
+      expect(result.winners).toHaveLength(1);
+      expect(result.winners[0].playerName).toBe('Charlie');
 
-      const bobPlayerId = await alicePage.evaluate(() => {
+      const playerIdsByName = await alicePage.evaluate(() => {
         const room = (window as any).pokerDebug?.getRoom?.();
-        return (
-          room?.players?.find((player: any) => player.name === 'Bob')?.id ??
-          null
+        return Object.fromEntries(
+          (room?.players ?? []).map((player: any) => [player.name, player.id]),
         );
       });
-      if (!bobPlayerId) {
+      const bobPlayerId = playerIdsByName.Bob ?? null;
+      const alicePlayerId = playerIdsByName.Alice ?? null;
+      const charliePlayerId = playerIdsByName.Charlie ?? null;
+      if (!bobPlayerId || !alicePlayerId || !charliePlayerId) {
         throw new Error(
-          'Missing Bob player id for folded-player visibility assertion',
+          'Missing player ids for hand-results ordering assertion',
         );
       }
 
@@ -8333,6 +8367,19 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       await expect(
         alicePage.locator(`[data-testid="hand-result-row-${bobPlayerId}"]`),
       ).toHaveCount(1);
+      const rowPlayerIdsInOrder = await alicePage
+        .locator('[data-testid^="hand-result-row-"]')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => node.getAttribute('data-testid') ?? '')
+            .map((testId) => testId.replace('hand-result-row-', ''))
+            .filter(Boolean),
+        );
+      expect(rowPlayerIdsInOrder).toEqual([
+        charliePlayerId,
+        alicePlayerId,
+        bobPlayerId,
+      ]);
 
       await expect(
         alicePage.locator('[data-testid^="hand-result-card-"]'),
@@ -8352,6 +8399,7 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       await expect(
         charliePage.locator('[data-testid^="hand-result-hidden-card-"]'),
       ).toHaveCount(2);
+
     } finally {
       await teardownThreePlayerSession(session);
     }
