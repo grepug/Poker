@@ -1468,6 +1468,13 @@ const resolveSeatPrimaryActionLabel = ({
     };
   }
 
+  if (seatPlayer.lastAction === "check") {
+    return {
+      text: t("common.check"),
+      tone: "call",
+    };
+  }
+
   if (seatPlayer.currentBet <= 0) {
     return null;
   }
