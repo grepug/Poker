@@ -13,6 +13,11 @@ const meta = {
   args: {
     mode: "showdown",
     isAutomationMode: false,
+    runCountCanChoose: true,
+    runCountHasChosenTwice: false,
+    runCountReadyCount: 1,
+    runCountTotalCount: 2,
+    runCountWaitingPlayerNames: ["Maya"],
     isResultRevealStep: false,
     canRevealNextStreet: true,
     hasRevealedNextStreet: false,
@@ -23,6 +28,8 @@ const meta = {
     showdownIsDecisionTurn: true,
     showdownWaitingPlayerName: null,
     showdownIsForcedRevealTurn: false,
+    onChooseRunOnce: () => {},
+    onChooseRunTwice: () => {},
     onRevealNextStreet: () => {},
     onShowMyHand: () => {},
     onFoldMyHand: () => {},
@@ -41,6 +48,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Showdown: Story = {};
+
+export const RunCountDecision: Story = {
+  args: {
+    mode: "runCount",
+  },
+};
 
 export const RevealNextStreet: Story = {
   args: {

@@ -21,6 +21,8 @@ import type {
   HandResult,
   GameEndedData,
   ShowdownDecisionStateData,
+  RunCount,
+  RunCountDecisionStateData,
   ClientToServerEvents,
   ChatHistorySyncData,
   ChatMessage,
@@ -97,6 +99,7 @@ type DebugApi = {
   getLastPlayerActionEvent: () => PlayerActionFlashEvent | null;
   getRevealedHandPlayerIds: () => string[];
   getShowdownDecisionState: () => ShowdownDecisionStateData | null;
+  getRunCountDecisionState: () => RunCountDecisionStateData | null;
   getRevealedShowdownHandsByPlayerId: () => Record<
     string,
     RevealedShowdownHand
@@ -116,6 +119,7 @@ type DebugApi = {
   showMyHand: () => void;
   muckMyHand: () => void;
   revealNextStreet: () => void;
+  decideRunCount: (runCount: RunCount) => void;
   performAction: (
     action: PlayerAction,
     amount?: number,
@@ -155,6 +159,7 @@ interface GameContextType {
   lastPlayerActionEvent: PlayerActionFlashEvent | null;
   revealedHandPlayerIds: string[];
   showdownDecisionState: ShowdownDecisionStateData | null;
+  runCountDecisionState: RunCountDecisionStateData | null;
   revealedShowdownHandsByPlayerId: Record<string, RevealedShowdownHand>;
   nextStreetRevealState: NextStreetRevealState | null;
   isHost: boolean;
@@ -178,6 +183,7 @@ interface GameContextType {
   showMyHand: () => void;
   muckMyHand: () => void;
   revealNextStreet: () => void;
+  decideRunCount: (runCount: RunCount) => void;
   performAction: (
     action: PlayerAction,
     amount?: number,
@@ -350,6 +356,23 @@ function deriveShowdownDecisionStateFromRoom(
   };
 }
 
+function deriveRunCountDecisionStateFromRoom(
+  roomState: Room | null | undefined,
+): RunCountDecisionStateData | null {
+  const currentHand = roomState?.currentHand;
+  const decision = currentHand?.runCountDecision;
+  if (!currentHand || !decision || decision.eligiblePlayerIds.length === 0) {
+    return null;
+  }
+
+  return {
+    handNumber: currentHand.handNumber,
+    eligiblePlayerIds: decision.eligiblePlayerIds ?? [],
+    twiceAgreedPlayerIds: decision.twiceAgreedPlayerIds ?? [],
+    expiresAt: decision.expiresAt,
+  };
+}
+
 const CHAT_HISTORY_PAGE_LIMIT = 50;
 
 function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -390,6 +413,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   );
   const [showdownDecisionState, setShowdownDecisionState] =
     useState<ShowdownDecisionStateData | null>(null);
+  const [runCountDecisionState, setRunCountDecisionState] =
+    useState<RunCountDecisionStateData | null>(null);
   const [revealedShowdownHandsByPlayerId, setRevealedShowdownHandsByPlayerId] =
     useState<Record<string, RevealedShowdownHand>>({});
   const [nextStreetRevealState, setNextStreetRevealState] =
@@ -455,6 +480,9 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setShowdownDecisionState(
           deriveShowdownDecisionStateFromRoom(roomState),
         );
+        setRunCountDecisionState(
+          deriveRunCountDecisionStateFromRoom(roomState),
+        );
         setRevealedShowdownHandsByPlayerId({});
         setLastPlayerActionEvent(null);
         setFinalGameResult(null);
@@ -483,6 +511,9 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         );
         setShowdownDecisionState(
           deriveShowdownDecisionStateFromRoom(roomState),
+        );
+        setRunCountDecisionState(
+          deriveRunCountDecisionStateFromRoom(roomState),
         );
         setRevealedShowdownHandsByPlayerId({});
         setLastPlayerActionEvent(null);
@@ -516,6 +547,9 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setShowdownDecisionState(
           deriveShowdownDecisionStateFromRoom(roomState),
         );
+        setRunCountDecisionState(
+          deriveRunCountDecisionStateFromRoom(roomState),
+        );
         setRevealedShowdownHandsByPlayerId({});
         setLastPlayerActionEvent(null);
         const restoredFinalResult =
@@ -542,6 +576,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         reconnectInFlightRef.current = false;
         setIsRecoveringSession(false);
         setShowdownDecisionState(null);
+        setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         if (isInvalidReconnectReason(reason)) {
           clearStoredSession();
@@ -729,6 +764,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setLastPlayerActionEvent(null);
         setRevealedHandPlayerIds([]);
         setShowdownDecisionState(null);
+        setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         setNextStreetRevealState(null);
         // Avoid clearing cards for active seats to prevent out-of-order GAME_STARTED/YOUR_CARDS races.
@@ -781,6 +817,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       // Community cards dealt
       socket.on("COMMUNITY_CARDS_DEALT", (data) => {
         setNextStreetRevealState(null);
+        setRunCountDecisionState(null);
         setRoom((prev) => {
           if (!prev || !prev.currentHand) return prev;
           return {
@@ -789,6 +826,9 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
               ...prev.currentHand,
               communityCards: data.cards,
               bettingRound: data.round,
+              runCount: data.runCount ?? prev.currentHand.runCount,
+              runoutBoards: data.runoutBoards ?? prev.currentHand.runoutBoards,
+              runCountDecision: null,
             },
           } as Room;
         });
@@ -800,6 +840,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setLastHandResult(data.result);
         setRevealedHandPlayerIds(data.revealedPlayerIds ?? []);
         setShowdownDecisionState(null);
+        setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         setNextStreetRevealState(null);
         setYourCards((prevCards) => {
@@ -854,6 +895,27 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
 
       socket.on("SHOWDOWN_DECISION_STATE", (data) => {
         setShowdownDecisionState(data);
+      });
+
+      socket.on("RUN_COUNT_DECISION_STATE", (data) => {
+        setRunCountDecisionState(data);
+        setRoom((prev) => {
+          if (!prev || !prev.currentHand) return prev;
+          return {
+            ...prev,
+            currentHand: {
+              ...prev.currentHand,
+              currentPlayerTurn: null,
+              runCountDecision: data
+                ? {
+                    eligiblePlayerIds: data.eligiblePlayerIds ?? [],
+                    twiceAgreedPlayerIds: data.twiceAgreedPlayerIds ?? [],
+                    expiresAt: data.expiresAt,
+                  }
+                : null,
+            },
+          } as Room;
+        });
       });
 
       socket.on("PLAYER_HAND_REVEALED", (data) => {
@@ -912,6 +974,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setLastPlayerActionEvent(null);
         setRevealedHandPlayerIds([]);
         setShowdownDecisionState(null);
+        setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         setNextStreetRevealState(null);
         setYourCards(null);
@@ -959,6 +1022,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       socket.on("NEW_HAND_STARTING", () => {
         console.log("New hand starting, waiting for GAME_STARTED event...");
         setShowdownDecisionState(null);
+        setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         setNextStreetRevealState(null);
       });
@@ -1123,6 +1187,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           });
         } else {
           setNextStreetRevealState(null);
+          setRunCountDecisionState(null);
         }
         if (data.nextRound !== "SHOWDOWN") {
           setShowdownDecisionState(null);
@@ -1145,6 +1210,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
                   pendingStreetRevealRound: data.awaitingPlayerStreetReveal
                     ? data.nextRound
                     : null,
+                  runCountDecision: null,
                 }
               : prev.currentHand,
             players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
@@ -1206,6 +1272,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         socket.off("COMMUNITY_CARDS_DEALT");
         socket.off("HAND_COMPLETE");
         socket.off("SHOWDOWN_DECISION_STATE");
+        socket.off("RUN_COUNT_DECISION_STATE");
         socket.off("PLAYER_HAND_REVEALED");
         socket.off("PLAYER_HAND_MUCKED");
         socket.off("GAME_ENDED");
@@ -1262,6 +1329,10 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
               setRoom(null);
               setPlayer(null);
               setYourCards(null);
+              setRunCountDecisionState(null);
+              setShowdownDecisionState(null);
+              setRevealedShowdownHandsByPlayerId({});
+              setNextStreetRevealState(null);
             }
             setLastError(reason);
           }
@@ -1460,6 +1531,20 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     });
   }, [socket]);
 
+  const decideRunCount = useCallback(
+    (runCount: RunCount) => {
+      if (!socket) return;
+      setLastError(null);
+      socket.emit("SET_RUN_COUNT", { runCount }, (response) => {
+        console.log("Set run count response:", response);
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to set run count");
+        }
+      });
+    },
+    [socket],
+  );
+
   const leaveRoom = useCallback(() => {
     const currentRoomId = roomRef.current?.id;
     if (currentRoomId) {
@@ -1477,6 +1562,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setLastPlayerActionEvent(null);
     setRevealedHandPlayerIds([]);
     setShowdownDecisionState(null);
+    setRunCountDecisionState(null);
     setRevealedShowdownHandsByPlayerId({});
     setNextStreetRevealState(null);
     setIsRecoveringSession(false);
@@ -1668,6 +1754,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         getLastPlayerActionEvent: () => lastPlayerActionEvent,
         getRevealedHandPlayerIds: () => revealedHandPlayerIds,
         getShowdownDecisionState: () => showdownDecisionState,
+        getRunCountDecisionState: () => runCountDecisionState,
         getRevealedShowdownHandsByPlayerId: () =>
           revealedShowdownHandsByPlayerId,
         getNextStreetRevealState: () => nextStreetRevealState,
@@ -1681,6 +1768,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         showMyHand,
         muckMyHand,
         revealNextStreet,
+        decideRunCount,
         performAction,
         fold: () => performAction("fold"),
         check: () => performAction("check"),
@@ -1724,6 +1812,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     lastPlayerActionEvent,
     revealedHandPlayerIds,
     showdownDecisionState,
+    runCountDecisionState,
     revealedShowdownHandsByPlayerId,
     nextStreetRevealState,
     socket,
@@ -1737,6 +1826,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     showMyHand,
     muckMyHand,
     revealNextStreet,
+    decideRunCount,
     performAction,
     leaveRoom,
     requestRebuy,
@@ -1764,6 +1854,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         lastPlayerActionEvent,
         revealedHandPlayerIds,
         showdownDecisionState,
+        runCountDecisionState,
         revealedShowdownHandsByPlayerId,
         nextStreetRevealState,
         isHost,
@@ -1783,6 +1874,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         showMyHand,
         muckMyHand,
         revealNextStreet,
+        decideRunCount,
         performAction,
         leaveRoom,
         requestRebuy,
