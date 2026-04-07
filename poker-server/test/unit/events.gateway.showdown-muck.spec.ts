@@ -650,4 +650,79 @@ describe('EventsGateway showdown reveal/muck flow', () => {
       ),
     ).toBe(true);
   });
+
+  it('settles immediately when only robot seats would be required for reveal-result gating', async () => {
+    roomState.config.allowPlayerStreetReveal = false;
+    roomState.players = [
+      {
+        ...roomState.players[0],
+        status: 'connected',
+        connectionStatus: 'disconnected',
+        cards: null,
+        currentBet: 0,
+        lastAction: null,
+      },
+      {
+        ...roomState.players[1],
+        socketId: '',
+        isRobot: true,
+        status: 'connected',
+      },
+      {
+        id: 'p-robot-1',
+        socketId: '',
+        name: 'Robot 1',
+        isRobot: true,
+        chips: 980,
+        totalBuyIn: 1000,
+        handsPlayedCount: 0,
+        handsWonCount: 0,
+        vpipHandsCount: 0,
+        position: 2,
+        status: 'folded',
+        cards: [
+          { suit: 'clubs', rank: '3' },
+          { suit: 'diamonds', rank: 'T' },
+        ],
+        currentBet: 5,
+        lastAction: 'fold',
+        lastConnectedAt: Date.now(),
+      },
+    ];
+    roomState.currentHand.bettingRound = 'PRE_FLOP';
+    roomState.currentHand.currentPlayerTurn = null;
+    roomState.currentHand.activePlayers = ['p-bob'];
+    roomState.currentHand.pendingStreetRevealRound = null;
+    roomState.currentHand.nextStreetReadyPlayerIds = [];
+    roomState.currentHand.nextStreetRequiredPlayerIds = [];
+    roomState.currentHand.communityCards = [];
+    roomState.currentHand.dealtPlayerIds = ['p-robot-1', 'p-bob'];
+    roomState.currentHand.positionLabelsByPlayerId = {
+      'p-robot-1': 'BB',
+      'p-bob': 'BTN/SB',
+    };
+    roomState.currentHand.pot = 15;
+    roomState.currentHand.currentBet = 10;
+    roomState.currentHand.potContributions = {
+      'p-robot-1': 5,
+      'p-bob': 10,
+    };
+    handService.isHandComplete.mockReturnValue(true);
+
+    await (gateway as any).handleBettingRoundComplete(roomState);
+
+    expect(handService.determineWinner).toHaveBeenCalledTimes(1);
+    expect(roomState.currentHand.pendingStreetRevealRound).toBeNull();
+    expect(roomState.currentHand.nextStreetRequiredPlayerIds).toEqual([]);
+    expect(
+      roomEmitter.emit.mock.calls.some(
+        ([eventName]) => eventName === 'NEXT_STREET_REVEAL_STATE',
+      ),
+    ).toBe(false);
+    expect(
+      roomEmitter.emit.mock.calls.some(
+        ([eventName]) => eventName === 'HAND_COMPLETE',
+      ),
+    ).toBe(true);
+  });
 });
