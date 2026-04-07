@@ -7,6 +7,28 @@ export type BettingRound = "PRE_FLOP" | "FLOP" | "TURN" | "RIVER" | "SHOWDOWN";
 // Game state
 export type GameStateType = "WAITING" | "IN_PROGRESS" | "ENDED";
 
+type EarlyPositionOffsetLabel =
+  | "UTG+1"
+  | "UTG+2"
+  | "UTG+3"
+  | "UTG+4"
+  | "UTG+5"
+  | "UTG+6"
+  | "UTG+7";
+
+export type HandPositionLabel =
+  | "BTN"
+  | "BTN/SB"
+  | "BTN/BB"
+  | "SB"
+  | "BB"
+  | "UTG"
+  | EarlyPositionOffsetLabel
+  | "MP"
+  | "LJ"
+  | "HJ"
+  | "CO";
+
 // Side pot for all-in scenarios
 export interface SidePot {
   amount: number;
@@ -29,6 +51,7 @@ export interface Hand {
   roundActions: Record<string, boolean>; // Track if player acted this round
   sidePots: SidePot[];
   potContributions: Record<string, number>; // Total chips each player put into the pot this hand
+  positionLabelsByPlayerId?: Record<string, HandPositionLabel>; // Runtime-only: current-hand position badges for dealt-in seats
   vpipPlayerIds?: string[]; // Runtime-only: players who voluntarily entered the pot pre-flop
   lastResult?: HandResult | null; // Runtime-only: final hand result for paused hand state
   revealedPlayerIds?: string[]; // Runtime-only: players who revealed their hand to the table
@@ -41,6 +64,7 @@ export interface Hand {
   showdownForcedRevealPlayerIds?: string[]; // Runtime-only: players forced to reveal (e.g. all-in)
   showdownLastAggressorPlayerId?: string | null; // Runtime-only: last aggressor during river action
   dealtPlayerIds?: string[]; // Runtime-only: players who were dealt into this hand
+  settledPlayerCardsByPlayerId?: Record<string, Card[]>; // Runtime-only: server-only cards retained for post-hand reveal actions
   startedAt: number;
   minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
 }
@@ -62,7 +86,7 @@ export interface HandResult {
   winners: Array<{
     playerId: string;
     playerName: string;
-    hand: HandEvaluation;
+    hand: HandEvaluation | null;
     amountWon: number;
   }>;
   playerHands: Array<{

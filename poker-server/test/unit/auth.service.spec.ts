@@ -47,18 +47,18 @@ describe('AuthService', () => {
 
     authStorageService = {
       getUsers: jest.fn(async () => clone(users)),
-      saveUsers: jest.fn(async (nextUsers) => {
+      replaceUsers: jest.fn(async (nextUsers) => {
         users = clone(nextUsers);
       }),
       getSessions: jest.fn(async () => clone(sessions)),
-      saveSessions: jest.fn(async (nextSessions) => {
+      replaceSessions: jest.fn(async (nextSessions) => {
         sessions = clone(nextSessions);
       }),
     };
 
     storageService = {
       getRoom: jest.fn(),
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(async () => []),
       roomExists: jest.fn(),
@@ -241,7 +241,7 @@ describe('AuthService', () => {
     });
 
     expect(users[0].passkeys[0].counter).toBe(10);
-    expect(authStorageService.saveUsers).toHaveBeenCalledTimes(1);
+    expect(authStorageService.replaceUsers).toHaveBeenCalledTimes(1);
   });
 
   it('returns current session and invalidates it on logout', async () => {
@@ -352,9 +352,9 @@ describe('AuthService', () => {
 
     expect(updated.displayName).toBe('new-name');
     expect(updated.avatarEmoji).toBe('😎');
-    expect(storageService.saveRoom).toHaveBeenCalledTimes(1);
+    expect(storageService.persistRoom).toHaveBeenCalledTimes(1);
 
-    const savedRoom = storageService.saveRoom.mock.calls[0][0] as any;
+    const savedRoom = storageService.persistRoom.mock.calls[0][0] as any;
     expect(savedRoom.players[0].name).toBe('new-name');
     expect(savedRoom.players[0].emoji).toBe('😎');
   });
@@ -423,7 +423,7 @@ describe('AuthService', () => {
     storageService.getAllRooms.mockResolvedValue(
       [clone(firstRoom), clone(secondRoom)] as any,
     );
-    storageService.saveRoom
+    storageService.persistRoom
       .mockResolvedValueOnce(undefined as any)
       .mockRejectedValueOnce(new Error('failed to persist room'));
 
@@ -436,7 +436,7 @@ describe('AuthService', () => {
         avatarEmoji: '😎',
       }),
     ).rejects.toThrow('failed to persist room');
-    expect(storageService.saveRoom).toHaveBeenCalledTimes(2);
+    expect(storageService.persistRoom).toHaveBeenCalledTimes(2);
     expect(emitSpy).not.toHaveBeenCalled();
   });
 

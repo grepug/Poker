@@ -1,96 +1,14 @@
 import { test, expect, Page } from '@playwright/test';
+import {
+  authenticateTestUser,
+  waitForPokerDebug,
+} from './helpers/persistence-e2e.helpers';
 
-const FRONTEND_URL =
-  process.env.PW_FRONTEND_URL ??
-  `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.PW_FRONTEND_PORT ?? '5174'}`;
-const BACKEND_URL =
-  process.env.PW_BACKEND_URL ??
-  `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.PW_BACKEND_PORT ?? '3001'}`;
-const DEFAULT_TEST_PASSWORD = 'test1234';
 const liveRobotConfigured = Boolean(
   process.env.AI_ROBOT_API_KEY?.trim() &&
     process.env.AI_ROBOT_BASE_URL?.trim() &&
     process.env.AI_ROBOT_MODEL_ID?.trim(),
 );
-
-async function waitForPokerDebug(page: Page) {
-  await page.waitForFunction(() => window.pokerDebug !== undefined, {
-    timeout: 5000,
-  });
-}
-
-async function authenticateTestUser(
-  page: Page,
-  accountId: string,
-  profile: { displayName: string; avatarEmoji?: string },
-) {
-  await page.goto(FRONTEND_URL);
-
-  const avatarEmoji = profile.avatarEmoji ?? '🙂';
-  await page.evaluate(
-    async ({ backendOrigin, loginAccountId, password, displayName, avatar }) => {
-      const loginResponse = await fetch(`${backendOrigin}/api/auth/password/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: loginAccountId,
-          password,
-        }),
-      });
-
-      const loginPayload = (await loginResponse.json()) as {
-        sessionToken?: string;
-        message?: string;
-        error?: string;
-      };
-      if (!loginResponse.ok || !loginPayload.sessionToken) {
-        throw new Error(
-          loginPayload.message ||
-            loginPayload.error ||
-            `login failed (${loginResponse.status})`,
-        );
-      }
-
-      window.localStorage.setItem('poker.authToken', loginPayload.sessionToken);
-
-      const profileResponse = await fetch(`${backendOrigin}/api/auth/me/profile`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${loginPayload.sessionToken}`,
-        },
-        body: JSON.stringify({
-          displayName,
-          avatarEmoji: avatar,
-        }),
-      });
-      if (!profileResponse.ok) {
-        const profilePayload = (await profileResponse.json()) as {
-          message?: string;
-          error?: string;
-        };
-        throw new Error(
-          profilePayload.message ||
-            profilePayload.error ||
-            `profile update failed (${profileResponse.status})`,
-        );
-      }
-    },
-    {
-      backendOrigin: BACKEND_URL,
-      loginAccountId: accountId,
-      password: DEFAULT_TEST_PASSWORD,
-      displayName: profile.displayName,
-      avatar: avatarEmoji,
-    },
-  );
-
-  await page.goto(FRONTEND_URL);
-  await page.waitForSelector('[data-testid="connection-status"]');
-  await expect(page.locator('[data-testid="connection-status"]')).toContainText(
-    'Connected',
-  );
-}
 
 async function createRoomViaSocket(page: Page, playerName: string) {
   await waitForPokerDebug(page);

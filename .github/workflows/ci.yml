@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - codex/staging
+      - release
 
 concurrency:
   group: ci-${{ github.ref }}

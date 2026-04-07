@@ -1,7 +1,4 @@
-import {
-  ForbiddenException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from '../../src/auth/auth.controller';
 
 describe('AuthController', () => {
@@ -20,7 +17,9 @@ describe('AuthController', () => {
 
   beforeEach(() => {
     authService = {
-      getAuthModes: jest.fn().mockReturnValue({ passkey: true, password: true }),
+      getAuthModes: jest
+        .fn()
+        .mockReturnValue({ passkey: true, password: true }),
       startPasskeyRegistration: jest.fn(),
       finishPasskeyRegistration: jest.fn(),
       startPasskeyLogin: jest.fn(),
@@ -52,12 +51,18 @@ describe('AuthController', () => {
   it('forwards password login with rate limit key', async () => {
     authService.loginWithPassword.mockResolvedValue({
       sessionToken: 'token',
+      sessionExpiresAt: Date.now() + 60_000,
       user: { id: 'u-1' },
     });
+    const response = {
+      cookie: jest.fn(),
+    };
 
     await controller.loginWithPassword(
       { accountId: 'test1', password: 'test1234' },
       '10.0.0.1',
+      { protocol: 'http', headers: {} } as any,
+      response as any,
     );
 
     expect(authService.loginWithPassword).toHaveBeenCalledWith({
@@ -65,23 +70,39 @@ describe('AuthController', () => {
       password: 'test1234',
       rateLimitKey: '10.0.0.1',
     });
+    expect(response.cookie).toHaveBeenCalledWith(
+      expect.any(String),
+      'token',
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      }),
+    );
   });
 
   it('rejects password login when mode is disabled', async () => {
-    authService.getAuthModes.mockReturnValue({ passkey: true, password: false });
+    authService.getAuthModes.mockReturnValue({
+      passkey: true,
+      password: false,
+    });
+    const response = {
+      cookie: jest.fn(),
+    };
 
     await expect(
       controller.loginWithPassword(
         { accountId: 'test1', password: 'test1234' },
         '10.0.0.1',
+        { protocol: 'http', headers: {} } as any,
+        response as any,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('rejects getMe when authorization header is missing', async () => {
-    await expect(controller.getMe(undefined)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      controller.getMe({ headers: {} } as any, undefined),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('returns current session payload for valid bearer token', async () => {
@@ -90,7 +111,10 @@ describe('AuthController', () => {
       sessionExpiresAt: Date.now() + 60_000,
     });
 
-    const result = await controller.getMe('Bearer token-123');
+    const result = await controller.getMe(
+      { headers: {} } as any,
+      'Bearer token-123',
+    );
 
     expect(authService.getCurrentSession).toHaveBeenCalledWith('token-123');
     expect(result).toEqual(
@@ -101,6 +125,20 @@ describe('AuthController', () => {
     );
   });
 
+  it('reads session token from auth cookie when bearer header is absent', async () => {
+    authService.getCurrentSession.mockResolvedValue({
+      user: { id: 'u-1', displayName: 'Alice' },
+      sessionExpiresAt: Date.now() + 60_000,
+    });
+
+    await controller.getMe(
+      { headers: { cookie: 'poker_session=cookie-token' } } as any,
+      undefined,
+    );
+
+    expect(authService.getCurrentSession).toHaveBeenCalledWith('cookie-token');
+  });
+
   it('forwards token and profile payload to updateProfileByToken', async () => {
     authService.updateProfileByToken.mockResolvedValue({
       id: 'u-1',
@@ -108,7 +146,7 @@ describe('AuthController', () => {
       avatarEmoji: '🐻',
     });
 
-    await controller.updateProfile('Bearer abc', {
+    await controller.updateProfile({ headers: {} } as any, 'Bearer abc', {
       displayName: 'Bob',
       avatarEmoji: '🐻',
     });
@@ -121,8 +159,40 @@ describe('AuthController', () => {
   });
 
   it('forwards logout with extracted bearer token', async () => {
-    await controller.logout('Bearer token-logout');
+    const response = {
+      clearCookie: jest.fn(),
+    };
+
+    await controller.logout(
+      { protocol: 'http', headers: {} } as any,
+      response as any,
+      'Bearer token-logout',
+    );
 
     expect(authService.logout).toHaveBeenCalledWith('token-logout');
+    expect(response.clearCookie).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      }),
+    );
+  });
+
+  it('allows logout with only auth cookie present', async () => {
+    const response = {
+      clearCookie: jest.fn(),
+    };
+
+    await controller.logout(
+      {
+        protocol: 'http',
+        headers: { cookie: 'poker_session=cookie-token' },
+      } as any,
+      response as any,
+      undefined,
+    );
+
+    expect(authService.logout).toHaveBeenCalledWith('cookie-token');
   });
 });

@@ -113,5 +113,5 @@ When manually validating any frontend/backend change in browser:
 ## Default Delivery Workflow
 
 - Unless the user explicitly asks otherwise, continue executing tasks end-to-end until the work is ready to be submitted as a PR; avoid pausing for intermediate check-ins/questions.
-- Default PR base branch is `codex/staging`.
+- Default PR base branch is `main`.
 - Before creating a PR, first pull the latest target/base branch and check for conflicts. If conflicts exist, resolve them before opening the PR.

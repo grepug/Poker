@@ -94,7 +94,7 @@ describe('EventsGateway reveal next street idempotency', () => {
         }
         return deepClone(roomState);
       }),
-      saveRoom: jest.fn(async (room: any) => {
+      persistRoom: jest.fn(async (room: any) => {
         roomState = deepClone(room);
       }),
       deleteRoom: jest.fn(),
@@ -107,7 +107,7 @@ describe('EventsGateway reveal next street idempotency', () => {
         room.currentHand.bettingRound = 'FLOP';
         room.currentHand.currentPlayerTurn = 'p-bob';
         room.lastActivityAt = Date.now();
-        await storageService.saveRoom(room);
+        await storageService.persistRoom(room);
         return 'FLOP';
       }),
       determineWinner: jest.fn(),

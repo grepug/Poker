@@ -1,33 +1,33 @@
-import { Room } from 'poker-types';
+import { Room, RoomPersistedWrite } from 'poker-types';
 
 /**
- * Abstract storage interface for room persistence
- * Allows swapping implementations (JSON, Database, etc.) without changing game logic
+ * Room persistence boundary used by game/auth/chat flows.
+ * Implementations may be file-backed or database-backed as long as they
+ * preserve the same room projection and canonical room-event write contract.
  */
 export interface IStorageService {
   /**
-   * Save a room to storage
+   * Persist the canonical room/game history plus the latest bounded snapshot.
    */
-  saveRoom(room: Room): Promise<void>;
+  persistRoom(room: Room, write?: RoomPersistedWrite): Promise<void>;
 
   /**
-   * Retrieve a room by ID
-   * Returns null if room doesn't exist
+   * Retrieve the latest room projection by ID.
    */
   getRoom(roomId: string): Promise<Room | null>;
 
   /**
-   * Delete a room from storage
+   * Delete a room and its persisted history.
    */
   deleteRoom(roomId: string): Promise<void>;
 
   /**
-   * Get all rooms
+   * Get the latest bounded room projections.
    */
   getAllRooms(): Promise<Room[]>;
 
   /**
-   * Check if a room exists
+   * Check if a room exists in persisted storage.
    */
   roomExists(roomId: string): Promise<boolean>;
 }

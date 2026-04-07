@@ -36,6 +36,7 @@ const useHomeElement = ({
   const [playerName, setPlayerName] = useState(() => user?.displayName ?? "");
   const [playerEmoji, setPlayerEmoji] = useState(() => user?.avatarEmoji ?? getRandomPlayerEmoji());
   const [useShortDeckRules, setUseShortDeckRules] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(10);
   const [isEmojiPopoverOpen, setIsEmojiPopoverOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
@@ -107,6 +108,14 @@ const useHomeElement = ({
     clearFeedback();
   };
 
+  const handleLogout = () => {
+    void logout()
+      .catch(() => undefined)
+      .finally(() => {
+        navigate("/auth", { replace: true });
+      });
+  };
+
   const handleCreateRoom = () => {
     if (isRecoveringSession) {
       return;
@@ -124,7 +133,7 @@ const useHomeElement = ({
         if (user && (trimmedName !== user.displayName || playerEmoji !== user.avatarEmoji)) {
           await updateProfile(trimmedName, playerEmoji);
         }
-        createRoom(undefined, undefined, { useShortDeckRules });
+        createRoom(undefined, undefined, { useShortDeckRules, maxPlayers });
       } catch (error) {
         setFeedback(error instanceof Error ? error.message : t("home.nameRequired"));
       }
@@ -177,10 +186,7 @@ const useHomeElement = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                void logout();
-                navigate("/auth", { replace: true });
-              }}
+              onClick={handleLogout}
               className="rounded-lg border border-rose-500/60 bg-rose-900/35 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-800/45"
             >
               {t("home.logout")}
@@ -198,6 +204,7 @@ const useHomeElement = ({
             feedback={feedback}
             lastError={lastError}
             useShortDeckRules={useShortDeckRules}
+            maxPlayers={maxPlayers}
             emojiOptions={PLAYER_EMOJI_OPTIONS}
             emojiPickerRef={emojiPickerRef}
             t={t}
@@ -210,6 +217,10 @@ const useHomeElement = ({
             onEmojiPick={handleEmojiPick}
             onUseShortDeckRulesChange={(enabled) => {
               setUseShortDeckRules(enabled);
+              clearFeedback();
+            }}
+            onMaxPlayersChange={(value) => {
+              setMaxPlayers(value);
               clearFeedback();
             }}
             onCreateRoom={handleCreateRoom}

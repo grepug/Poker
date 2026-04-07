@@ -9,8 +9,35 @@ import {
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 type ServerPlayer = Player & { userId?: string };
+
+const MIN_ROOM_PLAYERS = 2;
+const MAX_ROOM_PLAYERS = 15;
+
+const normalizeMaxPlayers = (maxPlayers: unknown): number => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (
+    !Number.isFinite(parsedMaxPlayers) ||
+    !Number.isInteger(parsedMaxPlayers) ||
+    parsedMaxPlayers < MIN_ROOM_PLAYERS ||
+    parsedMaxPlayers > MAX_ROOM_PLAYERS
+  ) {
+    throw new Error(
+      `maxPlayers must be an integer between ${MIN_ROOM_PLAYERS} and ${MAX_ROOM_PLAYERS}`,
+    );
+  }
+
+  return parsedMaxPlayers;
+};
+
+const isDisconnected = (player: Player): boolean =>
+  player.connectionStatus === 'disconnected' ||
+  player.status === 'disconnected';
+
+const resolveReconnectStatus = (status: PlayerStatus): PlayerStatus =>
+  status === 'disconnected' ? 'connected' : status;
 
 @Injectable()
 export class GameService {
@@ -43,6 +70,10 @@ export class GameService {
       reconnectGracePeriod: 120000,
       allowPlayerStreetReveal: process.env.TEST_MODE ? false : true,
     };
+    const normalizedConfig =
+      config && Object.prototype.hasOwnProperty.call(config, 'maxPlayers')
+        ? { ...config, maxPlayers: normalizeMaxPlayers(config.maxPlayers) }
+        : config;
 
     const host: ServerPlayer = {
       id: hostId,
@@ -58,6 +89,7 @@ export class GameService {
       vpipHandsCount: 0,
       position: 0,
       status: 'waiting' as PlayerStatus,
+      connectionStatus: 'connected',
       cards: null,
       currentBet: 0,
       lastAction: null,
@@ -67,7 +99,7 @@ export class GameService {
     const room: Room = {
       id: roomId,
       hostId,
-      config: { ...defaultConfig, ...config },
+      config: { ...defaultConfig, ...normalizedConfig },
       players: [host],
       gameState: 'WAITING',
       currentHand: null,
@@ -77,7 +109,21 @@ export class GameService {
       lastActivityAt: Date.now(),
     };
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'ROOM_CREATED',
+          actor: { source: 'ROOM_SERVICE', playerId: hostId, playerName: hostName, userId: hostUserId },
+          payload: {
+            hostId,
+            hostName,
+            config: room.config,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Room ${roomId} created by ${hostName}`);
 
     return room;
@@ -116,10 +162,7 @@ export class GameService {
       existingPlayerByUserId ??
       playersWithUserId.find((p) => p.name === normalizedPlayerName);
     if (existingPlayer) {
-      if (
-        existingPlayer.status !== 'disconnected' &&
-        existingPlayer.status !== 'left'
-      ) {
+      if (!isDisconnected(existingPlayer) && existingPlayer.status !== 'left') {
         throw new Error('Name already taken');
       }
 
@@ -149,7 +192,10 @@ export class GameService {
 
       existingPlayer.socketId = socketId;
       existingPlayer.status =
-        priorStatus === 'left' ? ('waiting' as PlayerStatus) : 'connected';
+        priorStatus === 'left'
+          ? ('waiting' as PlayerStatus)
+          : resolveReconnectStatus(priorStatus);
+      existingPlayer.connectionStatus = 'connected';
       existingPlayer.lastConnectedAt = Date.now();
       if (priorStatus === 'left') {
         existingPlayer.cards = null;
@@ -165,7 +211,27 @@ export class GameService {
       existingPlayer.name = normalizedPlayerName;
       room.lastActivityAt = Date.now();
 
-      await this.storageService.saveRoom(room);
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'PLAYER_REJOINED',
+            actor: {
+              source: 'ROOM_SERVICE',
+              playerId: existingPlayer.id,
+              playerName: existingPlayer.name,
+              userId,
+            },
+            payload: {
+              playerId: existingPlayer.id,
+              playerName: existingPlayer.name,
+              priorStatus,
+              position: existingPlayer.position,
+            },
+          }),
+        ),
+      );
       this.logger.log(
         `Player ${normalizedPlayerName} reclaimed seat in room ${roomId}`,
       );
@@ -202,6 +268,7 @@ export class GameService {
       vpipHandsCount: 0,
       position,
       status: 'waiting' as PlayerStatus,
+      connectionStatus: 'connected',
       cards: null,
       currentBet: 0,
       lastAction: null,
@@ -211,7 +278,27 @@ export class GameService {
     room.players.push(player);
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_JOINED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId,
+          },
+          payload: {
+            playerId: player.id,
+            playerName: player.name,
+            position: player.position,
+            joinedDuringActiveGame: joinsDuringActiveGame,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${normalizedPlayerName} joined room ${roomId}`);
 
     return { room, player, rejoined: false };
@@ -278,7 +365,26 @@ export class GameService {
 
     room.players.push(robotPlayer);
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_JOINED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: robotPlayer.id,
+            playerName: robotPlayer.name,
+          },
+          payload: {
+            playerId: robotPlayer.id,
+            playerName: robotPlayer.name,
+            position: robotPlayer.position,
+            joinedDuringActiveGame: joinsDuringInProgressGame,
+          },
+        }),
+      ),
+    );
 
     this.logger.log(`Robot ${robotPlayer.name} added to room ${room.id}`);
     return { room, player: robotPlayer };
@@ -343,6 +449,7 @@ export class GameService {
       return room;
     }
     player.status = 'left';
+    player.connectionStatus = 'connected';
     player.socketId = '';
     player.cards = null;
     player.currentBet = 0;
@@ -375,6 +482,7 @@ export class GameService {
       return null;
     }
 
+    const previousHostId = room.hostId;
     const seatedHumanPlayers = this.getSeatedHumanPlayers(room);
     if (seatedHumanPlayers.length === 0) {
       await this.storageService.deleteRoom(roomId);
@@ -389,7 +497,35 @@ export class GameService {
       this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
     }
 
-    await this.storageService.saveRoom(room);
+    const events = [
+      roomEvent({
+        roomId,
+        type: 'PLAYER_LEFT',
+        actor: {
+          source: 'ROOM_SERVICE',
+          playerId: player.id,
+          playerName: player.name,
+          userId: (player as ServerPlayer).userId,
+        },
+        payload: {
+          playerId: player.id,
+          playerName: player.name,
+        },
+      }),
+    ];
+    if (room.hostId !== previousHostId) {
+      events.push(
+        roomEvent({
+          roomId,
+          type: 'HOST_CHANGED',
+          actor: { source: 'ROOM_SERVICE' },
+          payload: {
+            hostId: room.hostId,
+          },
+        }),
+      );
+    }
+    await this.storageService.persistRoom(room, roomWrite(...events));
     return room;
   }
 
@@ -424,11 +560,30 @@ export class GameService {
     }
 
     player.socketId = newSocketId;
-    player.status = 'connected';
+    player.status = resolveReconnectStatus(player.status);
+    player.connectionStatus = 'connected';
     player.lastConnectedAt = Date.now();
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_REJOINED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId,
+          },
+          payload: {
+            playerId: player.id,
+            socketId: newSocketId,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${player.name} reconnected in room ${roomId}`);
 
     return player;
@@ -455,10 +610,28 @@ export class GameService {
       return room;
     }
 
-    player.status = 'disconnected';
+    player.connectionStatus = 'disconnected';
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_DISCONNECTED',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId: (player as ServerPlayer).userId,
+          },
+          payload: {
+            playerId: player.id,
+            playerName: player.name,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Player ${player.name} disconnected in room ${roomId}`);
 
     return room;
@@ -487,7 +660,27 @@ export class GameService {
     player.totalBuyIn += amount;
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_REBOUGHT',
+          actor: {
+            source: 'ROOM_SERVICE',
+            playerId: player.id,
+            playerName: player.name,
+            userId: (player as ServerPlayer).userId,
+          },
+          payload: {
+            playerId: player.id,
+            amount,
+            chips: player.chips,
+            totalBuyIn: player.totalBuyIn,
+          },
+        }),
+      ),
+    );
     this.logger.log(
       `Player ${player.name} bought ${amount} chips in room ${roomId}`,
     );
@@ -583,7 +776,20 @@ export class GameService {
     room.hostId = newHostId;
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'HOST_CHANGED',
+          actor: { source: 'ROOM_SERVICE' },
+          payload: {
+            hostId: newHostId,
+            hostName: newHost.name,
+          },
+        }),
+      ),
+    );
     this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
 
     return room;

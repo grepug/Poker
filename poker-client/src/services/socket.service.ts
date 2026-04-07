@@ -88,7 +88,10 @@ export const resolveServerResourceUrl = (
   resourcePath: string,
   explicitUrl?: string,
 ): string => {
-  if (resourcePath.startsWith("http://") || resourcePath.startsWith("https://")) {
+  if (
+    resourcePath.startsWith("http://") ||
+    resourcePath.startsWith("https://")
+  ) {
     return resourcePath;
   }
 
@@ -103,7 +106,9 @@ export const resolveServerResourceUrl = (
 
   if (baseUrl.startsWith("/")) {
     const normalizedBase = baseUrl.replace(/\/+$/, "");
-    return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
+    return normalizedBase
+      ? `${normalizedBase}${normalizedPath}`
+      : normalizedPath;
   }
 
   try {
@@ -118,28 +123,21 @@ export const resolveServerResourceUrl = (
 class SocketService {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
     null;
-  private currentToken: string | null = null;
 
-  connect(url?: string, token?: string | null) {
-    const nextToken = token || null;
+  connect(url?: string) {
     if (this.socket) {
-      if (this.currentToken === nextToken) {
-        if (!this.socket.connected) {
-          this.socket.auth = nextToken ? { token: nextToken } : {};
-          this.socket.connect();
-        }
-        return this.socket;
+      if (!this.socket.connected) {
+        this.socket.connect();
       }
-      this.disconnect();
+      return this.socket;
     }
 
     const socketUrl = resolveSocketUrl(url);
-    this.currentToken = nextToken;
 
     this.socket = io(socketUrl, {
       transports: ["websocket"],
       autoConnect: true,
-      auth: nextToken ? { token: nextToken } : {},
+      withCredentials: true,
     });
 
     this.socket.on("connect", () => {
@@ -157,7 +155,6 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
-      this.currentToken = null;
     }
   }
 

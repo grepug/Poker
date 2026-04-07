@@ -18,7 +18,9 @@ import {
   EndGameConfirmModal,
   FinalSummaryModal,
   HandResultsContent,
-  HandResultsPanel,
+  LeaveRoomConfirmModal,
+  HandResultsModal,
+  NextHandActionArea,
   OperationActionBar,
   ReadyActionArea,
   RankingsModal,
@@ -31,6 +33,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import type { SeatBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -152,6 +155,12 @@ type SeatActionLabel = {
   text: string;
   tone: "blind" | "aggressive" | "call" | "allin" | "pending";
 };
+
+const getConnectionStatus = (
+  seatPlayer: Pick<Player, "status" | "connectionStatus">,
+) =>
+  seatPlayer.connectionStatus ??
+  (seatPlayer.status === "disconnected" ? "disconnected" : "connected");
 
 type RulesCopy = {
   buttonLabel: string;
@@ -1325,7 +1334,19 @@ const getSeatSlotWidth = ({
   if (occupiedSeats <= 4) return "clamp(4.36rem, 16.8vw, 5.7rem)";
   if (occupiedSeats <= 6) return "clamp(4.08rem, 14.8vw, 5.5rem)";
   if (occupiedSeats <= 8) return "clamp(3.72rem, 13.5vw, 5.08rem)";
-  return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 10) return "clamp(3.46rem, 12.4vw, 4.72rem)";
+  if (occupiedSeats <= 12) return "clamp(3.18rem, 11.2vw, 4.3rem)";
+  if (occupiedSeats <= 16) return "clamp(2.86rem, 9.8vw, 3.86rem)";
+  return "clamp(2.58rem, 8.5vw, 3.38rem)";
+};
+
+const normalizeOrbitCapacity = (maxPlayers: number) => {
+  const parsedMaxPlayers = Number(maxPlayers);
+  if (!Number.isFinite(parsedMaxPlayers)) {
+    return 6;
+  }
+
+  return Math.min(15, Math.max(6, Math.floor(parsedMaxPlayers)));
 };
 
 const getSeatDensityClass = ({
@@ -1374,6 +1395,34 @@ const getSeatRoleIcon = (
   return null;
 };
 
+const buildSeatBadge = (
+  roleIcon: ReturnType<typeof getSeatRoleIcon>,
+  seatPositionLabel: string | null,
+): SeatBadge | null => {
+  if (roleIcon && seatPositionLabel) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (seatPositionLabel) {
+    return {
+      tone: "position",
+      text: seatPositionLabel,
+    };
+  }
+
+  if (roleIcon) {
+    return {
+      tone: roleIcon === "dealer" ? "dealer" : "small-blind",
+      text: roleIcon === "dealer" ? "D" : "SB",
+    };
+  }
+
+  return null;
+};
+
 const resolveSeatMainState = ({
   isCurrentTurnSeat,
   isDisconnected,
@@ -1388,25 +1437,27 @@ const resolveSeatMainState = ({
   isWaiting: boolean;
 }): SeatMainState => {
   if (isCurrentTurnSeat) return "turn";
-  if (isDisconnected) return "disconnected";
   if (isAllIn) return "all-in";
   if (isFolded) return "folded";
+  if (isDisconnected) return "disconnected";
   if (isWaiting) return "waiting";
   return "default";
 };
 
 const resolveSeatPrimaryActionLabel = ({
   seatPlayer,
+  isDisconnected,
   isForcedBlind,
   latestSeatActionEvent,
   t,
 }: {
   seatPlayer: Player;
+  isDisconnected: boolean;
   isForcedBlind: boolean;
   latestSeatActionEvent: PlayerActionFlashEvent | null;
   t: Translate;
 }): SeatActionLabel | null => {
-  if (seatPlayer.status === "folded" || seatPlayer.status === "disconnected") {
+  if (seatPlayer.status === "folded" || isDisconnected) {
     return null;
   }
 
@@ -1489,10 +1540,12 @@ const resolveSeatPrimaryActionLabel = ({
 
 const resolveSeatPendingActionLabel = ({
   seatPlayer,
+  isDisconnected,
   isCurrentTurnSeat,
   t,
 }: {
   seatPlayer: Player;
+  isDisconnected: boolean;
   isCurrentTurnSeat: boolean;
   t: Translate;
 }): SeatActionLabel | null => {
@@ -1502,7 +1555,7 @@ const resolveSeatPendingActionLabel = ({
 
   if (
     seatPlayer.status === "folded" ||
-    seatPlayer.status === "disconnected" ||
+    isDisconnected ||
     seatPlayer.status === "waiting" ||
     seatPlayer.status === "all-in"
   ) {
@@ -1638,6 +1691,8 @@ const useGameRoomElement = () => {
   const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+  const [showHandResultsModal, setShowHandResultsModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
@@ -1660,7 +1715,7 @@ const useGameRoomElement = () => {
   const potDropZoneRef = useRef<HTMLDivElement | null>(null);
   const handResultsPanelRef = useRef<HTMLElement | null>(null);
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
-  const lastAutoScrolledResultRef = useRef<HandResult | null>(null);
+  const lastDisplayedHandResultRef = useRef<HandResult | null>(null);
   const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
@@ -1693,7 +1748,10 @@ const useGameRoomElement = () => {
     [tablePlayers],
   );
   const readyEligiblePlayers = useMemo(
-    () => tablePlayers.filter((entry) => entry.status !== "disconnected"),
+    () =>
+      tablePlayers.filter(
+        (entry) => getConnectionStatus(entry) !== "disconnected",
+      ),
     [tablePlayers],
   );
   const isPlayerStreetRevealEnabled = room?.config.allowPlayerStreetReveal ?? true;
@@ -1979,7 +2037,7 @@ const useGameRoomElement = () => {
           player.status !== "folded" &&
           player.status !== "left" &&
           player.status !== "waiting" &&
-          player.status !== "disconnected")),
+          getConnectionStatus(player) !== "disconnected")),
   );
   const hasShownMyHandAtShowdown = Boolean(
     player?.id && revealedHandPlayerIdSet.has(player.id),
@@ -2053,6 +2111,12 @@ const useGameRoomElement = () => {
     }));
 
     rows.sort((left, right) => {
+      const leftSortBucket = left.isWinner ? 0 : left.cardsVisibility === "shown" ? 1 : 2;
+      const rightSortBucket = right.isWinner ? 0 : right.cardsVisibility === "shown" ? 1 : 2;
+      if (leftSortBucket !== rightSortBucket) {
+        return leftSortBucket - rightSortBucket;
+      }
+
       if (right.amountWon !== left.amountWon) {
         return right.amountWon - left.amountWon;
       }
@@ -2061,10 +2125,6 @@ const useGameRoomElement = () => {
       const rightNet = typeof right.netChange === "number" ? right.netChange : null;
       if (leftNet !== null && rightNet !== null && rightNet !== leftNet) {
         return rightNet - leftNet;
-      }
-
-      if (left.isWinner !== right.isWinner) {
-        return left.isWinner ? -1 : 1;
       }
 
       const leftSeatPosition =
@@ -2087,6 +2147,15 @@ const useGameRoomElement = () => {
       };
     });
   }, [hasNetByPlayerId, lastHandResult, netByPlayerId, winnersByPlayerId]);
+
+  const handleReadyFromHandResultsModal = useCallback(() => {
+    if (!canReadyNextHand || hasReadiedCurrentPhase) {
+      return;
+    }
+
+    markReady();
+    setShowHandResultsModal(false);
+  }, [canReadyNextHand, hasReadiedCurrentPhase, markReady]);
 
   const payoutBreakdownRows = useMemo(() => {
     if (!lastHandResult) return [];
@@ -2142,7 +2211,7 @@ const useGameRoomElement = () => {
 
   const orbitCapacity = useMemo(() => {
     if (!room) return 6;
-    return room.config.maxPlayers > 6 ? 10 : 6;
+    return normalizeOrbitCapacity(room.config.maxPlayers);
   }, [room]);
 
   const seatSlotWidth = useMemo(
@@ -2450,11 +2519,15 @@ const useGameRoomElement = () => {
         );
 
         const seatPlayerId = seatPlayer.id;
+        const seatPositionLabel =
+          currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
+        const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
         const isAllIn = seatPlayer.status === "all-in";
-        const isDisconnected = seatPlayer.status === "disconnected";
+        const isDisconnected =
+          getConnectionStatus(seatPlayer) === "disconnected";
         const isWaiting = seatPlayer.status === "waiting";
         const seatMainState = resolveSeatMainState({
           isCurrentTurnSeat,
@@ -2464,21 +2537,25 @@ const useGameRoomElement = () => {
           isWaiting,
         });
         const seatInlineStatusLabel =
-          seatMainState === "disconnected"
-            ? t("game.status.disconnected")
-            : seatMainState === "all-in"
+          seatMainState === "all-in"
               ? t("game.status.allIn")
               : seatMainState === "folded"
                 ? t("game.status.folded")
+                : seatMainState === "disconnected"
+                  ? t("game.status.disconnected")
                 : null;
         const seatExternalStatusLabel =
-          seatMainState === "turn"
+          isDisconnected && seatMainState !== "disconnected"
+            ? t("game.status.disconnected")
+            : seatMainState === "turn"
             ? t("game.status.acting")
             : seatMainState === "waiting"
               ? t("game.status.waiting")
               : null;
         const seatExternalStatusToneClass =
-          seatMainState === "turn"
+          isDisconnected && seatMainState !== "disconnected"
+            ? "seat-pod__status-badge--disconnected"
+            : seatMainState === "turn"
             ? "seat-pod__status-badge--turn"
             : seatMainState === "waiting"
               ? "seat-pod__status-badge--waiting"
@@ -2502,12 +2579,14 @@ const useGameRoomElement = () => {
           lastPlayerActionEvent?.playerId === seatPlayer.id ? lastPlayerActionEvent : null;
         const seatPrimaryActionLabel = resolveSeatPrimaryActionLabel({
           seatPlayer,
+          isDisconnected,
           isForcedBlind,
           latestSeatActionEvent,
           t,
         });
         const seatPendingActionLabel = resolveSeatPendingActionLabel({
           seatPlayer,
+          isDisconnected,
           isCurrentTurnSeat,
           t,
         });
@@ -2528,8 +2607,7 @@ const useGameRoomElement = () => {
           playerEmoji: seatPlayer.emoji || "🎲",
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
-          roleIcon,
-          roleLabel: roleIcon === "dealer" ? "D" : roleIcon === "small-blind" ? "SB" : null,
+          badge: seatBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
@@ -2741,21 +2819,17 @@ const useGameRoomElement = () => {
 
   useEffect(() => {
     if (!lastHandResult) {
-      lastAutoScrolledResultRef.current = null;
+      lastDisplayedHandResultRef.current = null;
+      setShowHandResultsModal(false);
       return;
     }
 
-    if (lastAutoScrolledResultRef.current === lastHandResult) {
+    if (lastDisplayedHandResultRef.current === lastHandResult) {
       return;
     }
 
-    lastAutoScrolledResultRef.current = lastHandResult;
-    window.requestAnimationFrame(() => {
-      handResultsPanelRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+    lastDisplayedHandResultRef.current = lastHandResult;
+    setShowHandResultsModal(true);
   }, [lastHandResult]);
 
   useEffect(() => {
@@ -2874,12 +2948,15 @@ const useGameRoomElement = () => {
 
   useEffect(() => {
     if (!finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowEndGameConfirmModal(false);
+    setShowLeaveConfirmModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult]);
 
   useEffect(() => {
     if (!isGameEnded || !finalGameResult) return;
+    setShowHandResultsModal(false);
     setShowFinalSummaryModal(true);
   }, [finalGameResult, isGameEnded]);
 
@@ -2968,11 +3045,16 @@ const useGameRoomElement = () => {
   );
 
   const dismissTransientOverlays = useCallback(() => {
+    if (showLeaveConfirmModal) {
+      setShowLeaveConfirmModal(false);
+      return;
+    }
     if (lastError) clearError();
     if (showRankingsModal) setShowRankingsModal(false);
     if (showRulesModal) setShowRulesModal(false);
     if (showSettingsModal) setShowSettingsModal(false);
     if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
+    if (showHandResultsModal) setShowHandResultsModal(false);
     if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
     if (quickConfirmAction) setQuickConfirmAction(null);
   }, [
@@ -2980,9 +3062,12 @@ const useGameRoomElement = () => {
     isGameEnded,
     lastError,
     quickConfirmAction,
+    setShowLeaveConfirmModal,
     setShowEndGameConfirmModal,
+    showHandResultsModal,
     setShowRankingsModal,
     setShowRulesModal,
+    showLeaveConfirmModal,
     showEndGameConfirmModal,
     showFinalSummaryModal,
     showRankingsModal,
@@ -2996,7 +3081,9 @@ const useGameRoomElement = () => {
       !showRankingsModal &&
       !showRulesModal &&
       !showSettingsModal &&
+      !showLeaveConfirmModal &&
       !showEndGameConfirmModal &&
+      !showHandResultsModal &&
       !showFinalSummaryModal &&
       !quickConfirmAction
     ) {
@@ -3013,7 +3100,9 @@ const useGameRoomElement = () => {
   }, [
     dismissTransientOverlays,
     lastError,
+    showLeaveConfirmModal,
     showEndGameConfirmModal,
+    showHandResultsModal,
     showFinalSummaryModal,
     showRankingsModal,
     showRulesModal,
@@ -3159,13 +3248,13 @@ const useGameRoomElement = () => {
 
   const saveShareablePanelScreenshot = async ({
     panel,
-    hiddenControlTestId,
+    hiddenControlTestIds,
     fileSuffix,
     successMessageKey,
     failureMessageKey,
   }: {
     panel: HTMLElement;
-    hiddenControlTestId: string;
+    hiddenControlTestIds: string[];
     fileSuffix: string;
     successMessageKey: MessageKey;
     failureMessageKey: MessageKey;
@@ -3173,13 +3262,14 @@ const useGameRoomElement = () => {
     if (!room) return;
 
     try {
+      const hiddenControlTestIdSet = new Set(hiddenControlTestIds);
       const screenshotDataUrl = await toPng(panel, {
         cacheBust: true,
         pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
         backgroundColor: "#032b26",
         filter: (node) => {
           if (!(node instanceof HTMLElement)) return true;
-          return node.dataset.testid !== hiddenControlTestId;
+          return !hiddenControlTestIdSet.has(node.dataset.testid ?? "");
         },
       });
 
@@ -3243,7 +3333,10 @@ const useGameRoomElement = () => {
 
     await saveShareablePanelScreenshot({
       panel: handResultsPanelRef.current,
-      hiddenControlTestId: "save-result-screenshot-button",
+      hiddenControlTestIds: [
+        "save-result-screenshot-button",
+        "close-hand-results-button",
+      ],
       fileSuffix: `hand-${currentHandNumber ?? "result"}`,
       successMessageKey: "game.resultScreenshotSaved",
       failureMessageKey: "game.resultScreenshotFailed",
@@ -3255,7 +3348,7 @@ const useGameRoomElement = () => {
 
     await saveShareablePanelScreenshot({
       panel: finalSummaryPanelRef.current,
-      hiddenControlTestId: "save-final-summary-screenshot-button",
+      hiddenControlTestIds: ["save-final-summary-screenshot-button"],
       fileSuffix: "final-results",
       successMessageKey: "game.final.screenshotSaved",
       failureMessageKey: "game.final.screenshotFailed",
@@ -3268,7 +3361,12 @@ const useGameRoomElement = () => {
     endGame();
   };
 
-  const handleLeave = () => {
+  const handleRequestLeave = () => {
+    setShowLeaveConfirmModal(true);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowLeaveConfirmModal(false);
     leaveRoom();
     navigate("/");
   };
@@ -3455,7 +3553,7 @@ const useGameRoomElement = () => {
         showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
         showStartGameButton={false}
         onCopyInvite={handleCopyInviteLink}
-        onLeave={handleLeave}
+        onLeave={handleRequestLeave}
         onOpenSettings={() => {
           if (user) {
             setProfileDisplayNameDraft(user.displayName);
@@ -3541,8 +3639,28 @@ const useGameRoomElement = () => {
         seatOrbitItems={seatOrbitItems}
       />
 
-      {lastHandResult && (
-        <HandResultsPanel ref={handResultsPanelRef}>
+      {showHandResultsModal && lastHandResult && !finalGameResult && (
+        <HandResultsModal
+          ref={handResultsPanelRef}
+          ariaLabel={t("game.handResults", { handNumber: currentHandNumber ?? "?" })}
+          footer={
+            showNextHandActionArea ? (
+              <NextHandActionArea
+                canReadyNextHand={canReadyNextHand}
+                hasReadiedNextHand={hasReadiedCurrentPhase}
+                canEndGame={canHostEndGame}
+                onReadyNextHand={handleReadyFromHandResultsModal}
+                onOpenEndGameConfirm={() => {
+                  if (!canHostEndGame) return;
+                  setShowEndGameConfirmModal(true);
+                }}
+                t={t}
+              />
+            ) : null
+          }
+          onClose={() => setShowHandResultsModal(false)}
+          t={t}
+        >
           <HandResultsContent
             currentHandNumber={currentHandNumber}
             totalPot={lastHandResult.totalPot}
@@ -3566,7 +3684,7 @@ const useGameRoomElement = () => {
             }
             t={t}
           />
-        </HandResultsPanel>
+        </HandResultsModal>
       )}
 
       {operationBarMode !== null && (
@@ -3624,7 +3742,7 @@ const useGameRoomElement = () => {
         </ChipComposerDock>
       )}
 
-      {showReadyActionArea && (
+      {showPreGameReadyArea && (
         <ChipComposerDock
           ref={bottomBarOverlayRef}
           className="chip-composer-dock--operation"
@@ -3648,6 +3766,26 @@ const useGameRoomElement = () => {
             }}
             onAddRobot={() => addRobotPlayer()}
             onRemoveRobot={(robotPlayerId) => removeRobotPlayer(robotPlayerId)}
+            t={t}
+          />
+        </ChipComposerDock>
+      )}
+
+      {showNextHandActionArea && !showHandResultsModal && (
+        <ChipComposerDock
+          ref={bottomBarOverlayRef}
+          className="chip-composer-dock--operation"
+          testId="operation-overlay"
+        >
+          <NextHandActionArea
+            canReadyNextHand={canReadyNextHand}
+            hasReadiedNextHand={hasReadiedCurrentPhase}
+            canEndGame={canHostEndGame}
+            onReadyNextHand={markReady}
+            onOpenEndGameConfirm={() => {
+              if (!canHostEndGame) return;
+              setShowEndGameConfirmModal(true);
+            }}
             t={t}
           />
         </ChipComposerDock>
@@ -3749,6 +3887,14 @@ const useGameRoomElement = () => {
         />
       )}
 
+      {showLeaveConfirmModal && (
+        <LeaveRoomConfirmModal
+          onCancel={() => setShowLeaveConfirmModal(false)}
+          onConfirm={handleConfirmLeave}
+          t={t}
+        />
+      )}
+
       {showFinalSummaryModal && finalGameResult && (
         <FinalSummaryModal
           ref={finalSummaryPanelRef}
@@ -3758,7 +3904,7 @@ const useGameRoomElement = () => {
           currentPlayerId={player.id}
           isGameEnded={isGameEnded}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
-          onLeave={handleLeave}
+          onLeave={handleRequestLeave}
           onClose={() => setShowFinalSummaryModal(false)}
           t={t}
         />

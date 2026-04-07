@@ -49,7 +49,7 @@ describe('EventsGateway robot player controls', () => {
 
     storageService = {
       getRoom: jest.fn(),
-      saveRoom: jest.fn().mockResolvedValue(undefined),
+      persistRoom: jest.fn().mockResolvedValue(undefined),
     };
 
     gameService = {
@@ -189,7 +189,20 @@ describe('EventsGateway robot player controls', () => {
       phase: 'START_GAME',
       readyPlayerIds: ['p-robot'],
     });
-    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({
+            type: 'READY_STATE_UPDATED',
+            payload: {
+              phase: 'START_GAME',
+              readyPlayerIds: ['p-robot'],
+            },
+          }),
+        ],
+      }),
+    );
   });
 
   it('removes a robot, broadcasts leave, and clears robot ready state', async () => {
@@ -255,7 +268,20 @@ describe('EventsGateway robot player controls', () => {
       phase: 'START_GAME',
       readyPlayerIds: [],
     });
-    expect(storageService.saveRoom).toHaveBeenCalledWith(roomAfterRemoval);
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      roomAfterRemoval,
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({
+            type: 'READY_STATE_UPDATED',
+            payload: {
+              phase: 'START_GAME',
+              readyPlayerIds: [],
+            },
+          }),
+        ],
+      }),
+    );
   });
 
   it('auto-readies robots during NEXT_HAND phase without requiring client input', () => {

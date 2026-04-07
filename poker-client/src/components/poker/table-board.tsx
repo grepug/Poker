@@ -3,7 +3,7 @@ import type { Card as PokerCard } from "poker-types";
 import { Card } from "@/components/Card";
 import { CommunityCardsLane } from "@/components/poker/community-cards-lane";
 import { PotDropZone } from "@/components/poker/pot-drop-zone";
-import { SeatPod } from "@/components/poker/seat-pod";
+import { SeatPod, type SeatBadge } from "@/components/poker/seat-pod";
 
 type SeatMainState = "turn" | "disconnected" | "all-in" | "folded" | "waiting" | "default";
 
@@ -21,8 +21,7 @@ type SeatOrbitItem = {
   playerEmoji: string;
   playerName: string;
   isYou: boolean;
-  roleIcon: "dealer" | "small-blind" | null;
-  roleLabel: string | null;
+  badge?: SeatBadge | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -503,8 +502,7 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                   playerEmoji={item.playerEmoji}
                   playerName={item.playerName}
                   isYou={item.isYou}
-                  roleIcon={item.roleIcon}
-                  roleLabel={item.roleLabel}
+                  badge={item.badge}
                   externalStatusLabel={item.externalStatusLabel}
                   externalStatusToneClass={item.externalStatusToneClass}
                   internalStatusLabel={item.internalStatusLabel}

@@ -8,22 +8,30 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import {
+  startAuthentication,
+  startRegistration,
+} from "@simplewebauthn/browser";
 import type { AuthModes, AuthUser } from "poker-types";
-import { authService, authTokenStorage } from "@/services/auth.service";
+import { authService } from "@/services/auth.service";
 
 type AuthContextType = {
-  authToken: string | null;
   user: AuthUser | null;
   authModes: AuthModes;
   isInitializing: boolean;
   isAuthenticated: boolean;
   passkeySupported: boolean;
   refreshSession: () => Promise<void>;
-  registerWithPasskey: (displayName: string, avatarEmoji: string) => Promise<void>;
+  registerWithPasskey: (
+    displayName: string,
+    avatarEmoji: string,
+  ) => Promise<void>;
   loginWithPasskey: () => Promise<void>;
   loginWithPassword: (accountId: string, password: string) => Promise<void>;
-  updateProfile: (displayName: string, avatarEmoji: string) => Promise<AuthUser>;
+  updateProfile: (
+    displayName: string,
+    avatarEmoji: string,
+  ) => Promise<AuthUser>;
   logout: () => Promise<void>;
 };
 
@@ -42,24 +50,22 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [authToken, setAuthToken] = useState<string | null>(null);
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authModes, setAuthModes] = useState<AuthModes>(defaultModes);
   const [isInitializing, setIsInitializing] = useState(true);
 
   const passkeySupported =
-    typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
+    typeof window !== "undefined" &&
+    typeof window.PublicKeyCredential !== "undefined";
 
-  const persistSession = useCallback((token: string, nextUser: AuthUser) => {
-    authTokenStorage.write(token);
-    setAuthToken(token);
+  const persistSession = useCallback((nextUser: AuthUser) => {
     setUser(nextUser);
   }, []);
 
   const clearSession = useCallback(() => {
-    authTokenStorage.clear();
-    setAuthToken(null);
     setUser(null);
   }, []);
 
@@ -69,15 +75,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const refreshSession = useCallback(async () => {
-    const token = authTokenStorage.read();
-    if (!token) {
-      clearSession();
-      return;
-    }
-
     try {
-      const payload = await authService.getMe(token);
-      setAuthToken(token);
+      const payload = await authService.getMe();
       setUser(payload.user);
       setAuthModes(payload.authModes);
     } catch {
@@ -106,12 +105,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         throw new Error("Passkey is not supported on this browser");
       }
 
-      const start = await authService.startPasskeyRegister(displayName, avatarEmoji);
+      const start = await authService.startPasskeyRegister(
+        displayName,
+        avatarEmoji,
+      );
       const passkeyResponse = await startRegistration({
-        optionsJSON: start.options as Parameters<typeof startRegistration>[0]["optionsJSON"],
+        optionsJSON: start.options as Parameters<
+          typeof startRegistration
+        >[0]["optionsJSON"],
       });
-      const finish = await authService.finishPasskeyRegister(start.flowId, passkeyResponse);
-      persistSession(finish.sessionToken, finish.user);
+      const finish = await authService.finishPasskeyRegister(
+        start.flowId,
+        passkeyResponse,
+      );
+      persistSession(finish.user);
+      setAuthModes(finish.authModes);
     },
     [passkeySupported, persistSession],
   );
@@ -123,35 +131,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const start = await authService.startPasskeyLogin();
     const passkeyResponse = await startAuthentication({
-      optionsJSON: start.options as Parameters<typeof startAuthentication>[0]["optionsJSON"],
+      optionsJSON: start.options as Parameters<
+        typeof startAuthentication
+      >[0]["optionsJSON"],
     });
-    const finish = await authService.finishPasskeyLogin(start.flowId, passkeyResponse);
-    persistSession(finish.sessionToken, finish.user);
+    const finish = await authService.finishPasskeyLogin(
+      start.flowId,
+      passkeyResponse,
+    );
+    persistSession(finish.user);
+    setAuthModes(finish.authModes);
   }, [passkeySupported, persistSession]);
 
   const loginWithPassword = useCallback(
     async (accountId: string, password: string) => {
       const payload = await authService.loginWithPassword(accountId, password);
-      persistSession(payload.sessionToken, payload.user);
+      persistSession(payload.user);
+      setAuthModes(payload.authModes);
     },
     [persistSession],
   );
 
   const updateProfile = useCallback(
     async (displayName: string, avatarEmoji: string) => {
-      if (!authToken) {
+      if (!user) {
         throw new Error("Not authenticated");
       }
-      const updatedUser = await authService.updateMyProfile(authToken, displayName, avatarEmoji);
+      const updatedUser = await authService.updateMyProfile(
+        displayName,
+        avatarEmoji,
+      );
       setUser(updatedUser);
       return updatedUser;
     },
-    [authToken],
+    [user],
   );
 
   const logout = useCallback(async () => {
     try {
-      await authService.logout(authTokenStorage.read());
+      await authService.logout();
+    } catch (error) {
+      console.warn("Logout request failed", error);
     } finally {
       clearSession();
     }
@@ -159,11 +179,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const value = useMemo<AuthContextType>(
     () => ({
-      authToken,
       user,
       authModes,
       isInitializing,
-      isAuthenticated: Boolean(authToken && user),
+      isAuthenticated: Boolean(user),
       passkeySupported,
       refreshSession,
       registerWithPasskey,
@@ -173,7 +192,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       logout,
     }),
     [
-      authToken,
       user,
       authModes,
       isInitializing,

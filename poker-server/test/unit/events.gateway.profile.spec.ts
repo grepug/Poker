@@ -26,7 +26,7 @@ describe('EventsGateway profile update', () => {
       authService as any,
       {
         getRoom: jest.fn(),
-        saveRoom: jest.fn(),
+        persistRoom: jest.fn(),
         deleteRoom: jest.fn(),
         getAllRooms: jest.fn(),
         roomExists: jest.fn(),
@@ -127,6 +127,40 @@ describe('EventsGateway profile update', () => {
     expect(client.emit).toHaveBeenCalledWith('ERROR', {
       message: 'Authentication required',
     });
+  });
+
+  it('authenticates socket user from cookie header when auth payload is absent', async () => {
+    authService.getUserByToken.mockResolvedValue({
+      id: 'user-1',
+      accountId: 'test1',
+      displayName: 'test1',
+      avatarEmoji: '🧪',
+    });
+    authService.updateProfileByUserId.mockResolvedValue({
+      id: 'user-1',
+      accountId: 'test1',
+      displayName: 'cookie-user',
+      avatarEmoji: '🍪',
+    });
+
+    const client = {
+      id: 'socket-cookie',
+      emit: jest.fn(),
+      handshake: {
+        auth: {},
+        headers: {
+          cookie: 'other=value; poker_session=cookie-token',
+        },
+      },
+    } as any;
+
+    const response = await gateway.handleUpdateProfile(client, {
+      displayName: 'cookie-user',
+      avatarEmoji: '🍪',
+    });
+
+    expect(response).toEqual(expect.objectContaining({ success: true }));
+    expect(authService.getUserByToken).toHaveBeenCalledWith('cookie-token');
   });
 
   it('returns error when profile update fails', async () => {

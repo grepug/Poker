@@ -38,12 +38,20 @@ describe('EventsGateway membership mutation serialization', () => {
     lastConnectedAt: Date.now(),
   });
 
-  const createClient = (socketId: string, token: string) => ({
+  const createClient = (
+    socketId: string,
+    options: { token?: string; cookieToken?: string },
+  ) => ({
     id: socketId,
     join: jest.fn(),
     leave: jest.fn(),
     emit: jest.fn(),
-    handshake: { headers: {}, auth: { token } },
+    handshake: {
+      headers: options.cookieToken
+        ? { cookie: `poker_session=${options.cookieToken}` }
+        : {},
+      auth: options.token ? { token: options.token } : {},
+    },
   });
 
   beforeEach(() => {
@@ -201,7 +209,7 @@ describe('EventsGateway membership mutation serialization', () => {
         }
         return deepClone(roomState);
       }),
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(),
       roomExists: jest.fn(),
@@ -279,8 +287,12 @@ describe('EventsGateway membership mutation serialization', () => {
   });
 
   it('does not drop players when JOIN_ROOM and RECONNECT happen concurrently', async () => {
-    const joinClient = createClient('socket-join', 'token-alice');
-    const reconnectClient = createClient('socket-reconnect', 'token-bob');
+    const joinClient = createClient('socket-join', {
+      cookieToken: 'token-alice',
+    });
+    const reconnectClient = createClient('socket-reconnect', {
+      cookieToken: 'token-bob',
+    });
 
     const [joinResult, reconnectResult] = await Promise.all([
       gateway.handleJoinRoom(joinClient as any, {
@@ -348,7 +360,9 @@ describe('EventsGateway membership mutation serialization', () => {
       .spyOn(gateway as any, 'handleBettingRoundComplete')
       .mockResolvedValue(undefined);
 
-    const leavingClient = createClient('socket-bob-old', 'token-bob');
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
     (gateway as any).socketToPlayer.set('socket-bob-old', {
       roomId: 'ROOM1',
       playerId: 'p-bob',
@@ -364,5 +378,82 @@ describe('EventsGateway membership mutation serialization', () => {
     expect(bettingService.isBettingRoundComplete).toHaveBeenCalledTimes(1);
     expect(handleBettingRoundCompleteSpy).toHaveBeenCalledTimes(1);
     expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');
+  });
+
+  it('preserves left seats when ending a game between hands', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      createPlayer({
+        id: 'p-host',
+        socketId: 'socket-host',
+        name: 'Host',
+        status: 'connected',
+        position: 0,
+      }),
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: '',
+          name: 'Bob',
+          status: 'left',
+          position: 1,
+        }),
+        chips: 425,
+        totalBuyIn: 1000,
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: [],
+      bettingRound: 'SHOWDOWN',
+      currentBet: 0,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        winningHand: null,
+        potAmount: 0,
+        playerHands: [],
+      },
+    };
+
+    (gateway as any).socketToPlayer.set('socket-host', {
+      roomId: 'ROOM1',
+      playerId: 'p-host',
+    });
+    const hostClient = createClient('socket-host', {
+      cookieToken: 'token-alice',
+    });
+
+    const result = await gateway.handleEndGame(hostClient as any);
+
+    expect(result).toEqual({ success: true });
+    const savedRoom = storageService.persistRoom.mock.calls.at(-1)?.[0];
+    expect(savedRoom?.gameState).toBe('ENDED');
+    const leftSeat = savedRoom?.players.find((player: any) => player.id === 'p-bob');
+    const hostSeat = savedRoom?.players.find((player: any) => player.id === 'p-host');
+    expect(leftSeat?.status).toBe('left');
+    expect(hostSeat?.status).toBe('waiting');
+    expect(storageService.persistRoom).toHaveBeenCalled();
   });
 });

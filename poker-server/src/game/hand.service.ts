@@ -8,11 +8,56 @@ import {
   HandResult,
   PotPayout,
   Card,
+  HandPositionLabel,
+  PersistedBettingRoundAdvancedPayload,
+  PersistedHandStartedPayload,
+  PersistedRoomPlayerStateSnapshot,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { createDeck, shuffleDeck, dealCards } from '../common/utils/deck';
 import { evaluateHand, compareHands } from '../common/utils/hand-evaluator';
 import { TestDeckService } from './test-deck.service';
+import { roomEvent, roomWrite } from '../storage/room-write.factory';
+
+const POSITION_LABELS_BY_PLAYER_COUNT: Record<number, HandPositionLabel[]> = {
+  3: ['BTN', 'SB', 'BB'],
+  4: ['BTN', 'SB', 'BB', 'UTG'],
+  5: ['BTN', 'SB', 'BB', 'UTG', 'CO'],
+  6: ['BTN', 'SB', 'BB', 'UTG', 'HJ', 'CO'],
+  7: ['BTN', 'SB', 'BB', 'UTG', 'LJ', 'HJ', 'CO'],
+  8: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'LJ', 'HJ', 'CO'],
+  9: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'MP', 'LJ', 'HJ', 'CO'],
+  10: ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'UTG+2', 'MP', 'LJ', 'HJ', 'CO'],
+};
+
+const buildPositionLabels = (
+  playerCount: number,
+): HandPositionLabel[] | null => {
+  const mappedLabels = POSITION_LABELS_BY_PLAYER_COUNT[playerCount];
+  if (mappedLabels) {
+    return mappedLabels;
+  }
+
+  if (playerCount < 3) {
+    return null;
+  }
+
+  const earlyPositionCount = playerCount - 7;
+  if (earlyPositionCount < 1) {
+    return null;
+  }
+
+  const earlyPositionLabels = Array.from(
+    { length: earlyPositionCount },
+    (_, index) => (index === 0 ? 'UTG' : `UTG+${index}`) as HandPositionLabel,
+  );
+
+  return ['BTN', 'SB', 'BB', ...earlyPositionLabels, 'MP', 'LJ', 'HJ', 'CO'];
+};
+
+const isDisconnected = (player: Player): boolean =>
+  player.connectionStatus === 'disconnected' ||
+  player.status === 'disconnected';
 
 @Injectable()
 export class HandService {
@@ -29,7 +74,9 @@ export class HandService {
    */
   async startNewHand(room: Room): Promise<Hand> {
     const useShortDeckRules = Boolean(room.config.useShortDeckRules);
-    const seatedPlayers = room.players.filter((player) => player.status !== 'left');
+    const seatedPlayers = room.players.filter(
+      (player) => player.status !== 'left' && !isDisconnected(player),
+    );
     if (seatedPlayers.length < 2) {
       throw new Error('Need at least 2 players to start a hand');
     }
@@ -38,7 +85,8 @@ export class HandService {
     for (const player of seatedPlayers) {
       if (player.chips === 0) {
         player.chips = room.config.startingChips;
-        player.totalBuyIn = (player.totalBuyIn ?? 0) + room.config.startingChips;
+        player.totalBuyIn =
+          (player.totalBuyIn ?? 0) + room.config.startingChips;
       }
     }
 
@@ -46,7 +94,9 @@ export class HandService {
 
     // Determine positions
     const activePlayers = this.getPlayersInSeatOrder(
-      room.players.filter((p) => p.chips > 0 && p.status !== 'left'),
+      room.players.filter(
+        (p) => p.chips > 0 && p.status !== 'left' && !isDisconnected(p),
+      ),
     );
     const dealerPosition = this.getNextDealerPosition(room, activePlayers);
     const activePlayerIds = activePlayers.map((p) => p.id);
@@ -56,7 +106,10 @@ export class HandService {
       throw new Error('Need at least 2 players with chips');
     }
 
-    const smallBlindPlayer = this.getNextPlayerByPosition(activePlayers, dealerPosition);
+    const smallBlindPlayer = this.getNextPlayerByPosition(
+      activePlayers,
+      dealerPosition,
+    );
     const bigBlindPlayer = smallBlindPlayer
       ? this.getNextPlayerByPosition(activePlayers, smallBlindPlayer.position)
       : null;
@@ -134,6 +187,12 @@ export class HandService {
       sidePots: [],
       potContributions,
       dealtPlayerIds: [...activePlayerIds],
+      positionLabelsByPlayerId: this.buildPositionLabelsByPlayerId({
+        activePlayers,
+        dealerPosition,
+        smallBlindPosition,
+        bigBlindPosition,
+      }),
       vpipPlayerIds: [],
       showdownLastAggressorPlayerId: null,
       startedAt: Date.now(),
@@ -145,7 +204,36 @@ export class HandService {
     room.readyPlayerIds = [];
     room.lastActivityAt = Date.now();
 
-    await this.storageService.saveRoom(room);
+    const handStartedPayload: PersistedHandStartedPayload = {
+      handNumber: hand.handNumber,
+      dealerPosition,
+      smallBlindPosition,
+      bigBlindPosition,
+      pot,
+      currentBet: hand.currentBet,
+      lastRaiseSize: hand.lastRaiseSize,
+      currentPlayerTurn,
+      activePlayerIds: [...hand.activePlayers],
+      dealtPlayerIds: [...(hand.dealtPlayerIds ?? [])],
+      positionLabelsByPlayerId: { ...(hand.positionLabelsByPlayerId ?? {}) },
+      potContributions: { ...hand.potContributions },
+      communityCards: [...hand.communityCards],
+      players: this.buildPersistedPlayerSnapshots(room, { includeCards: true }),
+    };
+
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'HAND_STARTED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: handStartedPayload,
+        }),
+      ),
+    );
     this.logger.log(`Hand #${handNumber} started in room ${room.id}`);
 
     return hand;
@@ -226,7 +314,33 @@ export class HandService {
       }
 
       room.lastActivityAt = Date.now();
-      await this.storageService.saveRoom(room);
+      const showdownAdvancePayload: PersistedBettingRoundAdvancedPayload = {
+        nextRound: 'SHOWDOWN',
+        communityCards: [...hand.communityCards],
+        currentPlayerTurn: hand.currentPlayerTurn,
+        allPlayersAllIn: true,
+        pot: hand.pot,
+        currentBet: hand.currentBet,
+        lastRaiseSize: hand.lastRaiseSize,
+        activePlayerIds: [...hand.activePlayers],
+        potContributions: { ...hand.potContributions },
+        players: this.buildPersistedPlayerSnapshots(room, {
+          includeCards: true,
+        }),
+      };
+      await this.storageService.persistRoom(
+        room,
+        roomWrite(
+          roomEvent({
+            roomId: room.id,
+            type: 'BETTING_ROUND_ADVANCED',
+            actor: { source: 'HAND_SERVICE' },
+            handNumber: hand.handNumber,
+            street: 'SHOWDOWN',
+            payload: showdownAdvancePayload,
+          }),
+        ),
+      );
       this.logger.log(
         `All players all-in, skipping to showdown in room ${room.id}, community cards: ${hand.communityCards.length}`,
       );
@@ -285,13 +399,41 @@ export class HandService {
 
     // Set first to act (first active player after dealer)
     const activePlayers = this.getActivePlayers(room);
-    const nextPlayer = this.getNextPlayerByPosition(activePlayers, hand.dealerPosition);
+    const nextPlayer = this.getNextPlayerByPosition(
+      activePlayers,
+      hand.dealerPosition,
+    );
     if (nextPlayer) {
       hand.currentPlayerTurn = nextPlayer.id;
     }
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    const roundAdvancePayload: PersistedBettingRoundAdvancedPayload = {
+      nextRound: hand.bettingRound,
+      communityCards: [...hand.communityCards],
+      currentPlayerTurn: hand.currentPlayerTurn,
+      pot: hand.pot,
+      currentBet: hand.currentBet,
+      lastRaiseSize: hand.lastRaiseSize,
+      activePlayerIds: [...hand.activePlayers],
+      potContributions: { ...hand.potContributions },
+      players: this.buildPersistedPlayerSnapshots(room, {
+        includeCards: true,
+      }),
+    };
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'BETTING_ROUND_ADVANCED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: hand.handNumber,
+          street: hand.bettingRound,
+          payload: roundAdvancePayload,
+        }),
+      ),
+    );
 
     this.logger.log(`Advanced to ${hand.bettingRound} in room ${room.id}`);
     return hand.bettingRound;
@@ -329,7 +471,8 @@ export class HandService {
 
       // Don't evaluate hand if won by fold (may not have enough community cards)
       const winnerCards = winner.cards ?? [];
-      const hasEnoughCards = winnerCards.length + hand.communityCards.length >= 5;
+      const hasEnoughCards =
+        winnerCards.length + hand.communityCards.length >= 5;
       const winnerHand = hasEnoughCards
         ? evaluateHand(winnerCards.concat(hand.communityCards), {
             useShortDeckRules: Boolean(room.config.useShortDeckRules),
@@ -369,9 +512,13 @@ export class HandService {
             uncontested: activePlayers.length === 1,
           },
         ],
-        netByPlayerId: this.buildNetByPlayerId(contributions, new Map([[winner.id, hand.pot]])),
+        netByPlayerId: this.buildNetByPlayerId(
+          contributions,
+          new Map([[winner.id, hand.pot]]),
+        ),
       };
 
+      this.captureSettledPlayerCards(room);
       await this.cleanupHand(room, winner.id);
       return result;
     }
@@ -379,9 +526,12 @@ export class HandService {
     // Evaluate all hands
     const evaluations = activePlayers.map((player) => ({
       player,
-      evaluation: evaluateHand((player.cards ?? []).concat(hand.communityCards), {
-        useShortDeckRules: Boolean(room.config.useShortDeckRules),
-      }),
+      evaluation: evaluateHand(
+        (player.cards ?? []).concat(hand.communityCards),
+        {
+          useShortDeckRules: Boolean(room.config.useShortDeckRules),
+        },
+      ),
     }));
 
     const evaluationsByPlayerId = new Map<
@@ -516,7 +666,9 @@ export class HandService {
       .sort((a, b) => b.amountWon - a.amountWon);
 
     for (const winnerEntry of winners) {
-      const winnerPlayer = room.players.find((p) => p.id === winnerEntry.playerId);
+      const winnerPlayer = room.players.find(
+        (p) => p.id === winnerEntry.playerId,
+      );
       if (!winnerPlayer) continue;
       winnerPlayer.handsWonCount = (winnerPlayer.handsWonCount ?? 0) + 1;
     }
@@ -529,8 +681,27 @@ export class HandService {
       netByPlayerId: this.buildNetByPlayerId(contributions, payoutByPlayerId),
     };
 
+    this.captureSettledPlayerCards(room);
     await this.cleanupHand(room, winners[0]?.playerId);
     return result;
+  }
+
+  private captureSettledPlayerCards(room: Room): void {
+    const hand = room.currentHand;
+    if (!hand) {
+      return;
+    }
+
+    hand.settledPlayerCardsByPlayerId = Object.fromEntries(
+      room.players
+        .filter(
+          (
+            player,
+          ): player is Player & { cards: NonNullable<Player['cards']> } =>
+            Array.isArray(player.cards) && player.cards.length > 0,
+        )
+        .map((player) => [player.id, [...player.cards]]),
+    );
   }
 
   private buildResultPlayerHands(
@@ -566,24 +737,25 @@ export class HandService {
       const isShowdownContender = showdownContenderIdSet.has(player.id);
       const isActiveAtSettlement = activePlayerIdSet.has(player.id);
 
-      const resultStatus: HandResult['playerHands'][number]['resultStatus'] = isShown
-        ? 'shown'
-        : isShowdownContender
-          ? isActiveAtSettlement
-            ? 'hidden_contender'
-            : 'folded_at_showdown'
-          : isActiveAtSettlement
-            ? 'hidden_contender'
-            : 'folded_pre_showdown';
-      const cardsVisibility: HandResult['playerHands'][number]['cardsVisibility'] = isShown
-        ? 'shown'
-        : 'hidden';
-      const evaluation = evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
+      const resultStatus: HandResult['playerHands'][number]['resultStatus'] =
+        isShown
+          ? 'shown'
+          : isShowdownContender
+            ? isActiveAtSettlement
+              ? 'hidden_contender'
+              : 'folded_at_showdown'
+            : isActiveAtSettlement
+              ? 'hidden_contender'
+              : 'folded_pre_showdown';
+      const cardsVisibility: HandResult['playerHands'][number]['cardsVisibility'] =
+        isShown ? 'shown' : 'hidden';
+      const evaluation =
+        evaluationsByPlayerId.get(player.id)?.evaluation ?? null;
 
       return {
         playerId: player.id,
         playerName: player.name,
-        cards: player.cards ?? [],
+        cards: cardsVisibility === 'shown' ? (player.cards ?? []) : [],
         hand: cardsVisibility === 'shown' ? evaluation : null,
         resultStatus,
         cardsVisibility,
@@ -719,7 +891,10 @@ export class HandService {
       return activePlayers[0];
     }
 
-    return this.getNextPlayerByPosition(activePlayers, currentTurnPlayer.position);
+    return this.getNextPlayerByPosition(
+      activePlayers,
+      currentTurnPlayer.position,
+    );
   }
 
   /**
@@ -774,12 +949,128 @@ export class HandService {
     }
 
     const currentDealer = room.currentHand.dealerPosition;
-    const nextDealer = this.getNextPlayerByPosition(activePlayers, currentDealer);
+    const nextDealer = this.getNextPlayerByPosition(
+      activePlayers,
+      currentDealer,
+    );
     return nextDealer?.position ?? activePlayers[0].position;
   }
 
   private getPlayersInSeatOrder(players: Player[]): Player[] {
     return [...players].sort((left, right) => left.position - right.position);
+  }
+
+  private buildPositionLabelsByPlayerId({
+    activePlayers,
+    dealerPosition,
+    smallBlindPosition,
+    bigBlindPosition,
+  }: {
+    activePlayers: Player[];
+    dealerPosition: number;
+    smallBlindPosition: number;
+    bigBlindPosition: number;
+  }): Record<string, HandPositionLabel> {
+    if (activePlayers.length === 0) {
+      return {};
+    }
+
+    if (activePlayers.length === 2) {
+      return this.buildHeadsUpPositionLabelsByPlayerId({
+        activePlayers,
+        dealerPosition,
+        smallBlindPosition,
+        bigBlindPosition,
+      });
+    }
+
+    const orderedFromButton = this.getPlayersClockwiseFromPosition(
+      activePlayers,
+      dealerPosition,
+    );
+    const labels = buildPositionLabels(orderedFromButton.length);
+    if (!labels || labels.length !== orderedFromButton.length) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      orderedFromButton.map((player, index) => [player.id, labels[index]]),
+    );
+  }
+
+  private buildPersistedPlayerSnapshots(
+    room: Room,
+    options?: {
+      includeCards?: boolean;
+    },
+  ): PersistedRoomPlayerStateSnapshot[] {
+    const hand = room.currentHand;
+    return this.getPlayersInSeatOrder(room.players).map((player) => ({
+      playerId: player.id,
+      playerName: player.name,
+      position: player.position,
+      status: player.status,
+      chips: player.chips,
+      currentBet: player.currentBet,
+      totalBuyIn: player.totalBuyIn,
+      lastAction: player.lastAction,
+      isActiveInHand: hand ? hand.activePlayers.includes(player.id) : false,
+      positionLabel: hand?.positionLabelsByPlayerId?.[player.id] ?? null,
+      cards: options?.includeCards ? player.cards : undefined,
+    }));
+  }
+
+  private buildHeadsUpPositionLabelsByPlayerId({
+    activePlayers,
+    dealerPosition,
+    smallBlindPosition,
+    bigBlindPosition,
+  }: {
+    activePlayers: Player[];
+    dealerPosition: number;
+    smallBlindPosition: number;
+    bigBlindPosition: number;
+  }): Record<string, HandPositionLabel> {
+    if (activePlayers.length !== 2) {
+      return {};
+    }
+
+    const playerByPosition = new Map(
+      activePlayers.map((player) => [player.position, player]),
+    );
+    const dealerPlayer = playerByPosition.get(dealerPosition);
+    const nonDealerPlayer =
+      activePlayers.find((player) => player.position !== dealerPosition) ?? null;
+
+    if (!dealerPlayer || !nonDealerPlayer) {
+      return {};
+    }
+
+    // Heads-up blind mechanics stay unchanged here; this only aligns
+    // the exposed position badge with the agreed UX contract.
+    return {
+      [dealerPlayer.id]: 'BTN/SB',
+      [nonDealerPlayer.id]: 'BB',
+    };
+  }
+
+  private getPlayersClockwiseFromPosition(
+    players: Player[],
+    startingPosition: number,
+  ): Player[] {
+    const sortedPlayers = this.getPlayersInSeatOrder(players);
+    const startIndex = sortedPlayers.findIndex(
+      (player) => player.position === startingPosition,
+    );
+
+    if (startIndex === -1) {
+      return sortedPlayers;
+    }
+
+    return [
+      ...sortedPlayers.slice(startIndex),
+      ...sortedPlayers.slice(0, startIndex),
+    ];
   }
 
   private getNextPlayerByPosition(
@@ -828,7 +1119,7 @@ export class HandService {
     );
 
     room.lastActivityAt = Date.now();
-    await this.storageService.saveRoom(room);
+    await this.storageService.persistRoom(room);
   }
 
   private reconcileChipConservation(
@@ -865,7 +1156,9 @@ export class HandService {
     if (delta > 0) {
       const recipient =
         room.players.find((player) => player.id === preferredPlayerId) ??
-        [...room.players].sort((a, b) => b.chips - a.chips || a.position - b.position)[0];
+        [...room.players].sort(
+          (a, b) => b.chips - a.chips || a.position - b.position,
+        )[0];
       if (!recipient) {
         return;
       }

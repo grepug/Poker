@@ -10,7 +10,7 @@ describe('AppController', () => {
 
   beforeEach(async () => {
     storageService = {
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       getRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn().mockResolvedValue([]),

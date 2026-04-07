@@ -22,7 +22,7 @@ describe('EventsGateway chat events', () => {
           },
         ],
       }),
-      saveRoom: jest.fn(),
+      persistRoom: jest.fn(),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(),
       roomExists: jest.fn(),

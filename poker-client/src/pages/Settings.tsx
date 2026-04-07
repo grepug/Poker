@@ -5,6 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLocalization } from "@/contexts/LocalizationContext";
 
 export const SettingsPage: React.FC = () => {
+  const displayNameInputId = "settings-display-name";
+  const avatarOptionsLabelId = "settings-avatar-options-label";
   const navigate = useNavigate();
   const { user, updateProfile, logout } = useAuth();
   const { t } = useLocalization();
@@ -35,8 +37,13 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/auth", { replace: true });
+    try {
+      await logout();
+    } catch {
+      // Local session is already cleared in the auth context.
+    } finally {
+      navigate("/auth", { replace: true });
+    }
   };
 
   return (
@@ -51,8 +58,14 @@ export const SettingsPage: React.FC = () => {
           </header>
 
           <div className="space-y-3">
-            <label className="text-sm font-semibold text-emerald-100">{t("settings.displayName")}</label>
+            <label
+              htmlFor={displayNameInputId}
+              className="text-sm font-semibold text-emerald-100"
+            >
+              {t("settings.displayName")}
+            </label>
             <input
+              id={displayNameInputId}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
@@ -60,10 +73,14 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <label className="text-sm font-semibold text-emerald-100">
+            <p id={avatarOptionsLabelId} className="text-sm font-semibold text-emerald-100">
               {t("settings.avatarLabel", { emoji: avatarEmoji })}
-            </label>
-            <div className="grid max-h-52 grid-cols-10 gap-1 overflow-y-auto rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-2">
+            </p>
+            <div
+              role="group"
+              aria-labelledby={avatarOptionsLabelId}
+              className="grid max-h-52 grid-cols-10 gap-1 overflow-y-auto rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-2"
+            >
               {PLAYER_EMOJI_OPTIONS.map((emoji) => (
                 <button
                   key={emoji}
