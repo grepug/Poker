@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PlayerAction } from 'poker-types';
+import { z } from 'zod';
+import {
+  createVolcengineResponsesCompatFetch,
+  isVolcengineResponsesBaseUrl,
+} from './openai-responses-compat';
 
 export type RobotActionCandidate = {
   action: PlayerAction;
@@ -98,6 +103,11 @@ const ACTION_INPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const ACTION_OUTPUT_SCHEMA = z.object({
+  action: z.enum(['fold', 'check', 'call', 'raise', 'all-in']),
+  amount: z.number().optional(),
+});
+
 const ROBOT_SYSTEM_PROMPT = `
 You are a poker robot player in a Texas Hold'em game.
 
@@ -115,7 +125,7 @@ TOOL LOOP POLICY
 1) Analyze context.
 2) Call attempt_action with candidate action.
 3) If rejected, use reason/legal actions and retry.
-4) Call done only with a legal action.
+4) Once you have a legal action, return it as structured output.
 5) Stay within max step limit.
 
 ACTION POLICY
@@ -152,9 +162,8 @@ export class RobotAgentService {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ToolLoopAgent, stepCountIs, tool, jsonSchema } = require('ai');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+    const { ToolLoopAgent, stepCountIs, tool, jsonSchema, Output } =
+      require('ai');
 
     const maxAgentSteps = Math.max(
       2,
@@ -165,90 +174,162 @@ export class RobotAgentService {
       params.context.constraints.toolRetryLimit || 4,
     );
 
-    let finalizedAction: RobotActionCandidate | null = null;
-    let latestValidAction: RobotActionCandidate | null = null;
-    let retryCount = 0;
+    const apiMode = this.getApiMode();
+    const model = this.createModel();
+    const maxProviderAttempts = apiMode === 'responses' ? 3 : 1;
+    let lastError: Error | null = null;
 
-    const provider = createOpenAICompatible({
-      name: 'robot-openai-compatible',
-      baseURL: process.env.AI_ROBOT_BASE_URL!.trim(),
-      apiKey: process.env.AI_ROBOT_API_KEY!.trim(),
-    });
+    for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
+      let finalizedAction: RobotActionCandidate | null = null;
+      let latestValidAction: RobotActionCandidate | null = null;
+      let retryCount = 0;
 
-    const agent = new ToolLoopAgent({
-      model: provider.chatModel(process.env.AI_ROBOT_MODEL_ID!.trim()),
-      instructions: ROBOT_SYSTEM_PROMPT,
-      toolChoice: 'required',
-      stopWhen: stepCountIs(maxAgentSteps),
-      temperature: Number(process.env.AI_ROBOT_TEMPERATURE || '0.3'),
-      tools: {
-        attempt_action: tool({
-          description:
-            'Propose an action candidate. Returns whether it is legal and, when invalid, why.',
-          inputSchema: jsonSchema(ACTION_INPUT_SCHEMA),
-          execute: async (input: RobotActionCandidate) => {
-            const candidate = this.normalizeAction(input);
-            const validation = params.validateAction(candidate);
-            if (validation.valid) {
-              latestValidAction = candidate;
-              return {
-                ok: true,
-                candidate,
-              };
-            }
-
-            retryCount += 1;
-            return {
-              ok: false,
-              reason: validation.reason || 'Invalid action',
-              legalActions:
-                validation.legalActions || params.context.legalActions,
-              retriesRemaining: Math.max(0, maxToolRetries - retryCount),
-            };
-          },
+      const agent = new ToolLoopAgent({
+        model,
+        instructions: ROBOT_SYSTEM_PROMPT,
+        // Structured output finalization can consume one extra step.
+        stopWhen: stepCountIs(maxAgentSteps + 1),
+        output: Output.object({
+          schema: ACTION_OUTPUT_SCHEMA,
         }),
-        done: tool({
-          description:
-            'Finalize turn with a legal action after at least one successful attempt_action.',
-          inputSchema: jsonSchema(ACTION_INPUT_SCHEMA),
-          execute: async (input: RobotActionCandidate) => {
-            const candidate = this.normalizeAction(input);
-            const validation = params.validateAction(candidate);
-            if (!validation.valid) {
+        ...(apiMode === 'responses'
+          ? {}
+          : { temperature: Number(process.env.AI_ROBOT_TEMPERATURE || '0.3') }),
+        tools: {
+          attempt_action: tool({
+            description:
+              'Propose an action candidate. Returns whether it is legal and, when invalid, why.',
+            inputSchema: jsonSchema(ACTION_INPUT_SCHEMA),
+            execute: async (input: RobotActionCandidate) => {
+              const candidate = this.normalizeAction(input);
+              const validation = params.validateAction(candidate);
+              if (validation.valid) {
+                latestValidAction = candidate;
+                return {
+                  ok: true,
+                  candidate,
+                };
+              }
+
+              retryCount += 1;
               return {
                 ok: false,
-                reason: validation.reason || 'Invalid final action',
+                reason: validation.reason || 'Invalid action',
                 legalActions:
                   validation.legalActions || params.context.legalActions,
+                retriesRemaining: Math.max(0, maxToolRetries - retryCount),
               };
-            }
+            },
+          }),
+        },
+      });
 
-            finalizedAction = candidate;
-            latestValidAction = candidate;
-            return { ok: true, finalized: true, candidate };
-          },
-        }),
-      },
-    });
+      let result:
+        | {
+            output?: RobotActionCandidate;
+          }
+        | undefined;
 
-    await agent.generate({
-      prompt: this.buildTurnPrompt(params.context),
-    });
+      try {
+        result = await agent.generate({
+          prompt: this.buildTurnPrompt(params.context),
+        });
+      } catch (error) {
+        const normalizedError =
+          error instanceof Error ? error : new Error(String(error));
+        lastError = normalizedError;
 
-    if (finalizedAction) {
-      return finalizedAction;
+        if (
+          attempt < maxProviderAttempts &&
+          this.isTransientResponsesError(apiMode, normalizedError)
+        ) {
+          this.logger.warn(
+            `Robot responses attempt ${attempt} failed with transient parse error; retrying`,
+          );
+          continue;
+        }
+
+        throw normalizedError;
+      }
+
+      const outputCandidate = result?.output
+        ? this.normalizeAction(result.output)
+        : null;
+      if (outputCandidate) {
+        const validation = params.validateAction(outputCandidate);
+        if (validation.valid) {
+          finalizedAction = outputCandidate;
+        } else {
+          lastError = new Error(
+            validation.reason || 'Robot agent produced an invalid final action',
+          );
+        }
+      }
+
+      if (finalizedAction) {
+        return finalizedAction;
+      }
+      if (latestValidAction) {
+        return latestValidAction;
+      }
+      if (lastError && attempt < maxProviderAttempts) {
+        continue;
+      }
     }
-    if (latestValidAction) {
-      return latestValidAction;
-    }
 
+    if (lastError) {
+      throw lastError;
+    }
     throw new Error('Robot agent failed to produce a legal action');
+  }
+
+  private createModel() {
+    const baseURL = process.env.AI_ROBOT_BASE_URL!.trim();
+    const apiKey = process.env.AI_ROBOT_API_KEY!.trim();
+    const modelId = process.env.AI_ROBOT_MODEL_ID!.trim();
+    const apiMode = this.getApiMode();
+
+    if (apiMode === 'responses') {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createOpenAI } = require('@ai-sdk/openai');
+      const provider = createOpenAI({
+        name: 'robot-openai-responses',
+        baseURL,
+        apiKey,
+        ...(isVolcengineResponsesBaseUrl(baseURL)
+          ? { fetch: createVolcengineResponsesCompatFetch() }
+          : {}),
+      });
+      return provider.responses(modelId);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+    const provider = createOpenAICompatible({
+      name: 'robot-openai-compatible',
+      baseURL,
+      apiKey,
+    });
+    return provider.chatModel(modelId);
+  }
+
+  private getApiMode(): 'chat' | 'responses' {
+    return (process.env.AI_ROBOT_API_MODE || 'chat').trim() === 'responses'
+      ? 'responses'
+      : 'chat';
+  }
+
+  private isTransientResponsesError(
+    apiMode: 'chat' | 'responses',
+    error: Error,
+  ): boolean {
+    return apiMode === 'responses' && error.message.includes('Invalid JSON response');
   }
 
   private buildTurnPrompt(context: RobotTurnContext): string {
     return [
       'Turn context JSON follows.',
-      'Use tools to validate actions and finish with done().',
+      'Use attempt_action to validate candidates, then return the final legal action as structured output.',
       'Never use hidden information.',
       JSON.stringify(context),
     ].join('\n\n');

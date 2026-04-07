@@ -4,6 +4,10 @@ describe('EventsGateway robot player controls', () => {
   let gateway: EventsGateway;
   let roomEmitter: { emit: jest.Mock };
   let gameService: any;
+  let handService: any;
+  let bettingService: any;
+  let testDeckService: any;
+  let robotAgentService: any;
   let storageService: any;
 
   const createPlayer = (params: {
@@ -53,16 +57,41 @@ describe('EventsGateway robot player controls', () => {
       removeRobotFromRoom: jest.fn(),
     };
 
+    handService = {
+      startNewHand: jest.fn(),
+    };
+
+    bettingService = {
+      calculateMinRaise: jest.fn().mockReturnValue(20),
+      validateAction: jest.fn((room: any, playerId: string, action: string) => {
+        void room;
+        void playerId;
+        if (action === 'check') {
+          return { valid: true };
+        }
+        if (action === 'raise') {
+          return { valid: false, reason: 'Raise unavailable' };
+        }
+        return { valid: true };
+      }),
+    };
+
+    testDeckService = {
+      isTestMode: jest.fn().mockReturnValue(false),
+    };
+
+    robotAgentService = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      getConfigurationError: jest.fn().mockReturnValue(null),
+      decideAction: jest.fn(),
+    };
+
     gateway = new EventsGateway(
       gameService,
-      {} as any,
-      {} as any,
-      { isTestMode: jest.fn().mockReturnValue(false) } as any,
-      {
-        isConfigured: jest.fn().mockReturnValue(false),
-        getConfigurationError: jest.fn().mockReturnValue(null),
-        decideAction: jest.fn(),
-      } as any,
+      handService,
+      bettingService,
+      testDeckService,
+      robotAgentService,
       { getUserByToken: jest.fn() } as any,
       storageService,
       {
@@ -227,5 +256,159 @@ describe('EventsGateway robot player controls', () => {
       readyPlayerIds: [],
     });
     expect(storageService.saveRoom).toHaveBeenCalledWith(roomAfterRemoval);
+  });
+
+  it('auto-readies robots during NEXT_HAND phase without requiring client input', () => {
+    const host = createPlayer({
+      id: 'p-host',
+      socketId: 'socket-host',
+      name: 'Host',
+      status: 'connected',
+      position: 0,
+    });
+    const robot = createPlayer({
+      id: 'p-robot',
+      socketId: '',
+      name: 'Robot 1',
+      status: 'waiting',
+      position: 1,
+      isRobot: true,
+    });
+    const room = {
+      id: 'ROOM1',
+      hostId: 'p-host',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [host, robot],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 7,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: null,
+        pot: 0,
+        communityCards: [],
+        bettingRound: 'SHOWDOWN',
+        currentBet: 0,
+        lastRaiseSize: 20,
+        activePlayers: [],
+        roundActions: {},
+        sidePots: [],
+        potContributions: {},
+        vpipPlayerIds: [],
+        lastResult: {
+          winners: [],
+          playerHands: [],
+          totalPot: 0,
+          payouts: [],
+          netByPlayerId: {},
+        },
+      },
+      readyPhase: null,
+      readyPlayerIds: ['p-host'],
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    (gateway as any).syncRoomReadyState(room);
+
+    expect(room.readyPhase).toBe('NEXT_HAND');
+    expect(room.readyPlayerIds).toEqual(['p-host', 'p-robot']);
+  });
+
+  it('falls back to a deterministic legal action when robot provider execution fails', async () => {
+    const robot = {
+      ...createPlayer({
+        id: 'p-robot',
+        socketId: '',
+        name: 'Robot 1',
+        status: 'connected',
+        position: 0,
+      }),
+      isRobot: true,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'hearts' },
+      ],
+    };
+    const human = {
+      ...createPlayer({
+        id: 'p-human',
+        socketId: 'socket-human',
+        name: 'Human',
+        status: 'connected',
+        position: 1,
+      }),
+      cards: [
+        { rank: '2', suit: 'clubs' },
+        { rank: '2', suit: 'diamonds' },
+      ],
+    };
+    const room = {
+      id: 'ROOM1',
+      hostId: 'p-human',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [robot, human],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 9,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-robot',
+        pot: 15,
+        communityCards: [
+          { rank: 'Q', suit: 'spades' },
+          { rank: 'J', suit: 'spades' },
+          { rank: '3', suit: 'clubs' },
+        ],
+        bettingRound: 'FLOP',
+        currentBet: 10,
+        lastRaiseSize: 10,
+        activePlayers: ['p-robot', 'p-human'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: { 'p-robot': 5, 'p-human': 10 },
+        vpipPlayerIds: ['p-robot', 'p-human'],
+        revealedPlayerIds: [],
+      },
+      readyPhase: null,
+      readyPlayerIds: [],
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    storageService.getRoom.mockResolvedValue(room);
+    robotAgentService.isConfigured.mockReturnValue(true);
+    robotAgentService.decideAction.mockRejectedValue(new Error('provider down'));
+    const handlePlayerActionSpy = jest
+      .spyOn(gateway as any, 'handlePlayerAction')
+      .mockResolvedValue({ success: true });
+
+    await (gateway as any).executeRobotTurn('ROOM1', 'p-robot', 9);
+
+    expect(robotAgentService.decideAction).toHaveBeenCalled();
+    expect(handlePlayerActionSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.stringMatching(/^robot:ROOM1:p-robot:/),
+      }),
+      expect.objectContaining({
+        action: 'check',
+      }),
+    );
   });
 });

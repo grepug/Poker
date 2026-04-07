@@ -471,6 +471,90 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.saveRoom).toHaveBeenCalledWith(room);
   });
 
+  it('transfers host to the next seated human instead of a robot', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+        createPlayer({
+          id: 'p-user',
+          socketId: 's-user',
+          name: 'User',
+          position: 2,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-host');
+
+    expect(updated).not.toBeNull();
+    expect(updated?.hostId).toBe('p-user');
+    expect(storageService.saveRoom).toHaveBeenCalledWith(room);
+    expect(storageService.deleteRoom).not.toHaveBeenCalled();
+  });
+
+  it('deletes the room when the last human leaves and only robots remain', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        createPlayer({
+          id: 'p-host',
+          socketId: 's-host',
+          name: 'Host',
+          position: 0,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.removePlayerFromRoom('ROOM01', 'p-host');
+
+    expect(updated).toBeNull();
+    expect(storageService.deleteRoom).toHaveBeenCalledWith('ROOM01');
+    expect(storageService.saveRoom).not.toHaveBeenCalled();
+  });
+
   it('allows host to add robot while game is waiting', async () => {
     const room = createRoom({
       gameState: 'WAITING',

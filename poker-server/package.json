@@ -23,9 +23,11 @@
     "test:e2e:playwright:smoke": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true ./node_modules/.bin/playwright test --project comprehensive-e2e --workers=1 --grep @critical --reporter=line",
     "test:e2e:playwright:comprehensive": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true ./node_modules/.bin/playwright test --project comprehensive-e2e --reporter=line",
     "test:e2e:playwright:comprehensive:parallel": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true PW_WORKERS=${PW_WORKERS:-3} ./node_modules/.bin/playwright test --project comprehensive-e2e --reporter=line",
+    "test:e2e:playwright:live-robot": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true PW_LIVE_ROBOT_E2E=1 ./node_modules/.bin/playwright test --project live-robot-e2e --workers=1 --reporter=line",
     "test:e2e:ui": "npm_config_proxy= npm_config_https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY='*' TEST_MODE=true ./node_modules/.bin/playwright test --ui"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.102",
     "@ai-sdk/openai-compatible": "^2.0.35",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^4.0.2",

@@ -375,9 +375,16 @@ export class GameService {
       return null;
     }
 
+    const seatedHumanPlayers = this.getSeatedHumanPlayers(room);
+    if (seatedHumanPlayers.length === 0) {
+      await this.storageService.deleteRoom(roomId);
+      this.logger.log(`Room ${roomId} deleted (no human players remaining)`);
+      return null;
+    }
+
     // If host left, transfer to next player
     if (room.hostId === playerId) {
-      const newHost = seatedPlayers[0];
+      const newHost = seatedHumanPlayers[0];
       room.hostId = newHost.id;
       this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
     }
@@ -604,5 +611,9 @@ export class GameService {
 
   private getSeatedPlayers(room: Room): Player[] {
     return room.players.filter((player) => player.status !== 'left');
+  }
+
+  private getSeatedHumanPlayers(room: Room): Player[] {
+    return this.getSeatedPlayers(room).filter((player) => !player.isRobot);
   }
 }

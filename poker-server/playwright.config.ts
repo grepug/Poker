@@ -34,6 +34,38 @@ const resolvedWorkers =
     : process.env.CI
       ? 2
       : 3;
+const liveRobotE2EEnabled = process.env.PW_LIVE_ROBOT_E2E === '1';
+
+function definedEnv(
+  entries: Record<string, string | undefined>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(entries).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+}
+
+const backendEnv = {
+  PORT: BACKEND_PORT,
+  CORS_ORIGIN: FRONTEND_URL,
+  CLIENT_URL: FRONTEND_URL,
+  TEST_MODE: 'true',
+  CHAT_RATE_LIMIT_COUNT: '500',
+  CHAT_RATE_LIMIT_WINDOW_MS: '10000',
+  CHAT_PAGE_SIZE: '20',
+  ...definedEnv({
+    AI_ROBOT_API_KEY: process.env.AI_ROBOT_API_KEY,
+    AI_ROBOT_BASE_URL: process.env.AI_ROBOT_BASE_URL,
+    AI_ROBOT_MODEL_ID: process.env.AI_ROBOT_MODEL_ID,
+    AI_ROBOT_API_MODE: process.env.AI_ROBOT_API_MODE,
+    AI_ROBOT_TEMPERATURE: process.env.AI_ROBOT_TEMPERATURE,
+    AI_ROBOT_MAX_AGENT_STEPS: process.env.AI_ROBOT_MAX_AGENT_STEPS,
+    AI_ROBOT_TOOL_RETRY_LIMIT: process.env.AI_ROBOT_TOOL_RETRY_LIMIT,
+    AI_ROBOT_ACTION_DELAY_MIN_MS: process.env.AI_ROBOT_ACTION_DELAY_MIN_MS,
+    AI_ROBOT_ACTION_DELAY_MAX_MS: process.env.AI_ROBOT_ACTION_DELAY_MAX_MS,
+  }),
+};
 
 export default defineConfig({
   testDir: './test/e2e',
@@ -71,6 +103,18 @@ export default defineConfig({
         headless: false, // Show browser for debugging
       },
     },
+    ...(liveRobotE2EEnabled
+      ? [
+          {
+            name: 'live-robot-e2e',
+            testMatch: 'robot-live-turn.spec.ts',
+            use: {
+              ...devices['Desktop Chrome'],
+              headless: true,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start both frontend and backend before tests
@@ -89,15 +133,7 @@ export default defineConfig({
       url: BACKEND_URL,
       reuseExistingServer: false,
       timeout: 60000,
-      env: {
-        PORT: BACKEND_PORT,
-        CORS_ORIGIN: FRONTEND_URL,
-        CLIENT_URL: FRONTEND_URL,
-        TEST_MODE: 'true',
-        CHAT_RATE_LIMIT_COUNT: '500',
-        CHAT_RATE_LIMIT_WINDOW_MS: '10000',
-        CHAT_PAGE_SIZE: '20',
-      },
+      env: backendEnv,
     },
   ],
 });
