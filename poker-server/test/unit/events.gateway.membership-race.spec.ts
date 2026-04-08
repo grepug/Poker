@@ -274,14 +274,13 @@ describe('EventsGateway membership mutation serialization', () => {
           .mockReturnValue('robot ai unavailable'),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       authService,
       storageService,
+      storageService as any,
       chatStorageService,
       chatMediaStorageService,
     );
-    (gateway as any).savedGameReviewService = {
-      scheduleArchiveReview: jest.fn().mockResolvedValue(undefined),
-    };
 
     const roomEmitter = { emit: jest.fn() };
     gateway.server = {

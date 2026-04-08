@@ -100,4 +100,31 @@ describe('SavedGameReviewService', () => {
       }),
     );
   });
+
+  it('queues archive reviews sequentially and deduplicates repeated schedule requests', async () => {
+    const started: string[] = [];
+    let releaseFirst: (() => void) | null = null;
+    const firstReviewFinished = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    jest.spyOn(service, 'runArchiveReview').mockImplementation(async (archiveId) => {
+      started.push(archiveId);
+      if (archiveId === 'ROOM1') {
+        await firstReviewFinished;
+      }
+    });
+
+    await service.scheduleArchiveReview('ROOM1');
+    await service.scheduleArchiveReview('ROOM1');
+    await service.scheduleArchiveReview('ROOM2');
+    await Promise.resolve();
+
+    expect(started).toEqual(['ROOM1']);
+
+    releaseFirst?.();
+    await (service as any).reviewQueue;
+
+    expect(started).toEqual(['ROOM1', 'ROOM2']);
+  });
 });

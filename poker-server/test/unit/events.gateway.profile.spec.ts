@@ -23,6 +23,7 @@ describe('EventsGateway profile update', () => {
         getConfigurationError: jest.fn().mockReturnValue(null),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       authService as any,
       {
         getRoom: jest.fn(),
@@ -31,6 +32,7 @@ describe('EventsGateway profile update', () => {
         getAllRooms: jest.fn(),
         roomExists: jest.fn(),
       } as any,
+      {} as any,
       {
         getMessagePage: jest.fn(),
         appendMessage: jest.fn(),

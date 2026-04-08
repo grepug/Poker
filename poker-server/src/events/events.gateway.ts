@@ -23,6 +23,7 @@ import {
 } from '../game/robot-agent.service';
 import { SavedGameReviewService } from '../game/saved-game-review.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { ISavedGameArchiveStorageService } from '../common/interfaces/saved-game-archive-storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
 import { AuthService } from '../auth/auth.service';
@@ -137,7 +138,6 @@ export class EventsGateway
   server: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
-  private readonly savedGameReviewService: SavedGameReviewService;
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private runCountDecisionTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
@@ -268,18 +268,17 @@ export class EventsGateway
     private readonly bettingService: BettingService,
     private readonly testDeckService: TestDeckService,
     private readonly robotAgentService: RobotAgentService,
+    private readonly savedGameReviewService: SavedGameReviewService,
     private readonly authService: AuthService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
+    @Inject('ISavedGameArchiveStorageService')
+    private readonly savedGameArchiveStorageService: ISavedGameArchiveStorageService,
     @Inject('IChatStorageService')
     private readonly chatStorageService: IChatStorageService,
     @Inject('IChatMediaStorageService')
     private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {
-    this.savedGameReviewService = new SavedGameReviewService(
-      this.storageService as any,
-      this.robotAgentService,
-    );
     realtimeEventBus.setSingletonListener(
       'PLAYER_PROFILE_UPDATED',
       this.profileUpdatedListenerKey,
@@ -1299,18 +1298,13 @@ export class EventsGateway
           }),
         ),
       );
-      const archiveEndedRoom = (
-        this.storageService as IStorageService & {
-          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
-        }
-      ).archiveEndedRoom;
-      if (typeof archiveEndedRoom === 'function') {
-        const archived = await archiveEndedRoom.call(this.storageService, room.id);
-        if (archived?.archiveId) {
-          await this.savedGameReviewService.scheduleArchiveReview(
-            archived.archiveId,
-          );
-        }
+      const archived = await this.savedGameArchiveStorageService.archiveEndedRoom(
+        room.id,
+      );
+      if (archived?.archiveId) {
+        await this.savedGameReviewService.scheduleArchiveReview(
+          archived.archiveId,
+        );
       }
 
       const gameEndedData: GameEndedData = {

@@ -23,10 +23,12 @@ import {
 import { randomUUID } from 'crypto';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { IHandHistoryStorageService } from '../common/interfaces/hand-history-storage.interface';
+import { ISavedGameArchiveStorageService } from '../common/interfaces/saved-game-archive-storage.interface';
 import {
   appendJsonlRecords,
   ensureDir,
   pathExists,
+  readFirstJsonlRecordMatching,
   readJsonFile,
   readJsonlRecords,
   writeJsonFileAtomic,
@@ -66,7 +68,10 @@ type SavedGameArchiveRecord = {
 
 @Injectable()
 export class JsonStorageService
-  implements IStorageService, IHandHistoryStorageService
+  implements
+    IStorageService,
+    IHandHistoryStorageService,
+    ISavedGameArchiveStorageService
 {
   private readonly logger = new Logger(JsonStorageService.name);
   private readonly dataDir: string;
@@ -75,6 +80,8 @@ export class JsonStorageService
   private readonly savedGameArchivesDir: string;
   private readonly savedGameUserIndexesDir: string;
   private readonly roomWriteQueues: Map<string, Promise<void>> = new Map();
+  private readonly savedGameArchiveWriteQueues: Map<string, Promise<void>> =
+    new Map();
 
   constructor(private readonly configService: ConfigService) {
     this.dataDir = this.configService.get<string>('DATA_DIR') || './data';
@@ -491,105 +498,115 @@ export class JsonStorageService
   async archiveEndedRoom(
     roomId: string,
   ): Promise<{ archiveId: string } | null> {
-    await this.ensureDirectories();
-
     const archiveId = roomId;
-    const existingArchive = await this.readSavedGameArchive(archiveId);
-    if (existingArchive) {
-      return { archiveId };
-    }
+    return this.runSavedGameArchiveWriteSequentially(archiveId, async () => {
+      await this.ensureDirectories();
 
-    const room = await this.getRoom(roomId);
-    if (!room || room.gameState !== 'ENDED') {
-      return null;
-    }
-
-    const archivedPlayers = room.players as ArchivedRoomPlayer[];
-    const participantViews = new Map<
-      string,
-      {
-        requesterUserId: string;
-        requesterPlayerId: string;
-        hands: SavedGameHandDetail[];
-      }
-    >();
-
-    for (const player of archivedPlayers) {
-      if (!player.userId) {
-        continue;
+      const existingArchive = await this.readSavedGameArchive(archiveId);
+      if (existingArchive) {
+        return { archiveId };
       }
 
-      const exportPayload = await this.getCompletedGameHistory(roomId, player.id);
-      if (!exportPayload) {
-        continue;
+      const room = await this.getRoom(roomId);
+      if (!room || room.gameState !== 'ENDED') {
+        return null;
       }
 
-      participantViews.set(player.userId, {
-        requesterUserId: player.userId,
-        requesterPlayerId: player.id,
-        hands: exportPayload.hands.map((hand) => ({
-          handNumber: hand.handNumber,
-          history: hand,
-          analysis: this.createPendingSavedGameAnalysis(room.lastActivityAt),
-        })),
-      });
-    }
-
-    if (participantViews.size === 0) {
-      return null;
-    }
-
-    const startedAt = await this.resolveSavedGameStartedAt(roomId, room.createdAt);
-    const concludedAt = Number(room.lastActivityAt || Date.now());
-    const participants = archivedPlayers
-      .map((player) => this.toSavedGameParticipant(player))
-      .sort((left, right) => {
-        if (right.finalChips !== left.finalChips) {
-          return right.finalChips - left.finalChips;
+      const archivedPlayers = room.players as ArchivedRoomPlayer[];
+      const participantViews = new Map<
+        string,
+        {
+          requesterUserId: string;
+          requesterPlayerId: string;
+          hands: SavedGameHandDetail[];
         }
-        if (right.profit !== left.profit) {
-          return right.profit - left.profit;
+      >();
+
+      for (const player of archivedPlayers) {
+        if (!player.userId) {
+          continue;
         }
-        return left.playerName.localeCompare(right.playerName);
-      });
-    const handCount =
-      participantViews.values().next().value?.hands.length ?? 0;
 
-    const archiveRecord: SavedGameArchiveRecord = {
-      archiveId,
-      roomId,
-      createdAt: concludedAt,
-      startedAt,
-      concludedAt,
-      handCount,
-      blinds: {
-        smallBlind: room.config.smallBlind,
-        bigBlind: room.config.bigBlind,
-      },
-      participants,
-      playerViews: Object.fromEntries(participantViews.entries()),
-    };
-
-    await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archiveRecord);
-
-    await Promise.all(
-      Array.from(participantViews.values()).map((view) =>
-        this.writeSavedGameIndexForUser({
-          archiveId,
+        const exportPayload = await this.getCompletedGameHistory(
           roomId,
-          requesterUserId: view.requesterUserId,
-          requesterPlayerId: view.requesterPlayerId,
-          createdAt: concludedAt,
-          startedAt,
-          concludedAt,
-          handCount,
-          blinds: archiveRecord.blinds,
-          participants,
-        }),
-      ),
-    );
+          player.id,
+        );
+        if (!exportPayload) {
+          continue;
+        }
 
-    return { archiveId };
+        participantViews.set(player.userId, {
+          requesterUserId: player.userId,
+          requesterPlayerId: player.id,
+          hands: exportPayload.hands.map((hand) => ({
+            handNumber: hand.handNumber,
+            history: hand,
+            analysis: this.createPendingSavedGameAnalysis(room.lastActivityAt),
+          })),
+        });
+      }
+
+      if (participantViews.size === 0) {
+        return null;
+      }
+
+      const startedAt = await this.resolveSavedGameStartedAt(
+        roomId,
+        room.createdAt,
+      );
+      const concludedAt = Number(room.lastActivityAt || Date.now());
+      const participants = archivedPlayers
+        .map((player) => this.toSavedGameParticipant(player))
+        .sort((left, right) => {
+          if (right.finalChips !== left.finalChips) {
+            return right.finalChips - left.finalChips;
+          }
+          if (right.profit !== left.profit) {
+            return right.profit - left.profit;
+          }
+          return left.playerName.localeCompare(right.playerName);
+        });
+      const handCount = participantViews.values().next().value?.hands.length ?? 0;
+
+      const archiveRecord: SavedGameArchiveRecord = {
+        archiveId,
+        roomId,
+        createdAt: concludedAt,
+        startedAt,
+        concludedAt,
+        handCount,
+        blinds: {
+          smallBlind: room.config.smallBlind,
+          bigBlind: room.config.bigBlind,
+        },
+        participants,
+        playerViews: Object.fromEntries(participantViews.entries()),
+      };
+
+      await writeJsonFileAtomic(
+        this.getSavedGameArchivePath(archiveId),
+        archiveRecord,
+      );
+
+      await Promise.all(
+        Array.from(participantViews.values()).map((view) =>
+          this.writeSavedGameIndexForUser({
+            archiveId,
+            roomId,
+            requesterUserId: view.requesterUserId,
+            requesterPlayerId: view.requesterPlayerId,
+            createdAt: concludedAt,
+            startedAt,
+            concludedAt,
+            handCount,
+            blinds: archiveRecord.blinds,
+            participants,
+          }),
+        ),
+      );
+
+      return { archiveId };
+    });
   }
 
   async listSavedGamesForUser(userId: string): Promise<SavedGameSummary[]> {
@@ -657,33 +674,35 @@ export class JsonStorageService
     handNumber: number,
     analysis: SavedGameHandAnalysis,
   ): Promise<void> {
-    await this.ensureDirectories();
-    const archive = await this.readSavedGameArchive(archiveId);
-    if (!archive) {
-      return;
-    }
+    await this.runSavedGameArchiveWriteSequentially(archiveId, async () => {
+      await this.ensureDirectories();
+      const archive = await this.readSavedGameArchive(archiveId);
+      if (!archive) {
+        return;
+      }
 
-    const playerView = archive.playerViews[userId];
-    if (!playerView) {
-      return;
-    }
+      const playerView = archive.playerViews[userId];
+      if (!playerView) {
+        return;
+      }
 
-    const nextHands = playerView.hands.map((hand) =>
-      hand.handNumber === handNumber
-        ? {
-            ...hand,
-            analysis: {
-              ...analysis,
-              updatedAt: Number(analysis.updatedAt || Date.now()),
-            },
-          }
-        : hand,
-    );
-    archive.playerViews[userId] = {
-      ...playerView,
-      hands: nextHands,
-    };
-    await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
+      const nextHands = playerView.hands.map((hand) =>
+        hand.handNumber === handNumber
+          ? {
+              ...hand,
+              analysis: {
+                ...analysis,
+                updatedAt: Number(analysis.updatedAt || Date.now()),
+              },
+            }
+          : hand,
+      );
+      archive.playerViews[userId] = {
+        ...playerView,
+        hands: nextHands,
+      };
+      await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
+    });
   }
 
   private async ensureDirectories(): Promise<void> {
@@ -830,6 +849,33 @@ export class JsonStorageService
     }
   }
 
+  private async runSavedGameArchiveWriteSequentially<T>(
+    archiveId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previousQueue =
+      this.savedGameArchiveWriteQueues.get(archiveId) || Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+
+    const gate = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+
+    const nextQueue = previousQueue.finally(() => gate);
+    this.savedGameArchiveWriteQueues.set(archiveId, nextQueue);
+
+    await previousQueue.catch(() => undefined);
+
+    try {
+      return await task();
+    } finally {
+      releaseCurrent();
+      if (this.savedGameArchiveWriteQueues.get(archiveId) === nextQueue) {
+        this.savedGameArchiveWriteQueues.delete(archiveId);
+      }
+    }
+  }
+
   private async migrateLegacyRoomsInDirectory(): Promise<void> {
     const entries = await fs.readdir(this.roomsDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -963,13 +1009,12 @@ export class JsonStorageService
     roomId: string,
     fallback: number,
   ): Promise<number> {
-    const roomEvents = await readJsonlRecords<PersistedRoomEventRecord>(
-      this.getRoomEventsPath(roomId),
-    );
-    return (
-      roomEvents.find((event) => event.type === 'HAND_STARTED')?.timestamp ??
-      fallback
-    );
+    const firstHandStarted =
+      await readFirstJsonlRecordMatching<PersistedRoomEventRecord>(
+        this.getRoomEventsPath(roomId),
+        (event) => event.type === 'HAND_STARTED',
+      );
+    return firstHandStarted?.timestamp ?? fallback;
   }
 
   private toSavedGameParticipant(player: ArchivedRoomPlayer): SavedGameParticipant {

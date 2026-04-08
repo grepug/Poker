@@ -71,6 +71,37 @@ export async function readJsonlRecords<T extends JsonValue>(
   }
 }
 
+export async function readFirstJsonlRecordMatching<T extends JsonValue>(
+  filePath: string,
+  predicate: (record: T) => boolean,
+): Promise<T | null> {
+  let handle: fs.FileHandle | null = null;
+
+  try {
+    handle = await fs.open(filePath, 'r');
+    for await (const rawLine of handle.readLines()) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+
+      const record = JSON.parse(line) as T;
+      if (predicate(record)) {
+        return record;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
 export function parseJsonlRecords<T extends JsonValue>(raw: string): T[] {
   if (!raw.trim()) {
     return [];

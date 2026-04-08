@@ -95,8 +95,10 @@ describe('EventsGateway robot player controls', () => {
       bettingService,
       testDeckService,
       robotAgentService,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
+      storageService as any,
       {
         getMessagePage: jest.fn().mockResolvedValue({
           messages: [],

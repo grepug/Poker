@@ -184,8 +184,10 @@ describe('EventsGateway run-count decision flow', () => {
         getConfigurationError: jest.fn().mockReturnValue(null),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
+      storageService as any,
       {
         getMessagePage: jest.fn().mockResolvedValue({
           messages: [],

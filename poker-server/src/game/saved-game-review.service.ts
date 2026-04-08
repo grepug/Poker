@@ -2,10 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CompletedHandHistoryExport, SavedGameHandAnalysis } from 'poker-types';
 import { z } from 'zod';
 import type { ISavedGameArchiveStorageService } from '../common/interfaces/saved-game-archive-storage.interface';
-import {
-  createVolcengineResponsesCompatFetch,
-  isVolcengineResponsesBaseUrl,
-} from './openai-responses-compat';
 import { RobotAgentService } from './robot-agent.service';
 
 const REVIEW_OUTPUT_SCHEMA = z.object({
@@ -17,6 +13,8 @@ const REVIEW_OUTPUT_SCHEMA = z.object({
 @Injectable()
 export class SavedGameReviewService {
   private readonly logger = new Logger(SavedGameReviewService.name);
+  private reviewQueue: Promise<void> = Promise.resolve();
+  private readonly queuedArchiveIds = new Set<string>();
 
   constructor(
     @Inject('ISavedGameArchiveStorageService')
@@ -25,13 +23,28 @@ export class SavedGameReviewService {
   ) {}
 
   async scheduleArchiveReview(archiveId: string): Promise<void> {
-    void this.runArchiveReview(archiveId).catch((error) => {
-      const message =
-        error instanceof Error ? error.message : 'Unknown review error';
-      this.logger.error(
-        `Saved game review scheduling failed for ${archiveId}: ${message}`,
-      );
-    });
+    if (this.queuedArchiveIds.has(archiveId)) {
+      return;
+    }
+
+    this.queuedArchiveIds.add(archiveId);
+    const runReview = async () => {
+      try {
+        await this.runArchiveReview(archiveId);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown review error';
+        this.logger.error(
+          `Saved game review scheduling failed for ${archiveId}: ${message}`,
+        );
+      } finally {
+        this.queuedArchiveIds.delete(archiveId);
+      }
+    };
+
+    this.reviewQueue = this.reviewQueue
+      .catch(() => undefined)
+      .then(runReview);
   }
 
   async runArchiveReview(archiveId: string): Promise<void> {
@@ -131,10 +144,10 @@ export class SavedGameReviewService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { generateObject } = require('ai');
     const result = await generateObject({
-      model: this.createModel(),
+      model: this.robotAgentService.createConfiguredModel('saved-game-review'),
       schema: REVIEW_OUTPUT_SCHEMA,
       prompt: this.buildReviewPrompt(params),
-      ...(this.getApiMode() === 'responses'
+      ...(this.robotAgentService.getApiMode() === 'responses'
         ? {}
         : { temperature: Number(process.env.AI_ROBOT_TEMPERATURE || '0.3') }),
     });
@@ -161,39 +174,4 @@ export class SavedGameReviewService {
     ].join('\n\n');
   }
 
-  private createModel() {
-    const baseURL = process.env.AI_ROBOT_BASE_URL!.trim();
-    const apiKey = process.env.AI_ROBOT_API_KEY!.trim();
-    const modelId = process.env.AI_ROBOT_MODEL_ID!.trim();
-    const apiMode = this.getApiMode();
-
-    if (apiMode === 'responses') {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { createOpenAI } = require('@ai-sdk/openai');
-      const provider = createOpenAI({
-        name: 'saved-game-review-openai-responses',
-        baseURL,
-        apiKey,
-        ...(isVolcengineResponsesBaseUrl(baseURL)
-          ? { fetch: createVolcengineResponsesCompatFetch() }
-          : {}),
-      });
-      return provider.responses(modelId);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
-    const provider = createOpenAICompatible({
-      name: 'saved-game-review-openai-compatible',
-      baseURL,
-      apiKey,
-    });
-    return provider.chatModel(modelId);
-  }
-
-  private getApiMode(): 'chat' | 'responses' {
-    return (process.env.AI_ROBOT_API_MODE || 'chat').trim() === 'responses'
-      ? 'responses'
-      : 'chat';
-  }
 }
