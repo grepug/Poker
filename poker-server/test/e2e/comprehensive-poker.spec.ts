@@ -1,3 +1,4 @@
+import * as fs from 'fs/promises';
 import { test, expect, Page, BrowserContext } from '@playwright/test';
 
 /**
@@ -63,6 +64,25 @@ async function confirmLeaveRoom(
   await expect(
     page.locator('[data-testid="leave-room-confirm-modal"]'),
   ).toHaveCount(0);
+}
+
+async function readDownloadedJson(page: Page, triggerSelector: string) {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click(triggerSelector),
+  ]);
+  const failure = await download.failure();
+  if (failure) {
+    throw new Error(`Download failed: ${failure}`);
+  }
+
+  const downloadPath = await download.path();
+  if (!downloadPath) {
+    throw new Error('Download path unavailable');
+  }
+
+  const raw = await fs.readFile(downloadPath, 'utf-8');
+  return JSON.parse(raw) as Record<string, any>;
 }
 
 // Helper to verify chip conservation (chips only, not including current bets)
@@ -7876,6 +7896,91 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="hand-results-modal"]'),
       ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.15b: Hand Results Export, Review Unavailable State, And Final Full Export', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'hearts', rank: 'A' }, // Alice
+        { suit: 'hearts', rank: 'K' }, // Alice
+        { suit: 'spades', rank: 'Q' }, // Bob
+        { suit: 'spades', rank: 'J' }, // Bob
+        { suit: 'clubs', rank: '2' }, // Flop 1
+        { suit: 'diamonds', rank: '5' }, // Flop 2
+        { suit: 'spades', rank: '8' }, // Flop 3
+        { suit: 'hearts', rank: '9' }, // Turn
+        { suit: 'diamonds', rank: 'K' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+      await handCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="export-hand-history-button"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="open-hand-review-button"]'),
+      ).toBeVisible();
+
+      const alicePlayerId = await alicePage.evaluate(
+        () => (window as any).pokerDebug?.getPlayer?.()?.id,
+      );
+      if (!alicePlayerId) {
+        throw new Error('Missing player id for hand-history export assertion');
+      }
+
+      const handExport = await readDownloadedJson(
+        alicePage,
+        '[data-testid="export-hand-history-button"]',
+      );
+      expect(handExport.roomId).toBe(roomCode);
+      expect(handExport.handNumber).toBe(1);
+      expect(handExport.requesterPlayerId).toBe(alicePlayerId);
+      expect(handExport.actions[0]).toEqual(
+        expect.objectContaining({
+          source: 'blind',
+          action: 'post-blind',
+        }),
+      );
+
+      await alicePage.click('[data-testid="open-hand-review-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-review-unavailable"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="end-game-button"]');
+      await expect(
+        alicePage.locator('[data-testid="end-game-confirm-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="end-game-confirm-accept"]');
+
+      await expect(
+        bobPage.locator('[data-testid="final-summary-modal"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="export-game-history-button"]'),
+      ).toBeVisible();
+
+      const gameExport = await readDownloadedJson(
+        bobPage,
+        '[data-testid="export-game-history-button"]',
+      );
+      expect(gameExport.roomId).toBe(roomCode);
+      expect(gameExport.handCount).toBe(1);
+      expect(gameExport.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
     } finally {
       await teardownTwoPlayerSession(session);
     }

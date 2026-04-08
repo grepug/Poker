@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CompletedGameHistoryExport,
+  CompletedHandHistoryAction,
+  CompletedHandHistoryExport,
+  CompletedHandHistorySeat,
+  PersistedBettingRoundAdvancedPayload,
+  PersistedHandSettlement,
+  PersistedHandStartedPayload,
+  PersistedPlayerActionPayload,
   PersistedRoomEventRecord,
   PersistedRoomSnapshot,
   Room,
@@ -8,6 +16,7 @@ import {
 } from 'poker-types';
 import { randomUUID } from 'crypto';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { IHandHistoryStorageService } from '../common/interfaces/hand-history-storage.interface';
 import {
   appendJsonlRecords,
   ensureDir,
@@ -25,7 +34,9 @@ type StoredRoomProjection = {
 };
 
 @Injectable()
-export class JsonStorageService implements IStorageService {
+export class JsonStorageService
+  implements IStorageService, IHandHistoryStorageService
+{
   private readonly logger = new Logger(JsonStorageService.name);
   private readonly dataDir: string;
   private readonly roomsDir: string;
@@ -159,6 +170,285 @@ export class JsonStorageService implements IStorageService {
 
   async roomExists(roomId: string): Promise<boolean> {
     return Boolean(await this.getRoom(roomId));
+  }
+
+  async getCompletedHandHistory(
+    roomId: string,
+    handNumber: number,
+    requesterPlayerId: string,
+  ): Promise<CompletedHandHistoryExport | null> {
+    await this.ensureDirectories();
+
+    const events = await readJsonlRecords<PersistedRoomEventRecord>(
+      this.getHandEventsPath(roomId, handNumber),
+    );
+    if (events.length === 0) {
+      return null;
+    }
+
+    const handStarted = events.find(
+      (event) => event.type === 'HAND_STARTED',
+    )?.payload as PersistedHandStartedPayload | undefined;
+    const handSettled = events.find(
+      (event) => event.type === 'HAND_SETTLED',
+    )?.payload as PersistedHandSettlement | undefined;
+
+    if (!handStarted || !handSettled?.result) {
+      return null;
+    }
+
+    const seatSnapshots = [...(handStarted.players ?? [])].sort(
+      (left, right) => left.position - right.position,
+    );
+    const seatSnapshotByPlayerId = new Map(
+      seatSnapshots.map((seat) => [seat.playerId, seat]),
+    );
+    const playerHandByPlayerId = new Map(
+      (handSettled.result.playerHands ?? []).map((playerHand) => [
+        playerHand.playerId,
+        playerHand,
+      ]),
+    );
+    const revealedPlayerIdSet = new Set(
+      handSettled.revealedPlayerIds ??
+        handSettled.result.playerHands
+          .filter((playerHand) => playerHand.cardsVisibility === 'shown')
+          .map((playerHand) => playerHand.playerId),
+    );
+
+    const seats: CompletedHandHistorySeat[] = seatSnapshots.map((seat) => {
+      const holeCardsVisibility =
+        seat.playerId === requesterPlayerId
+          ? 'self'
+          : revealedPlayerIdSet.has(seat.playerId)
+            ? 'revealed'
+            : 'hidden';
+
+      return {
+        playerId: seat.playerId,
+        playerName: seat.playerName,
+        seatPosition: seat.position,
+        positionLabel: seat.positionLabel ?? null,
+        startingStack: seat.chips + seat.currentBet,
+        holeCards:
+          holeCardsVisibility === 'hidden' ? null : [...(seat.cards ?? [])],
+        holeCardsVisibility,
+      };
+    });
+
+    const communityCardsByStreet = {
+      preFlop: [] as CompletedHandHistoryExport['communityCardsByStreet']['preFlop'],
+      flop: [] as CompletedHandHistoryExport['communityCardsByStreet']['flop'],
+      turn: [] as CompletedHandHistoryExport['communityCardsByStreet']['turn'],
+      river: [] as CompletedHandHistoryExport['communityCardsByStreet']['river'],
+    };
+
+    const applyBoard = (
+      board: PersistedBettingRoundAdvancedPayload['communityCards'],
+    ) => {
+      if (board.length >= 3) {
+        communityCardsByStreet.flop = [...board.slice(0, 3)];
+      }
+      if (board.length >= 4) {
+        communityCardsByStreet.turn = [...board.slice(0, 4)];
+      }
+      if (board.length >= 5) {
+        communityCardsByStreet.river = [...board.slice(0, 5)];
+      }
+    };
+
+    let runningPot = 0;
+    const actions: CompletedHandHistoryAction[] = [];
+    const pushAction = (
+      action: Omit<CompletedHandHistoryAction, 'order'>,
+    ) => {
+      actions.push({
+        order: actions.length + 1,
+        ...action,
+      });
+      runningPot = action.potAfter;
+    };
+
+    const smallBlindSeat = seatSnapshots.find(
+      (seat) => seat.position === handStarted.smallBlindPosition,
+    );
+    const bigBlindSeat = seatSnapshots.find(
+      (seat) => seat.position === handStarted.bigBlindPosition,
+    );
+
+    if (smallBlindSeat && smallBlindSeat.currentBet > 0) {
+      runningPot += smallBlindSeat.currentBet;
+      pushAction({
+        source: 'blind',
+        street: 'PRE_FLOP',
+        playerId: smallBlindSeat.playerId,
+        playerName: smallBlindSeat.playerName,
+        action: 'post-blind',
+        amount: smallBlindSeat.currentBet,
+        totalBetTo: smallBlindSeat.currentBet,
+        potAfter: runningPot,
+        blindType: 'SB',
+        displayKind: 'blind',
+      });
+    }
+
+    if (bigBlindSeat && bigBlindSeat.currentBet > 0) {
+      runningPot += bigBlindSeat.currentBet;
+      pushAction({
+        source: 'blind',
+        street: 'PRE_FLOP',
+        playerId: bigBlindSeat.playerId,
+        playerName: bigBlindSeat.playerName,
+        action: 'post-blind',
+        amount: bigBlindSeat.currentBet,
+        totalBetTo: bigBlindSeat.currentBet,
+        potAfter: runningPot,
+        blindType: 'BB',
+        displayKind: 'blind',
+      });
+    }
+
+    for (const event of events) {
+      if (event.type === 'BETTING_ROUND_ADVANCED') {
+        const payload = event.payload as PersistedBettingRoundAdvancedPayload;
+        applyBoard(payload.communityCards ?? []);
+        continue;
+      }
+
+      if (event.type === 'PLAYER_ACTION') {
+        const payload = event.payload as PersistedPlayerActionPayload;
+        const result = payload.result;
+        const playerId = event.actor?.playerId ?? '';
+        const seat = seatSnapshotByPlayerId.get(playerId);
+        pushAction({
+          source: 'player',
+          street: event.street ?? 'PRE_FLOP',
+          playerId,
+          playerName: event.actor?.playerName ?? seat?.playerName ?? '',
+          action: result?.resolvedAction ?? payload.action,
+          amount: result?.committedAmount ?? 0,
+          totalBetTo: result?.totalBetAfterAction ?? null,
+          potAfter: result?.potAfter ?? runningPot,
+          blindType: null,
+          displayKind: result?.displayKind ?? null,
+        });
+        continue;
+      }
+
+      if (event.type === 'SHOWDOWN_DECISION_UPDATED') {
+        const payload = event.payload as {
+          action?: 'REVEAL' | 'MUCK';
+        };
+        const playerId = event.actor?.playerId ?? '';
+        const seat = seatSnapshotByPlayerId.get(playerId);
+        if (payload.action === 'REVEAL' || payload.action === 'MUCK') {
+          pushAction({
+            source: 'system',
+            street: event.street ?? 'SHOWDOWN',
+            playerId,
+            playerName: event.actor?.playerName ?? seat?.playerName ?? '',
+            action: payload.action === 'REVEAL' ? 'reveal' : 'muck',
+            amount: 0,
+            totalBetTo: null,
+            potAfter: runningPot,
+            blindType: null,
+            displayKind: null,
+          });
+        }
+      }
+    }
+
+    if (communityCardsByStreet.river.length === 0) {
+      const firstRunBoard = handSettled.result.runouts?.[0]?.board ?? [];
+      applyBoard(firstRunBoard);
+    }
+
+    const settlement = {
+      isShowdown: handSettled.isShowdown,
+      revealedPlayerIds: [...(handSettled.revealedPlayerIds ?? [])],
+      totalPot: handSettled.result.totalPot,
+      payouts: [...(handSettled.result.payouts ?? [])],
+      winners: [...(handSettled.result.winners ?? [])],
+      netByPlayerId: { ...(handSettled.result.netByPlayerId ?? {}) },
+    };
+
+    // Preserve deterministic seat ordering even when the settled result omits cards.
+    for (const seat of seats) {
+      const playerHand = playerHandByPlayerId.get(seat.playerId);
+      if (
+        seat.holeCardsVisibility === 'revealed' &&
+        (!seat.holeCards || seat.holeCards.length === 0) &&
+        playerHand?.cards?.length
+      ) {
+        seat.holeCards = [...playerHand.cards];
+      }
+    }
+
+    return {
+      version: 1,
+      roomId,
+      handNumber: handStarted.handNumber,
+      requesterPlayerId,
+      dealerPosition: handStarted.dealerPosition,
+      smallBlindPosition: handStarted.smallBlindPosition,
+      bigBlindPosition: handStarted.bigBlindPosition,
+      blinds: {
+        smallBlind: smallBlindSeat?.currentBet ?? 0,
+        bigBlind: bigBlindSeat?.currentBet ?? 0,
+      },
+      communityCardsByStreet,
+      seats,
+      actions,
+      settlement,
+    };
+  }
+
+  async getCompletedGameHistory(
+    roomId: string,
+    requesterPlayerId: string,
+  ): Promise<CompletedGameHistoryExport | null> {
+    await this.ensureDirectories();
+
+    const room = await this.getRoom(roomId);
+    if (!room || room.gameState !== 'ENDED') {
+      return null;
+    }
+
+    const handsDir = this.getHandsDir(roomId);
+    if (!(await pathExists(handsDir))) {
+      return null;
+    }
+
+    const handEntries = await fs.readdir(handsDir, { withFileTypes: true });
+    const handNumbers = handEntries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+      .map((entry) => Number.parseInt(entry.name.replace(/\.jsonl$/, ''), 10))
+      .filter((handNumber) => Number.isFinite(handNumber))
+      .sort((left, right) => left - right);
+
+    const hands: CompletedHandHistoryExport[] = [];
+    for (const handNumber of handNumbers) {
+      const handHistory = await this.getCompletedHandHistory(
+        roomId,
+        handNumber,
+        requesterPlayerId,
+      );
+      if (handHistory) {
+        hands.push(handHistory);
+      }
+    }
+
+    if (hands.length === 0) {
+      return null;
+    }
+
+    return {
+      version: 1,
+      roomId,
+      requesterPlayerId,
+      handCount: hands.length,
+      hands,
+    };
   }
 
   private async ensureDirectories(): Promise<void> {

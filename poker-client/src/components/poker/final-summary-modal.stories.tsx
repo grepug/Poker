@@ -20,6 +20,8 @@ const meta = {
     finalStandings: finalStandingsFixture,
     currentPlayerId: "p1",
     isGameEnded: false,
+    onExportHistory: () => {},
+    isExportingHistory: false,
     onSaveScreenshot: () => {},
     onLeave: () => {},
     onClose: () => {},
@@ -37,4 +39,3 @@ export const GameEnded: Story = {
     isGameEnded: true,
   },
 };
-

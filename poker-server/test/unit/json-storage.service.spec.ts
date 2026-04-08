@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
 import { JsonStorageService } from '../../src/storage/json-storage.service';
-import { Room, GameStateType } from 'poker-types';
+import { Card, GameStateType, Room } from 'poker-types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { roomEvent, roomWrite } from '../../src/storage/room-write.factory';
@@ -59,6 +59,578 @@ describe('JsonStorageService', () => {
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
   });
+
+  const createCard = (rank: Card['rank'], suit: Card['suit']): Card => ({
+    rank,
+    suit,
+  });
+
+  const createRoomPlayer = (input: {
+    id: string;
+    name: string;
+    position: number;
+    chips: number;
+    currentBet?: number;
+    totalBuyIn?: number;
+    cards?: Card[] | null;
+  }) => ({
+    id: input.id,
+    socketId: `${input.id}-socket`,
+    name: input.name,
+    emoji: input.name === 'Alice' ? '🦊' : '🐻',
+    chips: input.chips,
+    totalBuyIn: input.totalBuyIn ?? 1000,
+    handsPlayedCount: 0,
+    handsWonCount: 0,
+    vpipHandsCount: 0,
+    position: input.position,
+    status: 'connected' as const,
+    cards: input.cards ?? null,
+    currentBet: input.currentBet ?? 0,
+    lastAction: null,
+    lastConnectedAt: Date.now(),
+  });
+
+  const seedCompletedHands = async (roomId: string) => {
+    const aliceCards = [createCard('A', 'hearts'), createCard('K', 'hearts')];
+    const bobCards = [createCard('Q', 'spades'), createCard('J', 'clubs')];
+    const flop = [
+      createCard('2', 'clubs'),
+      createCard('5', 'diamonds'),
+      createCard('9', 'hearts'),
+    ];
+    const turn = createCard('K', 'diamonds');
+    const river = createCard('7', 'spades');
+    const room = createMockRoom(roomId);
+    room.gameState = 'IN_PROGRESS';
+    room.players = [
+      createRoomPlayer({ id: 'alice', name: 'Alice', position: 0, chips: 980 }),
+      createRoomPlayer({ id: 'bob', name: 'Bob', position: 1, chips: 980 }),
+    ];
+
+    room.lastActivityAt = 100;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'HAND_STARTED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: 1,
+          street: 'PRE_FLOP',
+          payload: {
+            handNumber: 1,
+            dealerPosition: 0,
+            smallBlindPosition: 0,
+            bigBlindPosition: 1,
+            pot: 30,
+            currentBet: 20,
+            lastRaiseSize: 20,
+            currentPlayerTurn: 'alice',
+            activePlayerIds: ['alice', 'bob'],
+            dealtPlayerIds: ['alice', 'bob'],
+            positionLabelsByPlayerId: {
+              alice: 'BTN/SB',
+              bob: 'BB',
+            },
+            potContributions: {
+              alice: 10,
+              bob: 20,
+            },
+            communityCards: [],
+            players: [
+              {
+                playerId: 'alice',
+                playerName: 'Alice',
+                position: 0,
+                status: 'connected',
+                chips: 990,
+                currentBet: 10,
+                totalBuyIn: 1000,
+                lastAction: null,
+                isActiveInHand: true,
+                positionLabel: 'BTN/SB',
+                cards: aliceCards,
+              },
+              {
+                playerId: 'bob',
+                playerName: 'Bob',
+                position: 1,
+                status: 'connected',
+                chips: 980,
+                currentBet: 20,
+                totalBuyIn: 1000,
+                lastAction: null,
+                isActiveInHand: true,
+                positionLabel: 'BB',
+                cards: bobCards,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    room.lastActivityAt = 110;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_ACTION',
+          actor: {
+            source: 'BETTING_SERVICE',
+            playerId: 'alice',
+            playerName: 'Alice',
+          },
+          handNumber: 1,
+          street: 'PRE_FLOP',
+          payload: {
+            action: 'call',
+            amount: null,
+            playerStatus: 'connected',
+            playerChips: 980,
+            playerCurrentBet: 20,
+            pot: 40,
+            currentBet: 20,
+            request: {
+              action: 'call',
+              actionId: 'hand-1-action-1',
+            },
+            decision: {
+              currentPlayerTurnBefore: 'alice',
+              playerStatusBefore: 'connected',
+              playerChipsBefore: 990,
+              playerCurrentBetBefore: 10,
+              potBefore: 30,
+              currentBetBefore: 20,
+              lastRaiseSizeBefore: 20,
+              callAmountBefore: 10,
+              minimumRaiseBy: 20,
+              minimumRaiseTo: 40,
+              maximumBetTo: 1000,
+              facingBet: true,
+              legalActions: ['fold', 'call', 'raise', 'all-in'],
+              activePlayerIds: ['alice', 'bob'],
+              communityCards: [],
+              potContributions: { alice: 10, bob: 20 },
+              players: [],
+            },
+            result: {
+              resolvedAction: 'call',
+              displayKind: 'call-to',
+              committedAmount: 10,
+              totalBetAfterAction: 20,
+              playerStatusAfter: 'connected',
+              playerChipsAfter: 980,
+              playerCurrentBetAfter: 20,
+              potAfter: 40,
+              currentBetAfter: 20,
+              lastRaiseSizeAfter: 20,
+              activePlayerIds: ['alice', 'bob'],
+              potContributions: { alice: 20, bob: 20 },
+              players: [],
+            },
+          },
+        }),
+        roomEvent({
+          roomId,
+          type: 'PLAYER_ACTION',
+          actor: {
+            source: 'BETTING_SERVICE',
+            playerId: 'bob',
+            playerName: 'Bob',
+          },
+          handNumber: 1,
+          street: 'PRE_FLOP',
+          payload: {
+            action: 'check',
+            amount: null,
+            playerStatus: 'connected',
+            playerChips: 980,
+            playerCurrentBet: 20,
+            pot: 40,
+            currentBet: 20,
+            request: {
+              action: 'check',
+              actionId: 'hand-1-action-2',
+            },
+            decision: {
+              currentPlayerTurnBefore: 'bob',
+              playerStatusBefore: 'connected',
+              playerChipsBefore: 980,
+              playerCurrentBetBefore: 20,
+              potBefore: 40,
+              currentBetBefore: 20,
+              lastRaiseSizeBefore: 20,
+              callAmountBefore: 0,
+              minimumRaiseBy: 20,
+              minimumRaiseTo: 40,
+              maximumBetTo: 1000,
+              facingBet: false,
+              legalActions: ['check', 'raise', 'all-in'],
+              activePlayerIds: ['alice', 'bob'],
+              communityCards: [],
+              potContributions: { alice: 20, bob: 20 },
+              players: [],
+            },
+            result: {
+              resolvedAction: 'check',
+              displayKind: 'check',
+              committedAmount: 0,
+              totalBetAfterAction: 20,
+              playerStatusAfter: 'connected',
+              playerChipsAfter: 980,
+              playerCurrentBetAfter: 20,
+              potAfter: 40,
+              currentBetAfter: 20,
+              lastRaiseSizeAfter: 20,
+              activePlayerIds: ['alice', 'bob'],
+              potContributions: { alice: 20, bob: 20 },
+              players: [],
+            },
+          },
+        }),
+      ),
+    );
+
+    room.lastActivityAt = 120;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'BETTING_ROUND_ADVANCED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: 1,
+          street: 'FLOP',
+          payload: {
+            nextRound: 'FLOP',
+            communityCards: flop,
+            currentPlayerTurn: 'bob',
+            pot: 40,
+            currentBet: 0,
+            lastRaiseSize: 20,
+            activePlayerIds: ['alice', 'bob'],
+            potContributions: { alice: 20, bob: 20 },
+            players: [],
+          },
+        }),
+        roomEvent({
+          roomId,
+          type: 'BETTING_ROUND_ADVANCED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: 1,
+          street: 'TURN',
+          payload: {
+            nextRound: 'TURN',
+            communityCards: [...flop, turn],
+            currentPlayerTurn: 'bob',
+            pot: 40,
+            currentBet: 0,
+            lastRaiseSize: 20,
+            activePlayerIds: ['alice', 'bob'],
+            potContributions: { alice: 20, bob: 20 },
+            players: [],
+          },
+        }),
+        roomEvent({
+          roomId,
+          type: 'BETTING_ROUND_ADVANCED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: 1,
+          street: 'RIVER',
+          payload: {
+            nextRound: 'RIVER',
+            communityCards: [...flop, turn, river],
+            currentPlayerTurn: 'bob',
+            pot: 40,
+            currentBet: 0,
+            lastRaiseSize: 20,
+            activePlayerIds: ['alice', 'bob'],
+            potContributions: { alice: 20, bob: 20 },
+            players: [],
+          },
+        }),
+      ),
+    );
+
+    room.lastActivityAt = 130;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'HAND_SETTLED',
+          actor: { source: 'EVENTS_GATEWAY' },
+          handNumber: 1,
+          street: 'SHOWDOWN',
+          payload: {
+            handNumber: 1,
+            isShowdown: true,
+            revealedPlayerIds: ['alice'],
+            result: {
+              winners: [
+                {
+                  playerId: 'alice',
+                  playerName: 'Alice',
+                  hand: {
+                    rank: 'ONE_PAIR',
+                    value: 2,
+                    cards: [
+                      createCard('K', 'hearts'),
+                      createCard('K', 'diamonds'),
+                      createCard('A', 'hearts'),
+                      createCard('9', 'hearts'),
+                      createCard('7', 'spades'),
+                    ],
+                    description: 'Pair of Kings',
+                  },
+                  amountWon: 40,
+                },
+              ],
+              playerHands: [
+                {
+                  playerId: 'alice',
+                  playerName: 'Alice',
+                  cards: aliceCards,
+                  hand: {
+                    rank: 'ONE_PAIR',
+                    value: 2,
+                    cards: [
+                      createCard('K', 'hearts'),
+                      createCard('K', 'diamonds'),
+                      createCard('A', 'hearts'),
+                      createCard('9', 'hearts'),
+                      createCard('7', 'spades'),
+                    ],
+                    description: 'Pair of Kings',
+                  },
+                  resultStatus: 'shown',
+                  cardsVisibility: 'shown',
+                  seatPosition: 0,
+                },
+                {
+                  playerId: 'bob',
+                  playerName: 'Bob',
+                  cards: [],
+                  hand: null,
+                  resultStatus: 'hidden_contender',
+                  cardsVisibility: 'hidden',
+                  seatPosition: 1,
+                },
+              ],
+              totalPot: 40,
+              payouts: [
+                {
+                  segmentIndex: 0,
+                  potType: 'MAIN',
+                  amount: 40,
+                  eligiblePlayers: ['alice', 'bob'],
+                  winnerShares: [{ playerId: 'alice', amountWon: 40 }],
+                  uncontested: false,
+                },
+              ],
+              netByPlayerId: {
+                alice: 20,
+                bob: -20,
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    room.lastActivityAt = 200;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'HAND_STARTED',
+          actor: { source: 'HAND_SERVICE' },
+          handNumber: 2,
+          street: 'PRE_FLOP',
+          payload: {
+            handNumber: 2,
+            dealerPosition: 1,
+            smallBlindPosition: 1,
+            bigBlindPosition: 0,
+            pot: 30,
+            currentBet: 20,
+            lastRaiseSize: 20,
+            currentPlayerTurn: 'bob',
+            activePlayerIds: ['alice', 'bob'],
+            dealtPlayerIds: ['alice', 'bob'],
+            positionLabelsByPlayerId: {
+              alice: 'BB',
+              bob: 'BTN/SB',
+            },
+            potContributions: {
+              alice: 20,
+              bob: 10,
+            },
+            communityCards: [],
+            players: [
+              {
+                playerId: 'alice',
+                playerName: 'Alice',
+                position: 0,
+                status: 'connected',
+                chips: 980,
+                currentBet: 20,
+                totalBuyIn: 1000,
+                lastAction: null,
+                isActiveInHand: true,
+                positionLabel: 'BB',
+                cards: [createCard('9', 'clubs'), createCard('9', 'spades')],
+              },
+              {
+                playerId: 'bob',
+                playerName: 'Bob',
+                position: 1,
+                status: 'connected',
+                chips: 990,
+                currentBet: 10,
+                totalBuyIn: 1000,
+                lastAction: null,
+                isActiveInHand: true,
+                positionLabel: 'BTN/SB',
+                cards: [createCard('4', 'hearts'), createCard('3', 'diamonds')],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    room.lastActivityAt = 210;
+    await service.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId,
+          type: 'PLAYER_ACTION',
+          actor: {
+            source: 'BETTING_SERVICE',
+            playerId: 'bob',
+            playerName: 'Bob',
+          },
+          handNumber: 2,
+          street: 'PRE_FLOP',
+          payload: {
+            action: 'fold',
+            amount: null,
+            playerStatus: 'folded',
+            playerChips: 990,
+            playerCurrentBet: 10,
+            pot: 30,
+            currentBet: 20,
+            request: {
+              action: 'fold',
+              actionId: 'hand-2-action-1',
+            },
+            decision: {
+              currentPlayerTurnBefore: 'bob',
+              playerStatusBefore: 'connected',
+              playerChipsBefore: 990,
+              playerCurrentBetBefore: 10,
+              potBefore: 30,
+              currentBetBefore: 20,
+              lastRaiseSizeBefore: 20,
+              callAmountBefore: 10,
+              minimumRaiseBy: 20,
+              minimumRaiseTo: 40,
+              maximumBetTo: 1000,
+              facingBet: true,
+              legalActions: ['fold', 'call', 'raise', 'all-in'],
+              activePlayerIds: ['alice', 'bob'],
+              communityCards: [],
+              potContributions: { alice: 20, bob: 10 },
+              players: [],
+            },
+            result: {
+              resolvedAction: 'fold',
+              displayKind: 'fold',
+              committedAmount: 0,
+              totalBetAfterAction: 10,
+              playerStatusAfter: 'folded',
+              playerChipsAfter: 990,
+              playerCurrentBetAfter: 10,
+              potAfter: 30,
+              currentBetAfter: 20,
+              lastRaiseSizeAfter: 20,
+              activePlayerIds: ['alice'],
+              potContributions: { alice: 20, bob: 10 },
+              players: [],
+            },
+          },
+        }),
+        roomEvent({
+          roomId,
+          type: 'HAND_SETTLED',
+          actor: { source: 'EVENTS_GATEWAY' },
+          handNumber: 2,
+          street: 'PRE_FLOP',
+          payload: {
+            handNumber: 2,
+            isShowdown: false,
+            revealedPlayerIds: [],
+            result: {
+              winners: [
+                {
+                  playerId: 'alice',
+                  playerName: 'Alice',
+                  hand: null,
+                  amountWon: 30,
+                },
+              ],
+              playerHands: [
+                {
+                  playerId: 'alice',
+                  playerName: 'Alice',
+                  cards: [],
+                  hand: null,
+                  resultStatus: 'hidden_contender',
+                  cardsVisibility: 'hidden',
+                  seatPosition: 0,
+                },
+                {
+                  playerId: 'bob',
+                  playerName: 'Bob',
+                  cards: [],
+                  hand: null,
+                  resultStatus: 'folded_pre_showdown',
+                  cardsVisibility: 'hidden',
+                  seatPosition: 1,
+                },
+              ],
+              totalPot: 30,
+              payouts: [
+                {
+                  segmentIndex: 0,
+                  potType: 'MAIN',
+                  amount: 30,
+                  eligiblePlayers: ['alice', 'bob'],
+                  winnerShares: [{ playerId: 'alice', amountWon: 30 }],
+                  uncontested: true,
+                },
+              ],
+              netByPlayerId: {
+                alice: 10,
+                bob: -10,
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    room.gameState = 'ENDED';
+    room.currentHand = null;
+    room.lastActivityAt = 300;
+    await service.persistRoom(room);
+  };
 
   describe('persistRoom', () => {
     it('should save room to room snapshot file', async () => {
@@ -483,6 +1055,229 @@ describe('JsonStorageService', () => {
     it('should return false for non-existent room', async () => {
       const exists = await service.roomExists('NONEXISTENT');
       expect(exists).toBe(false);
+    });
+  });
+
+  describe('completed hand exports', () => {
+    it('returns a player-scoped completed-hand export with deterministic blind and action ordering', async () => {
+      await seedCompletedHands('ROOMHISTORY');
+
+      const getCompletedHandHistory = (
+        service as JsonStorageService & {
+          getCompletedHandHistory?: (
+            roomId: string,
+            handNumber: number,
+            requesterPlayerId: string,
+          ) => Promise<any>;
+        }
+      ).getCompletedHandHistory;
+
+      expect(typeof getCompletedHandHistory).toBe('function');
+      if (typeof getCompletedHandHistory !== 'function') {
+        return;
+      }
+
+      const aliceExport = await getCompletedHandHistory.call(
+        service,
+        'ROOMHISTORY',
+        1,
+        'alice',
+      );
+      const bobExport = await getCompletedHandHistory.call(
+        service,
+        'ROOMHISTORY',
+        1,
+        'bob',
+      );
+
+      expect(aliceExport).toEqual(
+        expect.objectContaining({
+          roomId: 'ROOMHISTORY',
+          handNumber: 1,
+          requesterPlayerId: 'alice',
+          dealerPosition: 0,
+          smallBlindPosition: 0,
+          bigBlindPosition: 1,
+          blinds: { smallBlind: 10, bigBlind: 20 },
+          communityCardsByStreet: {
+            preFlop: [],
+            flop: [
+              createCard('2', 'clubs'),
+              createCard('5', 'diamonds'),
+              createCard('9', 'hearts'),
+            ],
+            turn: [
+              createCard('2', 'clubs'),
+              createCard('5', 'diamonds'),
+              createCard('9', 'hearts'),
+              createCard('K', 'diamonds'),
+            ],
+            river: [
+              createCard('2', 'clubs'),
+              createCard('5', 'diamonds'),
+              createCard('9', 'hearts'),
+              createCard('K', 'diamonds'),
+              createCard('7', 'spades'),
+            ],
+          },
+          settlement: expect.objectContaining({
+            isShowdown: true,
+            totalPot: 40,
+            netByPlayerId: { alice: 20, bob: -20 },
+          }),
+        }),
+      );
+
+      expect(
+        aliceExport.actions
+          .slice(0, 4)
+          .map((action: any) => ({
+            order: action.order,
+            source: action.source,
+            action: action.action,
+            playerId: action.playerId,
+            amount: action.amount,
+            blindType: action.blindType ?? null,
+            potAfter: action.potAfter,
+            totalBetTo: action.totalBetTo ?? null,
+          })),
+      ).toEqual([
+        {
+          order: 1,
+          source: 'blind',
+          action: 'post-blind',
+          playerId: 'alice',
+          amount: 10,
+          blindType: 'SB',
+          potAfter: 10,
+          totalBetTo: 10,
+        },
+        {
+          order: 2,
+          source: 'blind',
+          action: 'post-blind',
+          playerId: 'bob',
+          amount: 20,
+          blindType: 'BB',
+          potAfter: 30,
+          totalBetTo: 20,
+        },
+        {
+          order: 3,
+          source: 'player',
+          action: 'call',
+          playerId: 'alice',
+          amount: 10,
+          blindType: null,
+          potAfter: 40,
+          totalBetTo: 20,
+        },
+        {
+          order: 4,
+          source: 'player',
+          action: 'check',
+          playerId: 'bob',
+          amount: 0,
+          blindType: null,
+          potAfter: 40,
+          totalBetTo: 20,
+        },
+      ]);
+
+      expect(
+        aliceExport.seats.find((seat: any) => seat.playerId === 'alice'),
+      ).toEqual(
+        expect.objectContaining({
+          playerId: 'alice',
+          playerName: 'Alice',
+          startingStack: 1000,
+          holeCards: [createCard('A', 'hearts'), createCard('K', 'hearts')],
+          holeCardsVisibility: 'self',
+        }),
+      );
+      expect(
+        aliceExport.seats.find((seat: any) => seat.playerId === 'bob'),
+      ).toEqual(
+        expect.objectContaining({
+          playerId: 'bob',
+          playerName: 'Bob',
+          startingStack: 1000,
+          holeCards: null,
+          holeCardsVisibility: 'hidden',
+        }),
+      );
+      expect(
+        bobExport.seats.find((seat: any) => seat.playerId === 'alice'),
+      ).toEqual(
+        expect.objectContaining({
+          playerId: 'alice',
+          holeCards: [createCard('A', 'hearts'), createCard('K', 'hearts')],
+          holeCardsVisibility: 'revealed',
+        }),
+      );
+      expect(
+        bobExport.seats.find((seat: any) => seat.playerId === 'bob'),
+      ).toEqual(
+        expect.objectContaining({
+          playerId: 'bob',
+          holeCards: [createCard('Q', 'spades'), createCard('J', 'clubs')],
+          holeCardsVisibility: 'self',
+        }),
+      );
+    });
+
+    it('returns an ended-game export only after the room has ended and orders completed hands by hand number', async () => {
+      const roomId = 'ROOMFULLGAME';
+      await seedCompletedHands(roomId);
+
+      const getCompletedGameHistory = (
+        service as JsonStorageService & {
+          getCompletedGameHistory?: (
+            roomId: string,
+            requesterPlayerId: string,
+          ) => Promise<any>;
+        }
+      ).getCompletedGameHistory;
+
+      expect(typeof getCompletedGameHistory).toBe('function');
+      if (typeof getCompletedGameHistory !== 'function') {
+        return;
+      }
+
+      const endedExport = await getCompletedGameHistory.call(
+        service,
+        roomId,
+        'bob',
+      );
+
+      expect(endedExport).toEqual(
+        expect.objectContaining({
+          roomId,
+          requesterPlayerId: 'bob',
+          handCount: 2,
+        }),
+      );
+      expect(endedExport.hands.map((hand: any) => hand.handNumber)).toEqual([
+        1,
+        2,
+      ]);
+      expect(endedExport.hands[0].requesterPlayerId).toBe('bob');
+      expect(
+        endedExport.hands[1].seats.find((seat: any) => seat.playerId === 'bob'),
+      ).toEqual(
+        expect.objectContaining({
+          holeCards: [createCard('4', 'hearts'), createCard('3', 'diamonds')],
+          holeCardsVisibility: 'self',
+        }),
+      );
+      expect(
+        endedExport.hands[1].seats.find((seat: any) => seat.playerId === 'alice'),
+      ).toEqual(
+        expect.objectContaining({
+          holeCards: null,
+          holeCardsVisibility: 'hidden',
+        }),
+      );
     });
   });
 });

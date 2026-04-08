@@ -56,6 +56,14 @@ type HandResultsContentProps = {
   handResultRows: HandResultRow[];
   revealedHandPlayerIdSet: Set<string>;
   onSaveResultScreenshot: () => void;
+  onExportHandHistory: () => void;
+  isExportingHandHistory: boolean;
+  onOpenHandReview: () => void;
+  isOpeningHandReview: boolean;
+  handReviewUnavailableSummary: {
+    actionCount: number;
+    playerCount: number;
+  } | null;
   describeEvaluatedHand: (hand: HandEvaluation) => string;
   t: Translate;
 };
@@ -105,6 +113,11 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   handResultRows,
   revealedHandPlayerIdSet,
   onSaveResultScreenshot,
+  onExportHandHistory,
+  isExportingHandHistory,
+  onOpenHandReview,
+  isOpeningHandReview,
+  handReviewUnavailableSummary,
   describeEvaluatedHand,
   t,
 }) => {
@@ -154,6 +167,26 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
             </span>
           )}
           <button
+            onClick={onExportHandHistory}
+            disabled={isExportingHandHistory}
+            data-testid="export-hand-history-button"
+            className="rounded-full border border-violet-300/55 bg-violet-900/30 px-3 py-1 text-xs font-semibold text-violet-100 transition hover:bg-violet-800/40 disabled:cursor-wait disabled:opacity-70"
+          >
+            {isExportingHandHistory
+              ? t("game.exportHandHistoryLoading")
+              : t("game.exportHandHistory")}
+          </button>
+          <button
+            onClick={onOpenHandReview}
+            disabled={isOpeningHandReview}
+            data-testid="open-hand-review-button"
+            className="rounded-full border border-amber-300/55 bg-amber-900/30 px-3 py-1 text-xs font-semibold text-amber-100 transition hover:bg-amber-800/40 disabled:cursor-wait disabled:opacity-70"
+          >
+            {isOpeningHandReview
+              ? t("game.handReviewLoading")
+              : t("game.openHandReview")}
+          </button>
+          <button
             onClick={onSaveResultScreenshot}
             data-testid="save-result-screenshot-button"
             className="rounded-full border border-cyan-300/55 bg-cyan-900/30 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/40"
@@ -162,6 +195,24 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
           </button>
         </div>
       </div>
+
+      {handReviewUnavailableSummary && (
+        <div
+          className="mt-3 rounded-xl border border-amber-400/45 bg-amber-950/35 p-3 text-amber-50"
+          data-testid="hand-review-unavailable"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-100/80">
+            {t("game.handReviewTitle")}
+          </p>
+          <p className="mt-1 text-sm">{t("game.handReviewUnavailable")}</p>
+          <p className="mt-2 text-xs text-amber-100/75">
+            {t("game.handReviewUnavailableDetail", {
+              actions: handReviewUnavailableSummary.actionCount,
+              players: handReviewUnavailableSummary.playerCount,
+            })}
+          </p>
+        </div>
+      )}
 
       <div
         className="mt-3 rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-3"
