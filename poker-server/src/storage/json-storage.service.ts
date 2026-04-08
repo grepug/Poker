@@ -343,7 +343,7 @@ export class JsonStorageService
         const seat = seatSnapshotByPlayerId.get(playerId);
         if (payload.action === 'REVEAL' || payload.action === 'MUCK') {
           pushAction({
-            source: 'system',
+            source: 'player',
             street: event.street ?? 'SHOWDOWN',
             playerId,
             playerName: event.actor?.playerName ?? seat?.playerName ?? '',
