@@ -21,6 +21,7 @@ import {
   RobotTurnContext,
   toRobotFallbackCause,
 } from '../game/robot-agent.service';
+import { SavedGameReviewService } from '../game/saved-game-review.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
@@ -136,6 +137,7 @@ export class EventsGateway
   server: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
+  private readonly savedGameReviewService: SavedGameReviewService;
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private runCountDecisionTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
@@ -274,6 +276,10 @@ export class EventsGateway
     @Inject('IChatMediaStorageService')
     private readonly chatMediaStorageService: IChatMediaStorageService,
   ) {
+    this.savedGameReviewService = new SavedGameReviewService(
+      this.storageService as any,
+      this.robotAgentService,
+    );
     realtimeEventBus.setSingletonListener(
       'PLAYER_PROFILE_UPDATED',
       this.profileUpdatedListenerKey,
@@ -1293,6 +1299,19 @@ export class EventsGateway
           }),
         ),
       );
+      const archiveEndedRoom = (
+        this.storageService as IStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      if (typeof archiveEndedRoom === 'function') {
+        const archived = await archiveEndedRoom.call(this.storageService, room.id);
+        if (archived?.archiveId) {
+          await this.savedGameReviewService.scheduleArchiveReview(
+            archived.archiveId,
+          );
+        }
+      }
 
       const gameEndedData: GameEndedData = {
         standings,

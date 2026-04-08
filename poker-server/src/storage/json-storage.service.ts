@@ -13,6 +13,12 @@ import {
   PersistedRoomSnapshot,
   Room,
   RoomPersistedWrite,
+  SavedGameDetail,
+  SavedGameHandAnalysis,
+  SavedGameHandDetail,
+  SavedGameParticipant,
+  SavedGameReviewTargets,
+  SavedGameSummary,
 } from 'poker-types';
 import { randomUUID } from 'crypto';
 import { IStorageService } from '../common/interfaces/storage.interface';
@@ -33,6 +39,31 @@ type StoredRoomProjection = {
   room: Room;
 };
 
+type ArchivedRoomPlayer = Room['players'][number] & {
+  userId?: string;
+  emoji?: string;
+  isRobot?: boolean;
+};
+
+type SavedGameArchiveRecord = {
+  archiveId: string;
+  roomId: string;
+  createdAt: number;
+  startedAt: number;
+  concludedAt: number;
+  handCount: number;
+  blinds: SavedGameSummary['blinds'];
+  participants: SavedGameParticipant[];
+  playerViews: Record<
+    string,
+    {
+      requesterUserId: string;
+      requesterPlayerId: string;
+      hands: SavedGameHandDetail[];
+    }
+  >;
+};
+
 @Injectable()
 export class JsonStorageService
   implements IStorageService, IHandHistoryStorageService
@@ -40,11 +71,17 @@ export class JsonStorageService
   private readonly logger = new Logger(JsonStorageService.name);
   private readonly dataDir: string;
   private readonly roomsDir: string;
+  private readonly savedGamesDir: string;
+  private readonly savedGameArchivesDir: string;
+  private readonly savedGameUserIndexesDir: string;
   private readonly roomWriteQueues: Map<string, Promise<void>> = new Map();
 
   constructor(private readonly configService: ConfigService) {
     this.dataDir = this.configService.get<string>('DATA_DIR') || './data';
     this.roomsDir = path.join(this.dataDir, 'rooms');
+    this.savedGamesDir = path.join(this.dataDir, 'saved-games');
+    this.savedGameArchivesDir = path.join(this.savedGamesDir, 'archives');
+    this.savedGameUserIndexesDir = path.join(this.savedGamesDir, 'users');
     this.ensureDirectories().catch((err) =>
       this.logger.error(`Failed to initialize directories: ${err.message}`),
     );
@@ -451,8 +488,208 @@ export class JsonStorageService
     };
   }
 
+  async archiveEndedRoom(
+    roomId: string,
+  ): Promise<{ archiveId: string } | null> {
+    await this.ensureDirectories();
+
+    const archiveId = roomId;
+    const existingArchive = await this.readSavedGameArchive(archiveId);
+    if (existingArchive) {
+      return { archiveId };
+    }
+
+    const room = await this.getRoom(roomId);
+    if (!room || room.gameState !== 'ENDED') {
+      return null;
+    }
+
+    const archivedPlayers = room.players as ArchivedRoomPlayer[];
+    const participantViews = new Map<
+      string,
+      {
+        requesterUserId: string;
+        requesterPlayerId: string;
+        hands: SavedGameHandDetail[];
+      }
+    >();
+
+    for (const player of archivedPlayers) {
+      if (!player.userId) {
+        continue;
+      }
+
+      const exportPayload = await this.getCompletedGameHistory(roomId, player.id);
+      if (!exportPayload) {
+        continue;
+      }
+
+      participantViews.set(player.userId, {
+        requesterUserId: player.userId,
+        requesterPlayerId: player.id,
+        hands: exportPayload.hands.map((hand) => ({
+          handNumber: hand.handNumber,
+          history: hand,
+          analysis: this.createPendingSavedGameAnalysis(room.lastActivityAt),
+        })),
+      });
+    }
+
+    if (participantViews.size === 0) {
+      return null;
+    }
+
+    const startedAt = await this.resolveSavedGameStartedAt(roomId, room.createdAt);
+    const concludedAt = Number(room.lastActivityAt || Date.now());
+    const participants = archivedPlayers
+      .map((player) => this.toSavedGameParticipant(player))
+      .sort((left, right) => {
+        if (right.finalChips !== left.finalChips) {
+          return right.finalChips - left.finalChips;
+        }
+        if (right.profit !== left.profit) {
+          return right.profit - left.profit;
+        }
+        return left.playerName.localeCompare(right.playerName);
+      });
+    const handCount =
+      participantViews.values().next().value?.hands.length ?? 0;
+
+    const archiveRecord: SavedGameArchiveRecord = {
+      archiveId,
+      roomId,
+      createdAt: concludedAt,
+      startedAt,
+      concludedAt,
+      handCount,
+      blinds: {
+        smallBlind: room.config.smallBlind,
+        bigBlind: room.config.bigBlind,
+      },
+      participants,
+      playerViews: Object.fromEntries(participantViews.entries()),
+    };
+
+    await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archiveRecord);
+
+    await Promise.all(
+      Array.from(participantViews.values()).map((view) =>
+        this.writeSavedGameIndexForUser({
+          archiveId,
+          roomId,
+          requesterUserId: view.requesterUserId,
+          requesterPlayerId: view.requesterPlayerId,
+          createdAt: concludedAt,
+          startedAt,
+          concludedAt,
+          handCount,
+          blinds: archiveRecord.blinds,
+          participants,
+        }),
+      ),
+    );
+
+    return { archiveId };
+  }
+
+  async listSavedGamesForUser(userId: string): Promise<SavedGameSummary[]> {
+    await this.ensureDirectories();
+    return (await readJsonFile<SavedGameSummary[]>(
+      this.getSavedGameUserIndexPath(userId),
+    )) ?? [];
+  }
+
+  async getSavedGameDetailForUser(
+    archiveId: string,
+    userId: string,
+  ): Promise<SavedGameDetail | null> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return null;
+    }
+
+    const playerView = archive.playerViews[userId];
+    if (!playerView) {
+      return null;
+    }
+
+    return {
+      archiveId: archive.archiveId,
+      roomId: archive.roomId,
+      requesterUserId: userId,
+      requesterPlayerId: playerView.requesterPlayerId,
+      createdAt: archive.createdAt,
+      startedAt: archive.startedAt,
+      concludedAt: archive.concludedAt,
+      handCount: archive.handCount,
+      blinds: archive.blinds,
+      participants: archive.participants,
+      hands: playerView.hands,
+    };
+  }
+
+  async getSavedGameReviewTargets(
+    archiveId: string,
+  ): Promise<SavedGameReviewTargets | null> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return null;
+    }
+
+    return {
+      archiveId,
+      playerViews: Object.values(archive.playerViews).map((view) => ({
+        requesterUserId: view.requesterUserId,
+        requesterPlayerId: view.requesterPlayerId,
+        hands: view.hands.map((hand) => ({
+          handNumber: hand.handNumber,
+          history: hand.history,
+        })),
+      })),
+    };
+  }
+
+  async updateSavedGameHandAnalysis(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+    analysis: SavedGameHandAnalysis,
+  ): Promise<void> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return;
+    }
+
+    const playerView = archive.playerViews[userId];
+    if (!playerView) {
+      return;
+    }
+
+    const nextHands = playerView.hands.map((hand) =>
+      hand.handNumber === handNumber
+        ? {
+            ...hand,
+            analysis: {
+              ...analysis,
+              updatedAt: Number(analysis.updatedAt || Date.now()),
+            },
+          }
+        : hand,
+    );
+    archive.playerViews[userId] = {
+      ...playerView,
+      hands: nextHands,
+    };
+    await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
+  }
+
   private async ensureDirectories(): Promise<void> {
     await ensureDir(this.roomsDir);
+    await ensureDir(this.savedGameArchivesDir);
+    await ensureDir(this.savedGameUserIndexesDir);
   }
 
   private getLegacyRoomFilePath(roomId: string): string {
@@ -477,6 +714,14 @@ export class JsonStorageService
 
   private getProjectionPath(roomId: string): string {
     return path.join(this.getRoomDir(roomId), 'room.snapshot.json');
+  }
+
+  private getSavedGameArchivePath(archiveId: string): string {
+    return path.join(this.savedGameArchivesDir, `${archiveId}.json`);
+  }
+
+  private getSavedGameUserIndexPath(userId: string): string {
+    return path.join(this.savedGameUserIndexesDir, `${userId}.json`);
   }
 
   private async readProjection(roomId: string): Promise<StoredRoomProjection | null> {
@@ -698,5 +943,80 @@ export class JsonStorageService
     await fs.rm(legacyPath, { force: true });
     this.logger.log(`Removed legacy room snapshot ${roomId} after confirming JSONL layout`);
     return true;
+  }
+
+  private createPendingSavedGameAnalysis(
+    timestamp: number,
+  ): SavedGameHandAnalysis {
+    return {
+      status: 'pending',
+      updatedAt: Number(timestamp || Date.now()),
+      provider: 'ai-robot-config',
+      summary: null,
+      headline: null,
+      keyAdjustments: [],
+      failureReason: null,
+    };
+  }
+
+  private async resolveSavedGameStartedAt(
+    roomId: string,
+    fallback: number,
+  ): Promise<number> {
+    const roomEvents = await readJsonlRecords<PersistedRoomEventRecord>(
+      this.getRoomEventsPath(roomId),
+    );
+    return (
+      roomEvents.find((event) => event.type === 'HAND_STARTED')?.timestamp ??
+      fallback
+    );
+  }
+
+  private toSavedGameParticipant(player: ArchivedRoomPlayer): SavedGameParticipant {
+    const finalChips = player.chips + (player.currentBet || 0);
+    const totalBuyIn = player.totalBuyIn || 0;
+    const handsPlayedCount = player.handsPlayedCount ?? 0;
+    const vpipHandsCount = player.vpipHandsCount ?? 0;
+
+    return {
+      playerId: player.id,
+      userId: player.userId ?? null,
+      playerName: player.name,
+      avatarEmoji: player.emoji ?? null,
+      isRobot: Boolean(player.isRobot),
+      finalChips,
+      totalBuyIn,
+      profit: finalChips - totalBuyIn,
+      handsPlayedCount,
+      handsWonCount: player.handsWonCount ?? 0,
+      vpipHandsCount,
+      vpipRate:
+        handsPlayedCount > 0
+          ? Number((vpipHandsCount / handsPlayedCount).toFixed(4))
+          : 0,
+    };
+  }
+
+  private async readSavedGameArchive(
+    archiveId: string,
+  ): Promise<SavedGameArchiveRecord | null> {
+    return await readJsonFile<SavedGameArchiveRecord>(
+      this.getSavedGameArchivePath(archiveId),
+    );
+  }
+
+  private async writeSavedGameIndexForUser(
+    summary: SavedGameSummary,
+  ): Promise<void> {
+    const current =
+      (await readJsonFile<SavedGameSummary[]>(
+        this.getSavedGameUserIndexPath(summary.requesterUserId),
+      )) ?? [];
+    const next = [...current.filter((item) => item.archiveId !== summary.archiveId), summary]
+      .sort((left, right) => right.concludedAt - left.concludedAt);
+    await writeJsonFileAtomic(
+      this.getSavedGameUserIndexPath(summary.requesterUserId),
+      next,
+    );
   }
 }

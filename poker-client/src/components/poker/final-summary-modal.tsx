@@ -25,6 +25,7 @@ type FinalSummaryModalProps = {
   isGameEnded: boolean;
   onExportHistory: () => void;
   isExportingHistory: boolean;
+  onOpenSavedHistory: () => void;
   onSaveScreenshot: () => void;
   onLeave: () => void;
   onClose: () => void;
@@ -44,6 +45,7 @@ export const FinalSummaryModal = React.forwardRef<
       isGameEnded,
       onExportHistory,
       isExportingHistory,
+      onOpenSavedHistory,
       onSaveScreenshot,
       onLeave,
       onClose,
@@ -76,6 +78,15 @@ export const FinalSummaryModal = React.forwardRef<
                 ? t("game.final.exportHistoryLoading")
                 : t("game.final.exportHistory")}
             </button>
+            {isGameEnded && (
+              <button
+                onClick={onOpenSavedHistory}
+                data-testid="open-saved-history-button"
+                className="rounded-full border border-amber-300/55 bg-amber-900/30 px-3 py-1 text-xs font-semibold text-amber-100 transition hover:bg-amber-800/40"
+              >
+                {t("game.final.openSavedHistory")}
+              </button>
+            )}
             <button
               onClick={onSaveScreenshot}
               data-testid="save-final-summary-screenshot-button"

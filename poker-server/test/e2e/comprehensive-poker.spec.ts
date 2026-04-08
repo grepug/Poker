@@ -8135,6 +8135,26 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(gameExport.roomId).toBe(roomCode);
       expect(gameExport.handCount).toBe(1);
       expect(gameExport.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
+
+      await bobPage.click('[data-testid="open-saved-history-button"]');
+      await expect(
+        bobPage.locator('[data-testid="saved-game-detail-page"]'),
+      ).toBeVisible();
+      await expect(bobPage).toHaveURL(new RegExp(`/history/${roomCode}$`));
+      await expect(
+        bobPage.getByRole('heading', { name: `Room ${roomCode}` }),
+      ).toBeVisible();
+      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
+      await expect(bobPage.getByRole('button', { name: 'Hand #1' })).toBeVisible();
+      await expect(bobPage.getByText('QS JS')).toBeVisible();
+
+      await bobPage.getByRole('button', { name: 'Back to History' }).click();
+      await expect(
+        bobPage.locator('[data-testid="saved-games-page"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator(`[data-testid="saved-game-card-${roomCode}"]`),
+      ).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
     }

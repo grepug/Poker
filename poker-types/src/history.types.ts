@@ -77,3 +77,74 @@ export type CompletedGameHistoryExport = {
   handCount: number;
   hands: CompletedHandHistoryExport[];
 };
+
+export type SavedGameAnalysisStatus =
+  | "pending"
+  | "ready"
+  | "failed"
+  | "unavailable";
+
+export type SavedGameHandAnalysis = {
+  status: SavedGameAnalysisStatus;
+  updatedAt: number;
+  provider?: "ai-robot-config";
+  summary?: string | null;
+  headline?: string | null;
+  keyAdjustments?: string[];
+  failureReason?: string | null;
+};
+
+export type SavedGameParticipant = {
+  playerId: string;
+  userId: string | null;
+  playerName: string;
+  avatarEmoji: string | null;
+  isRobot: boolean;
+  finalChips: number;
+  totalBuyIn: number;
+  profit: number;
+  handsPlayedCount: number;
+  handsWonCount: number;
+  vpipHandsCount: number;
+  vpipRate: number;
+};
+
+export type SavedGameSummary = {
+  archiveId: string;
+  roomId: string;
+  requesterUserId: string;
+  requesterPlayerId: string;
+  createdAt: number;
+  startedAt: number;
+  concludedAt: number;
+  handCount: number;
+  blinds: {
+    smallBlind: number;
+    bigBlind: number;
+  };
+  participants: SavedGameParticipant[];
+};
+
+export type SavedGameHandDetail = {
+  handNumber: number;
+  history: CompletedHandHistoryExport;
+  analysis: SavedGameHandAnalysis;
+};
+
+export type SavedGameDetail = SavedGameSummary & {
+  hands: SavedGameHandDetail[];
+};
+
+export type SavedGameReviewTarget = {
+  requesterUserId: string;
+  requesterPlayerId: string;
+  hands: Array<{
+    handNumber: number;
+    history: CompletedHandHistoryExport;
+  }>;
+};
+
+export type SavedGameReviewTargets = {
+  archiveId: string;
+  playerViews: SavedGameReviewTarget[];
+};

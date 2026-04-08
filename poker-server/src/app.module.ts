@@ -8,6 +8,7 @@ import { EventsModule } from './events/events.module';
 import { ChatModule } from './chat/chat.module';
 import { AuthModule } from './auth/auth.module';
 import { HandHistoryController } from './hand-history.controller';
+import { SavedGameHistoryController } from './saved-game-history.controller';
 
 @Module({
   imports: [
@@ -21,7 +22,11 @@ import { HandHistoryController } from './hand-history.controller';
     ChatModule,
     AuthModule,
   ],
-  controllers: [AppController, HandHistoryController],
+  controllers: [
+    AppController,
+    HandHistoryController,
+    SavedGameHistoryController,
+  ],
   providers: [AppService],
 })
 export class AppModule {}

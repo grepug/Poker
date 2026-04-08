@@ -19,6 +19,10 @@ import { JsonAuthStorageService } from './json-auth-storage.service';
       useExisting: JsonStorageService,
     },
     {
+      provide: 'ISavedGameArchiveStorageService',
+      useExisting: JsonStorageService,
+    },
+    {
       provide: 'IChatStorageService',
       useExisting: JsonChatStorageService,
     },
@@ -34,6 +38,7 @@ import { JsonAuthStorageService } from './json-auth-storage.service';
   exports: [
     'IStorageService',
     'IHandHistoryStorageService',
+    'ISavedGameArchiveStorageService',
     'IChatStorageService',
     'IChatMediaStorageService',
     'IAuthStorageService',
