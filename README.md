@@ -218,7 +218,7 @@ pnpm test
 Pre-game readiness (build + health + LAN URL + critical smoke checks):
 
 ```bash
-cd /Users/kai/.codex/worktrees/8d58/Poker
+cd <path-to-repo>
 ./scripts/pregame-readiness.sh
 ```
 
