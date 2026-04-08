@@ -23,6 +23,8 @@ type FinalSummaryModalProps = {
   finalStandings: FinalStanding[];
   currentPlayerId: string;
   isGameEnded: boolean;
+  onExportHistory: () => void;
+  isExportingHistory: boolean;
   onSaveScreenshot: () => void;
   onLeave: () => void;
   onClose: () => void;
@@ -40,6 +42,8 @@ export const FinalSummaryModal = React.forwardRef<
       finalStandings,
       currentPlayerId,
       isGameEnded,
+      onExportHistory,
+      isExportingHistory,
       onSaveScreenshot,
       onLeave,
       onClose,
@@ -62,6 +66,16 @@ export const FinalSummaryModal = React.forwardRef<
             <p className="mt-1 text-sm text-emerald-100/80">{t("game.final.subtitle")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={onExportHistory}
+              disabled={isExportingHistory}
+              data-testid="export-game-history-button"
+              className="rounded-full border border-violet-300/55 bg-violet-900/30 px-3 py-1 text-xs font-semibold text-violet-100 transition hover:bg-violet-800/40 disabled:cursor-wait disabled:opacity-70"
+            >
+              {isExportingHistory
+                ? t("game.final.exportHistoryLoading")
+                : t("game.final.exportHistory")}
+            </button>
             <button
               onClick={onSaveScreenshot}
               data-testid="save-final-summary-screenshot-button"

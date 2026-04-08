@@ -6,25 +6,34 @@ import { JsonAuthStorageService } from './json-auth-storage.service';
 
 @Module({
   providers: [
+    JsonStorageService,
+    JsonChatStorageService,
+    JsonChatMediaStorageService,
+    JsonAuthStorageService,
     {
       provide: 'IStorageService',
-      useClass: JsonStorageService,
+      useExisting: JsonStorageService,
+    },
+    {
+      provide: 'IHandHistoryStorageService',
+      useExisting: JsonStorageService,
     },
     {
       provide: 'IChatStorageService',
-      useClass: JsonChatStorageService,
+      useExisting: JsonChatStorageService,
     },
     {
       provide: 'IChatMediaStorageService',
-      useClass: JsonChatMediaStorageService,
+      useExisting: JsonChatMediaStorageService,
     },
     {
       provide: 'IAuthStorageService',
-      useClass: JsonAuthStorageService,
+      useExisting: JsonAuthStorageService,
     },
   ],
   exports: [
     'IStorageService',
+    'IHandHistoryStorageService',
     'IChatStorageService',
     'IChatMediaStorageService',
     'IAuthStorageService',

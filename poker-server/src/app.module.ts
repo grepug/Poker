@@ -7,6 +7,7 @@ import { GameModule } from './game/game.module';
 import { EventsModule } from './events/events.module';
 import { ChatModule } from './chat/chat.module';
 import { AuthModule } from './auth/auth.module';
+import { HandHistoryController } from './hand-history.controller';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { AuthModule } from './auth/auth.module';
     ChatModule,
     AuthModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HandHistoryController],
   providers: [AppService],
 })
 export class AppModule {}

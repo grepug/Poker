@@ -5,8 +5,17 @@ import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
-import type { ChatMessage, HandEvaluation, HandResult, Player, PlayerAction } from "poker-types";
+import type {
+  ChatMessage,
+  CompletedGameHistoryExport,
+  CompletedHandHistoryExport,
+  HandEvaluation,
+  HandResult,
+  Player,
+  PlayerAction,
+} from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
+import { handHistoryService } from "../services/hand-history.service";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
@@ -1696,6 +1705,13 @@ const useGameRoomElement = () => {
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
   const [showHandResultsModal, setShowHandResultsModal] = useState(false);
   const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
+  const [isExportingHandHistory, setIsExportingHandHistory] = useState(false);
+  const [isOpeningHandReview, setIsOpeningHandReview] = useState(false);
+  const [isExportingGameHistory, setIsExportingGameHistory] = useState(false);
+  const [handReviewUnavailableSummary, setHandReviewUnavailableSummary] = useState<{
+    actionCount: number;
+    playerCount: number;
+  } | null>(null);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
@@ -2857,6 +2873,11 @@ const useGameRoomElement = () => {
   }, [inviteCopyStatus]);
 
   useEffect(() => {
+    setHandReviewUnavailableSummary(null);
+    setIsOpeningHandReview(false);
+  }, [currentHandNumber, showHandResultsModal]);
+
+  useEffect(() => {
     if (!lastHandResult) {
       lastDisplayedHandResultRef.current = null;
       setShowHandResultsModal(false);
@@ -3373,6 +3394,8 @@ const useGameRoomElement = () => {
     await saveShareablePanelScreenshot({
       panel: handResultsPanelRef.current,
       hiddenControlTestIds: [
+        "export-hand-history-button",
+        "open-hand-review-button",
         "save-result-screenshot-button",
         "close-hand-results-button",
       ],
@@ -3387,11 +3410,104 @@ const useGameRoomElement = () => {
 
     await saveShareablePanelScreenshot({
       panel: finalSummaryPanelRef.current,
-      hiddenControlTestIds: ["save-final-summary-screenshot-button"],
+      hiddenControlTestIds: [
+        "export-game-history-button",
+        "save-final-summary-screenshot-button",
+      ],
       fileSuffix: "final-results",
       successMessageKey: "game.final.screenshotSaved",
       failureMessageKey: "game.final.screenshotFailed",
     });
+  };
+
+  const downloadJsonExport = (
+    payload: CompletedHandHistoryExport | CompletedGameHistoryExport,
+    fileName: string,
+  ) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const link = document.createElement("a");
+    const downloadUrl = URL.createObjectURL(blob);
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  };
+
+  const handleExportHandHistory = async () => {
+    if (!room || currentHandNumber === null || isExportingHandHistory) {
+      return;
+    }
+
+    setIsExportingHandHistory(true);
+    try {
+      const exportPayload = await handHistoryService.getCompletedHandHistory(
+        room.id,
+        currentHandNumber,
+      );
+      downloadJsonExport(
+        exportPayload,
+        `${room.id}-hand-${currentHandNumber}-history.json`,
+      );
+      setInviteCopyStatus(t("game.handHistoryExportSaved"));
+      setInviteCopyStatusTone("success");
+    } catch (error) {
+      console.error("Failed to export hand history:", error);
+      setInviteCopyStatus(t("game.handHistoryExportFailed"));
+      setInviteCopyStatusTone("error");
+    } finally {
+      setIsExportingHandHistory(false);
+    }
+  };
+
+  const handleOpenHandReview = async () => {
+    if (!room || currentHandNumber === null || isOpeningHandReview) {
+      return;
+    }
+
+    setIsOpeningHandReview(true);
+    setHandReviewUnavailableSummary(null);
+    try {
+      const exportPayload = await handHistoryService.getCompletedHandHistory(
+        room.id,
+        currentHandNumber,
+      );
+      setHandReviewUnavailableSummary({
+        actionCount: exportPayload.actions.length,
+        playerCount: exportPayload.seats.length,
+      });
+    } catch (error) {
+      console.error("Failed to open hand review:", error);
+      setInviteCopyStatus(t("game.handReviewFailed"));
+      setInviteCopyStatusTone("error");
+    } finally {
+      setIsOpeningHandReview(false);
+    }
+  };
+
+  const handleExportGameHistory = async () => {
+    if (!room || !isGameEnded || isExportingGameHistory) {
+      return;
+    }
+
+    setIsExportingGameHistory(true);
+    try {
+      const exportPayload = await handHistoryService.getCompletedGameHistory(
+        room.id,
+      );
+      downloadJsonExport(exportPayload, `${room.id}-all-hands-history.json`);
+      setInviteCopyStatus(t("game.final.historyExportSaved"));
+      setInviteCopyStatusTone("success");
+    } catch (error) {
+      console.error("Failed to export full game history:", error);
+      setInviteCopyStatus(t("game.final.historyExportFailed"));
+      setInviteCopyStatusTone("error");
+    } finally {
+      setIsExportingGameHistory(false);
+    }
   };
 
   const handleConfirmEndGame = () => {
@@ -3727,6 +3843,11 @@ const useGameRoomElement = () => {
             }))}
             revealedHandPlayerIdSet={revealedHandPlayerIdSet}
             onSaveResultScreenshot={handleSaveResultScreenshot}
+            onExportHandHistory={handleExportHandHistory}
+            isExportingHandHistory={isExportingHandHistory}
+            onOpenHandReview={handleOpenHandReview}
+            isOpeningHandReview={isOpeningHandReview}
+            handReviewUnavailableSummary={handReviewUnavailableSummary}
             describeEvaluatedHand={(evaluatedHand) =>
               `${formatHandRank(evaluatedHand.rank, locale)} - ${formatHandDescription(evaluatedHand, locale)}`
             }
@@ -3988,6 +4109,8 @@ const useGameRoomElement = () => {
           finalStandings={finalStandings}
           currentPlayerId={player.id}
           isGameEnded={isGameEnded}
+          onExportHistory={handleExportGameHistory}
+          isExportingHistory={isExportingGameHistory}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
           onLeave={handleRequestLeave}
           onClose={() => setShowFinalSummaryModal(false)}
