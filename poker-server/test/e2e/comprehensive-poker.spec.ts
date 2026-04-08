@@ -7525,6 +7525,160 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.13b1: Compact seat shows the Check action label after that seat checks', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 520, height: 900 }),
+        bobPage.setViewportSize({ width: 520, height: 900 }),
+        charliePage.setViewportSize({ width: 520, height: 900 }),
+      ]);
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        bobPage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        charliePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+      ]);
+      await Promise.all([
+        waitForHoleCards(alicePage),
+        waitForHoleCards(bobPage),
+        waitForHoleCards(charliePage),
+      ]);
+
+      const bobSeatId = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const bob = room?.players?.find((entry: any) => entry.name === 'Bob');
+        return bob?.id ? String(bob.id) : null;
+      });
+      if (!bobSeatId) {
+        throw new Error('Missing Bob seat id for compact seat assertion');
+      }
+
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${bobSeatId}"]`),
+      ).toHaveClass(/seat-pod--compact/);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('[data-testid="action-check"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+
+      const bobSeatAction = alicePage.locator(
+        `[data-testid="player-seat-${bobSeatId}-action"]`,
+      );
+      await expect(bobSeatAction).toHaveText('Check');
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
+  test('8.13b2: Earlier checked seat keeps the Check label after a later seat also checks', async ({
+    browser,
+  }) => {
+    const session = await setupThreePlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, charliePage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 520, height: 900 }),
+        bobPage.setViewportSize({ width: 520, height: 900 }),
+        charliePage.setViewportSize({ width: 520, height: 900 }),
+      ]);
+
+      await alicePage.click('[data-testid="start-game-button"]');
+      await Promise.all([
+        alicePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        bobPage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+        charliePage.waitForSelector('[data-testid="round-value"]', {
+          timeout: 10000,
+        }),
+      ]);
+      await Promise.all([
+        waitForHoleCards(alicePage),
+        waitForHoleCards(bobPage),
+        waitForHoleCards(charliePage),
+      ]);
+
+      const compactSeatIds = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const bob = room?.players?.find((entry: any) => entry.name === 'Bob');
+        const charlie = room?.players?.find(
+          (entry: any) => entry.name === 'Charlie',
+        );
+        return {
+          bobId: bob?.id ? String(bob.id) : null,
+          charlieId: charlie?.id ? String(charlie.id) : null,
+        };
+      });
+      if (!compactSeatIds.bobId || !compactSeatIds.charlieId) {
+        throw new Error('Missing Bob/Charlie seat ids for compact seat assertion');
+      }
+
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${compactSeatIds.bobId}"]`),
+      ).toHaveClass(/seat-pod--compact/);
+      await expect(
+        alicePage.locator(
+          `[data-testid="player-seat-${compactSeatIds.charlieId}"]`,
+        ),
+      ).toHaveClass(/seat-pod--compact/);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('[data-testid="action-check"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-check"]');
+
+      await waitForPlayerTurn(charliePage, 'Charlie');
+      await charliePage.click('[data-testid="action-check"]');
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const bobSeatAction = alicePage.locator(
+        `[data-testid="player-seat-${compactSeatIds.bobId}-action"]`,
+      );
+      const charlieSeatAction = alicePage.locator(
+        `[data-testid="player-seat-${compactSeatIds.charlieId}-action"]`,
+      );
+      await expect(bobSeatAction).toHaveText('Check');
+      await expect(charlieSeatAction).toHaveText('Check');
+    } finally {
+      await teardownThreePlayerSession(session);
+    }
+  });
+
   test('8.13c: Mobile Reveal Uses Operation Bar And Keeps Cards Above Actions', async ({
     browser,
   }) => {
