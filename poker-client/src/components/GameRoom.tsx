@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toPng } from "html-to-image";
 import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLiveAudio } from "@/contexts/LiveAudioContext";
 import { useLocalization } from "../contexts/LocalizationContext";
 import { useGame, type PlayerActionFlashEvent } from "../contexts/GameContext";
 import type {
@@ -27,8 +28,9 @@ import {
   EndGameConfirmModal,
   FinalSummaryModal,
   HandResultsContent,
-  LeaveRoomConfirmModal,
   HandResultsModal,
+  LeaveRoomConfirmModal,
+  LiveAudioPanel,
   NextHandActionArea,
   OperationActionBar,
   ReadyActionArea,
@@ -1697,6 +1699,20 @@ const useGameRoomElement = () => {
   } = useGame();
   const { locale, setLocale, t } = useLocalization();
   const { user, updateProfile } = useAuth();
+  const {
+    available: isLiveAudioAvailable,
+    isConfigLoaded: isLiveAudioConfigLoaded,
+    isConnecting: isLiveAudioConnecting,
+    isJoined: isLiveAudioJoined,
+    isMuted: isLiveAudioMuted,
+    isReconnecting: isLiveAudioReconnecting,
+    participants: liveAudioParticipants,
+    error: liveAudioError,
+    joinAudio,
+    leaveAudio,
+    muteAudio,
+    unmuteAudio,
+  } = useLiveAudio();
 
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
@@ -3740,6 +3756,50 @@ const useGameRoomElement = () => {
         onOpenChatFromPreview={handleOpenChatFromPreview}
         onDismissPreview={handleDismissPreview}
       />
+
+      {(isLiveAudioAvailable ||
+        isLiveAudioJoined ||
+        isLiveAudioConnecting ||
+        (isLiveAudioConfigLoaded && room !== null)) && (
+        <LiveAudioPanel
+          title={t("game.audio.title")}
+          subtitle={t("game.audio.subtitle")}
+          joinLabel={t("game.audio.join")}
+          leaveLabel={t("game.audio.leave")}
+          muteLabel={t("game.audio.mute")}
+          unmuteLabel={t("game.audio.unmute")}
+          connectingLabel={t("game.audio.connecting")}
+          connectedLabel={t("game.audio.connected")}
+          reconnectingLabel={t("game.audio.reconnecting")}
+          mutedLabel={t("game.audio.muted")}
+          unavailableLabel={t("game.audio.unavailable")}
+          rosterLabel={t("game.audio.roster")}
+          error={
+            liveAudioError?.startsWith("game.audio.error.")
+              ? t(liveAudioError as MessageKey)
+              : liveAudioError
+          }
+          available={isLiveAudioAvailable}
+          isConfigLoaded={isLiveAudioConfigLoaded}
+          isConnecting={isLiveAudioConnecting}
+          isJoined={isLiveAudioJoined}
+          isMuted={isLiveAudioMuted}
+          isReconnecting={isLiveAudioReconnecting}
+          participants={liveAudioParticipants}
+          onJoin={() => {
+            void joinAudio();
+          }}
+          onLeave={() => {
+            void leaveAudio();
+          }}
+          onMute={() => {
+            void muteAudio();
+          }}
+          onUnmute={() => {
+            void unmuteAudio();
+          }}
+        />
+      )}
 
       {isChatPanelOpen && (
         <div className="chat-panel-shell">

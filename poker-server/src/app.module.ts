@@ -9,6 +9,7 @@ import { ChatModule } from './chat/chat.module';
 import { AuthModule } from './auth/auth.module';
 import { HandHistoryController } from './hand-history.controller';
 import { SavedGameHistoryController } from './saved-game-history.controller';
+import { LiveAudioModule } from './live-audio/live-audio.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SavedGameHistoryController } from './saved-game-history.controller';
     EventsModule,
     ChatModule,
     AuthModule,
+    LiveAudioModule,
   ],
   controllers: [
     AppController,

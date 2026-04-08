@@ -38,6 +38,7 @@
     "@simplewebauthn/server": "^13.2.2",
     "ai": "^6.0.116",
     "multer": "^2.0.2",
+    "livekit-server-sdk": "^2.15.1",
     "nanoid": "^3.3.11",
     "poker-types": "workspace:*",
     "reflect-metadata": "^0.2.0",
