@@ -7512,6 +7512,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { alicePage, bobPage, charliePage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 520, height: 900 }),
+        bobPage.setViewportSize({ width: 520, height: 900 }),
+        charliePage.setViewportSize({ width: 520, height: 900 }),
+      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -7539,6 +7544,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       if (!bobSeatId) {
         throw new Error('Missing Bob seat id for compact seat assertion');
       }
+
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${bobSeatId}"]`),
+      ).toHaveClass(/seat-pod--compact/);
 
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-call"]');
@@ -7571,6 +7580,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { alicePage, bobPage, charliePage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 520, height: 900 }),
+        bobPage.setViewportSize({ width: 520, height: 900 }),
+        charliePage.setViewportSize({ width: 520, height: 900 }),
+      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -7604,6 +7618,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       if (!compactSeatIds.bobId || !compactSeatIds.charlieId) {
         throw new Error('Missing Bob/Charlie seat ids for compact seat assertion');
       }
+
+      await expect(
+        alicePage.locator(`[data-testid="player-seat-${compactSeatIds.bobId}"]`),
+      ).toHaveClass(/seat-pod--compact/);
+      await expect(
+        alicePage.locator(
+          `[data-testid="player-seat-${compactSeatIds.charlieId}"]`,
+        ),
+      ).toHaveClass(/seat-pod--compact/);
 
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-call"]');
