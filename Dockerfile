@@ -6,22 +6,25 @@ WORKDIR /app
 ARG VITE_SERVER_URL=/
 ENV VITE_SERVER_URL=${VITE_SERVER_URL}
 
-COPY poker-types/package*.json ./poker-types/
-COPY poker-client/package*.json ./poker-client/
-COPY poker-server/package*.json ./poker-server/
+RUN corepack enable
 
-RUN npm ci --prefix poker-types
-RUN npm ci --prefix poker-client
-RUN npm ci --prefix poker-server
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY poker-types/package.json ./poker-types/package.json
+COPY poker-client/package.json ./poker-client/package.json
+COPY poker-server/package.json ./poker-server/package.json
+COPY poker-registry/package.json ./poker-registry/package.json
+
+RUN pnpm install --frozen-lockfile
 
 COPY poker-types ./poker-types
 COPY poker-client ./poker-client
 COPY poker-server ./poker-server
+COPY poker-registry ./poker-registry
 
-RUN npm run build --prefix poker-types
-RUN npm run build --prefix poker-client
-RUN npm run build --prefix poker-server
-RUN npm prune --omit=dev --prefix poker-server
+RUN pnpm --filter poker-types build
+RUN pnpm --filter poker-client build
+RUN pnpm --filter poker-server build
+RUN pnpm --filter poker-server deploy --prod /prod/poker-server
 
 FROM node:22.12-alpine AS runtime
 ENV NODE_ENV=production
@@ -32,9 +35,9 @@ ENV FRONTEND_DIST_PATH=/app/poker-client/dist
 
 WORKDIR /app/poker-server
 
-COPY --from=build --chown=node:node /app/poker-server/package*.json ./
-COPY --from=build --chown=node:node /app/poker-server/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/poker-server/dist ./dist
+COPY --from=build --chown=node:node /prod/poker-server/package.json ./
+COPY --from=build --chown=node:node /prod/poker-server/node_modules ./node_modules
+COPY --from=build --chown=node:node /prod/poker-server/dist ./dist
 COPY --from=build --chown=node:node /app/poker-client/dist /app/poker-client/dist
 
 RUN mkdir -p /app/data && chown -R node:node /app/data

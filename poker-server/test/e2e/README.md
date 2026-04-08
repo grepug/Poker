@@ -52,13 +52,13 @@ The application has been enhanced with a deterministic testing system that allow
 
 ```bash
 # Install dependencies (if not already done)
-cd poker-server
-npm install
+corepack enable
+pnpm install
 
 # Start both frontend and backend (automatic with Playwright config)
 # OR start manually:
-cd poker-client && npm run dev  # Terminal 1
-cd poker-server && TEST_MODE=true npm run start:dev  # Terminal 2
+cd poker-client && pnpm run dev  # Terminal 1
+cd poker-server && TEST_MODE=true pnpm run start:dev  # Terminal 2
 ```
 
 ### Run All E2E Tests

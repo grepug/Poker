@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm --prefix ../poker-types run build && tsc -b && vite build",
+    "build": "pnpm --dir .. --filter poker-types build && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "storybook": "node ./scripts/storybook-dev-fast.mjs",
@@ -25,7 +25,7 @@
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.552.0",
-    "poker-types": "file:../poker-types",
+    "poker-types": "workspace:*",
     "postcss": "^8.5.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

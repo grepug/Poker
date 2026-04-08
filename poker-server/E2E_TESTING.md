@@ -12,7 +12,7 @@ Set the `TEST_MODE` environment variable to enable test deck functionality:
 
 ```bash
 export TEST_MODE=true
-npm run start:dev
+pnpm run start:dev
 ```
 
 ### 2. Test Deck Injection
@@ -50,13 +50,13 @@ Cards are dealt in order from the test deck:
 
 ```bash
 cd poker-server
-npm run test:e2e:playwright
+pnpm run test:e2e:playwright
 ```
 
 ### Run with UI (interactive):
 
 ```bash
-npm run test:e2e:ui
+pnpm run test:e2e:ui
 ```
 
 ### Run specific test:

@@ -1,0 +1,9 @@
+packages:
+  - poker-server
+  - poker-client
+  - poker-types
+  - poker-registry
+
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - esbuild

@@ -45,7 +45,7 @@ Prep script:
 From `poker-server`:
 
 ```bash
-PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 npm run test:e2e:playwright:smoke
+PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 pnpm run test:e2e:playwright:smoke
 ```
 
 Expected browser console behavior in test logs:
@@ -63,10 +63,10 @@ Example (`backend:3025`, `frontend:5199`):
 
 ```bash
 PORT=3025 HOST=0.0.0.0 CORS_ORIGIN=http://localhost:5199 CLIENT_URL=http://localhost:5199 \
-  pm2 start npm --name poker-server-3025 --cwd poker-server -- run start:dev
+  pm2 start pnpm --name poker-server-3025 --cwd poker-server -- run start:dev
 
 VITE_SERVER_PROTOCOL=http VITE_SERVER_HOST=localhost VITE_SERVER_PORT=3025 \
-  pm2 start npm --name poker-client-5199 --cwd poker-client -- run dev -- --host localhost --port 5199
+  pm2 start pnpm --name poker-client-5199 --cwd poker-client -- run dev -- --host localhost --port 5199
 ```
 
 Useful commands:
@@ -89,7 +89,7 @@ When manually validating any frontend/backend change in browser:
    - At least one edge case and one invalid/guardrail case.
 4. If behavior depends on dynamic state (turn, stack, role, permissions, etc.), test at least two contrasting states.
 5. Cross-check with targeted e2e on alternate ports when possible:
-   - `PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 npm run test:e2e:playwright -- --project <project> --workers=1 --grep "<targeted-test>" --reporter=line`
+   - `PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 pnpm run test:e2e:playwright -- --project <project> --workers=1 --grep "<targeted-test>" --reporter=line`
 
 ### Manual QA Pitfalls (Seen in Real Debugging)
 

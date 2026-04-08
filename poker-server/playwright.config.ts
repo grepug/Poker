@@ -126,14 +126,14 @@ export default defineConfig({
     {
       // Use prebuilt static assets for stability under Node versions that
       // may not meet Vite dev-server requirements.
-      command: `npm --prefix ../poker-client run build && ${prepareFrontendCommand} && python3 -m http.server ${FRONTEND_PORT} --bind ${FRONTEND_BIND_HOST} --directory ../poker-client/dist`,
+      command: `pnpm --dir .. --filter poker-client build && ${prepareFrontendCommand} && python3 -m http.server ${FRONTEND_PORT} --bind ${FRONTEND_BIND_HOST} --directory ../poker-client/dist`,
       url: FRONTEND_URL,
       reuseExistingServer: false,
       timeout: 120000,
     },
     {
       // Avoid watch mode restarts during long e2e runs.
-      command: `rm -rf ${E2E_DATA_DIR} && PORT=${BACKEND_PORT} DATA_DIR=${E2E_DATA_DIR} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true CHAT_RATE_LIMIT_COUNT=500 CHAT_RATE_LIMIT_WINDOW_MS=10000 CHAT_PAGE_SIZE=20 AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT=1000 AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS=1000 npm run start`,
+      command: `rm -rf ${E2E_DATA_DIR} && PORT=${BACKEND_PORT} DATA_DIR=${E2E_DATA_DIR} CORS_ORIGIN=${FRONTEND_URL} CLIENT_URL=${FRONTEND_URL} TEST_MODE=true CHAT_RATE_LIMIT_COUNT=500 CHAT_RATE_LIMIT_WINDOW_MS=10000 CHAT_PAGE_SIZE=20 AUTH_PASSWORD_LOGIN_RATE_LIMIT_COUNT=1000 AUTH_PASSWORD_LOGIN_RATE_LIMIT_WINDOW_MS=1000 pnpm run start`,
       url: BACKEND_URL,
       reuseExistingServer: false,
       timeout: 60000,
