@@ -3,6 +3,8 @@ import { resolveServerResourceUrl } from "./socket.service";
 
 export type LiveAudioParticipant = {
   identity: string;
+  playerId: string | null;
+  userId: string | null;
   displayName: string;
   avatarEmoji: string | null;
   isLocal: boolean;
@@ -92,7 +94,12 @@ const normalizeRoomId = (roomId: string) => roomId.trim().toUpperCase();
 
 const parseParticipantMetadata = (
   metadata: string | undefined,
-): { displayName?: string; avatarEmoji?: string } => {
+): {
+  displayName?: string;
+  avatarEmoji?: string;
+  playerId?: string;
+  userId?: string;
+} => {
   if (!metadata) {
     return {};
   }
@@ -101,6 +108,8 @@ const parseParticipantMetadata = (
     const parsed = JSON.parse(metadata) as {
       displayName?: string;
       avatarEmoji?: string;
+      playerId?: string;
+      userId?: string;
     };
 
     return {
@@ -108,6 +117,8 @@ const parseParticipantMetadata = (
         typeof parsed.displayName === "string" ? parsed.displayName : undefined,
       avatarEmoji:
         typeof parsed.avatarEmoji === "string" ? parsed.avatarEmoji : undefined,
+      playerId: typeof parsed.playerId === "string" ? parsed.playerId : undefined,
+      userId: typeof parsed.userId === "string" ? parsed.userId : undefined,
     };
   } catch {
     return {};
@@ -123,6 +134,8 @@ const toParticipantState = (
 
   return {
     identity: participant.identity,
+    playerId: metadata.playerId ?? null,
+    userId: metadata.userId ?? null,
     displayName:
       metadata.displayName ||
       participant.name ||

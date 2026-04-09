@@ -174,6 +174,8 @@ describe("createLiveAudioController", () => {
         participants: [
           expect.objectContaining({
             identity: joinPayload.participantIdentity,
+            playerId: "player-1",
+            userId: "user-1",
             displayName: "Alice",
             avatarEmoji: "🦊",
             isLocal: true,
@@ -205,6 +207,8 @@ describe("createLiveAudioController", () => {
       expect.arrayContaining([
         expect.objectContaining({
           identity: "user-2:player-2",
+          playerId: "player-2",
+          userId: "user-2",
           displayName: "Bob",
           avatarEmoji: "🐻",
           isLocal: false,

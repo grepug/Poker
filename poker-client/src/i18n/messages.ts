@@ -152,6 +152,8 @@ export const EN_MESSAGES = {
     "Your microphone is unavailable because another app is using it.",
   "game.audio.error.playbackBlocked":
     "Browser audio playback is blocked. Tap Enable Audio.",
+  "game.audio.badge.speaking": "Speaking",
+  "game.audio.badge.onMic": "Mic On",
   "pwa.iosInstallTitle": "Add this app to your Home Screen",
   "pwa.iosInstallBody": "In Safari, tap Share and choose Add to Home Screen for a full-screen app.",
 
@@ -594,6 +596,8 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
     "当前浏览器需要通过 HTTPS 或 localhost 才能访问麦克风。",
   "game.audio.error.microphoneBusy": "麦克风正在被其他应用占用。",
   "game.audio.error.playbackBlocked": "浏览器拦截了音频播放，请点“启用音频”。",
+  "game.audio.badge.speaking": "正在说话",
+  "game.audio.badge.onMic": "麦克风开启",
   "pwa.iosInstallTitle": "把应用添加到主屏幕",
   "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
 

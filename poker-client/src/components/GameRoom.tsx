@@ -44,7 +44,7 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
-import type { SeatBadge } from "@/components/poker/seat-pod";
+import type { SeatBadge, SeatLiveAudioBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
@@ -1434,6 +1434,33 @@ const buildSeatBadge = (
   return null;
 };
 
+const buildSeatLiveAudioBadge = (
+  liveAudioParticipant: {
+    isMuted: boolean;
+    isSpeaking: boolean;
+  } | null,
+  labels: {
+    speaking: string;
+    onMic: string;
+  },
+): SeatLiveAudioBadge | null => {
+  if (!liveAudioParticipant || liveAudioParticipant.isMuted) {
+    return null;
+  }
+
+  if (liveAudioParticipant.isSpeaking) {
+    return {
+      kind: "speaking",
+      ariaLabel: labels.speaking,
+    };
+  }
+
+  return {
+    kind: "on-mic",
+    ariaLabel: labels.onMic,
+  };
+};
+
 const resolveSeatMainState = ({
   isCurrentTurnSeat,
   isDisconnected,
@@ -2585,6 +2612,15 @@ const useGameRoomElement = () => {
     { length: 5 },
     (_, idx) => currentHand?.communityCards[idx] ?? null,
   );
+  const liveAudioParticipantByPlayerId = useMemo(
+    () =>
+      new Map(
+        liveAudioParticipants
+          .filter((participant) => participant.playerId)
+          .map((participant) => [participant.playerId as string, participant]),
+      ),
+    [liveAudioParticipants],
+  );
   const seatOrbitItems = useMemo(
     () =>
       seatSlots.map((slot) => {
@@ -2603,6 +2639,13 @@ const useGameRoomElement = () => {
         const seatPositionLabel =
           currentHand?.positionLabelsByPlayerId?.[seatPlayerId] ?? null;
         const seatBadge = buildSeatBadge(roleIcon, seatPositionLabel);
+        const seatLiveAudioBadge = buildSeatLiveAudioBadge(
+          liveAudioParticipantByPlayerId.get(seatPlayerId) ?? null,
+          {
+            speaking: t("game.audio.badge.speaking"),
+            onMic: t("game.audio.badge.onMic"),
+          },
+        );
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
         const isSelfSeat = seatPlayer.id === resolvedPlayerId;
         const isFolded = seatPlayer.status === "folded";
@@ -2689,6 +2732,7 @@ const useGameRoomElement = () => {
           playerName: seatPlayer.name,
           isYou: isSelfSeat,
           badge: seatBadge,
+          liveAudioBadge: seatLiveAudioBadge,
           externalStatusLabel: seatExternalStatusLabel,
           externalStatusToneClass: seatExternalStatusToneClass,
           internalStatusLabel: seatInlineStatusLabel,
@@ -2704,6 +2748,7 @@ const useGameRoomElement = () => {
       currentHand,
       lastPlayerActionEvent,
       resolvedPlayerId,
+      liveAudioParticipantByPlayerId,
       seatSlotWidth,
       seatSlotWidthPx,
       seatSlots,
