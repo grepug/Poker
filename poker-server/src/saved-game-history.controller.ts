@@ -51,19 +51,24 @@ export class SavedGameHistoryController {
     if (!detail) {
       throw new NotFoundException('Saved game unavailable');
     }
-    let didUpdateLocalizationState = false;
-    for (const hand of detail.hands) {
-      if (hand.analysis.status !== 'ready') {
-        continue;
-      }
-      didUpdateLocalizationState =
-        (await this.savedGameReviewService.scheduleHandLocalization({
+    const readyHands = detail.hands.filter(
+      (hand) => hand.analysis.status === 'ready',
+    );
+    if (readyHands.length === 0) {
+      return detail;
+    }
+
+    const localizationWrites = await Promise.all(
+      readyHands.map((hand) =>
+        this.savedGameReviewService.scheduleHandLocalization({
           archiveId,
           requesterUserId: current.user.id,
           handNumber: hand.handNumber,
           locale,
-        })) || didUpdateLocalizationState;
-    }
+        }),
+      ),
+    );
+    const didUpdateLocalizationState = localizationWrites.some(Boolean);
     if (!didUpdateLocalizationState) {
       return detail;
     }

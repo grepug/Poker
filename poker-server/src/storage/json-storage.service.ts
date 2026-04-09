@@ -724,6 +724,67 @@ export class JsonStorageService
     return hand ? this.normalizeSavedGameHandAnalysis(hand.analysis) : null;
   }
 
+  async mergeSavedGameHandLocalization(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+    locale: string,
+    entry: NonNullable<SavedGameHandAnalysis['localizedByLocale']>[string],
+  ): Promise<boolean> {
+    let didMerge = false;
+
+    await this.runSavedGameArchiveWriteSequentially(archiveId, async () => {
+      await this.ensureDirectories();
+      const archive = await this.readSavedGameArchive(archiveId);
+      if (!archive) {
+        return;
+      }
+
+      const playerView = archive.playerViews[userId];
+      if (!playerView) {
+        return;
+      }
+
+      const nextHands = playerView.hands.map((hand) => {
+        if (hand.handNumber !== handNumber) {
+          return hand;
+        }
+
+        const normalizedAnalysis = this.normalizeSavedGameHandAnalysis(hand.analysis);
+        didMerge = true;
+        return {
+          ...hand,
+          analysis: {
+            ...normalizedAnalysis,
+            localizedByLocale: {
+              ...(normalizedAnalysis.localizedByLocale ?? {}),
+              [locale]: {
+                ...entry,
+                updatedAt: Number(entry.updatedAt || Date.now()),
+                headline: entry.headline ?? null,
+                summary: entry.summary ?? null,
+                keyAdjustments: [...(entry.keyAdjustments ?? [])],
+                failureReason: entry.failureReason ?? null,
+              },
+            },
+          },
+        };
+      });
+
+      if (!didMerge) {
+        return;
+      }
+
+      archive.playerViews[userId] = {
+        ...playerView,
+        hands: nextHands,
+      };
+      await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
+    });
+
+    return didMerge;
+  }
+
   private async ensureDirectories(): Promise<void> {
     await ensureDir(this.roomsDir);
     await ensureDir(this.savedGameArchivesDir);

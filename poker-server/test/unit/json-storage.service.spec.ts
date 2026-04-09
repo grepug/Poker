@@ -1403,5 +1403,137 @@ describe('JsonStorageService', () => {
       );
       expect(unauthorizedDetail).toBeNull();
     });
+
+    it('merges a localized locale entry without dropping other locales or changing canonical updatedAt', async () => {
+      const roomId = 'ROOMARCHIVE2';
+      await seedCompletedHands(roomId);
+
+      const endedRoom = await service.getRoom(roomId);
+      if (!endedRoom) {
+        throw new Error('Expected ended room to exist');
+      }
+
+      endedRoom.players = endedRoom.players.map((player) => {
+        if (player.id === 'alice') {
+          return { ...player, userId: 'user-alice' };
+        }
+        if (player.id === 'bob') {
+          return { ...player, userId: 'user-bob' };
+        }
+        return player;
+      });
+      endedRoom.lastActivityAt = 2600;
+      await service.persistRoom(endedRoom);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const updateSavedGameHandAnalysis = (
+        service as JsonStorageService & {
+          updateSavedGameHandAnalysis?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+            analysis: any,
+          ) => Promise<void>;
+        }
+      ).updateSavedGameHandAnalysis;
+      const mergeSavedGameHandLocalization = (
+        service as JsonStorageService & {
+          mergeSavedGameHandLocalization?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+            locale: string,
+            entry: any,
+          ) => Promise<boolean>;
+        }
+      ).mergeSavedGameHandLocalization;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof updateSavedGameHandAnalysis).toBe('function');
+      expect(typeof mergeSavedGameHandLocalization).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof updateSavedGameHandAnalysis !== 'function' ||
+        typeof mergeSavedGameHandLocalization !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      await updateSavedGameHandAnalysis.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+        {
+          status: 'ready',
+          updatedAt: 111,
+          provider: 'ai-robot-config',
+          headline: 'Canonical review',
+          summary: 'Canonical summary',
+          keyAdjustments: ['Canonical adjustment'],
+          failureReason: null,
+          localizedByLocale: {
+            en: {
+              status: 'ready',
+              updatedAt: 111,
+              headline: 'English review',
+              summary: 'English summary',
+              keyAdjustments: ['English adjustment'],
+              failureReason: null,
+            },
+          },
+        },
+      );
+
+      await mergeSavedGameHandLocalization.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+        'fr',
+        {
+          status: 'ready',
+          updatedAt: 222,
+          headline: 'Analyse francaise',
+          summary: 'Resume francais',
+          keyAdjustments: ['Ajustement francais'],
+          failureReason: null,
+        },
+      );
+
+      const detail = await getSavedGameDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+      );
+      expect(detail?.hands[0].analysis.updatedAt).toBe(111);
+      expect(detail?.hands[0].analysis.localizedByLocale).toEqual(
+        expect.objectContaining({
+          en: expect.objectContaining({
+            headline: 'English review',
+            updatedAt: 111,
+          }),
+          fr: expect.objectContaining({
+            headline: 'Analyse francaise',
+            updatedAt: 222,
+          }),
+        }),
+      );
+    });
   });
 });

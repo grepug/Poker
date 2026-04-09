@@ -6,6 +6,7 @@ describe('SavedGameReviewService', () => {
     getSavedGameReviewTargets: jest.Mock;
     updateSavedGameHandAnalysis: jest.Mock;
     getSavedGameHandAnalysis: jest.Mock;
+    mergeSavedGameHandLocalization: jest.Mock;
   };
   let robotAgentService: {
     isConfigured: jest.Mock;
@@ -19,6 +20,7 @@ describe('SavedGameReviewService', () => {
       getSavedGameReviewTargets: jest.fn(),
       updateSavedGameHandAnalysis: jest.fn().mockResolvedValue(undefined),
       getSavedGameHandAnalysis: jest.fn(),
+      mergeSavedGameHandLocalization: jest.fn().mockResolvedValue(true),
     };
     robotAgentService = {
       isConfigured: jest.fn(),
@@ -184,18 +186,28 @@ describe('SavedGameReviewService', () => {
     await (service as any).reviewQueue;
 
     expect(
-      archiveStorageService.updateSavedGameHandAnalysis,
-    ).toHaveBeenCalledWith(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      1,
       'ROOM1',
       'user-alice',
       3,
+      'fr',
       expect.objectContaining({
-        localizedByLocale: expect.objectContaining({
-          fr: expect.objectContaining({
-            status: 'ready',
-            headline: 'Jouez plus serré préflop',
-          }),
-        }),
+        status: 'pending',
+      }),
+    );
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'ROOM1',
+      'user-alice',
+      3,
+      'fr',
+      expect.objectContaining({
+        status: 'ready',
+        headline: 'Jouez plus serré préflop',
       }),
     );
   });
@@ -221,18 +233,55 @@ describe('SavedGameReviewService', () => {
 
     expect(localizeReviewTextSpy).not.toHaveBeenCalled();
     expect(
-      archiveStorageService.updateSavedGameHandAnalysis,
+      archiveStorageService.mergeSavedGameHandLocalization,
     ).toHaveBeenCalledWith(
       'ROOM1',
       'user-alice',
       4,
+      'en',
       expect.objectContaining({
-        localizedByLocale: expect.objectContaining({
-          en: expect.objectContaining({
-            status: 'ready',
-            headline: 'Value bet bigger on the turn',
-          }),
-        }),
+        status: 'ready',
+        headline: 'Value bet bigger on the turn',
+      }),
+    );
+  });
+
+  it('reports a write when localization fails immediately without queueing', async () => {
+    archiveStorageService.getSavedGameHandAnalysis.mockResolvedValue({
+      status: 'ready',
+      headline: 'Play tighter preflop',
+      summary: 'Fold more offsuit broadways.',
+      keyAdjustments: ['Fold KJo UTG'],
+      localizedByLocale: {
+        en: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+        },
+      },
+    });
+    robotAgentService.getConfigurationError.mockReturnValue('Robot AI is not configured.');
+
+    await expect(
+      service.scheduleHandLocalization({
+        archiveId: 'ROOM1',
+        requesterUserId: 'user-alice',
+        handNumber: 6,
+        locale: 'zh_hans',
+      }),
+    ).resolves.toBe(true);
+
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenCalledWith(
+      'ROOM1',
+      'user-alice',
+      6,
+      'zh_hans',
+      expect.objectContaining({
+        status: 'failed',
+        failureReason: 'Robot AI is not configured.',
       }),
     );
   });

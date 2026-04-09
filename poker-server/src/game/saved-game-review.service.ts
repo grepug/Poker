@@ -61,12 +61,12 @@ export class SavedGameReviewService {
     locale?: string;
   }): Promise<boolean> {
     const locale = this.normalizeLocale(params.locale);
-    const shouldQueue = await this.prepareHandLocalization({
+    const preparation = await this.prepareHandLocalization({
       ...params,
       locale,
     });
-    if (!shouldQueue) {
-      return false;
+    if (!preparation.shouldQueue) {
+      return preparation.didWrite;
     }
 
     const queueKey = [
@@ -76,7 +76,7 @@ export class SavedGameReviewService {
       locale,
     ].join(':');
     if (this.queuedLocalizationKeys.has(queueKey)) {
-      return true;
+      return preparation.didWrite;
     }
 
     this.queuedLocalizationKeys.add(queueKey);
@@ -100,7 +100,7 @@ export class SavedGameReviewService {
     this.reviewQueue = this.reviewQueue
       .catch(() => undefined)
       .then(runLocalization);
-    return true;
+    return preparation.didWrite;
   }
 
   async runArchiveReview(archiveId: string): Promise<void> {
@@ -195,7 +195,7 @@ export class SavedGameReviewService {
     requesterUserId: string;
     handNumber: number;
     locale: string;
-  }): Promise<boolean> {
+  }): Promise<{ didWrite: boolean; shouldQueue: boolean }> {
     const analysis =
       await this.savedGameArchiveStorageService.getSavedGameHandAnalysis(
         params.archiveId,
@@ -203,59 +203,53 @@ export class SavedGameReviewService {
         params.handNumber,
       );
     if (!analysis || analysis.status !== 'ready') {
-      return false;
+      return { didWrite: false, shouldQueue: false };
     }
 
     const existingLocalization = analysis.localizedByLocale?.[params.locale];
     if (existingLocalization) {
-      return false;
+      return { didWrite: false, shouldQueue: false };
     }
 
     const canonicalReview = this.toCanonicalReviewText(analysis);
     if (!canonicalReview) {
-      return false;
+      return { didWrite: false, shouldQueue: false };
     }
 
     if (params.locale === 'en') {
-      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+      const didWrite =
+        await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
         params.archiveId,
         params.requesterUserId,
         params.handNumber,
-        this.withLocalizedEntry(
-          analysis,
-          params.locale,
-          this.buildLocalizedReadyEntry(canonicalReview),
-        ),
+        params.locale,
+        this.buildLocalizedReadyEntry(canonicalReview),
       );
-      return false;
+      return { didWrite, shouldQueue: false };
     }
 
     const configError = this.robotAgentService.getConfigurationError();
     if (configError) {
-      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+      const didWrite =
+        await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
         params.archiveId,
         params.requesterUserId,
         params.handNumber,
-        this.withLocalizedEntry(
-          analysis,
-          params.locale,
-          this.buildLocalizedFailureEntry(configError),
-        ),
+        params.locale,
+        this.buildLocalizedFailureEntry(configError),
       );
-      return false;
+      return { didWrite, shouldQueue: false };
     }
 
-    await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+    const didWrite =
+      await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
       params.archiveId,
       params.requesterUserId,
       params.handNumber,
-      this.withLocalizedEntry(
-        analysis,
-        params.locale,
-        this.buildLocalizedPendingEntry(),
-      ),
+      params.locale,
+      this.buildLocalizedPendingEntry(),
     );
-    return true;
+    return { didWrite, shouldQueue: didWrite };
   }
 
   private async finishQueuedHandLocalization(params: {
@@ -293,28 +287,22 @@ export class SavedGameReviewService {
         locale: params.locale,
         canonicalReview,
       });
-      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+      await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
         params.archiveId,
         params.requesterUserId,
         params.handNumber,
-        this.withLocalizedEntry(
-          analysis,
-          params.locale,
-          this.buildLocalizedReadyEntry(localizedReview),
-        ),
+        params.locale,
+        this.buildLocalizedReadyEntry(localizedReview),
       );
     } catch (error) {
       const failureReason =
         error instanceof Error ? error.message : 'Failed to localize review';
-      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+      await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
         params.archiveId,
         params.requesterUserId,
         params.handNumber,
-        this.withLocalizedEntry(
-          analysis,
-          params.locale,
-          this.buildLocalizedFailureEntry(failureReason),
-        ),
+        params.locale,
+        this.buildLocalizedFailureEntry(failureReason),
       );
     }
   }
@@ -470,21 +458,6 @@ export class SavedGameReviewService {
       summary: null,
       keyAdjustments: [],
       failureReason,
-    };
-  }
-
-  private withLocalizedEntry(
-    analysis: SavedGameHandAnalysis,
-    locale: string,
-    entry: SavedGameLocalizedAnalysis,
-  ): SavedGameHandAnalysis {
-    return {
-      ...analysis,
-      updatedAt: entry.updatedAt,
-      localizedByLocale: {
-        ...(analysis.localizedByLocale ?? {}),
-        [locale]: entry,
-      },
     };
   }
 
