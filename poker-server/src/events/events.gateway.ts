@@ -1995,6 +1995,11 @@ export class EventsGateway
         playerInfo.roomId,
         async () => {
           const roomBeforeLeave = await this.getRoom(playerInfo.roomId);
+          if (!roomBeforeLeave) {
+            client.leave(playerInfo.roomId);
+            this.socketToPlayer.delete(client.id);
+            return { success: true };
+          }
           const leaveError = this.getLeaveRoomError(
             roomBeforeLeave,
             playerInfo.playerId,
@@ -2033,7 +2038,11 @@ export class EventsGateway
               });
             }
 
-            if (room.currentHand && room.gameState === 'IN_PROGRESS') {
+            if (
+              room.currentHand &&
+              room.gameState === 'IN_PROGRESS' &&
+              !room.currentHand.lastResult
+            ) {
               if (
                 room.currentHand.bettingRound === 'SHOWDOWN' &&
                 !room.currentHand.lastResult

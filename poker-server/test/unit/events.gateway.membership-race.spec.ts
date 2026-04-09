@@ -388,9 +388,28 @@ describe('EventsGateway membership mutation serialization', () => {
       'ROOM1',
       'p-bob',
     );
-    expect(bettingService.isBettingRoundComplete).toHaveBeenCalledTimes(1);
+    expect(bettingService.isBettingRoundComplete).not.toHaveBeenCalled();
     expect(handleBettingRoundCompleteSpy).not.toHaveBeenCalled();
     expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');
+  });
+
+  it('treats leave from a missing room as successful local cleanup', async () => {
+    storageService.getRoom.mockResolvedValue(null);
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+
+    const result = await gateway.handleLeaveRoom(leavingClient as any);
+
+    expect(result).toEqual({ success: true });
+    expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');
+    expect(gameService.removePlayerFromRoom).not.toHaveBeenCalled();
+    expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
+    expect(leavingClient.emit).not.toHaveBeenCalledWith('ERROR', expect.anything());
   });
 
   it('rejects leave while a hand is still in progress', async () => {
