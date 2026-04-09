@@ -305,8 +305,8 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                 <button
                   ref={checkActionButtonRef}
                   onClick={() => onQuickDecisionAction("check")}
-                  disabled={!canCheck || isQuickDecisionLocked}
-                  data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                  disabled={isQuickDecisionLocked}
+                  data-testid="action-check"
                   className="chip-action chip-action--check"
                 >
                   {t("common.check")}
