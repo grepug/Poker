@@ -10,16 +10,19 @@ import { AuthModule } from './auth/auth.module';
 import { HandHistoryController } from './hand-history.controller';
 import { SavedGameHistoryController } from './saved-game-history.controller';
 import { LiveAudioModule } from './live-audio/live-audio.module';
+import { existsSync } from 'fs';
 import * as path from 'path';
+
+const envFilePath = [
+  path.resolve(__dirname, '..', '..', '.env'),
+  path.resolve(__dirname, '..', '..', '..', '.env'),
+].filter((candidate) => existsSync(candidate));
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: [
-        path.resolve(process.cwd(), '.env'),
-        path.resolve(process.cwd(), '../.env'),
-      ],
+      envFilePath,
     }),
     StorageModule,
     GameModule,
