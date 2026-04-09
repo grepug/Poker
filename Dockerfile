@@ -37,7 +37,7 @@ WORKDIR /app/poker-server
 
 COPY --from=build --chown=node:node /prod/poker-server/package.json ./
 COPY --from=build --chown=node:node /prod/poker-server/node_modules ./node_modules
-COPY --from=build --chown=node:node /prod/poker-server/dist ./dist
+COPY --from=build --chown=node:node /app/poker-server/dist ./dist
 COPY --from=build --chown=node:node /app/poker-client/dist /app/poker-client/dist
 
 RUN mkdir -p /app/data && chown -R node:node /app/data
