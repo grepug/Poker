@@ -17,6 +17,10 @@ import type {
 } from "poker-types";
 import type { Locale, MessageKey } from "../i18n/messages";
 import { handHistoryService } from "../services/hand-history.service";
+import {
+  applyTurnNotificationTransition,
+  playTurnNotification,
+} from "../services/turn-notification.service";
 import { playVoicePlayback } from "../services/voice-playback.service";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
@@ -3092,19 +3096,14 @@ const useGameRoomElement = () => {
   }, [finalGameResult, isGameEnded]);
 
   useEffect(() => {
-    const previousIsYourTurn = previousIsYourTurnRef.current;
-    if (previousIsYourTurn === null) {
-      if (isYourTurn) {
+    previousIsYourTurnRef.current = applyTurnNotificationTransition({
+      previousIsYourTurn: previousIsYourTurnRef.current,
+      isYourTurn,
+      onTurnStart: () => {
         triggerTurnAlert();
-      }
-      previousIsYourTurnRef.current = isYourTurn;
-      return;
-    }
-
-    if (!previousIsYourTurn && isYourTurn) {
-      triggerTurnAlert();
-    }
-    previousIsYourTurnRef.current = isYourTurn;
+        void playTurnNotification();
+      },
+    });
   }, [isYourTurn, triggerTurnAlert]);
 
   const syncActionCenterAlertWithLatestAction = useCallback(() => {
