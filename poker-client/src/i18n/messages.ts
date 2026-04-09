@@ -335,6 +335,7 @@ export const EN_MESSAGES = {
   "game.callWithAmount": "Call ${amount}",
   "game.allInWithAmount": "All-In ${amount}",
   "game.raise": "Raise",
+  "game.trayReviewAction": "Review {action}",
 
   "game.rankings.title": "Player Rankings",
   "game.rankings.sortedBy": "Sorted by net income (`stack - buy-in`).",
@@ -779,6 +780,7 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.callWithAmount": "跟注 ${amount}",
   "game.allInWithAmount": "全下 ${amount}",
   "game.raise": "加注",
+  "game.trayReviewAction": "确认{action}",
 
   "game.rankings.title": "玩家排行榜",
   "game.rankings.sortedBy": "按净收益（`桌面筹码 - 买入`）排序。",

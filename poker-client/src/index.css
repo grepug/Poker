@@ -289,6 +289,23 @@ body {
     linear-gradient(170deg, #071d14 0%, #04130d 70%);
 }
 
+.table-shell__desktop-layout {
+  min-width: 0;
+}
+
+.table-shell__game-column {
+  min-width: 0;
+}
+
+.table-shell__board-stage {
+  position: relative;
+  min-width: 0;
+}
+
+.desktop-right-rail {
+  display: none;
+}
+
 .table-micro-hud {
   position: sticky;
   top: 0.5rem;
@@ -1400,6 +1417,10 @@ body {
   transform: translateY(var(--your-cards-flyout-y-shift)) translateX(calc(-100% + 1.85rem));
 }
 
+.your-cards-flyout--left-edge {
+  left: max(0px, env(safe-area-inset-left, 0px));
+}
+
 .your-cards-flyout--anchored {
   --your-cards-flyout-y-shift: 0%;
   top: auto;
@@ -1409,6 +1430,20 @@ body {
   --your-cards-flyout-y-shift: 0%;
   top: auto;
   bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+}
+
+.your-cards-flyout--felt-right {
+  position: absolute;
+  right: 0.75rem;
+  left: auto;
+  top: 50%;
+  width: clamp(10.4rem, 15vw, 12rem);
+  grid-template-columns: 1.85rem minmax(0, 1fr);
+  transform: translateY(-50%);
+}
+
+.your-cards-flyout--felt-right.your-cards-flyout--closed {
+  transform: translateY(-50%) translateX(calc(100% - 1.85rem));
 }
 
 .your-cards-flyout__panel {
@@ -1488,6 +1523,20 @@ body {
 
 .your-cards-flyout__toggle:active {
   transform: scale(0.97);
+}
+
+.your-cards-flyout--felt-right .your-cards-flyout__panel {
+  order: 2;
+  border-left: none;
+  border-right: 1px solid rgba(6, 95, 70, 0.78);
+  border-radius: 0 0.85rem 0.85rem 0;
+}
+
+.your-cards-flyout--felt-right .your-cards-flyout__toggle {
+  order: 1;
+  border-left: 1px solid rgba(16, 185, 129, 0.65);
+  border-right: none;
+  border-radius: 0.72rem 0 0 0.72rem;
 }
 
 .chip-composer-dock {
@@ -1686,7 +1735,7 @@ body {
 .chip-composer-dock__footer {
   margin-top: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 0.32rem;
 }
 
@@ -1746,6 +1795,12 @@ body {
   border-color: rgba(251, 146, 60, 0.64);
   background: rgba(194, 65, 12, 0.58);
   color: #ffedd5;
+}
+
+.chip-action--review {
+  border-color: rgba(16, 185, 129, 0.65);
+  background: rgba(16, 185, 129, 0.22);
+  color: #d1fae5;
 }
 
 .chip-composer-dock__denoms {
@@ -2044,6 +2099,78 @@ body {
   max-height: min(60vh, 34rem);
   overscroll-behavior: contain;
   z-index: 65;
+}
+
+.chat-panel-shell--desktop-rail {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  width: auto;
+  height: min(52vh, 34rem);
+  max-height: min(52vh, 34rem);
+}
+
+.desktop-side-panel {
+  padding: 0.85rem;
+}
+
+.desktop-side-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.desktop-side-panel__header h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #ecfdf5;
+}
+
+.desktop-side-panel__meta {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(209, 250, 229, 0.78);
+}
+
+.desktop-side-panel__stats {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.desktop-side-panel__stats strong {
+  display: block;
+  margin-top: 0.16rem;
+  font-size: 0.84rem;
+  color: #f0fdf4;
+}
+
+.desktop-side-panel__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.74);
+}
+
+.desktop-side-panel__actions {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.desktop-side-panel__button {
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  border-radius: 0.72rem;
+  background: rgba(4, 120, 87, 0.28);
+  color: #d1fae5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.55rem 0.6rem;
 }
 
 .chat-panel {
@@ -2370,6 +2497,77 @@ body {
 }
 
 @media (min-width: 1024px) {
+  .table-shell--desktop-two-column {
+    padding: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .table-shell--desktop-two-column.table-shell--desktop-turn-dock {
+    padding-right: 1rem;
+  }
+
+  .table-shell--desktop-two-column .table-shell__desktop-layout {
+    max-width: min(96vw, 96rem);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(19rem, 24vw, 24rem);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .table-shell--desktop-two-column .table-shell__game-column {
+    display: grid;
+    gap: 0.8rem;
+    align-content: start;
+  }
+
+  .table-shell--desktop-two-column .table-shell__board-stage {
+    padding-right: clamp(10rem, 16vw, 12.5rem);
+  }
+
+  .table-shell--desktop-two-column .table-micro-hud {
+    margin: 0;
+    max-width: none;
+    top: 0;
+  }
+
+  .table-shell--desktop-two-column .table-board-wrap {
+    margin-top: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  .table-shell--desktop-two-column .desktop-right-rail {
+    display: grid;
+    gap: 0.85rem;
+    align-self: start;
+    position: sticky;
+    top: 1rem;
+  }
+
+  .table-shell--desktop-two-column .chip-composer-dock--desktop-main {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .table-shell--desktop-two-column .chat-panel-shell--desktop-rail {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    height: min(52vh, 34rem);
+    max-height: min(52vh, 34rem);
+    z-index: auto;
+  }
+
   .chat-panel-shell {
     left: auto;
     right: calc(0.85rem + env(safe-area-inset-right, 0px));

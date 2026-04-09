@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 
 type TableShellProps = {
   children: React.ReactNode;
+  isDesktopTwoColumn?: boolean;
   showDesktopTurnDock: boolean;
   showDesktopOperationDock: boolean;
   desktopBottomBarHeight: number;
@@ -11,6 +12,7 @@ type TableShellProps = {
 
 export const TableShell: React.FC<TableShellProps> = ({
   children,
+  isDesktopTwoColumn = false,
   showDesktopTurnDock,
   showDesktopOperationDock,
   desktopBottomBarHeight,
@@ -25,6 +27,7 @@ export const TableShell: React.FC<TableShellProps> = ({
       }
       className={cn(
         "table-shell",
+        isDesktopTwoColumn && "table-shell--desktop-two-column",
         showDesktopTurnDock && "table-shell--desktop-turn-dock",
         showDesktopOperationDock && "table-shell--desktop-operation-dock",
         isChatPanelOpen && "table-shell--chat-open",

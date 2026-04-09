@@ -8,6 +8,7 @@ type YourCardsFlyoutProps = {
   cards: PokerCard[];
   shouldAnchorToBottomBar: boolean;
   bottomBarHeight: number;
+  placement?: "left-edge" | "bottom" | "felt-right";
   title: string;
   emptyOpenStateLabel: string;
   emptyClosedStateLabel: string;
@@ -22,6 +23,7 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
   cards,
   shouldAnchorToBottomBar,
   bottomBarHeight,
+  placement,
   title,
   emptyOpenStateLabel,
   emptyClosedStateLabel,
@@ -29,13 +31,22 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
   showLabel,
   onToggle,
 }) => {
+  const resolvedPlacement =
+    placement ?? (shouldAnchorToBottomBar ? "bottom" : "left-edge");
+
   return (
     <section
       className={`your-cards-flyout ${
         isOpen ? "your-cards-flyout--open" : "your-cards-flyout--closed"
-      } ${shouldAnchorToBottomBar ? "your-cards-flyout--anchored" : "your-cards-flyout--bottom"}`}
+      } ${
+        resolvedPlacement === "felt-right"
+          ? "your-cards-flyout--felt-right"
+          : resolvedPlacement === "bottom"
+            ? "your-cards-flyout--bottom"
+            : "your-cards-flyout--left-edge"
+      } ${shouldAnchorToBottomBar ? "your-cards-flyout--anchored" : ""}`}
       style={
-        shouldAnchorToBottomBar
+        shouldAnchorToBottomBar && resolvedPlacement !== "felt-right"
           ? {
               bottom: `calc(0.55rem + env(safe-area-inset-bottom, 0px) + ${bottomBarHeight}px + 16px)`,
             }

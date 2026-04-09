@@ -25,6 +25,7 @@ type TurnActionDockProps = {
   maxStack: number;
   trayAmount: number;
   trayInputValue: string;
+  isDesktopClickBetting?: boolean;
   canStartDrag: boolean;
   isDragActive: boolean;
   isYourTurn: boolean;
@@ -39,10 +40,15 @@ type TurnActionDockProps = {
   onTrayInputChange: React.ChangeEventHandler<HTMLInputElement>;
   onTrayInputBlur: React.FocusEventHandler<HTMLInputElement>;
   onClearTray: () => void;
+  onSubmitTray?: () => void;
   onQuickDecisionAction: (action: QuickDecisionAction) => void;
   quickConfirmAction: QuickDecisionAction | null;
   onQuickConfirmDismiss: () => void;
   onQuickConfirmAccept: (action: QuickDecisionAction) => void;
+  traySubmitLabel?: string | null;
+  showTrayConfirm?: boolean;
+  onTrayConfirmDismiss?: () => void;
+  onTrayConfirmAccept?: () => void;
   onLegacyAction: (action: LegacyAction) => void;
   onLegacyRaiseAmountChange: (amount: number) => void;
   t: Translate;
@@ -54,6 +60,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   maxStack,
   trayAmount,
   trayInputValue,
+  isDesktopClickBetting = false,
   canStartDrag,
   isDragActive,
   isYourTurn,
@@ -68,10 +75,15 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onTrayInputChange,
   onTrayInputBlur,
   onClearTray,
+  onSubmitTray = () => {},
   onQuickDecisionAction,
   quickConfirmAction,
   onQuickConfirmDismiss,
   onQuickConfirmAccept,
+  traySubmitLabel = null,
+  showTrayConfirm = false,
+  onTrayConfirmDismiss = () => {},
+  onTrayConfirmAccept = () => {},
   onLegacyAction,
   onLegacyRaiseAmountChange,
   t,
@@ -80,6 +92,8 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const traySubmitButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const trayConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
     React.useState(isQuickDecisionAvailable);
@@ -92,7 +106,16 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     preferredPlacement: "top",
     align: "start",
   });
+  const trayConfirmStyle = useAnchoredPopover({
+    isOpen: !isAutomationMode && showTrayConfirm,
+    anchorRef: traySubmitButtonRef,
+    popoverRef: trayConfirmPopoverRef,
+    preferredPlacement: "top",
+    align: "end",
+  });
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
+  const showDesktopSubmitTrayButton =
+    !isAutomationMode && isDesktopClickBetting && Boolean(traySubmitLabel);
 
   React.useLayoutEffect(() => {
     if (quickDecisionLockTimeoutRef.current !== null) {
@@ -228,16 +251,62 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               </div>
             )}
 
-            <div className="chip-composer-dock__footer">
-              <button
-                ref={checkActionButtonRef}
-                onClick={() => onQuickDecisionAction("check")}
-                disabled={!canCheck || isQuickDecisionLocked}
-                data-testid={canCheck ? "action-check" : "action-check-disabled"}
-                className="chip-action chip-action--check"
+            {showDesktopSubmitTrayButton && showTrayConfirm && traySubmitLabel && (
+              <div
+                ref={trayConfirmPopoverRef}
+                role="dialog"
+                aria-label={t("game.confirmAction.title")}
+                data-testid="bet-action-confirm-popover"
+                className="action-quick-confirm-popover action-quick-confirm-popover--wide"
+                style={trayConfirmStyle}
               >
-                {t("common.check")}
-              </button>
+                <p className="text-xs font-semibold text-emerald-50">
+                  {t("game.quickConfirm.prompt", {
+                    action: traySubmitLabel,
+                  })}
+                </p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={onTrayConfirmDismiss}
+                    data-testid="bet-action-confirm-cancel"
+                    className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onTrayConfirmAccept}
+                    data-testid="bet-action-confirm-accept"
+                    className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-300"
+                  >
+                    {t("common.confirm")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="chip-composer-dock__footer">
+              {canCheck ? (
+                <button
+                  ref={checkActionButtonRef}
+                  onClick={() => onQuickDecisionAction("check")}
+                  disabled={!canCheck || isQuickDecisionLocked}
+                  data-testid={canCheck ? "action-check" : "action-check-disabled"}
+                  className="chip-action chip-action--check"
+                >
+                  {t("common.check")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onLegacyAction("call")}
+                  data-testid="action-call"
+                  className="chip-action chip-action--call"
+                >
+                  {t("game.callWithAmount", { amount: callAmount })}
+                </button>
+              )}
               <button
                 ref={foldActionButtonRef}
                 onClick={() => onQuickDecisionAction("fold")}
@@ -247,6 +316,17 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               >
                 {t("common.fold")}
               </button>
+              {showDesktopSubmitTrayButton && traySubmitLabel && (
+                <button
+                  ref={traySubmitButtonRef}
+                  type="button"
+                  onClick={onSubmitTray}
+                  data-testid="action-submit-tray"
+                  className="chip-action chip-action--review"
+                >
+                  {t("game.trayReviewAction", { action: traySubmitLabel })}
+                </button>
+              )}
             </div>
           </div>
         </div>

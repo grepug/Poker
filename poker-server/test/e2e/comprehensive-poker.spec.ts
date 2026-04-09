@@ -1822,6 +1822,29 @@ async function assertSeatCardsWithinTableBounds(
   ).toEqual([]);
 }
 
+async function dragTrayToPot(page: Page) {
+  const tray = page.locator('[data-testid="chip-stack-draggable"]');
+  const pot = page.locator('[data-testid="pot-drop-zone"]');
+  const trayBox = await tray.boundingBox();
+  const potBox = await pot.boundingBox();
+
+  if (!trayBox || !potBox) {
+    throw new Error('Unable to drag tray to pot without bounding boxes');
+  }
+
+  await page.mouse.move(
+    trayBox.x + trayBox.width / 2,
+    trayBox.y + trayBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    potBox.x + potBox.width / 2,
+    potBox.y + potBox.height / 2,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+}
+
 async function assertSeatCardsDoNotOverlapBoardAndPot(
   page: Page,
   label: string,
@@ -6644,6 +6667,71 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8f: Desktop room uses a fixed game column and right rail', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(
+        alicePage.locator('[data-testid="desktop-game-column"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="desktop-right-rail"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      const layout = await alicePage.evaluate(() => {
+        const gameColumn = document.querySelector<HTMLElement>(
+          '[data-testid="desktop-game-column"]',
+        );
+        const rightRail = document.querySelector<HTMLElement>(
+          '[data-testid="desktop-right-rail"]',
+        );
+        const felt = document.querySelector<HTMLElement>('.felt-oval');
+        const flyout = document.querySelector<HTMLElement>(
+          '[data-testid="your-cards-flyout"]',
+        );
+
+        if (!gameColumn || !rightRail || !felt || !flyout) {
+          return null;
+        }
+
+        const gameRect = gameColumn.getBoundingClientRect();
+        const railRect = rightRail.getBoundingClientRect();
+        const feltRect = felt.getBoundingClientRect();
+        const flyoutRect = flyout.getBoundingClientRect();
+
+        return {
+          railStartsAfterGameColumn: railRect.left >= gameRect.right - 1,
+          cardsPinnedOnFeltRightHalf:
+            flyoutRect.left + flyoutRect.width / 2 >
+            feltRect.left + feltRect.width / 2,
+        };
+      });
+
+      expect(layout).not.toBeNull();
+      expect(layout?.railStartsAfterGameColumn).toBe(true);
+      expect(layout?.cardsPinnedOnFeltRightHalf).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {
@@ -7496,6 +7584,58 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.locator('[data-testid="action-quick-confirm-modal"]'),
       ).toHaveCount(0);
       await alicePage.click('[data-testid="action-quick-confirm-accept"]');
+      await waitForRound(bobPage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13d: Desktop bet confirmation is click-first while drag remains available', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await bobPage.waitForFunction(() => window.navigator.webdriver === false);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const raisePreset = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(raisePreset).toBeVisible();
+      await raisePreset.click();
+      await expect(
+        bobPage.locator('[data-testid="tray-amount-value"]'),
+      ).not.toContainText('$0');
+
+      const submitTrayButton = bobPage.locator('[data-testid="action-submit-tray"]');
+      await expect(submitTrayButton).toBeVisible();
+      await submitTrayButton.click();
+
+      await expect(
+        bobPage.locator('[data-testid="bet-action-confirm-popover"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="bet-action-confirm-cancel"]');
+      await expect(
+        bobPage.locator('[data-testid="bet-action-confirm-popover"]'),
+      ).toHaveCount(0);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await submitTrayButton.click();
+      await bobPage.click('[data-testid="bet-action-confirm-accept"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const continuePreset = alicePage.locator('[data-testid="chip-load-continue"]');
+      await expect(continuePreset).toBeVisible();
+      await continuePreset.click();
+      await dragTrayToPot(alicePage);
       await waitForRound(bobPage, 'FLOP', 3);
     } finally {
       await teardownTwoPlayerSession(session);
@@ -8739,13 +8879,17 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
     }
   });
 
-  test('10.4: Clicking latest voice preview opens chat and starts that playback source', async ({
+  test('10.4: Mobile voice preview opens chat and starts that playback source', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
 
       await sendChatMessagesViaSocket(
         alicePage,
@@ -8775,13 +8919,17 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
     }
   });
 
-  test('10.5: Self messages do not create preview, dismiss/open both clear unread preview', async ({
+  test('10.5: Mobile hidden-chat preview dismiss/open both clear unread state', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
 
       await sendChatMessagesViaSocket(
         bobPage,

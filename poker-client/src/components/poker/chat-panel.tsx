@@ -22,6 +22,7 @@ const VOICE_RELEASE_TAIL_MS = 300;
 
 type ChatPanelProps = {
   onClose: () => void;
+  showCloseButton?: boolean;
 };
 
 type ChatPanelBindings = {
@@ -115,6 +116,7 @@ const VoicePlaybackBar: React.FC<VoicePlaybackBarProps> = ({
 
 const useChatPanelViewElement = ({
   onClose,
+  showCloseButton = true,
   locale,
   t,
   room,
@@ -567,14 +569,16 @@ const useChatPanelViewElement = ({
     <section className="chat-panel" data-testid="chat-panel">
       <header className="chat-panel__header">
         <h3>{t("game.chat.title")}</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          data-testid="close-chat-button"
-          className="chat-panel__close"
-        >
-          {t("common.close")}
-        </button>
+        {showCloseButton && (
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid="close-chat-button"
+            className="chat-panel__close"
+          >
+            {t("common.close")}
+          </button>
+        )}
       </header>
 
       <div
@@ -636,7 +640,10 @@ const useChatPanelViewElement = ({
 export const ChatPanelView: React.FC<ChatPanelViewProps> = (props) =>
   useChatPanelViewElement(props);
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
+export const ChatPanel: React.FC<ChatPanelProps> = ({
+  onClose,
+  showCloseButton = true,
+}) => {
   const { locale, t } = useLocalization();
   const {
     room,
@@ -653,6 +660,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onClose }) => {
   return (
     <ChatPanelView
       onClose={onClose}
+      showCloseButton={showCloseButton}
       locale={locale}
       t={t}
       room={room}
