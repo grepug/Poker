@@ -1,4 +1,4 @@
-import React, { type RefObject } from "react";
+import React from "react";
 import type { MessageKey } from "@/i18n/messages";
 
 type HomePanelProps = {
@@ -7,20 +7,11 @@ type HomePanelProps = {
   isJoining: boolean;
   inferredRoomId: string;
   effectiveRoomId: string;
-  playerName: string;
-  playerEmoji: string;
-  isEmojiPopoverOpen: boolean;
   feedback: string | null;
   lastError: string | null;
   useShortDeckRules: boolean;
   maxPlayers: number;
-  emojiOptions: readonly string[];
-  emojiPickerRef?: RefObject<HTMLDivElement | null>;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
-  onPlayerNameChange: (value: string) => void;
-  onToggleEmojiPopover: () => void;
-  onRandomEmoji: () => void;
-  onEmojiPick: (emoji: string) => void;
   onUseShortDeckRulesChange: (enabled: boolean) => void;
   onMaxPlayersChange: (value: number) => void;
   onCreateRoom: () => void;
@@ -36,20 +27,11 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   isJoining,
   inferredRoomId,
   effectiveRoomId,
-  playerName,
-  playerEmoji,
-  isEmojiPopoverOpen,
   feedback,
   lastError,
   useShortDeckRules,
   maxPlayers,
-  emojiOptions,
-  emojiPickerRef,
   t,
-  onPlayerNameChange,
-  onToggleEmojiPopover,
-  onRandomEmoji,
-  onEmojiPick,
   onUseShortDeckRulesChange,
   onMaxPlayersChange,
   onCreateRoom,
@@ -92,86 +74,6 @@ export const HomePanel: React.FC<HomePanelProps> = ({
           {t("home.reconnecting")}
         </div>
       )}
-
-      <div>
-        <label htmlFor="player-name" className="mb-2 block text-sm font-semibold text-emerald-100">
-          {t("home.yourName")}
-        </label>
-        <input
-          id="player-name"
-          type="text"
-          value={playerName}
-          onChange={(event) => onPlayerNameChange(event.target.value)}
-          placeholder={t("home.enterName")}
-          data-testid="name-input"
-          className="w-full rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-        />
-      </div>
-
-      <div className="relative" ref={emojiPickerRef}>
-        <label htmlFor="player-emoji" className="mb-2 block text-sm font-semibold text-emerald-100">
-          {t("home.avatarEmoji")}
-        </label>
-        <div className="flex items-center gap-2">
-          <button
-            id="player-emoji"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={isEmojiPopoverOpen}
-            onClick={onToggleEmojiPopover}
-            data-testid="emoji-select"
-            className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-4 py-3 text-left text-white outline-none transition hover:border-emerald-500/80 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/40"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="text-2xl leading-none" aria-hidden="true">
-                {playerEmoji}
-              </span>
-              <span className="truncate text-sm text-emerald-100/90">{t("home.avatarEmoji")}</span>
-            </span>
-            <span className="ml-3 text-sm text-emerald-300/80" aria-hidden="true">
-              {isEmojiPopoverOpen ? "▴" : "▾"}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onRandomEmoji}
-            data-testid="emoji-randomize-button"
-            className="rounded-xl border border-emerald-700/60 bg-emerald-950/60 px-3 py-3 text-xl leading-none text-emerald-100 transition hover:border-emerald-500/80 hover:bg-emerald-900/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-            aria-label={t("home.randomEmoji")}
-            title={t("home.randomEmoji")}
-          >
-            🎲
-          </button>
-        </div>
-        {isEmojiPopoverOpen && (
-          <div
-            role="dialog"
-            aria-label={t("home.avatarEmoji")}
-            data-testid="emoji-popover"
-            className="absolute z-30 mt-2 w-full rounded-xl border border-emerald-600/80 bg-emerald-950/95 p-3 shadow-2xl shadow-emerald-900/40 backdrop-blur-sm"
-          >
-            <div className="grid max-h-64 grid-cols-8 gap-1 overflow-y-auto pr-1 sm:grid-cols-10">
-              {emojiOptions.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => onEmojiPick(emoji)}
-                  data-testid="emoji-option"
-                  data-emoji={emoji}
-                  aria-label={`${t("home.avatarEmoji")} ${emoji}`}
-                  className={`flex h-9 items-center justify-center rounded-lg text-xl leading-none transition ${
-                    playerEmoji === emoji
-                      ? "bg-emerald-400/25 ring-1 ring-emerald-300/80"
-                      : "hover:bg-emerald-500/15"
-                  }`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
 
       {(feedback || lastError) && (
         <div
