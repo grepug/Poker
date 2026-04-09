@@ -520,6 +520,32 @@ export class EventsGateway
     return { started: true };
   }
 
+  private getLeaveRoomError(room: Room | null, playerId: string): string | null {
+    if (!room) {
+      return 'Room not found';
+    }
+
+    if (room.gameState === 'WAITING' || room.gameState === 'ENDED') {
+      return null;
+    }
+
+    const betweenHands =
+      room.gameState === 'IN_PROGRESS' &&
+      room.currentHand &&
+      room.currentHand.currentPlayerTurn === null &&
+      Boolean(room.currentHand.lastResult);
+    if (!betweenHands) {
+      return 'You can only leave the room between hands or after the game ends';
+    }
+
+    const readyPlayerIds = new Set(room.readyPlayerIds ?? []);
+    if (readyPlayerIds.has(playerId)) {
+      return 'You already marked ready for the next hand';
+    }
+
+    return null;
+  }
+
   private async maybeStartReadyPhaseIfAllReady(
     roomId: string,
     room: any,
@@ -699,6 +725,7 @@ export class EventsGateway
           this.server.to(room.id).emit('PLAYER_RECONNECTED', {
             playerId: player.id,
             playerName: player.name,
+            playerEmoji: player.emoji,
             status: player.status,
             connectionStatus: player.connectionStatus ?? 'connected',
           });
@@ -807,6 +834,7 @@ export class EventsGateway
         this.server.to(data.roomId).emit('PLAYER_RECONNECTED', {
           playerId: player.id,
           playerName: player.name,
+          playerEmoji: player.emoji,
           status: player.status,
           connectionStatus: player.connectionStatus ?? 'connected',
         });
@@ -1967,6 +1995,14 @@ export class EventsGateway
         playerInfo.roomId,
         async () => {
           const roomBeforeLeave = await this.getRoom(playerInfo.roomId);
+          const leaveError = this.getLeaveRoomError(
+            roomBeforeLeave,
+            playerInfo.playerId,
+          );
+          if (leaveError) {
+            client.emit('ERROR', { message: leaveError });
+            return { success: false, error: leaveError };
+          }
           const leavingPlayer = roomBeforeLeave?.players.find(
             (player) => player.id === playerInfo.playerId,
           );

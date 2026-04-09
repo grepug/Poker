@@ -1,4 +1,5 @@
 import React from "react";
+import type { RejoinableRoomSummary } from "poker-types";
 import type { MessageKey } from "@/i18n/messages";
 
 type HomePanelProps = {
@@ -11,6 +12,8 @@ type HomePanelProps = {
   lastError: string | null;
   useShortDeckRules: boolean;
   maxPlayers: number;
+  rejoinableRooms: RejoinableRoomSummary[];
+  rejoinDisabled: boolean;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   onUseShortDeckRulesChange: (enabled: boolean) => void;
   onMaxPlayersChange: (value: number) => void;
@@ -18,6 +21,7 @@ type HomePanelProps = {
   onEnableJoinMode: () => void;
   onRoomIdChange: (value: string) => void;
   onJoinRoom: () => void;
+  onRejoinRoom: (roomId: string) => void;
   onBack: () => void;
 };
 
@@ -31,6 +35,8 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   lastError,
   useShortDeckRules,
   maxPlayers,
+  rejoinableRooms,
+  rejoinDisabled,
   t,
   onUseShortDeckRulesChange,
   onMaxPlayersChange,
@@ -38,6 +44,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({
   onEnableJoinMode,
   onRoomIdChange,
   onJoinRoom,
+  onRejoinRoom,
   onBack,
 }) => (
   <section className="surface-panel w-full max-w-md p-6 md:p-8" data-testid="home-panel">
@@ -178,6 +185,61 @@ export const HomePanel: React.FC<HomePanelProps> = ({
           >
             {t("common.back")}
           </button>
+
+          {rejoinableRooms.length > 0 && (
+            <div
+              className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-4 py-4"
+              data-testid="rejoinable-room-list"
+            >
+              <div className="mb-3">
+                <p className="text-sm font-semibold text-emerald-100">
+                  {t("home.rejoinableRoomsTitle")}
+                </p>
+                <p className="mt-1 text-xs text-emerald-100/70">
+                  {t("home.rejoinableRoomsHint")}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {rejoinableRooms.map((room) => (
+                  <article
+                    key={room.roomId}
+                    className="rounded-xl border border-emerald-600/60 bg-emerald-900/20 p-3"
+                    data-testid={`rejoinable-room-card-${room.roomId}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">{room.roomId}</p>
+                        <p className="mt-1 text-xs text-emerald-100/75">
+                          {t("home.rejoinableRoomMeta", {
+                            count: room.seatedPlayerCount,
+                            max: room.maxPlayers,
+                            rules: room.useShortDeckRules
+                              ? t("home.shortDeckRulesLabel")
+                              : t("home.standardRulesLabel"),
+                          })}
+                        </p>
+                        {room.hostName && (
+                          <p className="mt-1 text-[11px] text-emerald-100/55">
+                            {t("home.rejoinableRoomHost", { host: room.hostName })}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRejoinRoom(room.roomId)}
+                        disabled={rejoinDisabled}
+                        data-testid={`rejoinable-room-button-${room.roomId}`}
+                        className="shrink-0 rounded-lg border border-sky-400/70 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {t("home.rejoinRoom")}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -3,6 +3,15 @@ import { Hand, GameStateType } from "./game.types";
 
 export type ReadyPhase = "START_GAME" | "NEXT_HAND";
 
+export interface RejoinableRoomSummary {
+  roomId: string;
+  hostName: string | null;
+  seatedPlayerCount: number;
+  maxPlayers: number;
+  useShortDeckRules: boolean;
+  lastActivityAt: number;
+}
+
 // Room configuration
 export interface RoomConfig {
   startingChips: number;
