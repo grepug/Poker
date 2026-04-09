@@ -3,8 +3,10 @@ import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 const repoRootEnvPath = path.resolve(__dirname, '../.env');
+const shouldLoadRepoRootEnv =
+  process.env.CI !== 'true' && existsSync(repoRootEnvPath);
 
-if (existsSync(repoRootEnvPath)) {
+if (shouldLoadRepoRootEnv) {
   process.loadEnvFile?.(repoRootEnvPath);
 }
 

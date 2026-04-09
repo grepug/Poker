@@ -12,8 +12,10 @@ const rootDir = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(rootDir, "..");
 const registryRoot = path.join(rootDir, "registry");
 const repoRootEnvPath = path.join(workspaceRoot, ".env");
+const shouldLoadRepoRootEnv =
+  process.env.CI !== "true" && existsSync(repoRootEnvPath);
 
-if (existsSync(repoRootEnvPath)) {
+if (shouldLoadRepoRootEnv) {
   process.loadEnvFile?.(repoRootEnvPath);
 }
 

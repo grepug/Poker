@@ -13,6 +13,7 @@ import { LiveAudioModule } from './live-audio/live-audio.module';
 import { existsSync } from 'fs';
 import * as path from 'path';
 
+const runningInCi = process.env.CI === 'true';
 const envFilePath = [
   path.resolve(__dirname, '..', '..', '.env'),
   path.resolve(__dirname, '..', '..', '..', '.env'),
@@ -22,6 +23,7 @@ const envFilePath = [
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      ignoreEnvFile: runningInCi,
       envFilePath,
     }),
     StorageModule,

@@ -11,8 +11,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "../..");
 const repoRootEnvPath = path.join(workspaceRoot, ".env");
+const shouldLoadRepoRootEnv =
+  process.env.CI !== "true" && existsSync(repoRootEnvPath);
 
-if (existsSync(repoRootEnvPath)) {
+if (shouldLoadRepoRootEnv) {
   process.loadEnvFile?.(repoRootEnvPath);
 }
 
