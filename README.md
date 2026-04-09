@@ -284,7 +284,7 @@ REGISTRY_HOST=0.0.0.0
 ```
 
 For server path settings, relative values such as `DATA_DIR` and
-`FRONTEND_DIST_PATH` are resolved from [`poker-server`](/Users/kai/Developer/games/Poker/poker-server),
+`FRONTEND_DIST_PATH` are resolved from `poker-server/`,
 not from the shell's current working directory.
 
 Auth passkey domain configuration:
