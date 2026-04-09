@@ -530,7 +530,6 @@ test.describe('Poker E2E - Persistence Storage', () => {
 
         if (!recoveredAfterReauth) {
           await bobPage.click('[data-testid="join-toggle-button"]');
-          await bobPage.fill('[data-testid="name-input"]', 'Bob');
           await bobPage.fill('[data-testid="room-id-input"]', session.roomCode);
           await bobPage.click('[data-testid="join-room-button"]');
         }

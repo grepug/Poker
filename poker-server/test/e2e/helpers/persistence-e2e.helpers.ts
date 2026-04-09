@@ -347,7 +347,6 @@ export async function setupTwoPlayerSession(
     : await createRoomViaSocket(alicePage, 'Alice');
 
   await bobPage.click('[data-testid="join-toggle-button"]');
-  await bobPage.fill('[data-testid="name-input"]', 'Bob');
   await bobPage.fill('[data-testid="room-id-input"]', roomCode);
   await bobPage.click('[data-testid="join-room-button"]');
 
