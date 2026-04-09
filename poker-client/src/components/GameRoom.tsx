@@ -3774,6 +3774,7 @@ const useGameRoomElement = () => {
           mutedLabel={t("game.audio.muted")}
           unavailableLabel={t("game.audio.unavailable")}
           rosterLabel={t("game.audio.roster")}
+          localParticipantLabel={t("game.audio.you")}
           error={
             liveAudioError?.startsWith("game.audio.error.")
               ? t(liveAudioError as MessageKey)

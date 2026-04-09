@@ -1,3 +1,4 @@
+import { RoomEvent } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
 import {
   createLiveAudioController,
@@ -56,6 +57,10 @@ class FakeRoom implements LiveAudioRoom {
     for (const listener of this.listeners.get(event) ?? []) {
       listener(...args);
     }
+  }
+
+  listenerCount(event: string) {
+    return this.listeners.get(event)?.size ?? 0;
   }
 }
 
@@ -250,5 +255,53 @@ describe("createLiveAudioController", () => {
     await controller.join("ROOM84");
     expect(secondRoom.connect).toHaveBeenCalledTimes(1);
     expect(controller.getState().joinedRoomId).toBe("ROOM84");
+  });
+
+  it("clears joinedRoomId when joining fails", async () => {
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => {
+        throw new Error("join failed");
+      }),
+      createRoom: vi.fn(),
+    });
+
+    await controller.join("ROOM83");
+
+    expect(controller.getState()).toEqual(
+      expect.objectContaining({
+        isJoined: false,
+        joinedRoomId: null,
+        error: "join failed",
+      }),
+    );
+  });
+
+  it("removes the media-devices error listener when leaving a room", async () => {
+    const room = new FakeRoom(
+      new FakeParticipant({
+        identity: joinPayload.participantIdentity,
+        name: joinPayload.participantName,
+        metadata: joinPayload.participantMetadata,
+      }),
+    );
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => joinPayload),
+      createRoom: vi.fn(() => room),
+    });
+
+    await controller.join("ROOM83");
+    expect(room.listenerCount(RoomEvent.MediaDevicesError)).toBeGreaterThan(0);
+
+    await controller.leave();
+
+    expect(room.listenerCount(RoomEvent.MediaDevicesError)).toBe(0);
   });
 });

@@ -297,11 +297,12 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
     }
     nextRoom.on(RoomEvent.Reconnecting, reconnecting);
     nextRoom.on(RoomEvent.Reconnected, reconnected);
-    nextRoom.on(RoomEvent.MediaDevicesError, (error) => {
+    const mediaDevicesError = (error: unknown) => {
       patchState({
         error: toLiveAudioError(error),
       });
-    });
+    };
+    nextRoom.on(RoomEvent.MediaDevicesError, mediaDevicesError);
     nextRoom.on(RoomEvent.Disconnected, disconnected);
 
     roomListenersCleanup = () => {
@@ -310,6 +311,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
       }
       nextRoom.off(RoomEvent.Reconnecting, reconnecting);
       nextRoom.off(RoomEvent.Reconnected, reconnected);
+      nextRoom.off(RoomEvent.MediaDevicesError, mediaDevicesError);
       nextRoom.off(RoomEvent.Disconnected, disconnected);
     };
   };
@@ -413,6 +415,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
           isJoined: false,
           isMuted: true,
           isReconnecting: false,
+          joinedRoomId: null,
           participants: [],
           error: toLiveAudioError(error),
         });

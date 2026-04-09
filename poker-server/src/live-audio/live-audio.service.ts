@@ -129,7 +129,7 @@ export class LiveAudioService {
   }
 
   private isEnabled(): boolean {
-    if (this.featureFlag === "false") {
+    if (this.featureFlag === 'false') {
       return false;
     }
 

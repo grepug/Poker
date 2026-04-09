@@ -15,6 +15,7 @@ type LiveAudioPanelProps = {
   mutedLabel: string;
   unavailableLabel: string;
   rosterLabel: string;
+  localParticipantLabel: string;
   error: string | null;
   available: boolean;
   isConfigLoaded: boolean;
@@ -42,6 +43,7 @@ export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
   mutedLabel,
   unavailableLabel,
   rosterLabel,
+  localParticipantLabel,
   error,
   available,
   isConfigLoaded,
@@ -158,7 +160,7 @@ export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
                 <span aria-hidden="true">{participant.avatarEmoji ?? "🎙"}</span>
                 <span className="max-w-[10rem] truncate">
                   {participant.displayName}
-                  {participant.isLocal ? " (You)" : ""}
+                  {participant.isLocal ? ` ${localParticipantLabel}` : ""}
                 </span>
                 {participant.isMuted && (
                   <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-cyan-50/70">
