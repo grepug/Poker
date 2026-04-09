@@ -283,6 +283,10 @@ REGISTRY_PORT=3022
 REGISTRY_HOST=0.0.0.0
 ```
 
+For server path settings, relative values such as `DATA_DIR` and
+`FRONTEND_DIST_PATH` are resolved from [`poker-server`](/Users/kai/Developer/games/Poker/poker-server),
+not from the shell's current working directory.
+
 Auth passkey domain configuration:
 - `AUTH_DOMAIN` accepts either host/port (`poker.example.com`, `localhost:5173`) or full origin (`https://poker.example.com`).
 - If `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` are set, they take precedence over `AUTH_DOMAIN`.
