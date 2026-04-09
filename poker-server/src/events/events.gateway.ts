@@ -21,7 +21,9 @@ import {
   RobotTurnContext,
   toRobotFallbackCause,
 } from '../game/robot-agent.service';
+import { SavedGameReviewService } from '../game/saved-game-review.service';
 import { IStorageService } from '../common/interfaces/storage.interface';
+import { ISavedGameArchiveStorageService } from '../common/interfaces/saved-game-archive-storage.interface';
 import { IChatStorageService } from '../common/interfaces/chat-storage.interface';
 import { IChatMediaStorageService } from '../common/interfaces/chat-media-storage.interface';
 import { AuthService } from '../auth/auth.service';
@@ -266,9 +268,12 @@ export class EventsGateway
     private readonly bettingService: BettingService,
     private readonly testDeckService: TestDeckService,
     private readonly robotAgentService: RobotAgentService,
+    private readonly savedGameReviewService: SavedGameReviewService,
     private readonly authService: AuthService,
     @Inject('IStorageService')
     private readonly storageService: IStorageService,
+    @Inject('ISavedGameArchiveStorageService')
+    private readonly savedGameArchiveStorageService: ISavedGameArchiveStorageService,
     @Inject('IChatStorageService')
     private readonly chatStorageService: IChatStorageService,
     @Inject('IChatMediaStorageService')
@@ -1293,6 +1298,14 @@ export class EventsGateway
           }),
         ),
       );
+      const archived = await this.savedGameArchiveStorageService.archiveEndedRoom(
+        room.id,
+      );
+      if (archived?.archiveId) {
+        await this.savedGameReviewService.scheduleArchiveReview(
+          archived.archiveId,
+        );
+      }
 
       const gameEndedData: GameEndedData = {
         standings,

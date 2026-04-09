@@ -22,6 +22,7 @@ const meta = {
     isGameEnded: false,
     onExportHistory: () => {},
     isExportingHistory: false,
+    onOpenSavedHistory: () => {},
     onSaveScreenshot: () => {},
     onLeave: () => {},
     onClose: () => {},

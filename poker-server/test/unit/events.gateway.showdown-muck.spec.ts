@@ -198,8 +198,10 @@ describe('EventsGateway showdown reveal/muck flow', () => {
           .mockReturnValue('robot ai unavailable'),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
+      storageService as any,
       {
         getMessagePage: jest.fn().mockResolvedValue({
           messages: [],

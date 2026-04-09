@@ -14,6 +14,8 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Home } from "./pages/Home";
 import { AuthPage } from "./pages/Auth";
 import { SettingsPage } from "./pages/Settings";
+import { SavedGamesPage } from "./pages/SavedGames";
+import { SavedGameDetailPage } from "./pages/SavedGameDetail";
 import { GameRoom } from "./components/GameRoom";
 import { IosInstallPrompt } from "./components/IosInstallPrompt";
 
@@ -40,10 +42,14 @@ const UrlStateSync: React.FC = () => {
     }
     const activeRoomId = room?.id?.toUpperCase();
     const hasActiveSession = Boolean(activeRoomId && player?.id);
+    const roomPathMatch = location.pathname.match(/^\/room\/([^/]+)$/i);
+    const isRoomPath = location.pathname === "/room" || Boolean(roomPathMatch);
+    const shouldSyncToActiveRoom =
+      location.pathname === "/" || location.pathname === "/auth" || isRoomPath;
 
     if (hasActiveSession) {
       const targetRoomPath = `/room/${activeRoomId}`;
-      if (location.pathname !== targetRoomPath) {
+      if (shouldSyncToActiveRoom && location.pathname !== targetRoomPath) {
         navigate(targetRoomPath, { replace: true });
       }
       return;
@@ -53,8 +59,6 @@ const UrlStateSync: React.FC = () => {
       return;
     }
 
-    const roomPathMatch = location.pathname.match(/^\/room\/([^/]+)$/i);
-    const isRoomPath = location.pathname === "/room" || Boolean(roomPathMatch);
     if (!isRoomPath) {
       return;
     }
@@ -138,6 +142,26 @@ const AppRoutes: React.FC = () => {
             element={
               isAuthenticated ? (
                 <SettingsPage />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              isAuthenticated ? (
+                <SavedGamesPage />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/history/:archiveId"
+            element={
+              isAuthenticated ? (
+                <SavedGameDetailPage />
               ) : (
                 <Navigate to="/auth" replace />
               )

@@ -1280,4 +1280,128 @@ describe('JsonStorageService', () => {
       );
     });
   });
+
+  describe('saved game archives', () => {
+    it('archives an ended room for authenticated participants and keeps player-scoped history readable after room deletion', async () => {
+      const roomId = 'ROOMARCHIVE1';
+      await seedCompletedHands(roomId);
+
+      const endedRoom = await service.getRoom(roomId);
+      if (!endedRoom) {
+        throw new Error('Expected ended room to exist');
+      }
+
+      endedRoom.players = endedRoom.players.map((player) => {
+        if (player.id === 'alice') {
+          return { ...player, userId: 'user-alice' };
+        }
+        if (player.id === 'bob') {
+          return { ...player, userId: 'user-bob' };
+        }
+        return player;
+      });
+      endedRoom.lastActivityAt = 2500;
+      await service.persistRoom(endedRoom);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const listSavedGamesForUser = (
+        service as JsonStorageService & {
+          listSavedGamesForUser?: (userId: string) => Promise<any[]>;
+        }
+      ).listSavedGamesForUser;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof listSavedGamesForUser).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof listSavedGamesForUser !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      expect(archived).toEqual(
+        expect.objectContaining({
+          archiveId: expect.any(String),
+        }),
+      );
+
+      const aliceGames = await listSavedGamesForUser.call(service, 'user-alice');
+      expect(aliceGames).toEqual([
+        expect.objectContaining({
+          archiveId: archived?.archiveId,
+          roomId,
+          handCount: 2,
+          requesterUserId: 'user-alice',
+          requesterPlayerId: 'alice',
+        }),
+      ]);
+
+      const aliceDetail = await getSavedGameDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+      );
+      expect(aliceDetail).toEqual(
+        expect.objectContaining({
+          archiveId: archived?.archiveId,
+          roomId,
+          requesterUserId: 'user-alice',
+          requesterPlayerId: 'alice',
+          handCount: 2,
+          hands: expect.arrayContaining([
+            expect.objectContaining({
+              handNumber: 1,
+              history: expect.objectContaining({
+                requesterPlayerId: 'alice',
+              }),
+              analysis: expect.objectContaining({
+                status: 'pending',
+              }),
+            }),
+          ]),
+        }),
+      );
+
+      await service.deleteRoom(roomId);
+
+      const archivedAfterDelete = await getSavedGameDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+      );
+      expect(archivedAfterDelete?.hands[0].history.requesterPlayerId).toBe('alice');
+      expect(
+        archivedAfterDelete?.hands[0].history.seats.find(
+          (seat: any) => seat.playerId === 'bob',
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          holeCardsVisibility: 'hidden',
+          holeCards: null,
+        }),
+      );
+
+      const unauthorizedDetail = await getSavedGameDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-intruder',
+      );
+      expect(unauthorizedDetail).toBeNull();
+    });
+  });
 });

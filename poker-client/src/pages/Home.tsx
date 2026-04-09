@@ -179,6 +179,13 @@ const useHomeElement = ({
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
+              onClick={() => navigate("/history")}
+              className="rounded-lg border border-violet-500/60 bg-violet-900/35 px-3 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-800/45"
+            >
+              {t("home.history")}
+            </button>
+            <button
+              type="button"
               onClick={() => navigate("/settings")}
               className="rounded-lg border border-emerald-500/60 bg-emerald-900/35 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-800/45"
             >

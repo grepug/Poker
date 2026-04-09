@@ -3419,6 +3419,7 @@ const useGameRoomElement = () => {
       panel: finalSummaryPanelRef.current,
       hiddenControlTestIds: [
         "export-game-history-button",
+        "open-saved-history-button",
         "save-final-summary-screenshot-button",
       ],
       fileSuffix: "final-results",
@@ -3515,6 +3516,13 @@ const useGameRoomElement = () => {
     } finally {
       setIsExportingGameHistory(false);
     }
+  };
+
+  const handleOpenSavedHistory = () => {
+    if (!room) {
+      return;
+    }
+    navigate(`/history/${room.id}`);
   };
 
   const handleConfirmEndGame = () => {
@@ -4118,6 +4126,7 @@ const useGameRoomElement = () => {
           isGameEnded={isGameEnded}
           onExportHistory={handleExportGameHistory}
           isExportingHistory={isExportingGameHistory}
+          onOpenSavedHistory={handleOpenSavedHistory}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
           onLeave={handleRequestLeave}
           onClose={() => setShowFinalSummaryModal(false)}

@@ -21,9 +21,11 @@ describe('EventsGateway membership mutation serialization', () => {
     name: string;
     status: string;
     position: number;
+    userId?: string;
   }) => ({
     id: params.id,
     socketId: params.socketId,
+    userId: params.userId,
     name: params.name,
     chips: 1000,
     totalBuyIn: 1000,
@@ -73,6 +75,7 @@ describe('EventsGateway membership mutation serialization', () => {
           name: 'Host',
           status: 'connected',
           position: 0,
+          userId: 'user-alice',
         }),
         createPlayer({
           id: 'p-bob',
@@ -80,6 +83,7 @@ describe('EventsGateway membership mutation serialization', () => {
           name: 'Bob',
           status: 'disconnected',
           position: 1,
+          userId: 'user-bob',
         }),
       ],
       gameState: 'IN_PROGRESS',
@@ -210,6 +214,7 @@ describe('EventsGateway membership mutation serialization', () => {
         return deepClone(roomState);
       }),
       persistRoom: jest.fn(),
+      archiveEndedRoom: jest.fn().mockResolvedValue({ archiveId: 'ROOM1' }),
       deleteRoom: jest.fn(),
       getAllRooms: jest.fn(),
       roomExists: jest.fn(),
@@ -269,8 +274,10 @@ describe('EventsGateway membership mutation serialization', () => {
           .mockReturnValue('robot ai unavailable'),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       authService,
       storageService,
+      storageService as any,
       chatStorageService,
       chatMediaStorageService,
     );
@@ -390,6 +397,7 @@ describe('EventsGateway membership mutation serialization', () => {
         name: 'Host',
         status: 'connected',
         position: 0,
+        userId: 'user-alice',
       }),
       {
         ...createPlayer({
@@ -398,6 +406,7 @@ describe('EventsGateway membership mutation serialization', () => {
           name: 'Bob',
           status: 'left',
           position: 1,
+          userId: 'user-bob',
         }),
         chips: 425,
         totalBuyIn: 1000,
@@ -455,5 +464,9 @@ describe('EventsGateway membership mutation serialization', () => {
     expect(leftSeat?.status).toBe('left');
     expect(hostSeat?.status).toBe('waiting');
     expect(storageService.persistRoom).toHaveBeenCalled();
+    expect(storageService.archiveEndedRoom).toHaveBeenCalledWith('ROOM1');
+    expect(
+      (gateway as any).savedGameReviewService.scheduleArchiveReview,
+    ).toHaveBeenCalledWith('ROOM1');
   });
 });

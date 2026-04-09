@@ -74,8 +74,10 @@ describe('EventsGateway chat events', () => {
           .mockReturnValue('robot ai unavailable'),
         decideAction: jest.fn(),
       } as any,
+      { scheduleArchiveReview: jest.fn().mockResolvedValue(undefined) } as any,
       { getUserByToken: jest.fn() } as any,
       storageService,
+      storageService as any,
       chatStorageService,
       chatMediaStorageService,
     );

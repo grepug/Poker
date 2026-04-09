@@ -199,7 +199,7 @@ export class RobotAgentService {
     );
 
     const apiMode = this.getApiMode();
-    const model = this.createModel();
+    const model = this.createConfiguredModel('robot');
     const maxProviderAttempts = apiMode === 'responses' ? 3 : 1;
     let lastError: Error | null = null;
 
@@ -341,7 +341,7 @@ export class RobotAgentService {
     );
   }
 
-  private createModel() {
+  createConfiguredModel(providerNamePrefix: string) {
     const baseURL = process.env.AI_ROBOT_BASE_URL!.trim();
     const apiKey = process.env.AI_ROBOT_API_KEY!.trim();
     const modelId = process.env.AI_ROBOT_MODEL_ID!.trim();
@@ -351,7 +351,7 @@ export class RobotAgentService {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { createOpenAI } = require('@ai-sdk/openai');
       const provider = createOpenAI({
-        name: 'robot-openai-responses',
+        name: `${providerNamePrefix}-openai-responses`,
         baseURL,
         apiKey,
         ...(isVolcengineResponsesBaseUrl(baseURL)
@@ -364,14 +364,14 @@ export class RobotAgentService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
     const provider = createOpenAICompatible({
-      name: 'robot-openai-compatible',
+      name: `${providerNamePrefix}-openai-compatible`,
       baseURL,
       apiKey,
     });
     return provider.chatModel(modelId);
   }
 
-  private getApiMode(): 'chat' | 'responses' {
+  getApiMode(): 'chat' | 'responses' {
     return (process.env.AI_ROBOT_API_MODE || 'chat').trim() === 'responses'
       ? 'responses'
       : 'chat';
