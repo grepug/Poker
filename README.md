@@ -62,29 +62,15 @@ Poker/
 ### Prerequisites
 
 - Node.js (v20.19+ or v22.12+ recommended, though v22.1.0 works)
-- npm or yarn
+- pnpm via Corepack (`corepack enable`)
 
 ### Installation
 
-1. **Install poker-types package:**
+1. **Enable Corepack and install workspace dependencies from the repo root:**
 
    ```bash
-   cd poker-types
-   npm install
-   npm run build
-   ```
-
-2. **Install and setup backend:**
-
-   ```bash
-   cd ../poker-server
-   npm install
-   ```
-
-3. **Install and setup frontend:**
-   ```bash
-   cd ../poker-client
-   npm install
+   corepack enable
+   pnpm install
    ```
 
 ### Running the Application
@@ -93,7 +79,7 @@ Poker/
 
    ```bash
    cd poker-server
-   npm run start:dev
+   pnpm run start:dev
    ```
 
    Server runs on http://localhost:3000
@@ -102,7 +88,7 @@ Poker/
 
    ```bash
    cd poker-client
-   npm run dev
+   pnpm run dev
    ```
 
    Frontend runs on http://localhost:5173
@@ -115,9 +101,7 @@ Poker/
 ### Running the Internal UI Registry
 
 ```bash
-cd poker-registry
-npm install
-npm run start
+pnpm --dir poker-registry run start
 ```
 
 Registry default URL: [http://localhost:3022/registry/index.json](http://localhost:3022/registry/index.json)
@@ -228,13 +212,13 @@ Backend includes comprehensive unit tests:
 
 ```bash
 cd poker-server
-npm test
+pnpm test
 ```
 
 Pre-game readiness (build + health + LAN URL + critical smoke checks):
 
 ```bash
-cd /Users/kai/Developer/games/Poker
+cd <path-to-repo>
 ./scripts/pregame-readiness.sh
 ```
 
@@ -249,7 +233,7 @@ Run comprehensive Playwright in parallel (worker count configurable):
 ```bash
 cd poker-server
 PW_FRONTEND_PORT=5188 PW_BACKEND_PORT=3015 PW_WORKERS=4 \
-  npm run test:e2e:playwright:comprehensive:parallel
+  pnpm run test:e2e:playwright:comprehensive:parallel
 ```
 
 Current test coverage:
@@ -332,16 +316,16 @@ docker build --build-arg VITE_SERVER_URL=/ -t poker-app:latest .
 
 ```bash
 cd poker-server
-npm run build
-npm run start:prod
+pnpm run build
+pnpm run start:prod
 ```
 
 **Frontend:**
 
 ```bash
 cd poker-client
-npm run build
-npm run preview
+pnpm run build
+pnpm run preview
 ```
 
 ### Code Quality

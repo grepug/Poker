@@ -86,7 +86,7 @@ if [[ "$MODE" != "--fast" && "$MODE" != "--full" ]]; then
   exit 1
 fi
 
-require_cmd npm
+require_cmd pnpm
 require_cmd pm2
 require_cmd curl
 require_cmd ifconfig
@@ -94,18 +94,18 @@ require_cmd ifconfig
 cd "$ROOT_DIR"
 
 log "Building poker-types"
-npm --prefix poker-types run build
+pnpm --filter poker-types build
 
 log "Building poker-server"
-npm --prefix poker-server run build
+pnpm --filter poker-server build
 
 log "Building poker-client"
-npm --prefix poker-client run build
+pnpm --filter poker-client build
 
 log "Ensuring PM2 services are running"
 restart_or_start_pm2 \
   "poker-client" \
-  "npm run dev -- --host 0.0.0.0 --port 5173" \
+  "pnpm run dev -- --host 0.0.0.0 --port 5173" \
   "$ROOT_DIR/poker-client"
 restart_or_start_pm2 \
   "poker-server" \
@@ -135,7 +135,7 @@ if [[ "$MODE" == "--full" ]]; then
   fi
 
   set +e
-  npm --prefix poker-server run test:e2e:playwright:smoke
+  pnpm --filter poker-server test:e2e:playwright:smoke
   SMOKE_EXIT=$?
   set -e
 

@@ -58,33 +58,67 @@ seed_server_env() {
   log "Skipping poker-server/.env bootstrap: no source file found."
 }
 
-install_package_deps() {
-  local package_dir="$1"
-
-  if [[ ! -f "$package_dir/package.json" ]]; then
-    log "Skipping dependency install: $package_dir/package.json not found."
+run_pnpm() {
+  if command -v corepack >/dev/null 2>&1; then
+    corepack pnpm "$@"
     return
   fi
 
-  if [[ -d "$package_dir/node_modules" ]]; then
-    log "Skipping dependency install: $package_dir/node_modules already exists."
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
     return
   fi
 
-  if [[ ! -f "$package_dir/package-lock.json" ]]; then
-    log "Skipping dependency install: $package_dir/package-lock.json not found."
+  log "Unable to install workspace dependencies: neither corepack nor pnpm is available."
+  exit 1
+}
+
+clean_legacy_package_node_modules() {
+  local workspace_root="$1"
+  local package_dir
+
+  for package_dir in poker-types poker-client poker-server poker-registry; do
+    local node_modules_dir="$workspace_root/$package_dir/node_modules"
+
+    if [[ -d "$node_modules_dir" ]]; then
+      log "Removing legacy package node_modules: $node_modules_dir"
+      rm -rf "$node_modules_dir"
+    fi
+  done
+}
+
+install_workspace_deps() {
+  local workspace_root="$1"
+
+  if [[ ! -f "$workspace_root/package.json" ]]; then
+    log "Skipping workspace install: $workspace_root/package.json not found."
     return
   fi
 
-  log "Installing dependencies in $package_dir..."
+  if [[ ! -f "$workspace_root/pnpm-lock.yaml" ]]; then
+    log "Skipping workspace install: $workspace_root/pnpm-lock.yaml not found."
+    return
+  fi
+
+  if [[ ! -f "$workspace_root/pnpm-workspace.yaml" ]]; then
+    log "Skipping workspace install: $workspace_root/pnpm-workspace.yaml not found."
+    return
+  fi
+
+  if [[ -d "$workspace_root/node_modules" ]]; then
+    log "Skipping workspace install: $workspace_root/node_modules already exists."
+    return
+  fi
+
+  clean_legacy_package_node_modules "$workspace_root"
+
+  log "Installing workspace dependencies in $workspace_root..."
   (
-    cd "$package_dir"
-    npm ci
+    cd "$workspace_root"
+    run_pnpm install --frozen-lockfile
   )
 }
 
 seed_server_env
 
-install_package_deps "$current_root/poker-types"
-install_package_deps "$current_root/poker-client"
-install_package_deps "$current_root/poker-server"
+install_workspace_deps "$current_root"
