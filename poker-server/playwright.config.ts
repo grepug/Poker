@@ -1,9 +1,12 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 const repoRootEnvPath = path.resolve(__dirname, '../.env');
 
-process.loadEnvFile?.(repoRootEnvPath);
+if (existsSync(repoRootEnvPath)) {
+  process.loadEnvFile?.(repoRootEnvPath);
+}
 
 const defaultFrontendUrl = `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.E2E_FRONTEND_PORT ?? process.env.PW_FRONTEND_PORT ?? '5174'}`;
 const defaultBackendUrl = `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.E2E_BACKEND_PORT ?? process.env.PW_BACKEND_PORT ?? '3001'}`;

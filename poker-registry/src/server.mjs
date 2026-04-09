@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
@@ -10,8 +11,11 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(rootDir, "..");
 const registryRoot = path.join(rootDir, "registry");
+const repoRootEnvPath = path.join(workspaceRoot, ".env");
 
-process.loadEnvFile?.(path.join(workspaceRoot, ".env"));
+if (existsSync(repoRootEnvPath)) {
+  process.loadEnvFile?.(repoRootEnvPath);
+}
 
 const app = Fastify({
   logger: true,
