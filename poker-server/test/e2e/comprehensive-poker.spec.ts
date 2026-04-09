@@ -5633,16 +5633,34 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await page.fill('[data-testid="room-id-input"]', 'ZZZZZZ');
       await page.click('[data-testid="join-room-button"]');
 
-      await page.waitForSelector('[data-testid="create-room-button"]');
+      await expect(page.locator('[data-testid="form-feedback"]')).toContainText(
+        /.+/,
+      );
+      await expect(page.locator('[data-testid="room-id-input"]')).toHaveValue(
+        'ZZZZZZ',
+      );
+      await expect(
+        page.locator('[data-testid="join-room-button"]'),
+      ).toBeVisible();
+      await expect(page.locator('[data-testid="back-button"]')).toBeVisible();
+      await expect(
+        page.locator('[data-testid="create-room-button"]'),
+      ).toHaveCount(0);
       const pathnameAfterJoinAttempt = await page.evaluate(
         () => window.location.pathname,
       );
       expect(pathnameAfterJoinAttempt).toBe('/');
 
-      await expect(page).toHaveURL(/\/(\?roomId=ZZZZZZ)?$/);
+      await expect(page).toHaveURL(/\/$/);
       await page.click('[data-testid="back-button"]');
 
       await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('[data-testid="room-id-input"]')).toHaveCount(
+        0,
+      );
+      await expect(page.locator('[data-testid="form-feedback"]')).toHaveCount(
+        0,
+      );
       await expect(
         page.locator('[data-testid="create-room-button"]'),
       ).toBeVisible();
@@ -8239,7 +8257,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       ).toBeVisible();
       await expect(bobPage.getByText('Session Statistics')).toBeVisible();
       await expect(bobPage.getByRole('button', { name: 'Hand #1' })).toBeVisible();
-      await expect(bobPage.getByText('QS JS')).toBeVisible();
+      const savedHandDetail = bobPage
+        .locator('section')
+        .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });
+      await expect(savedHandDetail.getByText(/Q♠\s+J♠/)).toBeVisible();
 
       await bobPage.getByRole('button', { name: 'Back to History' }).click();
       await expect(
