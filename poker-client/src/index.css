@@ -1089,6 +1089,14 @@ body {
   pointer-events: none;
 }
 
+.seat-pod--dense .seat-pod__live-audio-badge {
+  right: 0.02rem;
+  bottom: 0.02rem;
+  transform: translate(16%, 18%);
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
 .seat-pod__live-audio-badge--on-mic {
   border-color: rgba(34, 211, 238, 0.76);
   background: rgba(8, 47, 73, 0.96);
@@ -1154,6 +1162,12 @@ body {
     width: 0.96rem;
     height: 0.96rem;
   }
+
+  .seat-pod--dense .seat-pod__live-audio-badge {
+    width: 0.82rem;
+    height: 0.82rem;
+    transform: translate(12%, 14%);
+  }
 }
 
 @container seat-slot (max-width: 66px) {
@@ -1196,6 +1210,14 @@ body {
   .seat-pod__live-audio-badge {
     width: 0.84rem;
     height: 0.84rem;
+  }
+
+  .seat-pod--dense .seat-pod__live-audio-badge {
+    right: 0;
+    bottom: 0;
+    width: 0.72rem;
+    height: 0.72rem;
+    transform: translate(8%, 10%);
   }
 }
 
