@@ -301,7 +301,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                 <button
                   type="button"
                   onClick={() => onLegacyAction("call")}
-                  data-testid="action-call"
+                  data-testid={isAutomationMode ? "action-call-modern" : "action-call"}
                   className="chip-action chip-action--call"
                 >
                   {t("game.callWithAmount", { amount: callAmount })}
