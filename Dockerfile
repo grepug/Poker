@@ -6,7 +6,7 @@ WORKDIR /app
 ARG VITE_SERVER_URL=/
 ENV VITE_SERVER_URL=${VITE_SERVER_URL}
 
-RUN corepack enable
+RUN npm install -g pnpm@10.30.1
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY poker-types/package.json ./poker-types/package.json
