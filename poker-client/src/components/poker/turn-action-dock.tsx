@@ -152,25 +152,39 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
 
       <div className="chip-composer-dock__tray-row">
         <div className="chip-composer-dock__tray-panel">
-          <button
-            type="button"
-            onPointerDown={onDragStart}
-            onPointerMove={onDragMove}
-            onPointerUp={onDragEnd}
-            onPointerCancel={onDragEnd}
-            data-testid="chip-stack-draggable"
-            disabled={!canStartDrag}
-            className={`chip-stack chip-stack--hero ${isDragActive ? "chip-stack--dragging" : ""}`}
-          >
-            <span className="chip-stack__label">{t("game.tray")}</span>
-            <span
-              key={trayAmount}
-              className="chip-stack__value chip-stack__value--animated"
-              data-testid="tray-amount-value"
+          <div className="chip-composer-dock__tray-stack">
+            <button
+              type="button"
+              onPointerDown={onDragStart}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onPointerCancel={onDragEnd}
+              data-testid="chip-stack-draggable"
+              disabled={!canStartDrag}
+              className={`chip-stack chip-stack--hero ${isDragActive ? "chip-stack--dragging" : ""}`}
             >
-              ${trayAmount}
-            </span>
-          </button>
+              <span className="chip-stack__label">{t("game.tray")}</span>
+              <span
+                key={trayAmount}
+                className="chip-stack__value chip-stack__value--animated"
+                data-testid="tray-amount-value"
+              >
+                ${trayAmount}
+              </span>
+            </button>
+
+            {showDesktopSubmitTrayButton && traySubmitLabel && (
+              <button
+                ref={traySubmitButtonRef}
+                type="button"
+                onClick={onSubmitTray}
+                data-testid="action-submit-tray"
+                className="chip-action chip-action--review chip-action--tray-review"
+              >
+                {t("game.trayReviewAction", { action: traySubmitLabel })}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="chip-composer-dock__control-panel">
@@ -316,17 +330,6 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               >
                 {t("common.fold")}
               </button>
-              {showDesktopSubmitTrayButton && traySubmitLabel && (
-                <button
-                  ref={traySubmitButtonRef}
-                  type="button"
-                  onClick={onSubmitTray}
-                  data-testid="action-submit-tray"
-                  className="chip-action chip-action--review"
-                >
-                  {t("game.trayReviewAction", { action: traySubmitLabel })}
-                </button>
-              )}
             </div>
           </div>
         </div>

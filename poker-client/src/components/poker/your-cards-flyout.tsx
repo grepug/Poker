@@ -8,7 +8,7 @@ type YourCardsFlyoutProps = {
   cards: PokerCard[];
   shouldAnchorToBottomBar: boolean;
   bottomBarHeight: number;
-  placement?: "left-edge" | "bottom" | "felt-right";
+  placement?: "left-edge" | "bottom" | "felt-right" | "dock-left";
   title: string;
   emptyOpenStateLabel: string;
   emptyClosedStateLabel: string;
@@ -41,6 +41,8 @@ export const YourCardsFlyout: React.FC<YourCardsFlyoutProps> = ({
       } ${
         resolvedPlacement === "felt-right"
           ? "your-cards-flyout--felt-right"
+          : resolvedPlacement === "dock-left"
+            ? "your-cards-flyout--dock-left"
           : resolvedPlacement === "bottom"
             ? "your-cards-flyout--bottom"
             : "your-cards-flyout--left-edge"

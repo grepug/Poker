@@ -31,6 +31,7 @@ import {
   HandResultsModal,
   LeaveRoomConfirmModal,
   LiveAudioModal,
+  LiveAudioPanel,
   NextHandActionArea,
   OperationActionBar,
   ReadyActionArea,
@@ -48,6 +49,7 @@ import type { SeatBadge, SeatLiveAudioBadge } from "@/components/poker/seat-pod"
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
+const DRAG_DROP_ZONE_RECT_MARGIN_PX = 18;
 const ACTION_ALERT_VISIBLE_MS = 1300;
 const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
@@ -2180,6 +2182,8 @@ const useGameRoomElement = () => {
   const shouldShowChatPanel = isDesktopSideDock || isChatPanelOpen;
   const shouldAnchorCardsFlyoutToBottomBar =
     showOperationBar || showReadyActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const shouldRenderCardsBesideDesktopDock =
+    shouldRenderCardsFlyout && isDesktopSideDock && showTurnActionDock;
   const cardsFlyoutPlacement = isDesktopSideDock
     ? "felt-right"
     : shouldAnchorCardsFlyoutToBottomBar
@@ -3293,13 +3297,26 @@ const useGameRoomElement = () => {
     if (!dropZone) return false;
 
     const rect = dropZone.getBoundingClientRect();
+    const hoveredNode = document.elementFromPoint(clientX, clientY);
+    const isHoveringDropZone =
+      hoveredNode instanceof Element &&
+      Boolean(hoveredNode.closest('[data-testid="pot-drop-zone"]'));
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     const radius = Math.max(rect.width, rect.height) / 2 + DRAG_SNAP_RADIUS_PX;
     const deltaX = clientX - centerX;
     const deltaY = clientY - centerY;
+    const isWithinExpandedRect =
+      clientX >= rect.left - DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientX <= rect.right + DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientY >= rect.top - DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientY <= rect.bottom + DRAG_DROP_ZONE_RECT_MARGIN_PX;
 
-    return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+    return (
+      isHoveringDropZone ||
+      isWithinExpandedRect ||
+      deltaX * deltaX + deltaY * deltaY <= radius * radius
+    );
   }, []);
 
   const commitTrayDrop = useCallback(() => {
@@ -3912,7 +3929,7 @@ const useGameRoomElement = () => {
           )}
 
           <div className="table-shell__board-stage">
-            {shouldRenderCardsFlyout && (
+            {shouldRenderCardsFlyout && !shouldRenderCardsBesideDesktopDock && (
               <YourCardsFlyout
                 isOpen={isCardsFlyoutOpen}
                 hasHoleCards={hasHoleCards}
@@ -4103,109 +4120,107 @@ const useGameRoomElement = () => {
           )}
 
           {showTurnActionDock && (
-            <ChipComposerDock ref={bottomBarOverlayRef} className={desktopMainDockClassName}>
-              <TurnActionDock
-                callAmount={callAmount}
-                minRaise={minRaise}
-                maxStack={maxStack}
-                trayAmount={trayAmount}
-                trayInputValue={trayInputValue}
-                isDesktopClickBetting={isDesktopSideDock}
-                canStartDrag={canStartDrag}
-                isDragActive={dragState.active}
-                isYourTurn={isYourTurn}
-                canCheck={canCheck}
-                isAutomationMode={isAutomationMode}
-                legacyRaiseAmount={legacyRaiseAmount}
-                trayPresetButtons={trayPresetButtons}
-                onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-                onSetTrayDirectly={setTrayDirectly}
-                onTrayInputChange={handleCustomTrayInputChange}
-                onTrayInputBlur={handleCustomTrayInputBlur}
-                onClearTray={clearTray}
-                onSubmitTray={requestTraySubmit}
-                onQuickDecisionAction={handleQuickDecisionAction}
-                quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
-                onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
-                onQuickConfirmAccept={(action) => {
-                  setQuickConfirmAction(null);
-                  performAction(action);
-                }}
-                traySubmitLabel={desktopTraySubmitIntent?.label ?? null}
-                showTrayConfirm={showTrayConfirm}
-                onTrayConfirmDismiss={() => setShowTrayConfirm(false)}
-                onTrayConfirmAccept={acceptTraySubmit}
-                onLegacyAction={handleLegacyAction}
-                onLegacyRaiseAmountChange={setLegacyRaiseAmount}
-                t={t}
-              />
-            </ChipComposerDock>
+            <div className={isDesktopSideDock ? "desktop-dock-cluster" : undefined}>
+              {shouldRenderCardsBesideDesktopDock && (
+                <YourCardsFlyout
+                  isOpen={isCardsFlyoutOpen}
+                  hasHoleCards={hasHoleCards}
+                  cards={displayHoleCards ?? []}
+                  shouldAnchorToBottomBar={false}
+                  bottomBarHeight={bottomBarHeight}
+                  placement="dock-left"
+                  title={t("game.yourCards")}
+                  emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+                  emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+                  hideLabel={t("game.hide")}
+                  showLabel={t("game.show")}
+                  onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+                />
+              )}
+              <ChipComposerDock ref={bottomBarOverlayRef} className={desktopMainDockClassName}>
+                <TurnActionDock
+                  callAmount={callAmount}
+                  minRaise={minRaise}
+                  maxStack={maxStack}
+                  trayAmount={trayAmount}
+                  trayInputValue={trayInputValue}
+                  isDesktopClickBetting={isDesktopSideDock}
+                  canStartDrag={canStartDrag}
+                  isDragActive={dragState.active}
+                  isYourTurn={isYourTurn}
+                  canCheck={canCheck}
+                  isAutomationMode={isAutomationMode}
+                  legacyRaiseAmount={legacyRaiseAmount}
+                  trayPresetButtons={trayPresetButtons}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onSetTrayDirectly={setTrayDirectly}
+                  onTrayInputChange={handleCustomTrayInputChange}
+                  onTrayInputBlur={handleCustomTrayInputBlur}
+                  onClearTray={clearTray}
+                  onSubmitTray={requestTraySubmit}
+                  onQuickDecisionAction={handleQuickDecisionAction}
+                  quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
+                  onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
+                  onQuickConfirmAccept={(action) => {
+                    setQuickConfirmAction(null);
+                    performAction(action);
+                  }}
+                  traySubmitLabel={desktopTraySubmitIntent?.label ?? null}
+                  showTrayConfirm={showTrayConfirm}
+                  onTrayConfirmDismiss={() => setShowTrayConfirm(false)}
+                  onTrayConfirmAccept={acceptTraySubmit}
+                  onLegacyAction={handleLegacyAction}
+                  onLegacyRaiseAmountChange={setLegacyRaiseAmount}
+                  t={t}
+                />
+              </ChipComposerDock>
+            </div>
           )}
         </div>
 
         {shouldShowDesktopRail && (
           <aside className="desktop-right-rail" data-testid="desktop-right-rail">
+            <div className="desktop-rail-live-audio" data-testid="desktop-rail-live-audio">
+              <LiveAudioPanel
+                title={t("game.audio.title")}
+                subtitle={t("game.audio.subtitle")}
+                joinLabel={t("game.audio.join")}
+                leaveLabel={t("game.audio.leave")}
+                muteLabel={t("game.audio.mute")}
+                unmuteLabel={t("game.audio.unmute")}
+                enableAudioLabel={t("game.audio.enableAudio")}
+                connectingLabel={t("game.audio.connecting")}
+                connectedLabel={t("game.audio.connected")}
+                reconnectingLabel={t("game.audio.reconnecting")}
+                mutedLabel={t("game.audio.muted")}
+                unavailableLabel={t("game.audio.unavailable")}
+                rosterLabel={t("game.audio.roster")}
+                localParticipantLabel={t("game.audio.you")}
+                error={
+                  liveAudioError?.startsWith("game.audio.error.")
+                    ? t(liveAudioError as MessageKey)
+                    : liveAudioError
+                }
+                available={isLiveAudioAvailable}
+                isConfigLoaded={isLiveAudioConfigLoaded}
+                isConnecting={isLiveAudioConnecting}
+                isJoined={isLiveAudioJoined}
+                isMuted={isLiveAudioMuted}
+                isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
+                isReconnecting={isLiveAudioReconnecting}
+                participants={liveAudioParticipants}
+                onJoin={joinAudio}
+                onLeave={leaveAudio}
+                onMute={muteAudio}
+                onUnmute={unmuteAudio}
+                onEnableAudio={enableAudio}
+              />
+            </div>
             <div className="chat-panel-shell chat-panel-shell--desktop-rail">
               <ChatPanel onClose={() => undefined} showCloseButton={false} />
             </div>
-            <section className="surface-panel desktop-side-panel" data-testid="desktop-side-status">
-              <div className="desktop-side-panel__header">
-                <h3>{t("game.confirmActions")}</h3>
-                <span className="desktop-side-panel__meta">
-                  {t("game.playersCount", {
-                    count: tablePlayers.length,
-                    max: room.config.maxPlayers,
-                  })}
-                </span>
-              </div>
-              <div className="desktop-side-panel__stats">
-                <div>
-                  <span className="desktop-side-panel__label">{t("game.ruleVariant.standard")}</span>
-                  <strong>{ruleVariantLabel}</strong>
-                </div>
-                <div>
-                  <span className="desktop-side-panel__label">{t("game.potCenter")}</span>
-                  <strong>{`$${animatedPotValue}`}</strong>
-                </div>
-                {hiddenHudCopy.roundLabel && (
-                  <div>
-                    <span className="desktop-side-panel__label">{t("game.confirmAction.roundLabel")}</span>
-                    <strong>{hiddenHudCopy.roundLabel}</strong>
-                  </div>
-                )}
-                {hiddenHudCopy.turnLabel && (
-                  <div>
-                    <span className="desktop-side-panel__label">{t("game.confirmAction.turnLabel")}</span>
-                    <strong>{hiddenHudCopy.turnLabel}</strong>
-                  </div>
-                )}
-              </div>
-              <div className="desktop-side-panel__actions">
-                <button
-                  type="button"
-                  onClick={() => setShowRulesModal(true)}
-                  className="desktop-side-panel__button"
-                >
-                  {rulesCopy.buttonLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowRankingsModal(true)}
-                  className="desktop-side-panel__button"
-                >
-                  {t("game.rankings")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLiveAudioModal(true)}
-                  className="desktop-side-panel__button"
-                >
-                  {t("game.audio.title")}
-                </button>
-              </div>
-            </section>
           </aside>
         )}
       </div>

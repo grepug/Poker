@@ -732,6 +732,42 @@ async function expectYourCardsFlyoutAboveActionArea(
   );
 }
 
+async function expectYourCardsFlyoutLeftOfActionArea(
+  page: Page,
+  actionAreaTestId: string,
+) {
+  await expect(
+    page.locator('[data-testid="your-cards-section"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator(`[data-testid="${actionAreaTestId}"]`),
+  ).toBeVisible();
+
+  const layout = await page.evaluate((targetActionAreaTestId) => {
+    const cardsPanel = document.querySelector<HTMLElement>(
+      '[data-testid="your-cards-section"]',
+    );
+    const actionArea = document.querySelector<HTMLElement>(
+      `[data-testid="${targetActionAreaTestId}"]`,
+    );
+    if (!cardsPanel || !actionArea) {
+      return null;
+    }
+
+    const cardsRect = cardsPanel.getBoundingClientRect();
+    const actionRect = actionArea.getBoundingClientRect();
+    return {
+      cardsRight: cardsRect.right,
+      actionLeft: actionRect.left,
+    };
+  }, actionAreaTestId);
+
+  expect(layout).not.toBeNull();
+  expect(layout?.cardsRight ?? Infinity).toBeLessThanOrEqual(
+    layout?.actionLeft ?? -Infinity,
+  );
+}
+
 async function getRoomSnapshot(page: Page) {
   return page.evaluate(() => {
     const room = (window as any).pokerDebug?.getRoom();
@@ -1822,9 +1858,13 @@ async function assertSeatCardsWithinTableBounds(
   ).toEqual([]);
 }
 
-async function dragTrayToPot(page: Page) {
+async function dragTrayToPot(
+  page: Page,
+  dropOffset: { x: number; y: number } = { x: 0, y: 0 },
+) {
   const tray = page.locator('[data-testid="chip-stack-draggable"]');
   const pot = page.locator('[data-testid="pot-drop-zone"]');
+  const trayAmount = page.locator('[data-testid="tray-amount-value"]');
   const trayBox = await tray.boundingBox();
   const potBox = await pot.boundingBox();
 
@@ -1838,11 +1878,13 @@ async function dragTrayToPot(page: Page) {
   );
   await page.mouse.down();
   await page.mouse.move(
-    potBox.x + potBox.width / 2,
-    potBox.y + potBox.height / 2,
+    potBox.x + potBox.width / 2 + potBox.width * dropOffset.x,
+    potBox.y + potBox.height / 2 + potBox.height * dropOffset.y,
     { steps: 12 },
   );
+  await expect(pot).toHaveClass(/pot-drop-zone--hover/);
   await page.mouse.up();
+  await expect(trayAmount).toContainText('$0');
 }
 
 async function assertSeatCardsDoNotOverlapBoardAndPot(
@@ -6690,7 +6732,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="desktop-right-rail"]'),
       ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="desktop-side-status"]'),
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="chat-preview-strip"]'),
       ).toHaveCount(0);
@@ -6706,8 +6752,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const flyout = document.querySelector<HTMLElement>(
           '[data-testid="your-cards-flyout"]',
         );
+        const liveAudio = document.querySelector<HTMLElement>(
+          '[data-testid="live-audio-panel"]',
+        );
+        const chatPanel = document.querySelector<HTMLElement>(
+          '[data-testid="chat-panel"]',
+        );
 
-        if (!gameColumn || !rightRail || !felt || !flyout) {
+        if (!gameColumn || !rightRail || !felt || !flyout || !liveAudio || !chatPanel) {
           return null;
         }
 
@@ -6715,18 +6767,20 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const railRect = rightRail.getBoundingClientRect();
         const feltRect = felt.getBoundingClientRect();
         const flyoutRect = flyout.getBoundingClientRect();
+        const liveAudioRect = liveAudio.getBoundingClientRect();
+        const chatRect = chatPanel.getBoundingClientRect();
 
         return {
           railStartsAfterGameColumn: railRect.left >= gameRect.right - 1,
-          cardsPinnedOnFeltRightHalf:
-            flyoutRect.left + flyoutRect.width / 2 >
-            feltRect.left + feltRect.width / 2,
+          liveAudioSitsAboveChat: liveAudioRect.bottom <= chatRect.top + 1,
+          cardsStayOutOfRightRail: flyoutRect.right <= railRect.left + 1,
         };
       });
 
       expect(layout).not.toBeNull();
       expect(layout?.railStartsAfterGameColumn).toBe(true);
-      expect(layout?.cardsPinnedOnFeltRightHalf).toBe(true);
+      expect(layout?.liveAudioSitsAboveChat).toBe(true);
+      expect(layout?.cardsStayOutOfRightRail).toBe(true);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -7617,6 +7671,60 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       const submitTrayButton = bobPage.locator('[data-testid="action-submit-tray"]');
       await expect(submitTrayButton).toBeVisible();
+
+      const desktopActionLayout = await bobPage.evaluate(() => {
+        const submitButton = document.querySelector<HTMLElement>(
+          '[data-testid="action-submit-tray"]',
+        );
+        const trayButton = document.querySelector<HTMLElement>(
+          '[data-testid="chip-stack-draggable"]',
+        );
+        const foldButton = document.querySelector<HTMLElement>(
+          '[data-testid="action-fold"]',
+        );
+        const dock = document.querySelector<HTMLElement>(
+          '[data-testid="action-dock"]',
+        );
+        const cardsPanel = document.querySelector<HTMLElement>(
+          '[data-testid="your-cards-section"]',
+        );
+
+        if (!submitButton || !trayButton || !foldButton || !dock || !cardsPanel) {
+          return null;
+        }
+
+        const submitRect = submitButton.getBoundingClientRect();
+        const trayRect = trayButton.getBoundingClientRect();
+        const foldRect = foldButton.getBoundingClientRect();
+        const dockRect = dock.getBoundingClientRect();
+        const cardsRect = cardsPanel.getBoundingClientRect();
+        const submitCenterX = submitRect.left + submitRect.width / 2;
+        const submitCenterY = submitRect.top + submitRect.height / 2;
+        const trayCenterX = trayRect.left + trayRect.width / 2;
+        const trayCenterY = trayRect.top + trayRect.height / 2;
+        const foldCenterX = foldRect.left + foldRect.width / 2;
+        const foldCenterY = foldRect.top + foldRect.height / 2;
+
+        const distanceToTray = Math.hypot(
+          submitCenterX - trayCenterX,
+          submitCenterY - trayCenterY,
+        );
+        const distanceToFold = Math.hypot(
+          submitCenterX - foldCenterX,
+          submitCenterY - foldCenterY,
+        );
+
+        return {
+          submitNearTrayColumn: distanceToTray < distanceToFold,
+          cardsLeftOfDock: cardsRect.right <= dockRect.left + 1,
+        };
+      });
+
+      expect(desktopActionLayout).not.toBeNull();
+      expect(desktopActionLayout?.submitNearTrayColumn).toBe(true);
+      expect(desktopActionLayout?.cardsLeftOfDock).toBe(true);
+      await expectYourCardsFlyoutLeftOfActionArea(bobPage, 'action-dock');
+
       await submitTrayButton.click();
 
       await expect(
@@ -7635,7 +7743,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const continuePreset = alicePage.locator('[data-testid="chip-load-continue"]');
       await expect(continuePreset).toBeVisible();
       await continuePreset.click();
-      await dragTrayToPot(alicePage);
+      await dragTrayToPot(alicePage, { x: -0.16, y: 0.18 });
       await waitForRound(bobPage, 'FLOP', 3);
     } finally {
       await teardownTwoPlayerSession(session);
