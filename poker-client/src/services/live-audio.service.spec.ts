@@ -65,6 +65,14 @@ class FakeRoom implements LiveAudioRoom {
 }
 
 describe("createLiveAudioController", () => {
+  const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "navigator",
+  );
+  const originalSecureContextDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "isSecureContext",
+  );
   const joinPayload = {
     enabled: true,
     serverUrl: "wss://poker-16h0u738.livekit.cloud",
@@ -180,6 +188,19 @@ describe("createLiveAudioController", () => {
   });
 
   it("toggles microphone mute state through the active room", async () => {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: vi.fn(),
+        },
+      },
+    });
+    Object.defineProperty(globalThis, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+
     const localParticipant = new FakeParticipant({
       identity: joinPayload.participantIdentity,
       name: joinPayload.participantName,
@@ -198,14 +219,32 @@ describe("createLiveAudioController", () => {
       createRoom: vi.fn(() => room),
     });
 
-    await controller.join("ROOM83");
-    await controller.setMuted(false);
-    expect(setMicrophoneEnabled).toHaveBeenCalledWith(true);
-    expect(controller.getState().isMuted).toBe(false);
+    try {
+      await controller.join("ROOM83");
+      await controller.setMuted(false);
+      expect(setMicrophoneEnabled).toHaveBeenCalledWith(true);
+      expect(controller.getState().isMuted).toBe(false);
 
-    await controller.setMuted(true);
-    expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
-    expect(controller.getState().isMuted).toBe(true);
+      await controller.setMuted(true);
+      expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
+      expect(controller.getState().isMuted).toBe(true);
+    } finally {
+      if (originalNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", originalNavigatorDescriptor);
+      } else {
+        delete (globalThis as Record<string, unknown>).navigator;
+      }
+
+      if (originalSecureContextDescriptor) {
+        Object.defineProperty(
+          globalThis,
+          "isSecureContext",
+          originalSecureContextDescriptor,
+        );
+      } else {
+        delete (globalThis as Record<string, unknown>).isSecureContext;
+      }
+    }
   });
 
   it("disconnects the previous room during leave and before rejoining a different room", async () => {
@@ -255,6 +294,60 @@ describe("createLiveAudioController", () => {
     await controller.join("ROOM84");
     expect(secondRoom.connect).toHaveBeenCalledTimes(1);
     expect(controller.getState().joinedRoomId).toBe("ROOM84");
+  });
+
+  it("returns a secure-context error when the browser does not expose getUserMedia", async () => {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {},
+    });
+    Object.defineProperty(globalThis, "isSecureContext", {
+      configurable: true,
+      value: false,
+    });
+
+    const localParticipant = new FakeParticipant({
+      identity: joinPayload.participantIdentity,
+      name: joinPayload.participantName,
+      metadata: joinPayload.participantMetadata,
+      isMicrophoneEnabled: false,
+    });
+    const room = new FakeRoom(localParticipant);
+
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => joinPayload),
+      createRoom: vi.fn(() => room),
+    });
+
+    try {
+      await controller.join("ROOM83");
+      await controller.setMuted(false);
+
+      expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+      expect(controller.getState().error).toBe(
+        "game.audio.error.microphoneRequiresSecureContext",
+      );
+    } finally {
+      if (originalNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", originalNavigatorDescriptor);
+      } else {
+        delete (globalThis as Record<string, unknown>).navigator;
+      }
+
+      if (originalSecureContextDescriptor) {
+        Object.defineProperty(
+          globalThis,
+          "isSecureContext",
+          originalSecureContextDescriptor,
+        );
+      } else {
+        delete (globalThis as Record<string, unknown>).isSecureContext;
+      }
+    }
   });
 
   it("clears joinedRoomId when joining fails", async () => {

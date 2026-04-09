@@ -130,6 +130,13 @@ const toLiveAudioError = (error: unknown): string => {
     const normalizedName = error.name.toLowerCase();
     const normalizedMessage = error.message.toLowerCase();
     if (
+      normalizedMessage.includes("navigator.mediadevices.getusermedia") ||
+      normalizedMessage.includes("navigator.mediadevices") ||
+      normalizedMessage.includes("getusermedia")
+    ) {
+      return "game.audio.error.microphoneRequiresSecureContext";
+    }
+    if (
       normalizedName.includes("notallowed") ||
       normalizedMessage.includes("permission") ||
       normalizedMessage.includes("denied")
@@ -151,6 +158,14 @@ const toLiveAudioError = (error: unknown): string => {
 
   return "game.audio.error.unavailable";
 };
+
+const isBrowserMicrophoneApiUnavailable = (): boolean =>
+  typeof navigator !== "undefined" && !navigator.mediaDevices?.getUserMedia;
+
+const resolveUnavailableMicrophoneApiError = (): string =>
+  typeof globalThis.isSecureContext === "boolean" && !globalThis.isSecureContext
+    ? "game.audio.error.microphoneRequiresSecureContext"
+    : "game.audio.error.microphoneMissing";
 
 const requestJson = async <T>(
   path: string,
@@ -437,6 +452,13 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
 
     async setMuted(muted: boolean) {
       if (!room) {
+        return;
+      }
+
+      if (!muted && isBrowserMicrophoneApiUnavailable()) {
+        patchState({
+          error: resolveUnavailableMicrophoneApiError(),
+        });
         return;
       }
 

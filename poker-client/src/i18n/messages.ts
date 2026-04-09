@@ -143,6 +143,8 @@ export const EN_MESSAGES = {
   "game.audio.error.unavailable": "Live audio is unavailable right now.",
   "game.audio.error.microphoneDenied": "Microphone access was denied.",
   "game.audio.error.microphoneMissing": "No microphone was found on this device.",
+  "game.audio.error.microphoneRequiresSecureContext":
+    "Microphone access requires HTTPS or localhost in this browser.",
   "game.audio.error.microphoneBusy":
     "Your microphone is unavailable because another app is using it.",
   "pwa.iosInstallTitle": "Add this app to your Home Screen",
@@ -580,6 +582,8 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.audio.error.unavailable": "实时语音暂时不可用。",
   "game.audio.error.microphoneDenied": "麦克风权限被拒绝。",
   "game.audio.error.microphoneMissing": "当前设备未检测到麦克风。",
+  "game.audio.error.microphoneRequiresSecureContext":
+    "当前浏览器需要通过 HTTPS 或 localhost 才能访问麦克风。",
   "game.audio.error.microphoneBusy": "麦克风正在被其他应用占用。",
   "pwa.iosInstallTitle": "把应用添加到主屏幕",
   "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
