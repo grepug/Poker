@@ -331,8 +331,10 @@ describe('EventsGateway membership mutation serialization', () => {
     expect(gameService.updatePlayerSocket).toHaveBeenCalledTimes(1);
   });
 
-  it('completes betting progression when a non-turn player leaves and hand is now complete', async () => {
-    roomState.players[1].status = 'connected';
+  it('allows leave between hands before the player readies the next hand', async () => {
+    roomState.players[1].status = 'waiting';
+    roomState.readyPhase = 'NEXT_HAND';
+    roomState.readyPlayerIds = [];
     roomState.currentHand = {
       handNumber: 1,
       dealerPosition: 0,
@@ -342,9 +344,9 @@ describe('EventsGateway membership mutation serialization', () => {
       sidePots: [],
       communityCards: [],
       activePlayers: ['p-host', 'p-bob'],
-      bettingRound: 'PRE_FLOP',
+      bettingRound: 'RIVER',
       currentBet: 10,
-      currentPlayerTurn: 'p-host',
+      currentPlayerTurn: null,
       roundActions: { 'p-host': true, 'p-bob': true },
       lastRaiseSize: 10,
       deck: [],
@@ -359,10 +361,14 @@ describe('EventsGateway membership mutation serialization', () => {
       nextStreetReadyPlayerIds: [],
       nextStreetRequiredPlayerIds: [],
       revealedPlayerIds: [],
-      lastResult: null,
+      lastResult: {
+        winners: [],
+        playerHands: [],
+        pot: 10,
+        timestamp: Date.now(),
+      },
     };
 
-    bettingService.isBettingRoundComplete.mockReturnValue(true);
     const handleBettingRoundCompleteSpy = jest
       .spyOn(gateway as any, 'handleBettingRoundComplete')
       .mockResolvedValue(undefined);
@@ -382,9 +388,133 @@ describe('EventsGateway membership mutation serialization', () => {
       'ROOM1',
       'p-bob',
     );
-    expect(bettingService.isBettingRoundComplete).toHaveBeenCalledTimes(1);
-    expect(handleBettingRoundCompleteSpy).toHaveBeenCalledTimes(1);
+    expect(bettingService.isBettingRoundComplete).not.toHaveBeenCalled();
+    expect(handleBettingRoundCompleteSpy).not.toHaveBeenCalled();
     expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');
+  });
+
+  it('treats leave from a missing room as successful local cleanup', async () => {
+    storageService.getRoom.mockResolvedValue(null);
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+
+    const result = await gateway.handleLeaveRoom(leavingClient as any);
+
+    expect(result).toEqual({ success: true });
+    expect(leavingClient.leave).toHaveBeenCalledWith('ROOM1');
+    expect(gameService.removePlayerFromRoom).not.toHaveBeenCalled();
+    expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
+    expect(leavingClient.emit).not.toHaveBeenCalledWith('ERROR', expect.anything());
+  });
+
+  it('rejects leave while a hand is still in progress', async () => {
+    roomState.players[1].status = 'connected';
+    roomState.currentHand = {
+      handNumber: 1,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 10,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'PRE_FLOP',
+      currentBet: 10,
+      currentPlayerTurn: 'p-host',
+      roundActions: { 'p-bob': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+    };
+
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+
+    const result = await gateway.handleLeaveRoom(leavingClient as any);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'You can only leave the room between hands or after the game ends',
+    });
+    expect(gameService.removePlayerFromRoom).not.toHaveBeenCalled();
+    expect(leavingClient.leave).not.toHaveBeenCalled();
+  });
+
+  it('rejects leave after the player has already readied the next hand', async () => {
+    roomState.players[1].status = 'waiting';
+    roomState.readyPhase = 'NEXT_HAND';
+    roomState.readyPlayerIds = ['p-bob'];
+    roomState.currentHand = {
+      handNumber: 3,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      pot: 40,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'RIVER',
+      currentBet: 20,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        playerHands: [],
+        pot: 40,
+        timestamp: Date.now(),
+      },
+    };
+
+    const leavingClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+
+    const result = await gateway.handleLeaveRoom(leavingClient as any);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'You already marked ready for the next hand',
+    });
+    expect(gameService.removePlayerFromRoom).not.toHaveBeenCalled();
+    expect(leavingClient.leave).not.toHaveBeenCalled();
   });
 
   it('preserves left seats when ending a game between hands', async () => {

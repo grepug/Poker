@@ -111,7 +111,7 @@ type DebugApi = {
     emoji?: string,
     options?: CreateRoomOptions,
   ) => void;
-  joinRoom: (roomId: string, name?: string, emoji?: string) => void;
+  joinRoom: (roomId: string, name?: string, emoji?: string) => Promise<boolean>;
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
@@ -130,7 +130,7 @@ type DebugApi = {
   call: () => void;
   raise: (amount: number) => void;
   allIn: () => void;
-  leaveRoom: () => void;
+  leaveRoom: () => Promise<boolean>;
   requestRebuy: (amount: number) => void;
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
@@ -175,7 +175,11 @@ interface GameContextType {
     playerEmoji?: string,
     options?: CreateRoomOptions,
   ) => void;
-  joinRoom: (roomId: string, playerName?: string, playerEmoji?: string) => void;
+  joinRoom: (
+    roomId: string,
+    playerName?: string,
+    playerEmoji?: string,
+  ) => Promise<boolean>;
   startGame: () => void;
   startNextHand: () => void;
   markReady: () => void;
@@ -189,7 +193,7 @@ interface GameContextType {
     amount?: number,
     actionId?: string,
   ) => void;
-  leaveRoom: () => void;
+  leaveRoom: () => Promise<boolean>;
   requestRebuy: (amount: number) => void;
   updateRoomConfig: (
     config: Partial<Pick<RoomConfig, "allowPlayerStreetReveal">>,
@@ -652,6 +656,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
               p.id === data.playerId
                 ? {
                     ...p,
+                    name: data.playerName,
+                    emoji: data.playerEmoji ?? p.emoji,
                     ...(nextStatus ? { status: nextStatus } : {}),
                     connectionStatus: nextConnectionStatus,
                   }
@@ -663,6 +669,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
           prev && prev.id === data.playerId
             ? {
                 ...prev,
+                name: data.playerName,
+                emoji: data.playerEmoji ?? prev.emoji,
                 ...(nextStatus ? { status: nextStatus } : {}),
                 connectionStatus: nextConnectionStatus,
               }
@@ -1408,8 +1416,15 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
   );
 
   const joinRoom = useCallback(
-    (roomId: string, playerName?: string, playerEmoji?: string) => {
-      if (!socket) return;
+    (
+      roomId: string,
+      playerName?: string,
+      playerEmoji?: string,
+    ): Promise<boolean> => {
+      if (!socket) {
+        setLastError("Connection unavailable");
+        return Promise.resolve(false);
+      }
       setLastError(null);
       const payload: {
         roomId: string;
@@ -1422,11 +1437,16 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       if (playerEmoji) {
         payload.playerEmoji = playerEmoji;
       }
-      socket.emit("JOIN_ROOM", payload, (response) => {
-        console.log("Join room response:", response);
-        if (response && "success" in response && !response.success) {
-          setLastError(response.error || "Failed to join room");
-        }
+      return new Promise((resolve) => {
+        socket.emit("JOIN_ROOM", payload, (response) => {
+          console.log("Join room response:", response);
+          if (response && "success" in response && !response.success) {
+            setLastError(response.error || "Failed to join room");
+            resolve(false);
+            return;
+          }
+          resolve(true);
+        });
       });
     },
     [socket],
@@ -1545,8 +1565,30 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     [socket],
   );
 
-  const leaveRoom = useCallback(() => {
+  const leaveRoom = useCallback(async (): Promise<boolean> => {
+    if (!socket) {
+      setLastError("Connection unavailable");
+      return false;
+    }
+
+    setLastError(null);
     const currentRoomId = roomRef.current?.id;
+
+    const didLeave = await new Promise<boolean>((resolve) => {
+      socket.emit("LEAVE_ROOM", (response?: { success?: boolean; error?: string }) => {
+        if (response && "success" in response && !response.success) {
+          setLastError(response.error || "Failed to leave room");
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    });
+
+    if (!didLeave) {
+      return false;
+    }
+
     if (currentRoomId) {
       clearStoredFinalResult(currentRoomId);
     }
@@ -1574,10 +1616,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     setChatUnreadCount(0);
     setIsChatPanelOpenState(false);
 
-    if (!socket) return;
-    socket.emit("LEAVE_ROOM", () => {
-      // Local state is already cleared optimistically.
-    });
+    return true;
   }, [socket]);
 
   const requestRebuy = useCallback(

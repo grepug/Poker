@@ -6039,61 +6039,47 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('@critical 8.4e: Leaving Preserves Rankings And Same Name Rejoin Keeps Player ID', async ({
+  test('@critical 8.4e: Leaving To The Lobby Shows A Returnable Room Card And Rejoin Keeps Player ID', async ({
     browser,
   }) => {
-    const session = await setupThreePlayerSession(browser);
+    const session = await setupTwoPlayerSession(browser);
 
     try {
-      const { alicePage, bobPage, charliePage, roomCode } = session;
-      await startGameFromLobby(alicePage, bobPage);
-      await waitForHoleCards(charliePage);
+      const { alicePage, bobPage, roomCode } = session;
 
       const bobBeforeLeave = await bobPage.evaluate(() => {
         const pokerDebug = (window as any).pokerDebug;
         const player = pokerDebug?.getPlayer?.();
-        const cards = pokerDebug?.getCards?.();
         return {
           playerId: player?.id ?? null,
-          status: player?.status ?? null,
-          cardsCount: Array.isArray(cards) ? cards.length : 0,
         };
       });
       expect(bobBeforeLeave.playerId).toBeTruthy();
-      expect(bobBeforeLeave.status).toBe('connected');
-      expect(bobBeforeLeave.cardsCount).toBe(2);
 
       await confirmLeaveRoom(bobPage);
       await expect(bobPage).toHaveURL(/\/$/);
 
-      await Promise.all([
-        alicePage.waitForSelector(
-          '[data-testid="room-player-count"]:has-text("Players: 2/")',
-        ),
-        charliePage.waitForSelector(
-          '[data-testid="room-player-count"]:has-text("Players: 2/")',
-        ),
-      ]);
-
-      await alicePage.click('[data-testid="open-rankings-button"]');
-      await expect(
-        alicePage.locator('[data-testid="rankings-modal"]'),
-      ).toContainText('Bob');
-      await expect(
-        alicePage.locator('[data-testid="rankings-modal"]'),
-      ).toContainText('LEFT');
-      await alicePage.click('[data-testid="close-rankings-button"]');
+      await alicePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 1/")',
+      );
 
       await bobPage.click('[data-testid="join-toggle-button"]');
-      await bobPage.fill('[data-testid="room-id-input"]', roomCode);
-      await bobPage.click('[data-testid="join-room-button"]');
+      await expect(
+        bobPage.locator('[data-testid="rejoinable-room-list"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator(`[data-testid="rejoinable-room-card-${roomCode}"]`),
+      ).toBeVisible();
+      await bobPage.click(
+        `[data-testid="rejoinable-room-button-${roomCode}"]`,
+      );
 
       await Promise.all([
         bobPage.waitForSelector(
-          '[data-testid="room-player-count"]:has-text("Players: 3/")',
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
         ),
         alicePage.waitForSelector(
-          '[data-testid="room-player-count"]:has-text("Players: 3/")',
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
         ),
       ]);
 
@@ -6101,25 +6087,155 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const pokerDebug = (window as any).pokerDebug;
         const room = pokerDebug?.getRoom?.();
         const player = pokerDebug?.getPlayer?.();
-        const cards = pokerDebug?.getCards?.();
         const players = room?.players ?? [];
-        const leftStatusInRoom =
+        const statusInRoom =
           players.find((entry: any) => entry.name === 'Bob')?.status ?? null;
 
         return {
           playerId: player?.id ?? null,
           status: player?.status ?? null,
-          cardsCount: Array.isArray(cards) ? cards.length : 0,
-          statusInRoom: leftStatusInRoom,
+          statusInRoom,
         };
       });
 
       expect(bobAfterRejoin.playerId).toBe(bobBeforeLeave.playerId);
       expect(bobAfterRejoin.status).toBe('waiting');
       expect(bobAfterRejoin.statusInRoom).toBe('waiting');
-      expect(bobAfterRejoin.cardsCount).toBe(0);
     } finally {
-      await teardownThreePlayerSession(session);
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.4ea: Leave Is Blocked During An Active Hand', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await openLeaveRoomConfirm(bobPage);
+      await expect(
+        bobPage.locator('[data-testid="leave-room-confirm-availability-reason"]'),
+      ).toContainText(/Finish the current hand|当前这手牌结束/);
+      await expect(
+        bobPage.locator('[data-testid="leave-room-confirm-accept"]'),
+      ).toBeDisabled();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.4eb: Manual Room-Code Rejoin Avoids The Generic Name-Taken Failure', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+
+      const bobBeforeLeave = await bobPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const player = pokerDebug?.getPlayer?.();
+        return {
+          playerId: player?.id ?? null,
+        };
+      });
+
+      await confirmLeaveRoom(bobPage);
+      await expect(bobPage).toHaveURL(/\/$/);
+      await alicePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 1/")',
+      );
+
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+      await bobPage.click('[data-testid="join-room-button"]');
+
+      await Promise.all([
+        bobPage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+        alicePage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+      ]);
+
+      await expect(
+        bobPage.locator('[data-testid="form-feedback"]'),
+      ).toHaveCount(0);
+
+      const bobAfterRejoin = await bobPage.evaluate(() => {
+        const pokerDebug = (window as any).pokerDebug;
+        const player = pokerDebug?.getPlayer?.();
+        return {
+          playerId: player?.id ?? null,
+          status: player?.status ?? null,
+        };
+      });
+
+      expect(bobAfterRejoin.playerId).toBe(bobBeforeLeave.playerId);
+      expect(bobAfterRejoin.status).toBe('waiting');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.4ec: Rejoining After A Profile Change Syncs The Updated Name To Other Players', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+
+      await confirmLeaveRoom(bobPage);
+      await expect(bobPage).toHaveURL(/\/$/);
+      await alicePage.waitForSelector(
+        '[data-testid="room-player-count"]:has-text("Players: 1/")',
+      );
+
+      await ensureProfileForCurrentSession(bobPage, {
+        displayName: 'Bobby',
+        avatarEmoji: '🐯',
+      });
+      await bobPage.click('[data-testid="join-toggle-button"]');
+      await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+      await bobPage.click('[data-testid="join-room-button"]');
+
+      await Promise.all([
+        bobPage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+        alicePage.waitForSelector(
+          '[data-testid="room-player-count"]:has-text("Players: 2/")',
+        ),
+      ]);
+
+      await bobPage.waitForFunction(
+        () => window.pokerDebug?.getPlayer?.()?.name === 'Bobby',
+      );
+      await alicePage.waitForFunction(() =>
+        window.pokerDebug
+          ?.getRoom?.()
+          ?.players?.some((player: any) => player.name === 'Bobby'),
+      );
+
+      const aliceViewOfBob = await alicePage.evaluate(() => {
+        const room = window.pokerDebug?.getRoom?.();
+        const matchingPlayer = room?.players?.find(
+          (player: any) => player.name === 'Bobby',
+        );
+        return {
+          name: matchingPlayer?.name ?? null,
+          emoji: matchingPlayer?.emoji ?? null,
+        };
+      });
+
+      expect(aliceViewOfBob.name).toBe('Bobby');
+      expect(aliceViewOfBob.emoji).toBe('🐯');
+    } finally {
+      await teardownTwoPlayerSession(session);
     }
   });
 

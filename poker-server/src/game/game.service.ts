@@ -158,11 +158,23 @@ export class GameService {
     const existingPlayerByUserId = userId
       ? playersWithUserId.find((player) => player.userId === userId)
       : undefined;
-    const existingPlayer =
-      existingPlayerByUserId ??
-      playersWithUserId.find((p) => p.name === normalizedPlayerName);
+    const existingPlayerByName = playersWithUserId.find(
+      (player) => player.name === normalizedPlayerName,
+    );
+    const leftSeatReservedForDifferentUser =
+      Boolean(existingPlayerByName) &&
+      existingPlayerByName?.status === 'left' &&
+      Boolean(existingPlayerByName.userId) &&
+      existingPlayerByName.userId !== userId;
+    if (leftSeatReservedForDifferentUser && !existingPlayerByUserId) {
+      throw new Error('Name already taken');
+    }
+    const existingPlayer = existingPlayerByUserId ?? existingPlayerByName;
     if (existingPlayer) {
       if (!isDisconnected(existingPlayer) && existingPlayer.status !== 'left') {
+        if (existingPlayerByUserId?.id === existingPlayer.id) {
+          throw new Error('You are already in this room');
+        }
         throw new Error('Name already taken');
       }
 

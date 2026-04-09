@@ -3602,11 +3602,50 @@ const useGameRoomElement = () => {
     setShowLeaveConfirmModal(true);
   };
 
-  const handleConfirmLeave = () => {
+  const handleConfirmLeave = async () => {
     setShowLeaveConfirmModal(false);
-    leaveRoom();
-    navigate("/");
+    const didLeave = await leaveRoom();
+    if (didLeave) {
+      navigate("/");
+    }
   };
+
+  const leaveAvailability = useMemo(() => {
+    if (!room || !player) {
+      return {
+        canLeave: false,
+        reason: t("game.leaveConfirm.unavailableGeneric"),
+      };
+    }
+
+    if (isGameEnded || !isGameStarted) {
+      return { canLeave: true, reason: null };
+    }
+
+    if (!isHandPausedForNextHand) {
+      return {
+        canLeave: false,
+        reason: t("game.leaveConfirm.unavailableDuringHand"),
+      };
+    }
+
+    if (hasReadiedCurrentPhase) {
+      return {
+        canLeave: false,
+        reason: t("game.leaveConfirm.unavailableAfterReady"),
+      };
+    }
+
+    return { canLeave: true, reason: null };
+  }, [
+    hasReadiedCurrentPhase,
+    isGameEnded,
+    isGameStarted,
+    isHandPausedForNextHand,
+    player,
+    room,
+    t,
+  ]);
 
   const handleSaveProfile = async () => {
     if (!user) {
@@ -4235,6 +4274,18 @@ const useGameRoomElement = () => {
 
       {showLeaveConfirmModal && (
         <LeaveRoomConfirmModal
+          canConfirm={leaveAvailability.canLeave}
+          availabilityReason={leaveAvailability.reason}
+          body={
+            leaveAvailability.canLeave
+              ? undefined
+              : t("game.leaveConfirm.blockedBody")
+          }
+          warning={
+            leaveAvailability.canLeave
+              ? undefined
+              : t("game.leaveConfirm.blockedWarning")
+          }
           onCancel={() => setShowLeaveConfirmModal(false)}
           onConfirm={handleConfirmLeave}
           t={t}

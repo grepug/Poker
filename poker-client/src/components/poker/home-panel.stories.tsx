@@ -27,6 +27,8 @@ export const CreateRoom: Story = {
     lastError: null,
     useShortDeckRules: false,
     maxPlayers: 10,
+    rejoinableRooms: [],
+    rejoinDisabled: false,
     t: identity,
     onUseShortDeckRulesChange: () => {},
     onMaxPlayersChange: () => {},
@@ -34,6 +36,7 @@ export const CreateRoom: Story = {
     onEnableJoinMode: () => {},
     onRoomIdChange: () => {},
     onJoinRoom: () => {},
+    onRejoinRoom: () => {},
     onBack: () => {},
   },
 };

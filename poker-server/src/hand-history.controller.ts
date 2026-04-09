@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import type { Room } from 'poker-types';
+import type { RejoinableRoomSummary, Room } from 'poker-types';
 import { AuthService } from './auth/auth.service';
 import { readAuthSessionCookie } from './auth/session-cookie';
 import type { IHandHistoryStorageService } from './common/interfaces/hand-history-storage.interface';
@@ -31,6 +31,22 @@ export class HandHistoryController {
     @Inject('IHandHistoryStorageService')
     private readonly handHistoryStorageService: IHandHistoryStorageService,
   ) {}
+
+  @Get('rejoinable')
+  async listRejoinableRooms(
+    @Req() request: Request,
+    @Headers('authorization') authorization?: string,
+  ): Promise<RejoinableRoomSummary[]> {
+    const current = await this.resolveCurrentSession(request, authorization);
+    const rooms = await this.storageService.getAllRooms();
+
+    return rooms
+      .map((room) => this.toRejoinableRoomSummary(room, current.user.id))
+      .filter(
+        (summary): summary is RejoinableRoomSummary => summary !== null,
+      )
+      .sort((left, right) => right.lastActivityAt - left.lastActivityAt);
+  }
 
   @Get(':roomId/hands/:handNumber/history')
   async getCompletedHandHistory(
@@ -112,11 +128,7 @@ export class HandHistoryController {
     request: Request,
     authorization?: string,
   ): Promise<{ room: Room; requesterPlayerId: string }> {
-    const token = this.extractSessionToken(request, authorization);
-    const current = await this.authService.getCurrentSession(token);
-    if (!current) {
-      throw new UnauthorizedException('Invalid session');
-    }
+    const current = await this.resolveCurrentSession(request, authorization);
 
     const room = await this.storageService.getRoom(roomId);
     if (!room) {
@@ -133,6 +145,51 @@ export class HandHistoryController {
     return {
       room,
       requesterPlayerId: roomPlayer.id,
+    };
+  }
+
+  private async resolveCurrentSession(
+    request: Request,
+    authorization?: string,
+  ) {
+    const token = this.extractSessionToken(request, authorization);
+    const current = await this.authService.getCurrentSession(token);
+    if (!current) {
+      throw new UnauthorizedException('Invalid session');
+    }
+
+    return current;
+  }
+
+  private toRejoinableRoomSummary(
+    room: Room,
+    userId: string,
+  ): RejoinableRoomSummary | null {
+    const player = (room.players as RoomPlayerWithUser[]).find(
+      (entry) => entry.userId === userId,
+    );
+    if (!player || player.status !== 'left' || room.gameState === 'ENDED') {
+      return null;
+    }
+
+    const seatedPlayers = room.players.filter((entry) => entry.status !== 'left');
+    const storedSeatIsInvalid =
+      player.position < 0 || player.position >= room.config.maxPlayers;
+    const seatIsTakenByAnotherPlayer = seatedPlayers.some(
+      (entry) => entry.id !== player.id && entry.position === player.position,
+    );
+    const roomHasSpareSeat = seatedPlayers.length < room.config.maxPlayers;
+    if ((storedSeatIsInvalid || seatIsTakenByAnotherPlayer) && !roomHasSpareSeat) {
+      return null;
+    }
+
+    return {
+      roomId: room.id,
+      hostName: room.players.find((entry) => entry.id === room.hostId)?.name ?? null,
+      seatedPlayerCount: seatedPlayers.length,
+      maxPlayers: room.config.maxPlayers,
+      useShortDeckRules: room.config.useShortDeckRules ?? false,
+      lastActivityAt: room.lastActivityAt,
     };
   }
 

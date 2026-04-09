@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import type { RejoinableRoomSummary } from "poker-types";
 import { HomePanel } from "@/components/poker/home-panel";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGame } from "@/contexts/GameContext";
 import { useLocalization } from "@/contexts/LocalizationContext";
 import { useSocket } from "@/contexts/SocketContext";
+import { roomMembershipService } from "@/services/room-membership.service";
 
 interface HomeProps {
   prefilledRoomId?: string;
@@ -37,8 +39,38 @@ const useHomeElement = ({
   const [roomId, setRoomId] = useState("");
   const [joinModeOverride, setJoinModeOverride] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [rejoinableRooms, setRejoinableRooms] = useState<RejoinableRoomSummary[]>([]);
+  const connectedRef = useRef(connected);
   const effectiveRoomId = inferredRoomId || roomId;
   const isJoining = inferredRoomId ? true : joinModeOverride ?? defaultJoinMode;
+
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
+
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+
+    let disposed = false;
+    void roomMembershipService
+      .listRejoinableRooms()
+      .then((rooms) => {
+        if (!disposed) {
+          setRejoinableRooms(rooms);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setRejoinableRooms([]);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [connected]);
 
   const clearFeedback = () => {
     if (feedback) {
@@ -66,6 +98,11 @@ const useHomeElement = ({
     createRoom(undefined, undefined, { useShortDeckRules, maxPlayers });
   };
 
+  const refreshRejoinableRooms = async () => {
+    const rooms = await roomMembershipService.listRejoinableRooms().catch(() => []);
+    setRejoinableRooms(rooms);
+  };
+
   const handleJoinRoom = () => {
     if (isRecoveringSession) {
       return;
@@ -79,8 +116,27 @@ const useHomeElement = ({
       return;
     }
 
-    clearFeedback();
-    joinRoom(normalizedRoomId);
+    void (async () => {
+      clearFeedback();
+      const didJoin = await joinRoom(normalizedRoomId);
+      if (!didJoin && connectedRef.current) {
+        await refreshRejoinableRooms();
+      }
+    })();
+  };
+
+  const handleRejoinRoom = (targetRoomId: string) => {
+    if (isRecoveringSession || !connectedRef.current) {
+      return;
+    }
+
+    void (async () => {
+      clearFeedback();
+      const didJoin = await joinRoom(targetRoomId);
+      if (!didJoin && connectedRef.current) {
+        await refreshRejoinableRooms();
+      }
+    })();
   };
 
   return (
@@ -125,6 +181,8 @@ const useHomeElement = ({
             lastError={lastError}
             useShortDeckRules={useShortDeckRules}
             maxPlayers={maxPlayers}
+            rejoinableRooms={rejoinableRooms}
+            rejoinDisabled={!connected || isRecoveringSession}
             t={t}
             onUseShortDeckRulesChange={(enabled) => {
               setUseShortDeckRules(enabled);
@@ -147,6 +205,7 @@ const useHomeElement = ({
               clearFeedback();
             }}
             onJoinRoom={handleJoinRoom}
+            onRejoinRoom={handleRejoinRoom}
             onBack={() => {
               setJoinModeOverride(false);
               setRoomId("");

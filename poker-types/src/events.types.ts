@@ -282,6 +282,7 @@ export interface PlayerDisconnectedData {
 export interface PlayerReconnectedData {
   playerId: string;
   playerName: string;
+  playerEmoji?: string;
   status?: PlayerStatus;
   connectionStatus?: PlayerConnectionStatus;
 }
