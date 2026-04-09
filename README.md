@@ -71,6 +71,7 @@ Poker/
    ```bash
    corepack enable
    pnpm install
+   cp .env.example .env
    ```
 
 ### Running the Application
@@ -78,17 +79,15 @@ Poker/
 1. **Start the backend server:**
 
    ```bash
-   cd poker-server
-   pnpm run start:dev
+   pnpm run dev:server
    ```
 
-   Server runs on http://localhost:3000
+   Server runs on http://localhost:3001
 
 2. **Start the frontend (in a new terminal):**
 
    ```bash
-   cd poker-client
-   pnpm run dev
+   pnpm run dev:client
    ```
 
    Frontend runs on http://localhost:5173
@@ -268,10 +267,10 @@ Current test coverage:
 
 ## 📝 Environment Variables
 
-### Backend (.env)
+### Repo root (.env)
 
 ```
-PORT=3000
+PORT=3001
 CORS_ORIGIN=http://localhost:5173
 CLIENT_URL=http://localhost:5173
 AUTH_DOMAIN=localhost:5173
@@ -280,22 +279,30 @@ WEBAUTHN_ORIGIN=http://localhost:5173
 NODE_ENV=development
 DATA_DIR=./data
 FRONTEND_DIST_PATH=../poker-client/dist
+REGISTRY_PORT=3022
+REGISTRY_HOST=0.0.0.0
 ```
+
+For server path settings, relative values such as `DATA_DIR` and
+`FRONTEND_DIST_PATH` are resolved from `poker-server/`,
+not from the shell's current working directory.
 
 Auth passkey domain configuration:
 - `AUTH_DOMAIN` accepts either host/port (`poker.example.com`, `localhost:5173`) or full origin (`https://poker.example.com`).
 - If `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` are set, they take precedence over `AUTH_DOMAIN`.
 - Localhost-like hosts default to `http`, non-local hosts default to `https` when `AUTH_DOMAIN` has no scheme.
 
+`poker-server`, `poker-client`, and `poker-registry` all read from the repo-root `.env`.
+
 ### Frontend
 
 Frontend socket target can be set with:
 
 ```
-VITE_SERVER_URL=http://localhost:3000
+VITE_SERVER_URL=http://localhost:3001
 VITE_SERVER_PROTOCOL=http
 VITE_SERVER_HOST=localhost
-VITE_SERVER_PORT=3000
+VITE_SERVER_PORT=3001
 ```
 
 If these are not set, the client falls back to runtime config and then a host/port fallback.
@@ -315,17 +322,15 @@ docker build --build-arg VITE_SERVER_URL=/ -t poker-app:latest .
 **Backend:**
 
 ```bash
-cd poker-server
-pnpm run build
-pnpm run start:prod
+pnpm --filter poker-server build
+pnpm --filter poker-server start:prod
 ```
 
 **Frontend:**
 
 ```bash
-cd poker-client
-pnpm run build
-pnpm run preview
+pnpm --filter poker-client build
+pnpm --filter poker-client preview
 ```
 
 ### Code Quality

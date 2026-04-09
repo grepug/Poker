@@ -10,6 +10,17 @@ import {
   resolveRequestOrigin,
 } from './runtime-config';
 
+const serverRootCandidates = [
+  path.resolve(__dirname, '..'),
+  path.resolve(__dirname, '../..'),
+  process.cwd(),
+];
+
+const serverRoot =
+  serverRootCandidates.find(
+    (candidate) => path.basename(candidate) === 'poker-server',
+  ) ?? process.cwd();
+
 const resolveCorsOrigin = () => {
   const raw = process.env.CORS_ORIGIN?.trim();
   if (!raw || raw === '*') {
@@ -38,13 +49,15 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const dataDir = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
+  const dataDir = path.resolve(serverRoot, process.env.DATA_DIR || './data');
   const chatAudioPath = path.join(dataDir, 'chat-audio');
   app.use('/uploads/chat-audio', express.static(chatAudioPath, { index: false }));
 
   const frontendPathCandidates = [
-    process.env.FRONTEND_DIST_PATH?.trim(),
-    path.resolve(process.cwd(), '../poker-client/dist'),
+    process.env.FRONTEND_DIST_PATH?.trim()
+      ? path.resolve(serverRoot, process.env.FRONTEND_DIST_PATH.trim())
+      : undefined,
+    path.resolve(serverRoot, '../poker-client/dist'),
     path.resolve(__dirname, '../../poker-client/dist'),
     path.resolve(__dirname, '../../../poker-client/dist'),
   ].filter((candidate): candidate is string => Boolean(candidate));

@@ -1,13 +1,23 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
+import process from "node:process";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const workspaceRoot = path.resolve(rootDir, "..");
 const registryRoot = path.join(rootDir, "registry");
+const repoRootEnvPath = path.join(workspaceRoot, ".env");
+const shouldLoadRepoRootEnv =
+  process.env.CI !== "true" && existsSync(repoRootEnvPath);
+
+if (shouldLoadRepoRootEnv) {
+  process.loadEnvFile?.(repoRootEnvPath);
+}
 
 const app = Fastify({
   logger: true,
@@ -56,8 +66,8 @@ app.get("/registry/poker/:item.json", async (request, reply) => {
   }
 });
 
-const port = Number(process.env.PORT ?? 3022);
-const host = process.env.HOST ?? "0.0.0.0";
+const port = Number(process.env.REGISTRY_PORT ?? process.env.PORT ?? 3022);
+const host = process.env.REGISTRY_HOST ?? process.env.HOST ?? "0.0.0.0";
 
 const start = async () => {
   try {

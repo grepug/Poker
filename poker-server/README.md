@@ -63,7 +63,7 @@ $ pnpm run test:cov
 
 Robot players use the Vercel AI SDK with an OpenAI-compatible provider.
 
-Set these values in `.env` before testing live robot decisions:
+Set these values in the repo-root `.env` before testing live robot decisions:
 
 ```bash
 AI_ROBOT_API_KEY=...

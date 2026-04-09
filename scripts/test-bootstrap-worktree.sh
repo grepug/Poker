@@ -78,6 +78,10 @@ EOF
 lockfileVersion: '9.0'
 EOF
 
+  cat >"$current_root/.env.example" <<'EOF'
+TEST_SECRET=from-example
+EOF
+
   cat >"$current_root/poker-server/package.json" <<'EOF'
 {
   "name": "poker-server",
@@ -99,7 +103,7 @@ EOF
 }
 EOF
 
-  cat >"$primary_root/poker-server/.env" <<'EOF'
+  cat >"$primary_root/.env" <<'EOF'
 TEST_SECRET=from-primary-root
 EOF
 }
@@ -152,8 +156,8 @@ test_installs_workspace_when_missing() {
     exit 1
   fi
 
-  if [[ "$(cat "$current_root/poker-server/.env")" != "TEST_SECRET=from-primary-root" ]]; then
-    echo "Expected bootstrap to seed poker-server/.env from the primary root" >&2
+  if [[ "$(cat "$current_root/.env")" != "TEST_SECRET=from-primary-root" ]]; then
+    echo "Expected bootstrap to seed repo .env from the primary root" >&2
     exit 1
   fi
 }

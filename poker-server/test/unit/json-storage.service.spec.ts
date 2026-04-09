@@ -1041,6 +1041,21 @@ describe('JsonStorageService', () => {
       expect(rooms).toHaveLength(1);
       expect(rooms[0].id).toBe('ROOM1');
     });
+
+    it('should skip malformed legacy room snapshots during directory migration', async () => {
+      const room = createMockRoom('ROOM1');
+      await service.persistRoom(room);
+
+      await fs.writeFile(
+        path.join(testRoomsDir, 'BROKENLEGACY.json'),
+        `${JSON.stringify(createMockRoom('BROKENLEGACY'))}4\n}`,
+        'utf-8',
+      );
+
+      await expect(service.getAllRooms()).resolves.toEqual([
+        expect.objectContaining({ id: 'ROOM1' }),
+      ]);
+    });
   });
 
   describe('roomExists', () => {
