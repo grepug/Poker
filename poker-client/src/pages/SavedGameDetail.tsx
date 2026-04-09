@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type {
+  Card as PlayingCard,
   CompletedHandHistoryAction,
   CompletedHandHistoryExport,
   CompletedHandHistorySeat,
@@ -23,12 +24,21 @@ const formatDateTime = (value: number, locale: string) =>
 
 const formatCurrency = (value: number) => `${value >= 0 ? "+" : "-"}$${Math.abs(value)}`;
 
+const suitSymbols: Record<PlayingCard["suit"], string> = {
+  hearts: "♥",
+  diamonds: "♦",
+  clubs: "♣",
+  spades: "♠",
+};
+
 const describeSeatCards = (
   seat: CompletedHandHistorySeat,
   hiddenLabel: string,
 ) =>
   seat.holeCards && seat.holeCards.length > 0
-    ? seat.holeCards.map((card) => `${card.rank}${card.suit[0].toUpperCase()}`).join(" ")
+    ? seat.holeCards
+        .map((card) => `${card.rank}${suitSymbols[card.suit]}`)
+        .join(" ")
     : hiddenLabel;
 
 const describeAction = (
