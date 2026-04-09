@@ -443,7 +443,6 @@ async function setupTwoPlayerSession(
     : await createRoomViaSocket(alicePage, 'Alice');
 
   await bobPage.click('[data-testid="join-toggle-button"]');
-  await bobPage.fill('[data-testid="name-input"]', 'Bob');
   await bobPage.fill('[data-testid="room-id-input"]', roomCode);
   await bobPage.click('[data-testid="join-room-button"]');
 
@@ -493,7 +492,6 @@ async function setupThreePlayerSession(
     avatarEmoji: '🐼',
   });
 
-  await alicePage.fill('[data-testid="name-input"]', 'Alice');
   await alicePage.click('[data-testid="create-room-button"]');
   await alicePage.waitForSelector('[data-testid="room-title"]');
   const roomIdText = await alicePage.textContent('[data-testid="room-title"]');
@@ -503,7 +501,6 @@ async function setupThreePlayerSession(
   }
 
   await bobPage.click('[data-testid="join-toggle-button"]');
-  await bobPage.fill('[data-testid="name-input"]', 'Bob');
   await bobPage.fill('[data-testid="room-id-input"]', roomCode);
   await bobPage.click('[data-testid="join-room-button"]');
   await bobPage.waitForSelector(
@@ -514,7 +511,6 @@ async function setupThreePlayerSession(
   );
 
   await charliePage.click('[data-testid="join-toggle-button"]');
-  await charliePage.fill('[data-testid="name-input"]', 'Charlie');
   await charliePage.fill('[data-testid="room-id-input"]', roomCode);
   await charliePage.click('[data-testid="join-room-button"]');
   await Promise.all([
@@ -2174,7 +2170,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
@@ -2190,7 +2185,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
     // Bob joins room via UI
     console.log('Bob joining room...');
     await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
 
@@ -2404,7 +2398,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room to be created and get room code
@@ -2417,7 +2410,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -2615,7 +2607,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     await alicePage.waitForSelector('[data-testid="room-title"]');
@@ -2627,7 +2618,6 @@ test.describe('Poker E2E - Test Suite 1: Basic Betting Actions', () => {
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -2752,7 +2742,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
     const roomIdText = await alicePage.textContent(
@@ -2763,7 +2752,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -2953,7 +2941,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     await alicePage.waitForSelector('[data-testid="room-title"]');
@@ -2965,7 +2952,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Bob joins room via UI
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -3078,7 +3064,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
     const roomIdText = await alicePage.textContent(
@@ -3089,7 +3074,6 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -3521,7 +3505,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Alice creates room
     console.log('\nAlice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
     const roomIdText = await alicePage.textContent(
@@ -3531,7 +3514,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -3636,7 +3618,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
     const roomIdText = await alicePage.textContent(
@@ -3647,7 +3628,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -3809,7 +3789,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
     const roomIdText = await alicePage.textContent(
@@ -3820,7 +3799,6 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
     // Bob joins
     console.log('Bob joining room...');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.click('[data-testid="join-toggle-button"]');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
@@ -4257,7 +4235,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
@@ -4273,7 +4250,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     // Bob joins room via UI
     console.log('Bob joining room...');
     await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
 
@@ -4451,7 +4427,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Alice creates room via UI
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
 
     // Wait for room page to load
@@ -4467,7 +4442,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     // Bob joins room via UI
     console.log('Bob joining room...');
     await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
 
@@ -4651,7 +4625,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
 
     // Alice creates room
     console.log('Alice creating room...');
-    await alicePage.fill('[data-testid="name-input"]', 'Alice');
     await alicePage.click('[data-testid="create-room-button"]');
     await alicePage.waitForSelector('[data-testid="room-title"]');
 
@@ -4664,7 +4637,6 @@ test.describe('Poker E2E - Test Suite 2: Raise/Re-raise Actions', () => {
     // Bob joins room
     console.log('Bob joining room...');
     await bobPage.click('[data-testid="join-toggle-button"]');
-    await bobPage.fill('[data-testid="name-input"]', 'Bob');
     await bobPage.fill('[data-testid="room-id-input"]', roomCode!);
     await bobPage.click('[data-testid="join-room-button"]');
     await bobPage.waitForSelector('[data-testid="room-title"]');
@@ -5639,7 +5611,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await confirmLeaveRoom(bobPage);
 
       await expect(bobPage).toHaveURL(/\/$/);
-      await expect(bobPage.locator('[data-testid="name-input"]')).toBeVisible();
       await expect(
         bobPage.locator('[data-testid="create-room-button"]'),
       ).toBeVisible();
@@ -5662,7 +5633,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await page.fill('[data-testid="room-id-input"]', 'ZZZZZZ');
       await page.click('[data-testid="join-room-button"]');
 
-      await page.waitForSelector('[data-testid="name-input"]');
+      await page.waitForSelector('[data-testid="create-room-button"]');
       const pathnameAfterJoinAttempt = await page.evaluate(
         () => window.location.pathname,
       );
@@ -5672,7 +5643,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await page.click('[data-testid="back-button"]');
 
       await expect(page).toHaveURL(/\/$/);
-      await expect(page.locator('[data-testid="name-input"]')).toBeVisible();
       await expect(
         page.locator('[data-testid="create-room-button"]'),
       ).toBeVisible();
@@ -5749,7 +5719,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     try {
       await authenticateStandardTwoPlayerPages(alicePage, bobPage);
 
-      await alicePage.fill('[data-testid="name-input"]', 'Alice');
       const shortDeckToggle = alicePage.locator(
         '[data-testid="short-deck-toggle"] input[type="checkbox"]',
       );
@@ -5774,7 +5743,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(hostRoomState.useShortDeckRules).toBe(true);
 
       await bobPage.click('[data-testid="join-toggle-button"]');
-      await bobPage.fill('[data-testid="name-input"]', 'Bob');
       await bobPage.fill(
         '[data-testid="room-id-input"]',
         hostRoomState.roomCode as string,
@@ -5825,7 +5793,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.4b: Home Prefills Last Used Player Name', async ({ browser }) => {
+  test('8.4b: Home Reuses Saved Profile After Leaving Room', async ({
+    browser,
+  }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -5838,9 +5808,18 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await confirmLeaveRoom(page);
       await expect(page).toHaveURL(/\/$/);
-      await expect(page.locator('[data-testid="name-input"]')).toHaveValue(
-        'RememberMe',
-      );
+      await expect(
+        page.locator('[data-testid="create-room-button"]'),
+      ).toBeVisible();
+
+      await page.click('[data-testid="create-room-button"]');
+      await page.waitForSelector('[data-testid="room-title"]');
+
+      const recreatedPlayerName = await page.evaluate(() => {
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        return player?.name ?? null;
+      });
+      expect(recreatedPlayerName).toBe('RememberMe');
     } finally {
       await context.close();
     }
@@ -6012,8 +5991,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await alicePage.reload({ waitUntil: 'domcontentloaded' });
       await bobPage.reload({ waitUntil: 'domcontentloaded' });
-      await alicePage.waitForSelector('[data-testid="name-input"]');
-      await bobPage.waitForSelector('[data-testid="name-input"]');
+      await alicePage.waitForSelector('[data-testid="create-room-button"]');
+      await bobPage.waitForSelector('[data-testid="create-room-button"]');
 
       await alicePage.click('[data-testid="create-room-button"]');
       await alicePage.waitForSelector('[data-testid="room-title"]');
@@ -6106,7 +6085,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await alicePage.click('[data-testid="close-rankings-button"]');
 
       await bobPage.click('[data-testid="join-toggle-button"]');
-      await bobPage.fill('[data-testid="name-input"]', 'Bob');
       await bobPage.fill('[data-testid="room-id-input"]', roomCode);
       await bobPage.click('[data-testid="join-room-button"]');
 
@@ -6192,7 +6170,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       );
       await expect(alicePage).toHaveURL(/\/$/);
       await expect(
-        alicePage.locator('[data-testid="name-input"]'),
+        alicePage.locator('[data-testid="create-room-button"]'),
       ).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
@@ -6898,7 +6876,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
         if (!recoveredAfterReauth) {
           await bobPage.click('[data-testid="join-toggle-button"]');
-          await bobPage.fill('[data-testid="name-input"]', 'Bob');
           await bobPage.fill('[data-testid="room-id-input"]', roomCode);
           await bobPage.click('[data-testid="join-room-button"]');
         }
