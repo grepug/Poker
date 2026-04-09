@@ -84,6 +84,15 @@ export type SavedGameAnalysisStatus =
   | "failed"
   | "unavailable";
 
+export type SavedGameLocalizedAnalysis = {
+  status: SavedGameAnalysisStatus;
+  updatedAt: number;
+  headline?: string | null;
+  summary?: string | null;
+  keyAdjustments?: string[];
+  failureReason?: string | null;
+};
+
 export type SavedGameHandAnalysis = {
   status: SavedGameAnalysisStatus;
   updatedAt: number;
@@ -92,6 +101,7 @@ export type SavedGameHandAnalysis = {
   headline?: string | null;
   keyAdjustments?: string[];
   failureReason?: string | null;
+  localizedByLocale?: Record<string, SavedGameLocalizedAnalysis>;
 };
 
 export type SavedGameParticipant = {

@@ -5,20 +5,28 @@ describe('SavedGameReviewService', () => {
   let archiveStorageService: {
     getSavedGameReviewTargets: jest.Mock;
     updateSavedGameHandAnalysis: jest.Mock;
+    getSavedGameHandAnalysis: jest.Mock;
+    mergeSavedGameHandLocalization: jest.Mock;
   };
   let robotAgentService: {
     isConfigured: jest.Mock;
     getConfigurationError: jest.Mock;
+    createConfiguredModel: jest.Mock;
+    getApiMode: jest.Mock;
   };
 
   beforeEach(() => {
     archiveStorageService = {
       getSavedGameReviewTargets: jest.fn(),
       updateSavedGameHandAnalysis: jest.fn().mockResolvedValue(undefined),
+      getSavedGameHandAnalysis: jest.fn(),
+      mergeSavedGameHandLocalization: jest.fn().mockResolvedValue(true),
     };
     robotAgentService = {
       isConfigured: jest.fn(),
       getConfigurationError: jest.fn(),
+      createConfiguredModel: jest.fn(),
+      getApiMode: jest.fn().mockReturnValue('responses'),
     };
 
     service = new SavedGameReviewService(
@@ -84,6 +92,13 @@ describe('SavedGameReviewService', () => {
         summary: 'Fold more often against this line.',
         keyAdjustments: ['Fold river versus large polar sizing'],
       });
+    jest
+      .spyOn(service as any, 'localizeReviewText')
+      .mockResolvedValue({
+        headline: '河牌抓诈唬太薄了',
+        summary: '面对这条线时要更常弃牌。',
+        keyAdjustments: ['面对两极化大尺码时更多河牌弃牌'],
+      });
 
     await service.runArchiveReview('ROOM1');
 
@@ -97,6 +112,16 @@ describe('SavedGameReviewService', () => {
         status: 'ready',
         headline: 'River bluff catch was too thin',
         summary: 'Fold more often against this line.',
+        localizedByLocale: {
+          en: expect.objectContaining({
+            status: 'ready',
+            headline: 'River bluff catch was too thin',
+          }),
+          zh_hans: expect.objectContaining({
+            status: 'ready',
+            headline: '河牌抓诈唬太薄了',
+          }),
+        },
       }),
     );
   });
@@ -126,5 +151,176 @@ describe('SavedGameReviewService', () => {
     await (service as any).reviewQueue;
 
     expect(started).toEqual(['ROOM1', 'ROOM2']);
+  });
+
+  it('localizes a missing future locale from canonical review and caches it', async () => {
+    archiveStorageService.getSavedGameHandAnalysis.mockResolvedValue({
+      status: 'ready',
+      headline: 'Play tighter preflop',
+      summary: 'Fold more offsuit broadways.',
+      keyAdjustments: ['Fold KJo UTG'],
+      localizedByLocale: {
+        en: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+        },
+      },
+    });
+
+    jest
+      .spyOn(service as any, 'localizeReviewText')
+      .mockResolvedValue({
+        headline: 'Jouez plus serré préflop',
+        summary: 'Couchez plus de broadways offsuit.',
+        keyAdjustments: ['Couchez KJo UTG'],
+      });
+
+    await service.scheduleHandLocalization({
+      archiveId: 'ROOM1',
+      requesterUserId: 'user-alice',
+      handNumber: 3,
+      locale: 'fr',
+    });
+    await (service as any).reviewQueue;
+
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      1,
+      'ROOM1',
+      'user-alice',
+      3,
+      'fr',
+      expect.objectContaining({
+        status: 'pending',
+      }),
+    );
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'ROOM1',
+      'user-alice',
+      3,
+      'fr',
+      expect.objectContaining({
+        status: 'ready',
+        headline: 'Jouez plus serré préflop',
+      }),
+    );
+  });
+
+  it('falls back malformed locale requests to english cache deterministically', async () => {
+    archiveStorageService.getSavedGameHandAnalysis.mockResolvedValue({
+      status: 'ready',
+      headline: 'Value bet bigger on the turn',
+      summary: 'You left value on the table.',
+      keyAdjustments: ['Size up turn value bets'],
+      localizedByLocale: {},
+    });
+
+    const localizeReviewTextSpy = jest.spyOn(service as any, 'localizeReviewText');
+
+    await service.scheduleHandLocalization({
+      archiveId: 'ROOM1',
+      requesterUserId: 'user-alice',
+      handNumber: 4,
+      locale: '!!!',
+    });
+    await (service as any).reviewQueue;
+
+    expect(localizeReviewTextSpy).not.toHaveBeenCalled();
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenCalledWith(
+      'ROOM1',
+      'user-alice',
+      4,
+      'en',
+      expect.objectContaining({
+        status: 'ready',
+        headline: 'Value bet bigger on the turn',
+      }),
+    );
+  });
+
+  it('reports a write when localization fails immediately without queueing', async () => {
+    archiveStorageService.getSavedGameHandAnalysis.mockResolvedValue({
+      status: 'ready',
+      headline: 'Play tighter preflop',
+      summary: 'Fold more offsuit broadways.',
+      keyAdjustments: ['Fold KJo UTG'],
+      localizedByLocale: {
+        en: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+        },
+      },
+    });
+    robotAgentService.getConfigurationError.mockReturnValue('Robot AI is not configured.');
+
+    await expect(
+      service.scheduleHandLocalization({
+        archiveId: 'ROOM1',
+        requesterUserId: 'user-alice',
+        handNumber: 6,
+        locale: 'zh_hans',
+      }),
+    ).resolves.toBe(true);
+
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenCalledWith(
+      'ROOM1',
+      'user-alice',
+      6,
+      'zh_hans',
+      expect.objectContaining({
+        status: 'failed',
+        failureReason: 'Robot AI is not configured.',
+      }),
+    );
+  });
+
+  it('reuses an existing locale cache without rerunning localization', async () => {
+    archiveStorageService.getSavedGameHandAnalysis.mockResolvedValue({
+      status: 'ready',
+      headline: 'Play tighter preflop',
+      summary: 'Fold more offsuit broadways.',
+      keyAdjustments: ['Fold KJo UTG'],
+      localizedByLocale: {
+        en: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+        },
+        zh_hans: {
+          status: 'ready',
+          headline: '翻前更紧一些',
+          summary: '更多弃掉非同花大张。',
+          keyAdjustments: ['UTG 弃掉 KJo'],
+        },
+      },
+    });
+
+    const localizeReviewTextSpy = jest.spyOn(service as any, 'localizeReviewText');
+
+    await service.scheduleHandLocalization({
+      archiveId: 'ROOM1',
+      requesterUserId: 'user-alice',
+      handNumber: 5,
+      locale: 'zh_hans',
+    });
+    await (service as any).reviewQueue;
+
+    expect(localizeReviewTextSpy).not.toHaveBeenCalled();
+    expect(
+      archiveStorageService.updateSavedGameHandAnalysis,
+    ).not.toHaveBeenCalled();
   });
 });

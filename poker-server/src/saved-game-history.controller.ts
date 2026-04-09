@@ -5,6 +5,7 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import type { Request } from 'express';
 import { AuthService } from './auth/auth.service';
 import { readAuthSessionCookie } from './auth/session-cookie';
 import type { ISavedGameArchiveStorageService } from './common/interfaces/saved-game-archive-storage.interface';
+import { SavedGameReviewService } from './game/saved-game-review.service';
 
 @Controller('api/history/games')
 export class SavedGameHistoryController {
@@ -19,6 +21,7 @@ export class SavedGameHistoryController {
     private readonly authService: AuthService,
     @Inject('ISavedGameArchiveStorageService')
     private readonly savedGameArchiveStorageService: ISavedGameArchiveStorageService,
+    private readonly savedGameReviewService: SavedGameReviewService,
   ) {}
 
   @Get()
@@ -36,6 +39,7 @@ export class SavedGameHistoryController {
   async getSavedGameDetail(
     @Param('archiveId') archiveId: string,
     @Req() request: Request,
+    @Query('locale') locale?: string,
     @Headers('authorization') authorization?: string,
   ) {
     const current = await this.getCurrentSession(request, authorization);
@@ -47,7 +51,37 @@ export class SavedGameHistoryController {
     if (!detail) {
       throw new NotFoundException('Saved game unavailable');
     }
-    return detail;
+    const readyHands = detail.hands.filter(
+      (hand) => hand.analysis.status === 'ready',
+    );
+    if (readyHands.length === 0) {
+      return detail;
+    }
+
+    const localizationWrites = await Promise.all(
+      readyHands.map((hand) =>
+        this.savedGameReviewService.scheduleHandLocalization({
+          archiveId,
+          requesterUserId: current.user.id,
+          handNumber: hand.handNumber,
+          locale,
+        }),
+      ),
+    );
+    const didUpdateLocalizationState = localizationWrites.some(Boolean);
+    if (!didUpdateLocalizationState) {
+      return detail;
+    }
+
+    const refreshedDetail =
+      await this.savedGameArchiveStorageService.getSavedGameDetailForUser(
+        archiveId,
+        current.user.id,
+      );
+    if (!refreshedDetail) {
+      throw new NotFoundException('Saved game unavailable');
+    }
+    return refreshedDetail;
   }
 
   private async getCurrentSession(

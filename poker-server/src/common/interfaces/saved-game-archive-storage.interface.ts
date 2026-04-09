@@ -15,6 +15,18 @@ export interface ISavedGameArchiveStorageService {
   getSavedGameReviewTargets(
     archiveId: string,
   ): Promise<SavedGameReviewTargets | null>;
+  getSavedGameHandAnalysis(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandAnalysis | null>;
+  mergeSavedGameHandLocalization(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+    locale: string,
+    entry: NonNullable<SavedGameHandAnalysis['localizedByLocale']>[string],
+  ): Promise<boolean>;
   updateSavedGameHandAnalysis(
     archiveId: string,
     userId: string,

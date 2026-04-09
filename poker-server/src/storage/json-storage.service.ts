@@ -642,7 +642,10 @@ export class JsonStorageService
       handCount: archive.handCount,
       blinds: archive.blinds,
       participants: archive.participants,
-      hands: playerView.hands,
+      hands: playerView.hands.map((hand) => ({
+        ...hand,
+        analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
+      })),
     };
   }
 
@@ -690,10 +693,10 @@ export class JsonStorageService
         hand.handNumber === handNumber
           ? {
               ...hand,
-              analysis: {
+              analysis: this.normalizeSavedGameHandAnalysis({
                 ...analysis,
                 updatedAt: Number(analysis.updatedAt || Date.now()),
-              },
+              }),
             }
           : hand,
       );
@@ -703,6 +706,83 @@ export class JsonStorageService
       };
       await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
     });
+  }
+
+  async getSavedGameHandAnalysis(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandAnalysis | null> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return null;
+    }
+
+    const playerView = archive.playerViews[userId];
+    const hand = playerView?.hands.find((candidate) => candidate.handNumber === handNumber);
+    return hand ? this.normalizeSavedGameHandAnalysis(hand.analysis) : null;
+  }
+
+  async mergeSavedGameHandLocalization(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+    locale: string,
+    entry: NonNullable<SavedGameHandAnalysis['localizedByLocale']>[string],
+  ): Promise<boolean> {
+    let didMerge = false;
+
+    await this.runSavedGameArchiveWriteSequentially(archiveId, async () => {
+      await this.ensureDirectories();
+      const archive = await this.readSavedGameArchive(archiveId);
+      if (!archive) {
+        return;
+      }
+
+      const playerView = archive.playerViews[userId];
+      if (!playerView) {
+        return;
+      }
+
+      const nextHands = playerView.hands.map((hand) => {
+        if (hand.handNumber !== handNumber) {
+          return hand;
+        }
+
+        const normalizedAnalysis = this.normalizeSavedGameHandAnalysis(hand.analysis);
+        didMerge = true;
+        return {
+          ...hand,
+          analysis: {
+            ...normalizedAnalysis,
+            localizedByLocale: {
+              ...(normalizedAnalysis.localizedByLocale ?? {}),
+              [locale]: {
+                ...entry,
+                updatedAt: Number(entry.updatedAt || Date.now()),
+                headline: entry.headline ?? null,
+                summary: entry.summary ?? null,
+                keyAdjustments: [...(entry.keyAdjustments ?? [])],
+                failureReason: entry.failureReason ?? null,
+              },
+            },
+          },
+        };
+      });
+
+      if (!didMerge) {
+        return;
+      }
+
+      archive.playerViews[userId] = {
+        ...playerView,
+        hands: nextHands,
+      };
+      await writeJsonFileAtomic(this.getSavedGameArchivePath(archiveId), archive);
+    });
+
+    return didMerge;
   }
 
   private async ensureDirectories(): Promise<void> {
@@ -1002,6 +1082,33 @@ export class JsonStorageService
       headline: null,
       keyAdjustments: [],
       failureReason: null,
+      localizedByLocale: {},
+    };
+  }
+
+  private normalizeSavedGameHandAnalysis(
+    analysis: SavedGameHandAnalysis,
+  ): SavedGameHandAnalysis {
+    return {
+      ...analysis,
+      updatedAt: Number(analysis.updatedAt || Date.now()),
+      headline: analysis.headline ?? null,
+      summary: analysis.summary ?? null,
+      keyAdjustments: [...(analysis.keyAdjustments ?? [])],
+      failureReason: analysis.failureReason ?? null,
+      localizedByLocale: Object.fromEntries(
+        Object.entries(analysis.localizedByLocale ?? {}).map(([locale, localized]) => [
+          locale,
+          {
+            ...localized,
+            updatedAt: Number(localized.updatedAt || analysis.updatedAt || Date.now()),
+            headline: localized.headline ?? null,
+            summary: localized.summary ?? null,
+            keyAdjustments: [...(localized.keyAdjustments ?? [])],
+            failureReason: localized.failureReason ?? null,
+          },
+        ]),
+      ),
     };
   }
 
