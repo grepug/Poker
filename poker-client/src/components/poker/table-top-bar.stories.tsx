@@ -20,6 +20,8 @@ const meta = {
     rulesLabel: "Rules",
     rankingsLabel: "Rankings",
     chatLabel: "Chat (2)",
+    liveAudioLabel: "Live Audio",
+    liveAudioJoined: true,
     finalResultsLabel: "Final Results",
     startLabel: "Start",
     hiddenHudCopy: {
@@ -46,6 +48,7 @@ const meta = {
     onOpenRules: () => {},
     onOpenRankings: () => {},
     onToggleChat: () => {},
+    onOpenLiveAudio: () => {},
     onOpenFinalResults: () => {},
     onStartGame: () => {},
     onOpenChatFromPreview: () => {},

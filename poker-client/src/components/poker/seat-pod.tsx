@@ -1,4 +1,5 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
+import { AudioLines, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -19,12 +20,18 @@ export type SeatBadge = {
   tone: "dealer" | "small-blind" | "position";
 };
 
+export type SeatLiveAudioBadge = {
+  kind: "speaking" | "on-mic";
+  ariaLabel: string;
+};
+
 type SeatPodProps = {
   testId: string;
   playerEmoji: string;
   playerName: string;
   isYou: boolean;
   badge?: SeatBadge | null;
+  liveAudioBadge?: SeatLiveAudioBadge | null;
   externalStatusLabel: string | null;
   externalStatusToneClass: string;
   internalStatusLabel: string | null;
@@ -223,6 +230,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
   playerName,
   isYou,
   badge,
+  liveAudioBadge,
   externalStatusLabel,
   externalStatusToneClass,
   internalStatusLabel,
@@ -326,6 +334,7 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         "seat-pod",
         isYou && "seat-pod--you",
         Boolean(badge) && "seat-pod--has-role-icon",
+        Boolean(liveAudioBadge) && "seat-pod--has-live-audio-badge",
         Boolean(floatingStatusLabel) && "seat-pod--has-status-badge",
         seatState === "turn" && "seat-pod--turn",
         seatState === "all-in" && "seat-pod--allin",
@@ -368,6 +377,24 @@ export const SeatPod: React.FC<SeatPodProps> = ({
           data-seat-status={floatingStatusLabel}
         >
           {floatingStatusLabel}
+        </div>
+      )}
+
+      {liveAudioBadge && (
+        <div
+          className={cn(
+            "seat-pod__live-audio-badge",
+            `seat-pod__live-audio-badge--${liveAudioBadge.kind}`,
+          )}
+          data-testid={`${testId}-live-audio-badge`}
+          aria-label={liveAudioBadge.ariaLabel}
+          title={liveAudioBadge.ariaLabel}
+        >
+          {liveAudioBadge.kind === "speaking" ? (
+            <AudioLines size={10} strokeWidth={2.4} aria-hidden="true" />
+          ) : (
+            <Mic size={10} strokeWidth={2.4} aria-hidden="true" />
+          )}
         </div>
       )}
 

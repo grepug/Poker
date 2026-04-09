@@ -11,6 +11,7 @@ import { SocketProvider } from "./contexts/SocketContext";
 import { GameProvider, useGame } from "./contexts/GameContext";
 import { LocalizationProvider } from "./contexts/LocalizationContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { LiveAudioProvider } from "./contexts/LiveAudioContext";
 import { Home } from "./pages/Home";
 import { AuthPage } from "./pages/Auth";
 import { SettingsPage } from "./pages/Settings";
@@ -122,54 +123,56 @@ const AppRoutes: React.FC = () => {
   return (
     <SocketProvider isAuthenticated={isAuthenticated}>
       <GameProvider>
-        <UrlStateSync />
-        <IosInstallPrompt />
-        <Routes>
-          <Route
-            path="/auth"
-            element={
-              isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
-            }
-          />
-          <Route
-            path="/"
-            element={
-              isAuthenticated ? <Home /> : <Navigate to="/auth" replace />
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              isAuthenticated ? (
-                <SettingsPage />
-              ) : (
-                <Navigate to="/auth" replace />
-              )
-            }
-          />
-          <Route
-            path="/history"
-            element={
-              isAuthenticated ? (
-                <SavedGamesPage />
-              ) : (
-                <Navigate to="/auth" replace />
-              )
-            }
-          />
-          <Route
-            path="/history/:archiveId"
-            element={
-              isAuthenticated ? (
-                <SavedGameDetailPage />
-              ) : (
-                <Navigate to="/auth" replace />
-              )
-            }
-          />
-          <Route path="/room" element={<RoomRoute />} />
-          <Route path="/room/:roomId" element={<RoomRoute />} />
-        </Routes>
+        <LiveAudioProvider>
+          <UrlStateSync />
+          <IosInstallPrompt />
+          <Routes>
+            <Route
+              path="/auth"
+              element={
+                isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
+              }
+            />
+            <Route
+              path="/"
+              element={
+                isAuthenticated ? <Home /> : <Navigate to="/auth" replace />
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                isAuthenticated ? (
+                  <SettingsPage />
+                ) : (
+                  <Navigate to="/auth" replace />
+                )
+              }
+            />
+            <Route
+              path="/history"
+              element={
+                isAuthenticated ? (
+                  <SavedGamesPage />
+                ) : (
+                  <Navigate to="/auth" replace />
+                )
+              }
+            />
+            <Route
+              path="/history/:archiveId"
+              element={
+                isAuthenticated ? (
+                  <SavedGameDetailPage />
+                ) : (
+                  <Navigate to="/auth" replace />
+                )
+              }
+            />
+            <Route path="/room" element={<RoomRoute />} />
+            <Route path="/room/:roomId" element={<RoomRoute />} />
+          </Routes>
+        </LiveAudioProvider>
       </GameProvider>
     </SocketProvider>
   );

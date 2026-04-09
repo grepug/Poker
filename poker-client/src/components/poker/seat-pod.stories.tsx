@@ -73,3 +73,16 @@ export const FoldedSeat: Story = {
     densityClass: "seat-pod--compact",
   },
 };
+
+export const SpeakingSeat: Story = {
+  args: {
+    ...TurnSeat.args,
+    isYou: false,
+    playerEmoji: "🐻",
+    playerName: "Bob",
+    badge: { tone: "position", text: "BB" },
+    liveAudioBadge: { kind: "speaking", ariaLabel: "Speaking" },
+    seatState: "default",
+    actionLabel: { text: "Call $20", tone: "call" },
+  },
+};

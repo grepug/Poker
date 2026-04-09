@@ -1068,6 +1068,72 @@ body {
   color: #dcfce7;
 }
 
+.seat-pod__live-audio-badge {
+  position: absolute;
+  right: 0.08rem;
+  bottom: 0.1rem;
+  transform: translate(24%, 28%);
+  width: 1.08rem;
+  height: 1.08rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(125, 211, 252, 0.72);
+  background: rgba(8, 47, 73, 0.94);
+  color: #e0f2fe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+  box-shadow:
+    0 6px 14px rgba(2, 6, 23, 0.36),
+    inset 0 0 0 1px rgba(186, 230, 253, 0.12);
+  pointer-events: none;
+}
+
+.seat-pod--dense .seat-pod__live-audio-badge {
+  right: 0.02rem;
+  bottom: 0.02rem;
+  transform: translate(16%, 18%);
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.seat-pod__live-audio-badge--on-mic {
+  border-color: rgba(34, 211, 238, 0.76);
+  background: rgba(8, 47, 73, 0.96);
+  color: #67e8f9;
+}
+
+.seat-pod__live-audio-badge--speaking {
+  border-color: rgba(110, 231, 183, 0.84);
+  background: rgba(6, 78, 59, 0.96);
+  color: #a7f3d0;
+  box-shadow:
+    0 6px 14px rgba(2, 6, 23, 0.36),
+    0 0 18px rgba(16, 185, 129, 0.34),
+    inset 0 0 0 1px rgba(209, 250, 229, 0.14);
+}
+
+.seat-pod__live-audio-badge--speaking::after {
+  content: "";
+  position: absolute;
+  inset: -0.12rem;
+  border-radius: inherit;
+  border: 1px solid rgba(110, 231, 183, 0.45);
+  animation: seat-audio-speaking-pulse 1.15s ease-out infinite;
+}
+
+@keyframes seat-audio-speaking-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.92);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+
 @container seat-slot (max-width: 76px) {
   .seat-pod {
     padding: 0.2rem 0.24rem 0.22rem;
@@ -1090,6 +1156,17 @@ body {
 
   .seat-pod__row--action {
     min-height: calc(var(--seat-bet-size) * 1.02);
+  }
+
+  .seat-pod__live-audio-badge {
+    width: 0.96rem;
+    height: 0.96rem;
+  }
+
+  .seat-pod--dense .seat-pod__live-audio-badge {
+    width: 0.82rem;
+    height: 0.82rem;
+    transform: translate(12%, 14%);
   }
 }
 
@@ -1128,6 +1205,19 @@ body {
     top: 0.1rem;
     right: 0.08rem;
     transform: translate(28%, -44%);
+  }
+
+  .seat-pod__live-audio-badge {
+    width: 0.84rem;
+    height: 0.84rem;
+  }
+
+  .seat-pod--dense .seat-pod__live-audio-badge {
+    right: 0;
+    bottom: 0;
+    width: 0.72rem;
+    height: 0.72rem;
+    transform: translate(8%, 10%);
   }
 }
 

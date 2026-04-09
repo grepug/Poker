@@ -5,6 +5,10 @@ import * as express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { existsSync } from 'fs';
 import * as path from 'path';
+import {
+  createRuntimeConfigScript,
+  resolveRequestOrigin,
+} from './runtime-config';
 
 const resolveCorsOrigin = () => {
   const raw = process.env.CORS_ORIGIN?.trim();
@@ -51,9 +55,15 @@ async function bootstrap() {
 
   if (frontendDistPath) {
     const frontendIndexPath = path.join(frontendDistPath, 'index.html');
-    app.use(express.static(frontendDistPath, { index: false }));
-
     const expressApp = app.getHttpAdapter().getInstance();
+
+    expressApp.get('/runtime-config.js', (req: Request, res: Response) => {
+      res.type('application/javascript');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(createRuntimeConfigScript(resolveRequestOrigin(req)));
+    });
+
+    app.use(express.static(frontendDistPath, { index: false }));
     expressApp.get(
       '*',
       (req: Request, res: Response, next: NextFunction): void => {
