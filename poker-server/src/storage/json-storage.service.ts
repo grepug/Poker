@@ -910,7 +910,19 @@ export class JsonStorageService
       return;
     }
 
-    const legacyRoom = await readJsonFile<Room>(legacyPath);
+    let legacyRoom: Room | null;
+    try {
+      legacyRoom = await readJsonFile<Room>(legacyPath);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        this.logger.warn(
+          `Skipping malformed legacy room snapshot ${roomId}: ${error.message}`,
+        );
+        return;
+      }
+      throw error;
+    }
+
     if (!legacyRoom) {
       return;
     }
