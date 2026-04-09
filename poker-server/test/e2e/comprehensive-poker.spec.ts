@@ -6195,8 +6195,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         '[data-testid="room-player-count"]:has-text("Players: 1/")',
       );
 
+      await ensureProfileForCurrentSession(bobPage, {
+        displayName: 'Bobby',
+        avatarEmoji: '🐯',
+      });
       await bobPage.click('[data-testid="join-toggle-button"]');
-      await bobPage.fill('[data-testid="name-input"]', 'Bobby');
       await bobPage.fill('[data-testid="room-id-input"]', roomCode);
       await bobPage.click('[data-testid="join-room-button"]');
 
@@ -6230,7 +6233,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       });
 
       expect(aliceViewOfBob.name).toBe('Bobby');
-      expect(aliceViewOfBob.emoji).toBe('🐻');
+      expect(aliceViewOfBob.emoji).toBe('🐯');
     } finally {
       await teardownTwoPlayerSession(session);
     }
