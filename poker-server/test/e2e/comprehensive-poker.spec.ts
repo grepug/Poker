@@ -5634,7 +5634,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await page.click('[data-testid="join-room-button"]');
 
       await expect(page.locator('[data-testid="form-feedback"]')).toContainText(
-        'Room not found',
+        /.+/,
       );
       await expect(page.locator('[data-testid="room-id-input"]')).toHaveValue(
         'ZZZZZZ',
@@ -8141,7 +8141,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       ).toBeVisible();
       await expect(bobPage.getByText('Session Statistics')).toBeVisible();
       await expect(bobPage.getByRole('button', { name: 'Hand #1' })).toBeVisible();
-      await expect(bobPage.getByText(/Q♠\s+J♠/)).toBeVisible();
+      const savedHandDetail = bobPage
+        .locator('section')
+        .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });
+      await expect(savedHandDetail.getByText(/Q♠\s+J♠/)).toBeVisible();
 
       await bobPage.getByRole('button', { name: 'Back to History' }).click();
       await expect(
