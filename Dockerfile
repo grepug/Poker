@@ -24,7 +24,7 @@ COPY poker-registry ./poker-registry
 RUN pnpm --filter poker-types build
 RUN pnpm --filter poker-client build
 RUN pnpm --filter poker-server build
-RUN pnpm --filter poker-server deploy --prod /prod/poker-server
+RUN pnpm --filter poker-server deploy --prod --legacy /prod/poker-server
 
 FROM node:22.12-alpine AS runtime
 ENV NODE_ENV=production
