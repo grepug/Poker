@@ -1,4 +1,7 @@
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+process.loadEnvFile?.(path.resolve(process.cwd(), '../.env'));
 
 const defaultFrontendUrl = `http://${process.env.PW_FRONTEND_HOST ?? 'localhost'}:${process.env.E2E_FRONTEND_PORT ?? process.env.PW_FRONTEND_PORT ?? '5174'}`;
 const defaultBackendUrl = `http://${process.env.PW_BACKEND_HOST ?? 'localhost'}:${process.env.E2E_BACKEND_PORT ?? process.env.PW_BACKEND_PORT ?? '3001'}`;

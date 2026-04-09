@@ -1,5 +1,11 @@
 import type { StorybookConfig } from "@storybook/react-vite";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { mergeConfig } from "vite";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+process.loadEnvFile?.(path.resolve(__dirname, "../../.env"));
 
 const isFastMode = process.env.STORYBOOK_FAST_MODE === "1";
 

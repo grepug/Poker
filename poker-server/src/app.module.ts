@@ -10,12 +10,16 @@ import { AuthModule } from './auth/auth.module';
 import { HandHistoryController } from './hand-history.controller';
 import { SavedGameHistoryController } from './saved-game-history.controller';
 import { LiveAudioModule } from './live-audio/live-audio.module';
+import * as path from 'path';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(process.cwd(), '../.env'),
+      ],
     }),
     StorageModule,
     GameModule,

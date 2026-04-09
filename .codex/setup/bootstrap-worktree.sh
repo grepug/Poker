@@ -33,13 +33,13 @@ log "current_root=$current_root"
 log "primary_root=$primary_root"
 log "log_file=$log_file"
 
-seed_server_env() {
-  local source_env="$primary_root/poker-server/.env"
-  local example_env="$current_root/poker-server/.env.example"
-  local dest_env="$current_root/poker-server/.env"
+seed_repo_env() {
+  local source_env="$primary_root/.env"
+  local example_env="$current_root/.env.example"
+  local dest_env="$current_root/.env"
 
   if [[ -e "$dest_env" ]]; then
-    log "Skipping poker-server/.env bootstrap: $dest_env already exists."
+    log "Skipping repo .env bootstrap: $dest_env already exists."
     return
   fi
 
@@ -55,7 +55,7 @@ seed_server_env() {
     return
   fi
 
-  log "Skipping poker-server/.env bootstrap: no source file found."
+  log "Skipping repo .env bootstrap: no source file found."
 }
 
 run_pnpm() {
@@ -119,6 +119,6 @@ install_workspace_deps() {
   )
 }
 
-seed_server_env
+seed_repo_env
 
 install_workspace_deps "$current_root"

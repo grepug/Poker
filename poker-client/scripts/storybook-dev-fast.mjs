@@ -1,9 +1,16 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const workspaceRoot = path.resolve(__dirname, "../..");
+
+process.loadEnvFile?.(path.join(workspaceRoot, ".env"));
 
 const PREWARM_STORY_IDS = [
   "poker-tableboard--desktop",
