@@ -15,6 +15,11 @@ export interface ISavedGameArchiveStorageService {
   getSavedGameReviewTargets(
     archiveId: string,
   ): Promise<SavedGameReviewTargets | null>;
+  getSavedGameHandAnalysis(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandAnalysis | null>;
   updateSavedGameHandAnalysis(
     archiveId: string,
     userId: string,

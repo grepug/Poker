@@ -7,6 +7,8 @@ import type {
   CompletedHandHistorySeat,
   SavedGameAnalysisStatus,
   SavedGameDetail,
+  SavedGameHandAnalysis,
+  SavedGameLocalizedAnalysis,
 } from "poker-types";
 import { Card } from "@/components/Card";
 import { useLocalization } from "@/contexts/LocalizationContext";
@@ -72,8 +74,70 @@ const getDisplayedCommunityCards = (
     : history.communityCardsByStreet.turn.length > 0
       ? history.communityCardsByStreet.turn
       : history.communityCardsByStreet.flop.length > 0
-        ? history.communityCardsByStreet.flop
+      ? history.communityCardsByStreet.flop
         : history.communityCardsByStreet.preFlop;
+
+const getRequestedAnalysisLocale = (locale: string) => {
+  const normalized = locale.trim().toLowerCase().replace(/-/g, "_");
+  if (!normalized) {
+    return "en";
+  }
+  if (normalized === "en" || normalized.startsWith("en_")) {
+    return "en";
+  }
+  if (
+    normalized === "zh_hans" ||
+    normalized === "zh_cn" ||
+    normalized === "zh_hans_cn"
+  ) {
+    return "zh_hans";
+  }
+  return /^[a-z]{2,3}(?:_[a-z0-9]{2,8})*$/.test(normalized)
+    ? normalized
+    : "en";
+};
+
+const toCanonicalAnalysisContent = (
+  analysis: SavedGameHandAnalysis,
+): SavedGameLocalizedAnalysis => ({
+  status: analysis.status,
+  updatedAt: analysis.updatedAt,
+  headline: analysis.headline ?? null,
+  summary: analysis.summary ?? null,
+  keyAdjustments: analysis.keyAdjustments ?? [],
+  failureReason: analysis.failureReason ?? null,
+});
+
+const getDisplayedAnalysis = (
+  analysis: SavedGameHandAnalysis,
+  locale: string,
+) => {
+  const requestedLocale = getRequestedAnalysisLocale(locale);
+  const requestedLocalized = analysis.localizedByLocale?.[requestedLocale];
+  const englishLocalized = analysis.localizedByLocale?.en;
+  const content =
+    requestedLocalized?.status === "ready"
+      ? requestedLocalized
+      : englishLocalized?.status === "ready"
+        ? englishLocalized
+        : toCanonicalAnalysisContent(analysis);
+  const status =
+    requestedLocalized && requestedLocalized.status !== "ready"
+      ? requestedLocalized.status
+      : analysis.status;
+  const failureReason =
+    requestedLocalized && requestedLocalized.status !== "ready"
+      ? requestedLocalized.failureReason ?? analysis.failureReason ?? null
+      : analysis.failureReason ?? null;
+
+  return {
+    status,
+    failureReason,
+    headline: content.headline ?? null,
+    summary: content.summary ?? null,
+    keyAdjustments: content.keyAdjustments ?? [],
+  };
+};
 
 export const SavedGameDetailPage: React.FC = () => {
   const { archiveId = "" } = useParams();
@@ -97,10 +161,17 @@ export const SavedGameDetailPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const nextDetail = await savedGameHistoryService.getSavedGameDetail(archiveId);
+        const nextDetail = await savedGameHistoryService.getSavedGameDetail(
+          archiveId,
+          locale,
+        );
         if (!cancelled) {
           setDetail(nextDetail);
-          setSelectedHandNumber(nextDetail.hands[0]?.handNumber ?? null);
+          setSelectedHandNumber((current) =>
+            nextDetail.hands.some((hand) => hand.handNumber === current)
+              ? current
+              : nextDetail.hands[0]?.handNumber ?? null,
+          );
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -122,7 +193,7 @@ export const SavedGameDetailPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [archiveId, t]);
+  }, [archiveId, locale, t]);
 
   const localeTag = useMemo(
     () => (locale === "zh_hans" ? "zh-Hans-CN" : "en-US"),
@@ -131,6 +202,9 @@ export const SavedGameDetailPage: React.FC = () => {
 
   const selectedHand =
     detail?.hands.find((hand) => hand.handNumber === selectedHandNumber) ?? null;
+  const selectedHandAnalysis = selectedHand
+    ? getDisplayedAnalysis(selectedHand.analysis, locale)
+    : null;
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
@@ -384,27 +458,37 @@ export const SavedGameDetailPage: React.FC = () => {
                               : "border-emerald-700/60 bg-emerald-900/25 text-emerald-100/80 hover:bg-emerald-800/35"
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-semibold">
-                              {t("history.handLabel", { handNumber: hand.handNumber })}
-                            </span>
-                            <span
-                              className={`text-xs uppercase tracking-wide ${
-                                hand.analysis.status === "ready"
-                                  ? "text-emerald-300"
-                                  : hand.analysis.status === "failed"
-                                    ? "text-rose-300"
-                                    : "text-amber-200"
-                              }`}
-                            >
-                              {t(getAnalysisStatusKey(hand.analysis.status))}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-emerald-100/60">
-                            {t("history.handPot", {
-                              amount: hand.history.settlement.totalPot,
-                            })}
-                          </p>
+                          {(() => {
+                            const displayedAnalysis = getDisplayedAnalysis(
+                              hand.analysis,
+                              locale,
+                            );
+                            return (
+                              <>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="font-semibold">
+                                    {t("history.handLabel", { handNumber: hand.handNumber })}
+                                  </span>
+                                  <span
+                                    className={`text-xs uppercase tracking-wide ${
+                                      displayedAnalysis.status === "ready"
+                                        ? "text-emerald-300"
+                                        : displayedAnalysis.status === "failed"
+                                          ? "text-rose-300"
+                                          : "text-amber-200"
+                                    }`}
+                                  >
+                                    {t(getAnalysisStatusKey(displayedAnalysis.status))}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-emerald-100/60">
+                                  {t("history.handPot", {
+                                    amount: hand.history.settlement.totalPot,
+                                  })}
+                                </p>
+                              </>
+                            );
+                          })()}
                         </button>
                       ))}
                     </div>
@@ -417,18 +501,18 @@ export const SavedGameDetailPage: React.FC = () => {
                       </h2>
                       <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
                         <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                          {t(getAnalysisStatusKey(selectedHand.analysis.status))}
+                          {t(getAnalysisStatusKey(selectedHandAnalysis?.status ?? "pending"))}
                         </p>
-                        {selectedHand.analysis.status === "ready" ? (
+                        {selectedHandAnalysis?.headline || selectedHandAnalysis?.summary ? (
                           <>
                             <h3 className="mt-2 text-base font-semibold text-white">
-                              {selectedHand.analysis.headline}
+                              {selectedHandAnalysis?.headline}
                             </h3>
                             <p className="mt-2 text-sm text-emerald-100/80">
-                              {selectedHand.analysis.summary}
+                              {selectedHandAnalysis?.summary}
                             </p>
                             <ul className="mt-3 space-y-2 text-sm text-emerald-50">
-                              {(selectedHand.analysis.keyAdjustments ?? []).map((adjustment) => (
+                              {(selectedHandAnalysis?.keyAdjustments ?? []).map((adjustment) => (
                                 <li
                                   key={`${selectedHand.handNumber}-${adjustment}`}
                                   className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-3 py-2"
@@ -440,7 +524,7 @@ export const SavedGameDetailPage: React.FC = () => {
                           </>
                         ) : (
                           <p className="mt-2 text-sm text-emerald-100/80">
-                            {selectedHand.analysis.failureReason ||
+                            {selectedHandAnalysis?.failureReason ||
                               t("history.analysisPending")}
                           </p>
                         )}

@@ -24,7 +24,10 @@ export const savedGameHistoryService = {
     return requestJson<SavedGameSummary[]>("/api/history/games");
   },
 
-  getSavedGameDetail(archiveId: string): Promise<SavedGameDetail> {
-    return requestJson<SavedGameDetail>(`/api/history/games/${archiveId}`);
+  getSavedGameDetail(archiveId: string, locale: string): Promise<SavedGameDetail> {
+    const query = new URLSearchParams({ locale });
+    return requestJson<SavedGameDetail>(
+      `/api/history/games/${archiveId}?${query.toString()}`,
+    );
   },
 };
