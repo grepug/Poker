@@ -13,6 +13,7 @@ describe("LiveAudioPanel", () => {
         leaveLabel: "Leave",
         muteLabel: "Mute",
         unmuteLabel: "Unmute",
+        enableAudioLabel: "Enable Audio",
         connectingLabel: "Connecting",
         connectedLabel: "Connected",
         reconnectingLabel: "Reconnecting",
@@ -26,6 +27,7 @@ describe("LiveAudioPanel", () => {
         isConnecting: false,
         isJoined: true,
         isMuted: true,
+        isAudioPlaybackBlocked: false,
         isReconnecting: false,
         participants: [
           {
@@ -41,6 +43,7 @@ describe("LiveAudioPanel", () => {
         onLeave: vi.fn(),
         onMute: vi.fn(),
         onUnmute: vi.fn(),
+        onEnableAudio: vi.fn(),
       }),
     );
 

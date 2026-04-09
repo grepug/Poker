@@ -129,10 +129,13 @@ export const EN_MESSAGES = {
   "game.chat.preview.empty": "(empty message)",
   "game.audio.title": "Live Audio",
   "game.audio.subtitle": "Join the room audio and hear the table in real time.",
+  "game.audio.modalTitle": "Table Audio",
+  "game.audio.modalSubtitle": "Open voice controls, roster, and playback recovery in one place.",
   "game.audio.join": "Join Audio",
   "game.audio.leave": "Leave Audio",
   "game.audio.mute": "Mute",
   "game.audio.unmute": "Unmute",
+  "game.audio.enableAudio": "Enable Audio",
   "game.audio.connecting": "Connecting…",
   "game.audio.connected": "Connected",
   "game.audio.reconnecting": "Reconnecting…",
@@ -147,6 +150,8 @@ export const EN_MESSAGES = {
     "Microphone access requires HTTPS or localhost in this browser.",
   "game.audio.error.microphoneBusy":
     "Your microphone is unavailable because another app is using it.",
+  "game.audio.error.playbackBlocked":
+    "Browser audio playback is blocked. Tap Enable Audio.",
   "pwa.iosInstallTitle": "Add this app to your Home Screen",
   "pwa.iosInstallBody": "In Safari, tap Share and choose Add to Home Screen for a full-screen app.",
 
@@ -568,10 +573,13 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.chat.preview.empty": "（空消息）",
   "game.audio.title": "实时语音",
   "game.audio.subtitle": "加入牌桌语音，实时听见桌上交流。",
+  "game.audio.modalTitle": "牌桌语音",
+  "game.audio.modalSubtitle": "在这里管理语音加入、成员列表和音频恢复。",
   "game.audio.join": "加入语音",
   "game.audio.leave": "离开语音",
   "game.audio.mute": "静音",
   "game.audio.unmute": "取消静音",
+  "game.audio.enableAudio": "启用音频",
   "game.audio.connecting": "连接中…",
   "game.audio.connected": "已连接",
   "game.audio.reconnecting": "重连中…",
@@ -585,6 +593,7 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.audio.error.microphoneRequiresSecureContext":
     "当前浏览器需要通过 HTTPS 或 localhost 才能访问麦克风。",
   "game.audio.error.microphoneBusy": "麦克风正在被其他应用占用。",
+  "game.audio.error.playbackBlocked": "浏览器拦截了音频播放，请点“启用音频”。",
   "pwa.iosInstallTitle": "把应用添加到主屏幕",
   "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
 

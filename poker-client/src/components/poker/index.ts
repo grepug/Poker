@@ -7,6 +7,7 @@ export { HandResultsContent } from "./hand-results-content";
 export { HandResultsModal } from "./hand-results-modal";
 export { HandResultsPanel } from "./hand-results-panel";
 export { LeaveRoomConfirmModal } from "./leave-room-confirm-modal";
+export { LiveAudioModal } from "./live-audio-modal";
 export { LiveAudioPanel } from "./live-audio-panel";
 export { NextHandActionArea } from "./next-hand-action-area";
 export { OperationActionBar } from "./operation-action-bar";

@@ -2,6 +2,7 @@ import { RoomEvent } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
 import {
   createLiveAudioController,
+  type LiveAudioRoomTrack,
   type LiveAudioRoom,
   type LiveAudioRoomParticipant,
 } from "./live-audio.service";
@@ -32,6 +33,8 @@ class FakeRoom implements LiveAudioRoom {
   localParticipant: FakeParticipant;
   remoteParticipants = new Map<string, FakeParticipant>();
   activeSpeakers: LiveAudioRoomParticipant[] = [];
+  canPlaybackAudio = true;
+  startAudio = vi.fn(async () => undefined);
   connect = vi.fn(async () => undefined);
   prepareConnection = vi.fn(async () => undefined);
   disconnect = vi.fn(() => undefined);
@@ -62,6 +65,30 @@ class FakeRoom implements LiveAudioRoom {
   listenerCount(event: string) {
     return this.listeners.get(event)?.size ?? 0;
   }
+}
+
+class FakeAudioTrack implements LiveAudioRoomTrack {
+  kind = "audio";
+  attachedElements: unknown[] = [];
+  attach = vi.fn(() => {
+    const element = {
+      remove: vi.fn(),
+    };
+    this.attachedElements.push(element);
+    return element;
+  });
+  detach = vi.fn((element?: unknown) => {
+    if (element) {
+      this.attachedElements = this.attachedElements.filter(
+        (candidate) => candidate !== element,
+      );
+      return [element];
+    }
+
+    const detached = [...this.attachedElements];
+    this.attachedElements = [];
+    return detached;
+  });
 }
 
 describe("createLiveAudioController", () => {
@@ -129,6 +156,7 @@ describe("createLiveAudioController", () => {
 
     await controller.join("ROOM83");
 
+    expect(room.startAudio).toHaveBeenCalledTimes(1);
     expect(room.prepareConnection).toHaveBeenCalledWith(
       joinPayload.serverUrl,
       joinPayload.token,
@@ -184,6 +212,89 @@ describe("createLiveAudioController", () => {
           isSpeaking: true,
         }),
       ]),
+    );
+  });
+
+  it("attaches remote audio tracks when subscribed and detaches them on leave", async () => {
+    const room = new FakeRoom(
+      new FakeParticipant({
+        identity: joinPayload.participantIdentity,
+        name: joinPayload.participantName,
+        metadata: joinPayload.participantMetadata,
+        isMicrophoneEnabled: false,
+      }),
+    );
+    const remoteParticipant = new FakeParticipant({
+      identity: "user-2:player-2",
+      name: "Bob",
+      metadata: JSON.stringify({
+        roomId: "ROOM83",
+        playerId: "player-2",
+        userId: "user-2",
+        displayName: "Bob",
+        avatarEmoji: "🐻",
+      }),
+      isMicrophoneEnabled: true,
+    });
+    const remoteTrack = new FakeAudioTrack();
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => joinPayload),
+      createRoom: vi.fn(() => room),
+    });
+
+    await controller.join("ROOM83");
+    room.emit(RoomEvent.TrackSubscribed, remoteTrack, {}, remoteParticipant);
+
+    expect(remoteTrack.attach).toHaveBeenCalledTimes(1);
+
+    await controller.leave();
+
+    expect(remoteTrack.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces blocked playback and retries it from an explicit action", async () => {
+    const room = new FakeRoom(
+      new FakeParticipant({
+        identity: joinPayload.participantIdentity,
+        name: joinPayload.participantName,
+        metadata: joinPayload.participantMetadata,
+        isMicrophoneEnabled: false,
+      }),
+    );
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => joinPayload),
+      createRoom: vi.fn(() => room),
+    });
+
+    await controller.join("ROOM83");
+    room.startAudio.mockClear();
+    room.canPlaybackAudio = false;
+    room.emit(RoomEvent.AudioPlaybackStatusChanged, false);
+
+    expect(controller.getState()).toEqual(
+      expect.objectContaining({
+        isAudioPlaybackBlocked: true,
+        error: "game.audio.error.playbackBlocked",
+      }),
+    );
+
+    room.canPlaybackAudio = true;
+    await controller.enableAudio();
+
+    expect(room.startAudio).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toEqual(
+      expect.objectContaining({
+        isAudioPlaybackBlocked: false,
+        error: null,
+      }),
     );
   });
 
@@ -351,6 +462,13 @@ describe("createLiveAudioController", () => {
   });
 
   it("clears joinedRoomId when joining fails", async () => {
+    const room = new FakeRoom(
+      new FakeParticipant({
+        identity: joinPayload.participantIdentity,
+        name: joinPayload.participantName,
+        metadata: joinPayload.participantMetadata,
+      }),
+    );
     const controller = createLiveAudioController({
       loadConfig: vi.fn(async () => ({
         enabled: true,
@@ -359,7 +477,7 @@ describe("createLiveAudioController", () => {
       requestJoinToken: vi.fn(async () => {
         throw new Error("join failed");
       }),
-      createRoom: vi.fn(),
+      createRoom: vi.fn(() => room),
     });
 
     await controller.join("ROOM83");

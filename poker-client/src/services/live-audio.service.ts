@@ -17,6 +17,7 @@ export type LiveAudioState = {
   isConnecting: boolean;
   isJoined: boolean;
   isMuted: boolean;
+  isAudioPlaybackBlocked: boolean;
   isReconnecting: boolean;
   joinedRoomId: string | null;
   participants: LiveAudioParticipant[];
@@ -45,12 +46,20 @@ export interface LiveAudioRoomParticipant {
   isMicrophoneEnabled: boolean;
 }
 
+export interface LiveAudioRoomTrack {
+  kind?: string;
+  attach(): unknown;
+  detach(element?: unknown): unknown[] | void;
+}
+
 export interface LiveAudioRoom {
   localParticipant: LiveAudioRoomParticipant & {
     setMicrophoneEnabled(enabled: boolean): Promise<void>;
   };
   remoteParticipants: Map<string, LiveAudioRoomParticipant>;
   activeSpeakers: LiveAudioRoomParticipant[];
+  canPlaybackAudio?: boolean;
+  startAudio?(): Promise<void>;
   prepareConnection(url: string, token?: string): Promise<void> | void;
   connect(url: string, token: string): Promise<void>;
   disconnect(): void;
@@ -72,6 +81,7 @@ export const INITIAL_LIVE_AUDIO_STATE: LiveAudioState = {
   isConnecting: false,
   isJoined: false,
   isMuted: true,
+  isAudioPlaybackBlocked: false,
   isReconnecting: false,
   joinedRoomId: null,
   participants: [],
@@ -216,7 +226,66 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
   let room: LiveAudioRoom | null = null;
   let localIdentity: string | null = null;
   let roomListenersCleanup: (() => void) | null = null;
+  const attachedAudioElements = new Map<LiveAudioRoomTrack, unknown>();
   const subscribers = new Set<(nextState: LiveAudioState) => void>();
+
+  const mountAttachedAudioElement = (element: unknown) => {
+    if (
+      typeof document === "undefined" ||
+      !(element instanceof HTMLElement) ||
+      element.isConnected
+    ) {
+      return;
+    }
+
+    element.setAttribute("data-live-audio-element", "true");
+    element.setAttribute("aria-hidden", "true");
+    if (element instanceof HTMLMediaElement) {
+      element.autoplay = true;
+    }
+    element.style.display = "none";
+    document.body.appendChild(element);
+  };
+
+  const trackSubscribed = (track: LiveAudioRoomTrack) => {
+    if (track.kind !== "audio" || attachedAudioElements.has(track)) {
+      return;
+    }
+
+    const element = track.attach();
+    attachedAudioElements.set(track, element);
+    mountAttachedAudioElement(element);
+    if (
+      typeof HTMLMediaElement !== "undefined" &&
+      element instanceof HTMLMediaElement
+    ) {
+      void element.play().catch(() => undefined);
+    }
+  };
+
+  const detachTrackAudio = (track: LiveAudioRoomTrack) => {
+    const attachedElement = attachedAudioElements.get(track);
+    if (attachedElement === undefined) {
+      return;
+    }
+
+    track.detach(attachedElement);
+    if (
+      attachedElement &&
+      typeof attachedElement === "object" &&
+      "remove" in attachedElement &&
+      typeof attachedElement.remove === "function"
+    ) {
+      attachedElement.remove();
+    }
+    attachedAudioElements.delete(track);
+  };
+
+  const detachAllTrackAudio = () => {
+    for (const track of attachedAudioElements.keys()) {
+      detachTrackAudio(track);
+    }
+  };
 
   const emit = () => {
     for (const subscriber of subscribers) {
@@ -237,6 +306,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
     if (!room) {
       patchState({
         isMuted: true,
+        isAudioPlaybackBlocked: false,
         participants: [],
       });
       return;
@@ -261,6 +331,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
   const clearRoom = () => {
     roomListenersCleanup?.();
     roomListenersCleanup = null;
+    detachAllTrackAudio();
     room?.disconnect();
     room = null;
     localIdentity = null;
@@ -278,6 +349,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
     const reconnected = () => {
       patchState({
         isReconnecting: false,
+        isAudioPlaybackBlocked: nextRoom.canPlaybackAudio === false,
         error: null,
       });
       sync();
@@ -288,9 +360,18 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
         isConnecting: false,
         isJoined: false,
         isMuted: true,
+        isAudioPlaybackBlocked: false,
         isReconnecting: false,
         joinedRoomId: null,
         participants: [],
+      });
+    };
+    const audioPlaybackStatusChanged = (canPlaybackAudio?: unknown) => {
+      const playbackBlocked =
+        canPlaybackAudio === false || nextRoom.canPlaybackAudio === false;
+      patchState({
+        isAudioPlaybackBlocked: playbackBlocked,
+        error: playbackBlocked ? "game.audio.error.playbackBlocked" : null,
       });
     };
 
@@ -312,6 +393,22 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
     }
     nextRoom.on(RoomEvent.Reconnecting, reconnecting);
     nextRoom.on(RoomEvent.Reconnected, reconnected);
+    const onTrackSubscribed = (track: unknown) => {
+      if (track && typeof track === "object") {
+        trackSubscribed(track as LiveAudioRoomTrack);
+      }
+    };
+    const onTrackUnsubscribed = (track: unknown) => {
+      if (track && typeof track === "object") {
+        detachTrackAudio(track as LiveAudioRoomTrack);
+      }
+    };
+    nextRoom.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
+    nextRoom.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
+    nextRoom.on(
+      RoomEvent.AudioPlaybackStatusChanged,
+      audioPlaybackStatusChanged,
+    );
     const mediaDevicesError = (error: unknown) => {
       patchState({
         error: toLiveAudioError(error),
@@ -326,6 +423,12 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
       }
       nextRoom.off(RoomEvent.Reconnecting, reconnecting);
       nextRoom.off(RoomEvent.Reconnected, reconnected);
+      nextRoom.off(RoomEvent.TrackSubscribed, onTrackSubscribed);
+      nextRoom.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
+      nextRoom.off(
+        RoomEvent.AudioPlaybackStatusChanged,
+        audioPlaybackStatusChanged,
+      );
       nextRoom.off(RoomEvent.MediaDevicesError, mediaDevicesError);
       nextRoom.off(RoomEvent.Disconnected, disconnected);
     };
@@ -404,8 +507,9 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
       });
 
       try {
-        const joinPayload = await deps.requestJoinToken(normalizedRoomId);
         const nextRoom = deps.createRoom();
+        await nextRoom.startAudio?.().catch(() => undefined);
+        const joinPayload = await deps.requestJoinToken(normalizedRoomId);
         localIdentity = joinPayload.participantIdentity;
         bindRoom(nextRoom);
         await nextRoom.prepareConnection(joinPayload.serverUrl, joinPayload.token);
@@ -419,8 +523,12 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
           serverUrl: joinPayload.serverUrl,
           isConnecting: false,
           isJoined: true,
+          isAudioPlaybackBlocked: nextRoom.canPlaybackAudio === false,
           joinedRoomId: normalizedRoomId,
-          error: null,
+          error:
+            nextRoom.canPlaybackAudio === false
+              ? "game.audio.error.playbackBlocked"
+              : null,
         });
         syncParticipantsFromRoom();
       } catch (error) {
@@ -429,6 +537,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
           isConnecting: false,
           isJoined: false,
           isMuted: true,
+          isAudioPlaybackBlocked: false,
           isReconnecting: false,
           joinedRoomId: null,
           participants: [],
@@ -443,6 +552,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
         isConnecting: false,
         isJoined: false,
         isMuted: true,
+        isAudioPlaybackBlocked: false,
         isReconnecting: false,
         joinedRoomId: null,
         participants: [],
@@ -471,6 +581,27 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
       } catch (error) {
         patchState({
           error: toLiveAudioError(error),
+        });
+      }
+    },
+
+    async enableAudio() {
+      if (!room?.startAudio) {
+        return;
+      }
+
+      try {
+        await room.startAudio();
+        patchState({
+          isAudioPlaybackBlocked: room.canPlaybackAudio === false,
+          error: room.canPlaybackAudio === false
+            ? "game.audio.error.playbackBlocked"
+            : null,
+        });
+      } catch {
+        patchState({
+          isAudioPlaybackBlocked: true,
+          error: "game.audio.error.playbackBlocked",
         });
       }
     },

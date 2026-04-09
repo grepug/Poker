@@ -30,6 +30,8 @@ type TableTopBarProps = {
   rulesLabel: string;
   rankingsLabel: string;
   chatLabel: string;
+  liveAudioLabel: string;
+  liveAudioJoined: boolean;
   finalResultsLabel: string;
   startLabel: string;
   startDisabled?: boolean;
@@ -44,6 +46,7 @@ type TableTopBarProps = {
   onOpenRules: () => void;
   onOpenRankings: () => void;
   onToggleChat: () => void;
+  onOpenLiveAudio: () => void;
   onOpenFinalResults: () => void;
   onStartGame: () => void;
   onOpenChatFromPreview: () => void;
@@ -62,6 +65,8 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   rulesLabel,
   rankingsLabel,
   chatLabel,
+  liveAudioLabel,
+  liveAudioJoined,
   finalResultsLabel,
   startLabel,
   startDisabled = false,
@@ -76,6 +81,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   onOpenRules,
   onOpenRankings,
   onToggleChat,
+  onOpenLiveAudio,
   onOpenFinalResults,
   onStartGame,
   onOpenChatFromPreview,
@@ -180,6 +186,19 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
           className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
         >
           {chatLabel}
+        </button>
+        <button
+          onClick={onOpenLiveAudio}
+          data-testid="open-live-audio-button"
+          className="inline-flex items-center gap-2 rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+        >
+          <span>{liveAudioLabel}</span>
+          {liveAudioJoined && (
+            <span
+              className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.9)]"
+              data-testid="live-audio-joined-indicator"
+            />
+          )}
         </button>
         {showFinalResultsButton && (
           <button

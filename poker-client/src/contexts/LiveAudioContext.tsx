@@ -21,6 +21,7 @@ type LiveAudioContextValue = LiveAudioState & {
   leaveAudio: () => Promise<void>;
   muteAudio: () => Promise<void>;
   unmuteAudio: () => Promise<void>;
+  enableAudio: () => Promise<void>;
   clearError: () => void;
 };
 
@@ -99,6 +100,9 @@ export const LiveAudioProvider: React.FC<{ children: ReactNode }> = ({
       },
       unmuteAudio: async () => {
         await controllerRef.current.setMuted(false);
+      },
+      enableAudio: async () => {
+        await controllerRef.current.enableAudio();
       },
       clearError: () => {
         controllerRef.current.clearError();

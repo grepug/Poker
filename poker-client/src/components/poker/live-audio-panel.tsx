@@ -9,6 +9,7 @@ type LiveAudioPanelProps = {
   leaveLabel: string;
   muteLabel: string;
   unmuteLabel: string;
+  enableAudioLabel: string;
   connectingLabel: string;
   connectedLabel: string;
   reconnectingLabel: string;
@@ -22,12 +23,14 @@ type LiveAudioPanelProps = {
   isConnecting: boolean;
   isJoined: boolean;
   isMuted: boolean;
+  isAudioPlaybackBlocked: boolean;
   isReconnecting: boolean;
   participants: LiveAudioParticipant[];
   onJoin: () => void;
   onLeave: () => void;
   onMute: () => void;
   onUnmute: () => void;
+  onEnableAudio: () => void;
 };
 
 export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
@@ -37,6 +40,7 @@ export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
   leaveLabel,
   muteLabel,
   unmuteLabel,
+  enableAudioLabel,
   connectingLabel,
   connectedLabel,
   reconnectingLabel,
@@ -50,12 +54,14 @@ export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
   isConnecting,
   isJoined,
   isMuted,
+  isAudioPlaybackBlocked,
   isReconnecting,
   participants,
   onJoin,
   onLeave,
   onMute,
   onUnmute,
+  onEnableAudio,
 }) => {
   const roster = participants.length > 0 ? participants : [];
   const statusLabel = !isConfigLoaded
@@ -123,6 +129,15 @@ export const LiveAudioPanel: React.FC<LiveAudioPanelProps> = ({
                 >
                   {leaveLabel}
                 </button>
+                {isAudioPlaybackBlocked && (
+                  <button
+                    type="button"
+                    onClick={onEnableAudio}
+                    className="rounded-full border border-cyan-200/70 bg-cyan-200 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-slate-950 transition hover:bg-white"
+                  >
+                    {enableAudioLabel}
+                  </button>
+                )}
               </>
             )}
           </div>
