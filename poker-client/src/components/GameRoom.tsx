@@ -91,7 +91,9 @@ const hasMeaningfulRobotRankingActivity = (
   rankedPlayer.vpipHandsCount > 0 ||
   rankedPlayer.chips + (rankedPlayer.currentBet || 0) > 0;
 
-const shouldIncludeLiveRankingPlayer = (rankedPlayer: Player) =>
+// Keep this client-side predicate aligned with poker-types/src/rankings.ts.
+// The Vite client bundle does not cleanly consume that CommonJS runtime helper.
+const shouldDisplayLiveRankingPlayer = (rankedPlayer: Player) =>
   !rankedPlayer.isRobot ||
   rankedPlayer.status !== "left" ||
   hasMeaningfulRobotRankingActivity(rankedPlayer);
@@ -2541,7 +2543,7 @@ const useGameRoomElement = () => {
     () => {
       if (!room) return [];
       return [...room.players]
-        .filter((rankedPlayer) => shouldIncludeLiveRankingPlayer(rankedPlayer))
+        .filter((rankedPlayer) => shouldDisplayLiveRankingPlayer(rankedPlayer))
         .map((rankedPlayer) => {
           const tableStack = rankedPlayer.chips + (rankedPlayer.currentBet || 0);
           const net = tableStack - rankedPlayer.totalBuyIn;

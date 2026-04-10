@@ -36,5 +36,8 @@ describe("RankingsModal", () => {
     expect(html).toContain("max-h-[calc(100vh-2rem)]");
     expect(html).toContain('data-testid="rankings-modal-scroll-region"');
     expect(html).toContain("overflow-y-auto");
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="rankings-modal-title"');
   });
 });

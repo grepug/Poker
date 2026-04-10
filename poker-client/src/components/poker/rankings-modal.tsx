@@ -40,9 +40,14 @@ export const RankingsModal: React.FC<RankingsModalProps> = ({
     <section
       className="surface-panel flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col p-4 md:p-6"
       data-testid="rankings-modal-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rankings-modal-title"
     >
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-black text-white">{t("game.rankings.title")}</h3>
+        <h3 id="rankings-modal-title" className="text-lg font-black text-white">
+          {t("game.rankings.title")}
+        </h3>
         <button
           onClick={onClose}
           data-testid="close-rankings-button"
