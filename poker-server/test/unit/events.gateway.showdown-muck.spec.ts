@@ -8,6 +8,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
   let roomState: any;
   let storageService: any;
   let handService: any;
+  let bettingService: any;
   let roomEmitter: { emit: jest.Mock };
 
   beforeEach(() => {
@@ -184,12 +185,14 @@ describe('EventsGateway showdown reveal/muck flow', () => {
 
     roomEmitter = { emit: jest.fn() };
 
+    bettingService = {
+      calculateMinRaise: jest.fn().mockReturnValue(10),
+    };
+
     gateway = new EventsGateway(
       gameService,
       handService,
-      {
-        calculateMinRaise: jest.fn().mockReturnValue(10),
-      } as any,
+      bettingService as any,
       { isTestMode: jest.fn().mockReturnValue(false) } as any,
       {
         isConfigured: jest.fn().mockReturnValue(false),
@@ -396,6 +399,23 @@ describe('EventsGateway showdown reveal/muck flow', () => {
         cardsVisibility: 'shown',
       }),
     ]);
+  });
+
+  it('adds the authoritative minRaise to sanitized active-hand snapshots', () => {
+    roomState.currentHand = {
+      ...roomState.currentHand,
+      bettingRound: 'FLOP',
+      currentPlayerTurn: 'p-bob',
+      currentBet: 20,
+      lastRaiseSize: 20,
+    };
+    bettingService.calculateMinRaise.mockReturnValue(20);
+
+    const sanitizedRoom = (gateway as any).sanitizeRoom(roomState);
+
+    expect(bettingService.calculateMinRaise).toHaveBeenCalledWith(roomState);
+    expect(sanitizedRoom.currentHand.minRaise).toBe(20);
+    expect(sanitizedRoom.currentHand.currentBet).toBe(20);
   });
 
   it('reveals a completed hidden hand from server-only settled cards', async () => {

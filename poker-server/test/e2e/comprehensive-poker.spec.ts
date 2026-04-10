@@ -5089,6 +5089,15 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
       await alicePage.click('[data-testid="reveal-next-street-button"]');
       await handCompletePromise;
       await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid^="your-card-"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="hole-cards-hidden-state"]'),
+      ).toBeVisible();
+      await expect(
         alicePage.locator('[data-testid="start-next-hand-button"]'),
       ).toBeVisible();
       await alicePage.click('[data-testid="start-next-hand-button"]');
@@ -5465,7 +5474,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.2c: Tray Composer Uses Min-Raise First And Clamped Custom Input', async ({
+  test('8.2c: Tray Composer Uses Min-Raise First, Hides Call Without Pressure, And Clamps Custom Input', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -5487,16 +5496,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         .first();
       await expect(firstPreset).toHaveAttribute(
         'data-testid',
-        'chip-load-continue',
+        'chip-load-raise',
       );
       const continueButton = bobPage.locator(
         '[data-testid="chip-load-continue"]',
       );
-      await expect(continueButton).toBeEnabled();
-      const continueButtonText = (await continueButton.textContent()) ?? '';
-      const continueAmountMatch = continueButtonText.match(/\$([0-9]+)/);
-      expect(continueAmountMatch).not.toBeNull();
-      const continueAmount = continueAmountMatch?.[1] ?? '0';
+      await expect(continueButton).toHaveCount(0);
 
       const raiseButton = bobPage.locator('[data-testid="chip-load-raise"]');
       await expect(raiseButton).toBeVisible();
@@ -5504,14 +5509,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const raiseButtonText = (await raiseButton.textContent()) ?? '';
       const raiseAmountMatch = raiseButtonText.match(/\$([0-9]+)/);
       expect(raiseAmountMatch).not.toBeNull();
+      await expect(bobPage.locator('[data-testid="chip-load-all-in"]')).toBeVisible();
       expect(
         await bobPage.locator('[data-testid="chip-load-3bet"]').count(),
       ).toBe(0);
 
-      await continueButton.click();
+      await raiseButton.click();
       await expect(
         bobPage.locator('[data-testid="tray-amount-value"]'),
-      ).toContainText(`$${continueAmount}`);
+      ).toContainText(`$${raiseAmountMatch?.[1] ?? '0'}`);
 
       await expect(
         bobPage.locator('[data-testid="chip-custom-input"]'),
@@ -5567,7 +5573,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
-  test('8.2d: Tray Composer Disables Non-All-In Presets When Clamped To Stack', async ({
+  test('8.2d: Tray Composer Hides Illegal Non-All-In Presets When Clamped To Stack', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser, {
@@ -5593,23 +5599,21 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const continueButton = bobPage.locator(
         '[data-testid="chip-load-continue"]',
       );
-      await expect(continueButton).toContainText(`$${bobStack}`);
-      await expect(continueButton).toBeDisabled();
+      await expect(continueButton).toHaveCount(0);
 
       const raiseButton = bobPage.locator('[data-testid="chip-load-raise"]');
-      await expect(raiseButton).toContainText(`$${bobStack}`);
-      await expect(raiseButton).toBeDisabled();
+      await expect(raiseButton).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="preset-third-pot"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="preset-half-pot"]')).toHaveCount(0);
+      await expect(bobPage.locator('[data-testid="preset-pot"]')).toHaveCount(0);
 
       const allInButton = bobPage.locator('[data-testid="chip-load-all-in"]');
       await expect(allInButton).toContainText(`$${bobStack}`);
       await expect(allInButton).toBeEnabled();
 
-      const enabledPresetCount = await bobPage
-        .locator(
-          '[data-testid="action-dock"] [data-tray-preset]:not([disabled])',
-        )
-        .count();
-      expect(enabledPresetCount).toBe(1);
+      await expect(
+        bobPage.locator('[data-testid="action-dock"] [data-tray-preset]'),
+      ).toHaveCount(1);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -6981,6 +6985,62 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.9b: Your Cards Auto-Hides When Hand Results Are Shown Until Next Hand', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await expect(
+        alicePage.locator('[data-testid^="your-card-"]'),
+      ).toHaveCount(2);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid^="your-card-"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
+
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="start-next-hand-button"]');
+
+      await waitForHandStart(alicePage, 2);
+      await expect(
+        alicePage.locator('[data-testid^="your-card-"]'),
+      ).toHaveCount(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.10: Rejected Action Shows Detailed Error Modal', async ({
     browser,
   }) => {
@@ -7200,6 +7260,189 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await waitForPlayerTurn(alicePage, 'Alice');
       await alicePage.click('[data-testid="action-check"]');
       await waitForRound(alicePage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.12h: Refresh Mid-Hand Preserves Authoritative Min Raise Constraints', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1280, height: 900 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.call());
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.evaluate(() => (window as any).pokerDebug.check());
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.check());
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const flopBetResponse = await emitPlayerActionWithId(alicePage, {
+        action: 'raise',
+        amount: 20,
+        actionId: `flop-bet-${Date.now()}`,
+      });
+      expect(flopBetResponse.success).toBe(true);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const beforeRefresh = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        const currentPlayer = room?.players?.find((p: any) => p.id === player?.id);
+        return {
+          roomId: room?.id ?? null,
+          playerId: player?.id ?? null,
+          currentBet: room?.currentHand?.currentBet ?? null,
+          minRaise: room?.currentHand?.minRaise ?? null,
+          callAmount:
+            room?.currentHand && currentPlayer
+              ? room.currentHand.currentBet - currentPlayer.currentBet
+              : null,
+        };
+      });
+
+      expect(beforeRefresh.roomId).toBe(roomCode);
+      expect(beforeRefresh.currentBet).toBe(20);
+      expect(beforeRefresh.minRaise).toBe(20);
+      expect(beforeRefresh.callAmount).toBe(20);
+
+      const persistedAuthSnapshot = await bobPage.evaluate(() => ({
+        activeSession: window.sessionStorage.getItem('poker.activeSession'),
+      }));
+      expect(persistedAuthSnapshot.activeSession).toBeTruthy();
+
+      await bobPage.addInitScript((snapshot) => {
+        if (snapshot.activeSession) {
+          window.sessionStorage.setItem(
+            'poker.activeSession',
+            snapshot.activeSession,
+          );
+        }
+      }, persistedAuthSnapshot);
+
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.reload({ waitUntil: 'domcontentloaded' });
+      await bobPage.unroute(roomRoutePattern);
+
+      const postRefreshModeHandle = await bobPage.waitForFunction(
+        () => {
+          const pd = (window as any).pokerDebug;
+          const room = pd?.getRoom?.();
+          const player = pd?.getPlayer?.();
+          if (!!room?.id && !!player?.id) {
+            return 'recovered';
+          }
+          if (document.querySelector('[data-testid="room-title"]')) {
+            return 'room';
+          }
+          if (document.querySelector('[data-testid="connection-status"]')) {
+            return 'home';
+          }
+          if (document.querySelector('[data-testid="auth-page"]')) {
+            return 'auth';
+          }
+          return null;
+        },
+        { timeout: 15000 },
+      );
+      const postRefreshMode = await postRefreshModeHandle.jsonValue();
+
+      if (postRefreshMode === 'auth' || postRefreshMode === 'home') {
+        if (postRefreshMode === 'auth') {
+          await authenticateTestUser(bobPage, 'test2', {
+            displayName: 'Bob',
+            avatarEmoji: '🐻',
+          });
+        }
+
+        const recoveredAfterReauth = await bobPage
+          .waitForFunction(
+            () => {
+              const pd = (window as any).pokerDebug;
+              const room = pd?.getRoom?.();
+              const player = pd?.getPlayer?.();
+              return !!room?.id && !!player?.id;
+            },
+            { timeout: 5000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+
+        if (!recoveredAfterReauth) {
+          await bobPage.click('[data-testid="join-toggle-button"]');
+          await bobPage.fill('[data-testid="room-id-input"]', roomCode);
+          await bobPage.click('[data-testid="join-room-button"]');
+        }
+      }
+
+      await bobPage.waitForFunction(
+        () => {
+          const pd = (window as any).pokerDebug;
+          const room = pd?.getRoom?.();
+          const player = pd?.getPlayer?.();
+          return !!room?.id && !!player?.id;
+        },
+        { timeout: 15000 },
+      );
+
+      const afterRefresh = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        const currentPlayer = room?.players?.find((p: any) => p.id === player?.id);
+        return {
+          playerId: player?.id ?? null,
+          currentPlayerTurn: room?.currentHand?.currentPlayerTurn ?? null,
+          currentBet: room?.currentHand?.currentBet ?? null,
+          minRaise: room?.currentHand?.minRaise ?? null,
+          callAmount:
+            room?.currentHand && currentPlayer
+              ? room.currentHand.currentBet - currentPlayer.currentBet
+              : null,
+        };
+      });
+
+      expect(afterRefresh.currentPlayerTurn).toBe(afterRefresh.playerId);
+      expect(afterRefresh.currentBet).toBe(20);
+      expect(afterRefresh.minRaise).toBe(20);
+      expect(afterRefresh.callAmount).toBe(20);
+
+      const minRaiseResponse = await emitPlayerActionWithId(bobPage, {
+        action: 'raise',
+        amount: 20,
+        actionId: `recovered-min-raise-${Date.now()}`,
+      });
+      expect(minRaiseResponse.success).toBe(true);
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const aliceFacingRaise = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.currentHand?.currentBet ?? null;
+      });
+      expect(aliceFacingRaise).toBe(40);
     } finally {
       await teardownTwoPlayerSession(session);
     }

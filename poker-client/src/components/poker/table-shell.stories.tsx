@@ -12,6 +12,7 @@ const meta = {
     showDesktopTurnDock: true,
     showDesktopOperationDock: false,
     desktopBottomBarHeight: 180,
+    mobileBottomSafeHeight: 232,
     isChatPanelOpen: false,
     children: (
       <div className="mx-auto max-w-5xl p-6">

@@ -53,6 +53,14 @@ import {
   resolveCardsFlyoutDesktopLayout,
   shouldRenderCardsFlyoutInBoardStage,
 } from "@/components/poker/game-room-layout";
+import {
+  buildTurnActionPresetButtons,
+  type TrayPresetButton,
+} from "@/components/poker/turn-action-presets";
+import {
+  getBottomBarCardsOffsetPx,
+  getMobileTableBottomSafeHeightPx,
+} from "@/components/poker/mobile-overlay-layout";
 import type { SeatBadge, SeatLiveAudioBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
@@ -63,6 +71,7 @@ const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
 const POT_ANIMATION_MS = 360;
 const DESKTOP_SIDE_DOCK_QUERY = "(min-width: 1024px)";
+const COMPACT_MOBILE_DOCK_QUERY = "(max-width: 767px)";
 const CHAT_PREVIEW_TEXT_MAX_LENGTH = 80;
 
 const truncatePreviewText = (text: string, maxLength: number): string => {
@@ -138,17 +147,6 @@ type DragState = {
   clientX: number;
   clientY: number;
   overDropZone: boolean;
-};
-
-type TrayPresetTone = "call" | "raise" | "allin";
-
-type TrayPresetButton = {
-  key: string;
-  label: string;
-  amount: number;
-  testId: string;
-  tone: TrayPresetTone;
-  enabled: boolean;
 };
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -1783,6 +1781,7 @@ const useGameRoomElement = () => {
   const [actionPointerVector, setActionPointerVector] = useState<ActionPointerVector | null>(null);
   const [turnAlertToken, setTurnAlertToken] = useState<number | null>(null);
   const [bottomBarHeight, setBottomBarHeight] = useState(0);
+  const [cardsFlyoutHeight, setCardsFlyoutHeight] = useState(0);
   const [feltSize, setFeltSize] = useState({ width: 0, height: 0 });
   const [tableObstacleRects, setTableObstacleRects] = useState<RectBounds[]>([]);
   const [isDesktopSideDock, setIsDesktopSideDock] = useState(() => {
@@ -1790,6 +1789,12 @@ const useGameRoomElement = () => {
       return false;
     }
     return window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
+  });
+  const [isCompactMobileDock, setIsCompactMobileDock] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.matchMedia(COMPACT_MOBILE_DOCK_QUERY).matches;
   });
   const [dismissedPreviewMessageId, setDismissedPreviewMessageId] = useState<string | null>(null);
   const [relativeNow, setRelativeNow] = useState(() => Date.now());
@@ -1799,6 +1804,7 @@ const useGameRoomElement = () => {
   const finalSummaryPanelRef = useRef<HTMLElement | null>(null);
   const lastDisplayedHandResultRef = useRef<HandResult | null>(null);
   const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
+  const mobileCardsFlyoutRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
   const chatForcedByDesktopRef = useRef(false);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
@@ -2213,9 +2219,7 @@ const useGameRoomElement = () => {
   });
   const cardsFlyoutPlacement = isDesktopSideDock
     ? "felt-right"
-    : shouldAnchorCardsFlyoutToBottomBar
-      ? "bottom"
-      : "left-edge";
+    : "bottom";
   const activeBottomBarMode = showOperationBar
     ? "operation"
     : showReadyActionArea
@@ -2812,67 +2816,15 @@ const useGameRoomElement = () => {
   const canStartDrag = isYourTurn && trayAmount > 0 && Boolean(dropResolution.intent);
 
   const trayPresetButtons = useMemo<TrayPresetButton[]>(() => {
-    const clampToStack = (value: number) => clampTrayAmount(value);
-    const continueCommit = clampToStack(callAmount > 0 ? callAmount : minRaise);
-    const continueLabel = callAmount > 0 ? t("game.preset.call") : t("game.preset.minBet");
-    const raiseCommit = clampToStack(callAmount > 0 ? callAmount + minRaise : minRaise * 2);
-    const raiseLabel = callAmount > 0 ? t("game.preset.raise") : t("game.preset.bet");
-
-    const presets: TrayPresetButton[] = [
-      {
-        key: "continue",
-        label: continueLabel,
-        amount: continueCommit,
-        testId: "chip-load-continue",
-        tone: callAmount > 0 ? "call" : "raise",
-        enabled: false,
-      },
-      {
-        key: "raise",
-        label: raiseLabel,
-        amount: raiseCommit,
-        testId: "chip-load-raise",
-        tone: "raise",
-        enabled: false,
-      },
-      {
-        key: "all-in",
-        label: t("game.preset.allIn"),
-        amount: maxStack,
-        testId: "chip-load-all-in",
-        tone: "allin",
-        enabled: false,
-      },
-    ];
-
-    return presets.map((preset) => {
-      const resolution = resolveDropIntent({
-        trayAmount: preset.amount,
-        callAmount,
-        minRaise,
-        stack: maxStack,
-        t,
-      });
-      const resolvedIntent = resolution.intent;
-      const resolvesToAllIn = resolvedIntent?.action === "all-in";
-      const isAllInPreset = preset.key === "all-in";
-      return {
-        ...preset,
-        enabled:
-          isYourTurn &&
-          preset.amount > 0 &&
-          Boolean(resolvedIntent) &&
-          (isAllInPreset || !resolvesToAllIn),
-      };
+    return buildTurnActionPresetButtons({
+      callAmount,
+      minRaise,
+      maxStack,
+      displayPot,
+      isYourTurn,
+      t,
     });
-  }, [
-    callAmount,
-    clampTrayAmount,
-    isYourTurn,
-    maxStack,
-    minRaise,
-    t,
-  ]);
+  }, [callAmount, displayPot, isYourTurn, maxStack, minRaise, t]);
 
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
@@ -2891,7 +2843,11 @@ const useGameRoomElement = () => {
 
     const updateDockMode = () => {
       const nextIsDesktop = window.matchMedia(DESKTOP_SIDE_DOCK_QUERY).matches;
+      const nextIsCompactMobile = window.matchMedia(COMPACT_MOBILE_DOCK_QUERY).matches;
       setIsDesktopSideDock((prev) => (prev === nextIsDesktop ? prev : nextIsDesktop));
+      setIsCompactMobileDock((prev) =>
+        prev === nextIsCompactMobile ? prev : nextIsCompactMobile,
+      );
     };
 
     updateDockMode();
@@ -3026,6 +2982,14 @@ const useGameRoomElement = () => {
   }, [lastHandResult]);
 
   useEffect(() => {
+    if (!lastHandResult) {
+      return;
+    }
+
+    setIsCardsFlyoutOpen(false);
+  }, [lastHandResult, setIsCardsFlyoutOpen]);
+
+  useEffect(() => {
     setLegacyRaiseAmount((prev) => {
       if (prev <= 0) return 0;
       return Math.min(prev, maxStack);
@@ -3096,6 +3060,38 @@ const useGameRoomElement = () => {
       window.removeEventListener("resize", updateOverlayHeight);
     };
   }, [activeBottomBarMode, shouldAnchorCardsFlyoutToBottomBar]);
+
+  useEffect(() => {
+    if (isDesktopSideDock || !shouldRenderCardsInBoardStage) {
+      setCardsFlyoutHeight(0);
+      return;
+    }
+
+    const cardsFlyoutNode = mobileCardsFlyoutRef.current;
+    if (!cardsFlyoutNode) {
+      return;
+    }
+
+    const updateCardsFlyoutHeight = () => {
+      const nextHeight = Math.ceil(cardsFlyoutNode.getBoundingClientRect().height);
+      setCardsFlyoutHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    };
+
+    updateCardsFlyoutHeight();
+    window.addEventListener("resize", updateCardsFlyoutHeight);
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", updateCardsFlyoutHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(updateCardsFlyoutHeight);
+    resizeObserver.observe(cardsFlyoutNode);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateCardsFlyoutHeight);
+    };
+  }, [isCardsFlyoutOpen, isDesktopSideDock, shouldRenderCardsInBoardStage]);
 
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
@@ -3974,6 +3970,13 @@ const useGameRoomElement = () => {
   const desktopOperationDockClassName = isDesktopSideDock
     ? "chip-composer-dock--operation chip-composer-dock--desktop-main"
     : "chip-composer-dock--operation";
+  const cardsBottomOffsetPx = isDesktopSideDock ? 0 : getBottomBarCardsOffsetPx(bottomBarHeight);
+  const mobileBottomSafeHeight = isDesktopSideDock
+    ? 0
+    : getMobileTableBottomSafeHeightPx({
+        cardsFlyoutHeight,
+        bottomBarHeight,
+      });
 
   if (!room || !player) {
     return (
@@ -4000,6 +4003,7 @@ const useGameRoomElement = () => {
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
       showDesktopOperationDock={(showOperationBar || showReadyActionArea) && isDesktopSideDock}
       desktopBottomBarHeight={bottomBarHeight}
+      mobileBottomSafeHeight={mobileBottomSafeHeight}
       isChatPanelOpen={shouldShowChatPanel}
     >
       <div className="table-shell__desktop-layout">
@@ -4076,11 +4080,11 @@ const useGameRoomElement = () => {
           <div className="table-shell__board-stage">
             {shouldRenderCardsInBoardStage && (
               <YourCardsFlyout
+                ref={mobileCardsFlyoutRef}
                 isOpen={isCardsFlyoutOpen}
                 hasHoleCards={hasHoleCards}
                 cards={displayHoleCards ?? []}
-                shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
-                bottomBarHeight={bottomBarHeight}
+                bottomOffsetPx={cardsBottomOffsetPx}
                 placement={cardsFlyoutPlacement}
                 title={t("game.yourCards")}
                 emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
@@ -4270,8 +4274,7 @@ const useGameRoomElement = () => {
                 isOpen={isCardsFlyoutOpen}
                 hasHoleCards={hasHoleCards}
                 cards={displayHoleCards ?? []}
-                shouldAnchorToBottomBar={false}
-                bottomBarHeight={bottomBarHeight}
+                bottomOffsetPx={0}
                 placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
                 title={t("game.yourCards")}
                 emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
@@ -4295,8 +4298,7 @@ const useGameRoomElement = () => {
                   isOpen={isCardsFlyoutOpen}
                   hasHoleCards={hasHoleCards}
                   cards={displayHoleCards ?? []}
-                  shouldAnchorToBottomBar={false}
-                  bottomBarHeight={bottomBarHeight}
+                  bottomOffsetPx={0}
                   placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
                   title={t("game.yourCards")}
                   emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
@@ -4314,6 +4316,7 @@ const useGameRoomElement = () => {
                   trayAmount={trayAmount}
                   trayInputValue={trayInputValue}
                   isDesktopClickBetting={isDesktopSideDock}
+                  isCompactMobileLayout={isCompactMobileDock}
                   canStartDrag={canStartDrag}
                   isDragActive={dragState.active}
                   isYourTurn={isYourTurn}
