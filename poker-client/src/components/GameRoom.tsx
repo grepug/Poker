@@ -2057,7 +2057,7 @@ const useGameRoomElement = () => {
       ? myCompletedHand.cards
       : yourCards;
   const hasHoleCards = Boolean(displayHoleCards && displayHoleCards.length > 0);
-  const shouldRenderCardsFlyout = Boolean(isGameStarted || hasHoleCards);
+  const shouldRenderCardsFlyout = Boolean((isGameStarted || hasHoleCards) && !lastHandResult);
   const isWaitingForNextHand =
     Boolean(isGameStarted) && currentPlayer?.status === "waiting" && !hasHoleCards;
 
