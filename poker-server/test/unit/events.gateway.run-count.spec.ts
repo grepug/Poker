@@ -172,6 +172,7 @@ describe('EventsGateway run-count decision flow', () => {
     gateway = new EventsGateway(
       {
         markPlayerDisconnected: jest.fn(async () => deepClone(roomState)),
+        transferHostOnDisconnectTimeout: jest.fn(async () => deepClone(roomState)),
       } as any,
       handService,
       {

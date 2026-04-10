@@ -105,6 +105,7 @@ describe('EventsGateway showdown reveal/muck flow', () => {
 
     gameService = {
       markPlayerDisconnected: jest.fn(async () => deepClone(roomState)),
+      transferHostOnDisconnectTimeout: jest.fn(async () => deepClone(roomState)),
     };
 
     storageService = {
