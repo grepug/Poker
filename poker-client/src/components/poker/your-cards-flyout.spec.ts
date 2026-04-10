@@ -1,80 +1,78 @@
 import { readFileSync } from "node:fs";
+import postcss, { type AtRule, type Container, type Declaration, type Rule } from "postcss";
 import { describe, expect, it } from "vitest";
 
 const indexCss = readFileSync(new URL("../../index.css", import.meta.url), "utf8");
+const indexCssRoot = postcss.parse(indexCss);
 
-function getCssBlock(css: string, selector: string): string {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, "m"));
+function normalizeMediaQuery(query: string): string {
+  return query.replace(/^@media\s+/, "").trim();
+}
 
-  if (!match) {
+function getRule(container: Container, selector: string): Rule {
+  const matchingRule = container.nodes?.find(
+    (node): node is Rule => node.type === "rule" && node.selector === selector,
+  );
+
+  if (!matchingRule) {
     throw new Error(`Missing CSS block for selector: ${selector}`);
   }
 
-  return match[1];
+  return matchingRule;
 }
 
-function getMediaQueryBlock(css: string, query: string): string {
-  const startIndex = css.indexOf(query);
+function getMediaQuery(container: Container, query: string): AtRule {
+  const normalizedQuery = normalizeMediaQuery(query);
+  const matchingMediaQuery = container.nodes?.find(
+    (node): node is AtRule => node.type === "atrule" && node.name === "media" && node.params === normalizedQuery,
+  );
 
-  if (startIndex === -1) {
+  if (!matchingMediaQuery) {
     throw new Error(`Missing media query: ${query}`);
   }
 
-  const bodyStartIndex = css.indexOf("{", startIndex);
+  return matchingMediaQuery;
+}
 
-  if (bodyStartIndex === -1) {
-    throw new Error(`Missing opening brace for media query: ${query}`);
-  }
-
-  let depth = 0;
-
-  for (let index = bodyStartIndex; index < css.length; index += 1) {
-    const character = css[index];
-
-    if (character === "{") {
-      depth += 1;
-    } else if (character === "}") {
-      depth -= 1;
-
-      if (depth === 0) {
-        return css.slice(bodyStartIndex + 1, index);
-      }
-    }
-  }
-
-  throw new Error(`Unclosed media query: ${query}`);
+function getDeclarationValue(rule: Rule, propertyName: string): string | undefined {
+  return rule.nodes?.find(
+    (node): node is Declaration => node.type === "decl" && node.prop === propertyName,
+  )?.value;
 }
 
 describe("your-cards-flyout styles", () => {
   it("lets the bottom placement inherit the compact base width", () => {
-    const bottomBlock = getCssBlock(indexCss, ".your-cards-flyout--bottom");
+    const bottomRule = getRule(indexCssRoot, ".your-cards-flyout--bottom");
 
-    expect(bottomBlock).not.toMatch(/\bwidth\s*:/);
+    expect(getDeclarationValue(bottomRule, "width")).toBeUndefined();
   });
 
   it("keeps a minimum width for the bottom placement in short landscape layouts", () => {
-    const landscapeMediaBlock = getMediaQueryBlock(
-      indexCss,
+    const landscapeMediaQuery = getMediaQuery(
+      indexCssRoot,
       "@media (orientation: landscape) and (max-height: 500px)",
     );
-    const bottomBlock = getCssBlock(landscapeMediaBlock, ".your-cards-flyout--bottom");
+    const bottomRule = getRule(landscapeMediaQuery, ".your-cards-flyout--bottom");
 
-    expect(bottomBlock).toMatch(/width:\s*clamp\(9\.15rem,\s*24vw,\s*10rem\)/);
+    expect(getDeclarationValue(bottomRule, "width")).toBe("clamp(9.15rem, 24vw, 10rem)");
   });
 
   it("preserves the existing wider bottom placement outside mobile", () => {
-    const tabletMediaBlock = getMediaQueryBlock(indexCss, "@media (min-width: 768px)");
-    const bottomBlock = getCssBlock(tabletMediaBlock, ".your-cards-flyout--bottom");
+    const tabletMediaQuery = getMediaQuery(indexCssRoot, "@media (min-width: 768px)");
+    const bottomRule = getRule(tabletMediaQuery, ".your-cards-flyout--bottom");
 
-    expect(bottomBlock).toMatch(/width:\s*min\(\s*14rem,/);
+    expect(getDeclarationValue(bottomRule, "width")).toMatch(/^min\(\s*14rem,/);
   });
 
   it("keeps the non-mobile override after the short-landscape mobile rule", () => {
-    const landscapeMediaIndex = indexCss.indexOf(
+    const landscapeMediaQuery = getMediaQuery(
+      indexCssRoot,
       "@media (orientation: landscape) and (max-height: 500px)",
     );
-    const tabletMediaIndex = indexCss.indexOf("@media (min-width: 768px)");
+    const tabletMediaQuery = getMediaQuery(indexCssRoot, "@media (min-width: 768px)");
+    const rootNodes = indexCssRoot.nodes ?? [];
+    const landscapeMediaIndex = rootNodes.indexOf(landscapeMediaQuery);
+    const tabletMediaIndex = rootNodes.indexOf(tabletMediaQuery);
 
     expect(landscapeMediaIndex).toBeGreaterThan(-1);
     expect(tabletMediaIndex).toBeGreaterThan(-1);
