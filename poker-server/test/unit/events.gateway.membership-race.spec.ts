@@ -14,6 +14,7 @@ describe('EventsGateway membership mutation serialization', () => {
   let chatStorageService: any;
   let chatMediaStorageService: any;
   let authService: any;
+  let roomEmitter: any;
   let persistViaStaleSnapshot: (mutate: (draft: any) => void) => Promise<any>;
 
   const createPlayer = (params: {
@@ -335,7 +336,7 @@ describe('EventsGateway membership mutation serialization', () => {
       chatMediaStorageService,
     );
 
-    const roomEmitter = { emit: jest.fn() };
+    roomEmitter = { emit: jest.fn() };
     gateway.server = {
       to: jest.fn().mockReturnValue(roomEmitter),
       sockets: { sockets: new Map() },
