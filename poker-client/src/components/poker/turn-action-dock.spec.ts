@@ -113,6 +113,29 @@ describe("TurnActionDock", () => {
     expect(html).not.toContain('data-testid="action-open-raise-menu"');
   });
 
+  it("renames the compact mobile raise trigger when all-in is the only menu action", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TurnActionDock, {
+        ...baseProps,
+        isCompactMobileLayout: true,
+        trayPresetButtons: [
+          {
+            key: "all-in",
+            label: "All-In",
+            amount: 40,
+            testId: "chip-load-all-in",
+            tone: "allin" as const,
+            enabled: true,
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-testid="action-open-raise-menu"');
+    expect(html).toContain(">All-In<");
+    expect(html).not.toContain(">game.raise<");
+  });
+
   it("keeps min-bet standalone on compact mobile when there is nothing to call", () => {
     const html = renderToStaticMarkup(
       React.createElement(TurnActionDock, {

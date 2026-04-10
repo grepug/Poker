@@ -67,6 +67,17 @@ export const partitionCompactMobilePresets = (
   };
 };
 
+const getCompactMobileRaiseMenuLabel = (
+  menuPresets: TrayPresetButton[],
+  t: Translate,
+) => {
+  if (menuPresets.length === 1 && menuPresets[0]?.key === "all-in") {
+    return menuPresets[0].label;
+  }
+
+  return t("game.raise");
+};
+
 export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   callAmount,
   minRaise,
@@ -118,6 +129,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     trayPresetButtons,
     callAmount,
   );
+  const compactMobileRaiseMenuLabel = getCompactMobileRaiseMenuLabel(menuPresets, t);
   const hasCompactMobileRaiseMenu = isCompactMobileLayout && menuPresets.length > 0;
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
@@ -301,7 +313,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                       aria-expanded={isRaiseMenuOpen}
                       aria-haspopup="dialog"
                     >
-                      <span>{t("game.raise")}</span>
+                      <span>{compactMobileRaiseMenuLabel}</span>
                     </button>
                   )}
                 </div>
