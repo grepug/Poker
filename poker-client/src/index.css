@@ -1430,10 +1430,6 @@ body {
   --your-cards-flyout-y-shift: 0%;
   left: max(0px, env(safe-area-inset-left, 0px));
   top: auto;
-  width: min(
-    13.25rem,
-    calc(100vw - 1.1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
-  );
   bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
 }
 
@@ -2259,6 +2255,10 @@ body {
 @media (orientation: landscape) and (max-height: 500px) {
   .your-cards-flyout {
     width: clamp(8.6rem, 24vw, 10rem);
+  }
+
+  .your-cards-flyout--bottom {
+    width: clamp(9.15rem, 24vw, 10rem);
   }
 
   .felt-oval {
