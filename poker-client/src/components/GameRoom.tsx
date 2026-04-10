@@ -45,6 +45,10 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import {
+  resolveCardsFlyoutDesktopLayout,
+  shouldRenderCardsFlyoutInBoardStage,
+} from "@/components/poker/game-room-layout";
 import type { SeatBadge, SeatLiveAudioBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
@@ -1801,6 +1805,8 @@ const useGameRoomElement = () => {
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
   const previousIsYourTurnRef = useRef<boolean | null>(null);
+  const dragStateRef = useRef<DragState>(EMPTY_DRAG_STATE);
+  const dragActivatorRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -2182,8 +2188,25 @@ const useGameRoomElement = () => {
   const shouldShowChatPanel = isDesktopSideDock || isChatPanelOpen;
   const shouldAnchorCardsFlyoutToBottomBar =
     showOperationBar || showReadyActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const desktopCardsFlyoutLayout = resolveCardsFlyoutDesktopLayout({
+    shouldRenderCardsFlyout,
+    isDesktopSideDock,
+    showTurnActionDock,
+  });
   const shouldRenderCardsBesideDesktopDock =
-    shouldRenderCardsFlyout && isDesktopSideDock && showTurnActionDock;
+    desktopCardsFlyoutLayout.renderInDesktopDockCluster && showTurnActionDock;
+  const shouldRenderCardsInDesktopDockCluster =
+    desktopCardsFlyoutLayout.renderInDesktopDockCluster;
+  const shouldRenderStandaloneDesktopCardsFlyout =
+    shouldRenderCardsInDesktopDockCluster &&
+    !showTurnActionDock &&
+    !showOperationBar &&
+    !showReadyActionArea;
+  const shouldRenderCardsInBoardStage = shouldRenderCardsFlyoutInBoardStage({
+    shouldRenderCardsFlyout,
+    isDesktopSideDock,
+    showTurnActionDock,
+  });
   const cardsFlyoutPlacement = isDesktopSideDock
     ? "felt-right"
     : shouldAnchorCardsFlyoutToBottomBar
@@ -3005,12 +3028,32 @@ const useGameRoomElement = () => {
     });
   }, [maxStack]);
 
+  const updateDragState = useCallback((nextState: DragState) => {
+    dragStateRef.current = nextState;
+    setDragState(nextState);
+  }, []);
+
+  const clearDragState = useCallback((pointerId?: number | null) => {
+    const dragActivatorNode = dragActivatorRef.current;
+    if (
+      dragActivatorNode &&
+      pointerId !== null &&
+      pointerId !== undefined &&
+      dragActivatorNode.hasPointerCapture(pointerId)
+    ) {
+      dragActivatorNode.releasePointerCapture(pointerId);
+    }
+
+    dragActivatorRef.current = null;
+    updateDragState(EMPTY_DRAG_STATE);
+  }, [updateDragState]);
+
   const resetTurnInteractionState = useCallback(() => {
     setTrayAmount(0);
     setQuickConfirmAction(null);
     setShowTrayConfirm(false);
-    setDragState(EMPTY_DRAG_STATE);
-  }, []);
+    clearDragState(dragStateRef.current.pointerId);
+  }, [clearDragState]);
 
   useEffect(() => {
     if (!showTurnActionDock) {
@@ -3334,6 +3377,92 @@ const useGameRoomElement = () => {
     setTrayAmount(0);
   }, [dropResolution.intent, isYourTurn, performAction]);
 
+  const updateDragPointer = useCallback((pointerId: number, clientX: number, clientY: number) => {
+    const currentDragState = dragStateRef.current;
+    if (!currentDragState.active || currentDragState.pointerId !== pointerId) {
+      return;
+    }
+
+    const nextOverDropZone = isPointInDropZone(clientX, clientY);
+    if (
+      currentDragState.clientX === clientX &&
+      currentDragState.clientY === clientY &&
+      currentDragState.overDropZone === nextOverDropZone
+    ) {
+      return;
+    }
+
+    updateDragState({
+      ...currentDragState,
+      clientX,
+      clientY,
+      overDropZone: nextOverDropZone,
+    });
+  }, [isPointInDropZone, updateDragState]);
+
+  const finishDragPointer = useCallback(({
+    pointerId,
+    clientX,
+    clientY,
+    cancelled,
+  }: {
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    cancelled: boolean;
+  }) => {
+    const currentDragState = dragStateRef.current;
+    if (!currentDragState.active || currentDragState.pointerId !== pointerId) {
+      return;
+    }
+
+    const shouldCommit =
+      !cancelled &&
+      (currentDragState.overDropZone || isPointInDropZone(clientX, clientY));
+
+    clearDragState(pointerId);
+
+    if (shouldCommit) {
+      commitTrayDrop();
+    }
+  }, [clearDragState, commitTrayDrop, isPointInDropZone]);
+
+  useEffect(() => {
+    if (!dragState.active || dragState.pointerId === null) {
+      return;
+    }
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      updateDragPointer(event.pointerId, event.clientX, event.clientY);
+    };
+    const handleWindowPointerUp = (event: PointerEvent) => {
+      finishDragPointer({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        cancelled: false,
+      });
+    };
+    const handleWindowPointerCancel = (event: PointerEvent) => {
+      finishDragPointer({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        cancelled: true,
+      });
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp, true);
+    window.addEventListener("pointercancel", handleWindowPointerCancel, true);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp, true);
+      window.removeEventListener("pointercancel", handleWindowPointerCancel, true);
+    };
+  }, [dragState.active, dragState.pointerId, finishDragPointer, updateDragPointer]);
+
   const requestTraySubmit = useCallback(() => {
     if (!desktopTraySubmitIntent) {
       return;
@@ -3397,8 +3526,9 @@ const useGameRoomElement = () => {
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragActivatorRef.current = event.currentTarget;
 
-    setDragState({
+    updateDragState({
       active: true,
       pointerId: event.pointerId,
       clientX: event.clientX,
@@ -3408,39 +3538,16 @@ const useGameRoomElement = () => {
   };
 
   const handleDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    setDragState((prev) => {
-      if (!prev.active || prev.pointerId !== event.pointerId) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        overDropZone: isPointInDropZone(event.clientX, event.clientY),
-      };
-    });
+    updateDragPointer(event.pointerId, event.clientX, event.clientY);
   };
 
   const handleDragEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const isSamePointer = dragState.active && dragState.pointerId === event.pointerId;
-    const isCancelled = event.type === "pointercancel";
-    const shouldCommit =
-      isSamePointer &&
-      !isCancelled &&
-      (dragState.overDropZone || isPointInDropZone(event.clientX, event.clientY));
-
-    setDragState((prev) =>
-      !prev.active || prev.pointerId !== event.pointerId ? prev : EMPTY_DRAG_STATE,
-    );
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    if (shouldCommit) {
-      commitTrayDrop();
-    }
+    finishDragPointer({
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      cancelled: event.type === "pointercancel",
+    });
   };
 
   const handleCopyInviteLink = async () => {
@@ -3929,7 +4036,7 @@ const useGameRoomElement = () => {
           )}
 
           <div className="table-shell__board-stage">
-            {shouldRenderCardsFlyout && !shouldRenderCardsBesideDesktopDock && (
+            {shouldRenderCardsInBoardStage && (
               <YourCardsFlyout
                 isOpen={isCardsFlyoutOpen}
                 hasHoleCards={hasHoleCards}
@@ -4119,6 +4226,30 @@ const useGameRoomElement = () => {
             </ChipComposerDock>
           )}
 
+          {shouldRenderStandaloneDesktopCardsFlyout && (
+            <div className="desktop-dock-cluster desktop-dock-cluster--cards-only">
+              <YourCardsFlyout
+                isOpen={isCardsFlyoutOpen}
+                hasHoleCards={hasHoleCards}
+                cards={displayHoleCards ?? []}
+                shouldAnchorToBottomBar={false}
+                bottomBarHeight={bottomBarHeight}
+                placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
+                title={t("game.yourCards")}
+                emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+                emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+                hideLabel={t("game.hide")}
+                showLabel={t("game.show")}
+                onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+              />
+              <div
+                className="desktop-dock-cluster__anchor"
+                data-testid="desktop-dock-anchor"
+                aria-hidden="true"
+              />
+            </div>
+          )}
+
           {showTurnActionDock && (
             <div className={isDesktopSideDock ? "desktop-dock-cluster" : undefined}>
               {shouldRenderCardsBesideDesktopDock && (
@@ -4128,7 +4259,7 @@ const useGameRoomElement = () => {
                   cards={displayHoleCards ?? []}
                   shouldAnchorToBottomBar={false}
                   bottomBarHeight={bottomBarHeight}
-                  placement="dock-left"
+                  placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
                   title={t("game.yourCards")}
                   emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
                   emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}

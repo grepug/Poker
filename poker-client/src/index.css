@@ -2585,6 +2585,15 @@ body {
     align-items: end;
   }
 
+  .table-shell--desktop-two-column .desktop-dock-cluster--cards-only {
+    min-height: 0;
+  }
+
+  .table-shell--desktop-two-column .desktop-dock-cluster__anchor {
+    min-width: 0;
+    min-height: 1px;
+  }
+
   .table-shell--desktop-two-column .desktop-dock-cluster .chip-composer-dock {
     min-width: 0;
   }
