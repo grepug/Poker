@@ -603,6 +603,18 @@ export class EventsGateway
     this.server.to(roomId).emit('READY_STATE_UPDATED', payload);
   }
 
+  private emitHostChanged(roomId: string, room: any): void {
+    const nextHost = room?.players?.find((player: any) => player.id === room.hostId);
+    if (!nextHost) {
+      return;
+    }
+
+    this.server.to(roomId).emit('HOST_CHANGED', {
+      newHostId: nextHost.id,
+      newHostName: nextHost.name,
+    });
+  }
+
   private areAllEligiblePlayersReady(room: any): boolean {
     const eligiblePlayerIds = this.getReadyEligiblePlayerIds(room);
     if (eligiblePlayerIds.length < 2) {
@@ -611,6 +623,34 @@ export class EventsGateway
 
     const readySet = new Set(room?.readyPlayerIds ?? []);
     return eligiblePlayerIds.every((playerId) => readySet.has(playerId));
+  }
+
+  private async maybeTransferDisconnectedHostIfEligible(
+    roomId: string,
+    room: any,
+  ): Promise<any> {
+    const host = room?.players?.find((player: any) => player.id === room.hostId);
+    if (!host || !this.isPlayerDisconnected(host)) {
+      return room;
+    }
+
+    if (this.disconnectTimers.has(host.id)) {
+      return room;
+    }
+
+    const phase = this.resolveRoomReadyPhase(room);
+    if (phase !== 'START_GAME' && phase !== 'NEXT_HAND') {
+      return room;
+    }
+
+    const transferredRoom =
+      await this.gameService.transferHostOnDisconnectTimeout(roomId, host.id);
+    if (!transferredRoom || transferredRoom.hostId === room.hostId) {
+      return transferredRoom ?? room;
+    }
+
+    this.emitHostChanged(roomId, transferredRoom);
+    return transferredRoom;
   }
 
   private async startGameAndBroadcast(room: any): Promise<void> {
@@ -3252,6 +3292,10 @@ export class EventsGateway
         }),
       ),
     );
+    const roomAfterHostTransfer = await this.maybeTransferDisconnectedHostIfEligible(
+      room.id,
+      room,
+    );
 
     const handCompleteData: HandCompleteData = {
       result: this.sanitizeHandResult(result)!,
@@ -3261,7 +3305,7 @@ export class EventsGateway
     };
 
     this.server.to(room.id).emit('HAND_COMPLETE', handCompleteData);
-    this.emitReadyStateUpdated(room.id, room);
+    this.emitReadyStateUpdated(room.id, roomAfterHostTransfer);
     if (this.testDeckService.isTestMode()) {
       // Keep auto-advance in TEST_MODE to preserve deterministic e2e cadence.
       setTimeout(async () => {
@@ -3749,7 +3793,6 @@ export class EventsGateway
           clearTimeout(timer);
           this.disconnectTimers.delete(playerId);
         }
-
         const room = await this.getRoom(roomId);
         if (!room) {
           return;
@@ -3817,14 +3860,19 @@ export class EventsGateway
               this.updateAbandonedRoomTracking(disconnectedRoom);
               this.syncRoomReadyState(disconnectedRoom);
               await this.storageService.persistRoom(disconnectedRoom);
+              const roomAfterHostTransfer =
+                await this.maybeTransferDisconnectedHostIfEligible(
+                  roomId,
+                  disconnectedRoom,
+                );
               const started = await this.maybeStartReadyPhaseIfAllReady(
                 roomId,
-                disconnectedRoom,
+                roomAfterHostTransfer,
               );
               if (!started) {
-                this.emitReadyStateUpdated(roomId, disconnectedRoom);
+                this.emitReadyStateUpdated(roomId, roomAfterHostTransfer);
               }
-              await this.maybeFinalizeAbandonedRoom(disconnectedRoom);
+              await this.maybeFinalizeAbandonedRoom(roomAfterHostTransfer);
             }
             return;
           }
@@ -3849,14 +3897,19 @@ export class EventsGateway
           this.updateAbandonedRoomTracking(disconnectedRoom);
           this.syncRoomReadyState(disconnectedRoom);
           await this.storageService.persistRoom(disconnectedRoom);
+          const roomAfterHostTransfer =
+            await this.maybeTransferDisconnectedHostIfEligible(
+              roomId,
+              disconnectedRoom,
+            );
           const started = await this.maybeStartReadyPhaseIfAllReady(
             roomId,
-            disconnectedRoom,
+            roomAfterHostTransfer,
           );
           if (!started) {
-            this.emitReadyStateUpdated(roomId, disconnectedRoom);
+            this.emitReadyStateUpdated(roomId, roomAfterHostTransfer);
           }
-          await this.maybeFinalizeAbandonedRoom(disconnectedRoom);
+          await this.maybeFinalizeAbandonedRoom(roomAfterHostTransfer);
         }
       });
     } catch (error) {

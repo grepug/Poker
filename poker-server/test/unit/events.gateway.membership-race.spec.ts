@@ -216,6 +216,37 @@ describe('EventsGateway membership mutation serialization', () => {
 
         return updatedRoom;
       }),
+      transferHostOnDisconnectTimeout: jest.fn(async (roomId: string, playerId: string) => {
+        if (roomId !== 'ROOM1') {
+          return null;
+        }
+
+        let updatedRoom: any = null;
+        await persistViaStaleSnapshot((draft) => {
+          if (draft.hostId !== playerId) {
+            updatedRoom = deepClone(draft);
+            return;
+          }
+
+          const nextHost = draft.players.find(
+            (entry: any) =>
+              entry.id !== playerId &&
+              !entry.isRobot &&
+              entry.status !== 'left' &&
+              entry.connectionStatus !== 'disconnected',
+          );
+          if (!nextHost) {
+            updatedRoom = deepClone(draft);
+            return;
+          }
+
+          draft.hostId = nextHost.id;
+          draft.lastActivityAt = Date.now();
+          updatedRoom = deepClone(draft);
+        });
+
+        return updatedRoom;
+      }),
     };
 
     handService = {
@@ -1229,5 +1260,107 @@ describe('EventsGateway membership mutation serialization', () => {
     await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
 
     expect((gateway as any).disconnectTimers.size).toBe(0);
+  });
+
+  it('does not transfer disconnected host ownership while a hand is still live after timeout', async () => {
+    roomState.players[0].connectionStatus = 'disconnected';
+    roomState.currentHand = {
+      handNumber: 5,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      pot: 30,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'PRE_FLOP',
+      currentBet: 20,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+    };
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).not.toHaveBeenCalled();
+    expect(roomState.hostId).toBe('p-host');
+    expect(roomEmitter.emit).not.toHaveBeenCalledWith(
+      'HOST_CHANGED',
+      expect.anything(),
+    );
+  });
+
+  it('transfers disconnected host ownership after timeout when the room is between hands', async () => {
+    roomState.players[0].connectionStatus = 'disconnected';
+    roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
+    roomState.players.push(
+      createPlayer({
+        id: 'p-charlie',
+        socketId: 'socket-charlie',
+        name: 'Charlie',
+        status: 'waiting',
+        position: 2,
+        userId: 'user-charlie',
+      }),
+    );
+    roomState.currentHand = {
+      handNumber: 6,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      pot: 30,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob', 'p-charlie'],
+      bettingRound: 'RIVER',
+      currentBet: 20,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        playerHands: [],
+        pot: 30,
+        timestamp: Date.now(),
+      },
+    };
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-host',
+    );
+    expect(roomState.hostId).toBe('p-bob');
+    expect(roomEmitter.emit).toHaveBeenCalledWith('HOST_CHANGED', {
+      newHostId: 'p-bob',
+      newHostName: 'Bob',
+    });
   });
 });
