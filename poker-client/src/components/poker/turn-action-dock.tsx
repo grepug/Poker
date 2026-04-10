@@ -25,6 +25,8 @@ type TurnActionDockProps = {
   maxStack: number;
   trayAmount: number;
   trayInputValue: string;
+  mobileChipDraftValue: string;
+  showMobileChipPopover: boolean;
   isDesktopClickBetting?: boolean;
   canStartDrag: boolean;
   isDragActive: boolean;
@@ -39,6 +41,12 @@ type TurnActionDockProps = {
   onSetTrayDirectly: (amount: number) => void;
   onTrayInputChange: React.ChangeEventHandler<HTMLInputElement>;
   onTrayInputBlur: React.FocusEventHandler<HTMLInputElement>;
+  onOpenMobileChipPopover: () => void;
+  onCloseMobileChipPopover: () => void;
+  onMobileChipDigit: (digit: string) => void;
+  onMobileChipBackspace: () => void;
+  onMobileChipClearDraft: () => void;
+  onMobileChipConfirm: () => void;
   onClearTray: () => void;
   onSubmitTray?: () => void;
   onQuickDecisionAction: (action: QuickDecisionAction) => void;
@@ -60,6 +68,8 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   maxStack,
   trayAmount,
   trayInputValue,
+  mobileChipDraftValue,
+  showMobileChipPopover,
   isDesktopClickBetting = false,
   canStartDrag,
   isDragActive,
@@ -74,6 +84,12 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   onSetTrayDirectly,
   onTrayInputChange,
   onTrayInputBlur,
+  onOpenMobileChipPopover,
+  onCloseMobileChipPopover,
+  onMobileChipDigit,
+  onMobileChipBackspace,
+  onMobileChipClearDraft,
+  onMobileChipConfirm,
   onClearTray,
   onSubmitTray = () => {},
   onQuickDecisionAction,
@@ -94,6 +110,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const traySubmitButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const trayConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const mobileChipTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const mobileChipPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const latestCloseMobileChipPopoverRef = React.useRef(onCloseMobileChipPopover);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
     React.useState(isQuickDecisionAvailable);
@@ -113,9 +132,17 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     preferredPlacement: "top",
     align: "end",
   });
+  const mobileChipPopoverStyle = useAnchoredPopover({
+    isOpen: showMobileChipPopover,
+    anchorRef: mobileChipTriggerRef,
+    popoverRef: mobileChipPopoverRef,
+    preferredPlacement: "top",
+    align: "center",
+  });
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
   const showDesktopSubmitTrayButton =
     !isAutomationMode && isDesktopClickBetting && Boolean(traySubmitLabel);
+  const mobileChipDisplayValue = mobileChipDraftValue || "0";
 
   React.useLayoutEffect(() => {
     if (quickDecisionLockTimeoutRef.current !== null) {
@@ -141,6 +168,35 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
       }
     };
   }, [isQuickDecisionAvailable]);
+
+  React.useEffect(() => {
+    latestCloseMobileChipPopoverRef.current = onCloseMobileChipPopover;
+  }, [onCloseMobileChipPopover]);
+
+  React.useEffect(() => {
+    if (!showMobileChipPopover) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (
+        mobileChipPopoverRef.current?.contains(target) ||
+        mobileChipTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      latestCloseMobileChipPopoverRef.current();
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [showMobileChipPopover]);
 
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
@@ -205,18 +261,35 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
           </div>
 
           <div className="chip-composer-dock__manual">
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={trayInputValue}
-              onChange={onTrayInputChange}
-              onBlur={onTrayInputBlur}
-              data-testid="chip-custom-input"
-              aria-label={t("game.trayAmountAria")}
-              className="chip-input"
-            />
+            {isDesktopClickBetting ? (
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={trayInputValue}
+                onChange={onTrayInputChange}
+                onBlur={onTrayInputBlur}
+                data-testid="chip-custom-input"
+                aria-label={t("game.trayAmountAria")}
+                className="chip-input"
+              />
+            ) : (
+              <button
+                ref={mobileChipTriggerRef}
+                type="button"
+                onClick={onOpenMobileChipPopover}
+                data-testid="chip-mobile-input-trigger"
+                aria-label={t("game.mobileChipInput.open")}
+                aria-expanded={showMobileChipPopover}
+                aria-haspopup="dialog"
+                className="chip-mobile-input-trigger"
+              >
+                <span className="chip-mobile-input-trigger__label">{t("game.mobileChipInput.edit")}</span>
+                <span className="chip-mobile-input-trigger__value">${trayAmount}</span>
+              </button>
+            )}
             <button
+              type="button"
               onClick={onClearTray}
               className="chip-clear"
               disabled={!isYourTurn || trayAmount <= 0}
@@ -293,6 +366,73 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                     onClick={onTrayConfirmAccept}
                     data-testid="bet-action-confirm-accept"
                     className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-300"
+                  >
+                    {t("common.confirm")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isDesktopClickBetting && showMobileChipPopover && (
+              <div
+                ref={mobileChipPopoverRef}
+                role="dialog"
+                aria-label={t("game.mobileChipInput.title")}
+                data-testid="chip-mobile-input-popover"
+                className="action-quick-confirm-popover chip-mobile-input-popover"
+                style={mobileChipPopoverStyle}
+              >
+                <p className="chip-mobile-input-popover__title">{t("game.mobileChipInput.title")}</p>
+                <div
+                  className="chip-mobile-input-popover__display"
+                  data-testid="chip-mobile-input-display"
+                >
+                  ${mobileChipDisplayValue}
+                </div>
+                <div className="chip-mobile-input-popover__keypad">
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((digit) => (
+                    <button
+                      key={digit}
+                      type="button"
+                      onClick={() => onMobileChipDigit(digit)}
+                      data-testid={`chip-mobile-digit-${digit}`}
+                      className="chip-mobile-input-popover__key"
+                    >
+                      {digit}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={onMobileChipBackspace}
+                    data-testid="chip-mobile-backspace"
+                    aria-label={t("game.mobileChipInput.backspace")}
+                    className="chip-mobile-input-popover__key chip-mobile-input-popover__key--wide"
+                  >
+                    {t("game.mobileChipInput.backspace")}
+                  </button>
+                </div>
+                <div className="chip-mobile-input-popover__actions">
+                  <button
+                    type="button"
+                    onClick={onMobileChipClearDraft}
+                    data-testid="chip-mobile-popover-clear"
+                    className="chip-mobile-input-popover__secondary"
+                  >
+                    {t("common.clear")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCloseMobileChipPopover}
+                    data-testid="chip-mobile-popover-cancel"
+                    className="chip-mobile-input-popover__secondary"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onMobileChipConfirm}
+                    data-testid="chip-mobile-popover-confirm"
+                    className="chip-mobile-input-popover__confirm"
                   >
                     {t("common.confirm")}
                   </button>

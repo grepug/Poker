@@ -16,6 +16,9 @@ const meta = {
     maxStack: 980,
     trayAmount: 120,
     trayInputValue: "120",
+    mobileChipDraftValue: "120",
+    showMobileChipPopover: false,
+    isDesktopClickBetting: true,
     canStartDrag: true,
     isDragActive: false,
     isYourTurn: true,
@@ -33,6 +36,12 @@ const meta = {
     onSetTrayDirectly: () => {},
     onTrayInputChange: () => {},
     onTrayInputBlur: () => {},
+    onOpenMobileChipPopover: () => {},
+    onCloseMobileChipPopover: () => {},
+    onMobileChipDigit: () => {},
+    onMobileChipBackspace: () => {},
+    onMobileChipClearDraft: () => {},
+    onMobileChipConfirm: () => {},
     onClearTray: () => {},
     onQuickDecisionAction: () => {},
     quickConfirmAction: null,
@@ -67,4 +76,20 @@ export const CheckAvailable: Story = {
       { key: "allIn", label: "All-in", amount: 980, testId: "preset-all-in", tone: "allin", enabled: true },
     ],
   },
+};
+
+export const MobilePopover: Story = {
+  args: {
+    isDesktopClickBetting: false,
+    showMobileChipPopover: true,
+    isAutomationMode: false,
+    mobileChipDraftValue: "240",
+  },
+  render: (args) => (
+    <div style={{ width: 390 }}>
+      <ChipComposerDock>
+        <TurnActionDock {...args} />
+      </ChipComposerDock>
+    </div>
+  ),
 };
