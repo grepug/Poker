@@ -37,6 +37,8 @@ type TableTopBarProps = {
   startDisabled?: boolean;
   hiddenHudCopy: HiddenHudCopy;
   isChatPanelOpen: boolean;
+  showChatButton?: boolean;
+  showChatPreview?: boolean;
   chatPreview: ChatPreview | null;
   showFinalResultsButton: boolean;
   showStartGameButton: boolean;
@@ -72,6 +74,8 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   startDisabled = false,
   hiddenHudCopy,
   isChatPanelOpen,
+  showChatButton = true,
+  showChatPreview = true,
   chatPreview,
   showFinalResultsButton,
   showStartGameButton,
@@ -180,13 +184,15 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         >
           {rankingsLabel}
         </button>
-        <button
-          onClick={onToggleChat}
-          data-testid="open-chat-button"
-          className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
-        >
-          {chatLabel}
-        </button>
+        {showChatButton && (
+          <button
+            onClick={onToggleChat}
+            data-testid="open-chat-button"
+            className="rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"
+          >
+            {chatLabel}
+          </button>
+        )}
         <button
           onClick={onOpenLiveAudio}
           data-testid="open-live-audio-button"
@@ -224,7 +230,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         </div>
       </section>
 
-      {!isChatPanelOpen && chatPreview && (
+      {showChatPreview && !isChatPanelOpen && chatPreview && (
         <div className="chat-preview-strip" data-testid="chat-preview-strip">
           <button
             type="button"

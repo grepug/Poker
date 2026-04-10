@@ -732,6 +732,42 @@ async function expectYourCardsFlyoutAboveActionArea(
   );
 }
 
+async function expectYourCardsFlyoutLeftOfActionArea(
+  page: Page,
+  actionAreaTestId: string,
+) {
+  await expect(
+    page.locator('[data-testid="your-cards-section"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator(`[data-testid="${actionAreaTestId}"]`),
+  ).toBeVisible();
+
+  const layout = await page.evaluate((targetActionAreaTestId) => {
+    const cardsPanel = document.querySelector<HTMLElement>(
+      '[data-testid="your-cards-section"]',
+    );
+    const actionArea = document.querySelector<HTMLElement>(
+      `[data-testid="${targetActionAreaTestId}"]`,
+    );
+    if (!cardsPanel || !actionArea) {
+      return null;
+    }
+
+    const cardsRect = cardsPanel.getBoundingClientRect();
+    const actionRect = actionArea.getBoundingClientRect();
+    return {
+      cardsRight: cardsRect.right,
+      actionLeft: actionRect.left,
+    };
+  }, actionAreaTestId);
+
+  expect(layout).not.toBeNull();
+  expect(layout?.cardsRight ?? Infinity).toBeLessThanOrEqual(
+    layout?.actionLeft ?? -Infinity,
+  );
+}
+
 async function getRoomSnapshot(page: Page) {
   return page.evaluate(() => {
     const room = (window as any).pokerDebug?.getRoom();
@@ -1820,6 +1856,37 @@ async function assertSeatCardsWithinTableBounds(
     result.failures,
     `[${label}] seat card overflowed table bounds: ${JSON.stringify(result.failures)}`,
   ).toEqual([]);
+}
+
+async function dragTrayToPot(
+  page: Page,
+  dropOffset: { x: number; y: number } = { x: 0, y: 0 },
+  options: { steps?: number } = {},
+) {
+  const tray = page.locator('[data-testid="chip-stack-draggable"]');
+  const pot = page.locator('[data-testid="pot-drop-zone"]');
+  const trayAmount = page.locator('[data-testid="tray-amount-value"]');
+  const trayBox = await tray.boundingBox();
+  const potBox = await pot.boundingBox();
+  const steps = options.steps ?? 12;
+
+  if (!trayBox || !potBox) {
+    throw new Error('Unable to drag tray to pot without bounding boxes');
+  }
+
+  await page.mouse.move(
+    trayBox.x + trayBox.width / 2,
+    trayBox.y + trayBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    potBox.x + potBox.width / 2 + potBox.width * dropOffset.x,
+    potBox.y + potBox.height / 2 + potBox.height * dropOffset.y,
+    { steps },
+  );
+  await expect(pot).toHaveClass(/pot-drop-zone--hover/);
+  await page.mouse.up();
+  await expect(trayAmount).toContainText('$0');
 }
 
 async function assertSeatCardsDoNotOverlapBoardAndPot(
@@ -6778,6 +6845,84 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8f: Desktop room uses a fixed game column and right rail', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(
+        alicePage.locator('[data-testid="desktop-game-column"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="desktop-right-rail"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="desktop-side-status"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="chat-preview-strip"]'),
+      ).toHaveCount(0);
+
+      const layout = await alicePage.evaluate(() => {
+        const gameColumn = document.querySelector<HTMLElement>(
+          '[data-testid="desktop-game-column"]',
+        );
+        const rightRail = document.querySelector<HTMLElement>(
+          '[data-testid="desktop-right-rail"]',
+        );
+        const felt = document.querySelector<HTMLElement>('.felt-oval');
+        const flyout = document.querySelector<HTMLElement>(
+          '[data-testid="your-cards-flyout"]',
+        );
+        const liveAudio = document.querySelector<HTMLElement>(
+          '[data-testid="live-audio-panel"]',
+        );
+        const chatPanel = document.querySelector<HTMLElement>(
+          '[data-testid="chat-panel"]',
+        );
+
+        if (!gameColumn || !rightRail || !felt || !flyout || !liveAudio || !chatPanel) {
+          return null;
+        }
+
+        const gameRect = gameColumn.getBoundingClientRect();
+        const railRect = rightRail.getBoundingClientRect();
+        const feltRect = felt.getBoundingClientRect();
+        const flyoutRect = flyout.getBoundingClientRect();
+        const liveAudioRect = liveAudio.getBoundingClientRect();
+        const chatRect = chatPanel.getBoundingClientRect();
+
+        return {
+          railStartsAfterGameColumn: railRect.left >= gameRect.right - 1,
+          liveAudioSitsAboveChat: liveAudioRect.bottom <= chatRect.top + 1,
+          cardsStayOutOfRightRail: flyoutRect.right <= railRect.left + 1,
+        };
+      });
+
+      expect(layout).not.toBeNull();
+      expect(layout?.railStartsAfterGameColumn).toBe(true);
+      expect(layout?.liveAudioSitsAboveChat).toBe(true);
+      expect(layout?.cardsStayOutOfRightRail).toBe(true);
+      await expectYourCardsFlyoutLeftOfActionArea(alicePage, 'desktop-dock-anchor');
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {
@@ -7631,6 +7776,164 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       ).toHaveCount(0);
       await alicePage.click('[data-testid="action-quick-confirm-accept"]');
       await waitForRound(bobPage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13d: Desktop bet confirmation is click-first while drag remains available', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await bobPage.waitForFunction(() => window.navigator.webdriver === false);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const raisePreset = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(raisePreset).toBeVisible();
+      await raisePreset.click();
+      await expect(
+        bobPage.locator('[data-testid="tray-amount-value"]'),
+      ).not.toContainText('$0');
+
+      const submitTrayButton = bobPage.locator('[data-testid="action-submit-tray"]');
+      await expect(submitTrayButton).toBeVisible();
+
+      const desktopActionLayout = await bobPage.evaluate(() => {
+        const submitButton = document.querySelector<HTMLElement>(
+          '[data-testid="action-submit-tray"]',
+        );
+        const trayButton = document.querySelector<HTMLElement>(
+          '[data-testid="chip-stack-draggable"]',
+        );
+        const foldButton = document.querySelector<HTMLElement>(
+          '[data-testid="action-fold"]',
+        );
+        const dock = document.querySelector<HTMLElement>(
+          '[data-testid="action-dock"]',
+        );
+        const cardsPanel = document.querySelector<HTMLElement>(
+          '[data-testid="your-cards-section"]',
+        );
+
+        if (!submitButton || !trayButton || !foldButton || !dock || !cardsPanel) {
+          return null;
+        }
+
+        const submitRect = submitButton.getBoundingClientRect();
+        const trayRect = trayButton.getBoundingClientRect();
+        const foldRect = foldButton.getBoundingClientRect();
+        const dockRect = dock.getBoundingClientRect();
+        const cardsRect = cardsPanel.getBoundingClientRect();
+        const submitCenterX = submitRect.left + submitRect.width / 2;
+        const submitCenterY = submitRect.top + submitRect.height / 2;
+        const trayCenterX = trayRect.left + trayRect.width / 2;
+        const trayCenterY = trayRect.top + trayRect.height / 2;
+        const foldCenterX = foldRect.left + foldRect.width / 2;
+        const foldCenterY = foldRect.top + foldRect.height / 2;
+
+        const distanceToTray = Math.hypot(
+          submitCenterX - trayCenterX,
+          submitCenterY - trayCenterY,
+        );
+        const distanceToFold = Math.hypot(
+          submitCenterX - foldCenterX,
+          submitCenterY - foldCenterY,
+        );
+
+        return {
+          submitNearTrayColumn: distanceToTray < distanceToFold,
+          cardsLeftOfDock: cardsRect.right <= dockRect.left + 1,
+        };
+      });
+
+      expect(desktopActionLayout).not.toBeNull();
+      expect(desktopActionLayout?.submitNearTrayColumn).toBe(true);
+      expect(desktopActionLayout?.cardsLeftOfDock).toBe(true);
+      await expectYourCardsFlyoutLeftOfActionArea(bobPage, 'action-dock');
+
+      await submitTrayButton.click();
+
+      await expect(
+        bobPage.locator('[data-testid="bet-action-confirm-popover"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="bet-action-confirm-cancel"]');
+      await expect(
+        bobPage.locator('[data-testid="bet-action-confirm-popover"]'),
+      ).toHaveCount(0);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await submitTrayButton.click();
+      await bobPage.click('[data-testid="bet-action-confirm-accept"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const continuePreset = alicePage.locator('[data-testid="chip-load-continue"]');
+      await expect(continuePreset).toBeVisible();
+      await continuePreset.click();
+      await dragTrayToPot(alicePage, { x: -0.16, y: 0.18 });
+      await waitForRound(bobPage, 'FLOP', 3);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.13e: Desktop wide repeated drag-to-pot commits with quick releases', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1728, height: 1117 }),
+        bobPage.setViewportSize({ width: 1728, height: 1117 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="chip-load-continue"]');
+      await dragTrayToPot(bobPage, { x: -0.14, y: 0.16 }, { steps: 2 });
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+      await expect(
+        alicePage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="action-quick-confirm-accept"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const bobContinuePreset = bobPage.locator(
+        '[data-testid="chip-load-continue"]',
+      );
+      await expect(bobContinuePreset).toBeVisible();
+      await expect(bobContinuePreset).toBeEnabled();
+      await bobContinuePreset.click();
+      await dragTrayToPot(bobPage, { x: 0.12, y: -0.1 }, { steps: 2 });
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const aliceContinuePreset = alicePage.locator(
+        '[data-testid="chip-load-continue"]',
+      );
+      await expect(aliceContinuePreset).toBeVisible();
+      await expect(aliceContinuePreset).toBeEnabled();
+      await aliceContinuePreset.click();
+      await dragTrayToPot(alicePage, { x: -0.08, y: 0.12 }, { steps: 2 });
+
+      await waitForPlayerTurn(bobPage, 'Bob');
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -8876,13 +9179,17 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
     }
   });
 
-  test('10.4: Clicking latest voice preview opens chat and starts that playback source', async ({
+  test('10.4: Mobile voice preview opens chat and starts that playback source', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
 
       await sendChatMessagesViaSocket(
         alicePage,
@@ -8912,13 +9219,17 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
     }
   });
 
-  test('10.5: Self messages do not create preview, dismiss/open both clear unread preview', async ({
+  test('10.5: Mobile hidden-chat preview dismiss/open both clear unread state', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
 
       await sendChatMessagesViaSocket(
         bobPage,

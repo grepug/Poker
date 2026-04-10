@@ -35,6 +35,7 @@ import {
   HandResultsModal,
   LeaveRoomConfirmModal,
   LiveAudioModal,
+  LiveAudioPanel,
   NextHandActionArea,
   OperationActionBar,
   ReadyActionArea,
@@ -48,10 +49,15 @@ import {
   TurnCenterAlert,
   YourCardsFlyout,
 } from "@/components/poker";
+import {
+  resolveCardsFlyoutDesktopLayout,
+  shouldRenderCardsFlyoutInBoardStage,
+} from "@/components/poker/game-room-layout";
 import type { SeatBadge, SeatLiveAudioBadge } from "@/components/poker/seat-pod";
 import { buildEqualArcEllipsePoints } from "@/components/poker/seat-orbit-layout";
 
 const DRAG_SNAP_RADIUS_PX = 32;
+const DRAG_DROP_ZONE_RECT_MARGIN_PX = 18;
 const ACTION_ALERT_VISIBLE_MS = 1300;
 const ACTION_ALERT_TOTAL_MS = 1600;
 const TURN_ALERT_VISIBLE_MS = 1650;
@@ -1770,6 +1776,7 @@ const useGameRoomElement = () => {
     playerCount: number;
   } | null>(null);
   const [quickConfirmAction, setQuickConfirmAction] = useState<QuickConfirmAction | null>(null);
+  const [showTrayConfirm, setShowTrayConfirm] = useState(false);
   const [legacyRaiseAmount, setLegacyRaiseAmount] = useState(0);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG_STATE);
   const [actionCenterAlert, setActionCenterAlert] = useState<ActionCenterAlert | null>(null);
@@ -1793,6 +1800,7 @@ const useGameRoomElement = () => {
   const lastDisplayedHandResultRef = useRef<HandResult | null>(null);
   const bottomBarOverlayRef = useRef<HTMLElement | null>(null);
   const actionCenterAlertRef = useRef<HTMLDivElement | null>(null);
+  const chatForcedByDesktopRef = useRef(false);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const boardCenterStackRef = useRef<HTMLDivElement | null>(null);
   const communityLaneRef = useRef<HTMLDivElement | null>(null);
@@ -1801,6 +1809,8 @@ const useGameRoomElement = () => {
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
   const previousIsYourTurnRef = useRef<boolean | null>(null);
+  const dragStateRef = useRef<DragState>(EMPTY_DRAG_STATE);
+  const dragActivatorRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -2178,8 +2188,34 @@ const useGameRoomElement = () => {
       ? "streetReveal"
       : null;
   const showTurnActionDock = isYourTurn && !showOperationBar && !showReadyActionArea;
+  const shouldShowDesktopRail = isDesktopSideDock;
+  const shouldShowChatPanel = isDesktopSideDock || isChatPanelOpen;
   const shouldAnchorCardsFlyoutToBottomBar =
     showOperationBar || showReadyActionArea || (showTurnActionDock && !isDesktopSideDock);
+  const desktopCardsFlyoutLayout = resolveCardsFlyoutDesktopLayout({
+    shouldRenderCardsFlyout,
+    isDesktopSideDock,
+    showTurnActionDock,
+  });
+  const shouldRenderCardsBesideDesktopDock =
+    desktopCardsFlyoutLayout.renderInDesktopDockCluster && showTurnActionDock;
+  const shouldRenderCardsInDesktopDockCluster =
+    desktopCardsFlyoutLayout.renderInDesktopDockCluster;
+  const shouldRenderStandaloneDesktopCardsFlyout =
+    shouldRenderCardsInDesktopDockCluster &&
+    !showTurnActionDock &&
+    !showOperationBar &&
+    !showReadyActionArea;
+  const shouldRenderCardsInBoardStage = shouldRenderCardsFlyoutInBoardStage({
+    shouldRenderCardsFlyout,
+    isDesktopSideDock,
+    showTurnActionDock,
+  });
+  const cardsFlyoutPlacement = isDesktopSideDock
+    ? "felt-right"
+    : shouldAnchorCardsFlyoutToBottomBar
+      ? "bottom"
+      : "left-edge";
   const activeBottomBarMode = showOperationBar
     ? "operation"
     : showReadyActionArea
@@ -2840,6 +2876,13 @@ const useGameRoomElement = () => {
 
   const isAutomationMode =
     typeof window !== "undefined" && Boolean(window.navigator.webdriver);
+  const desktopTraySubmitIntent =
+    !isAutomationMode &&
+    isDesktopSideDock &&
+    dropResolution.intent &&
+    dropResolution.intent.action !== "call"
+      ? dropResolution.intent
+      : null;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2856,6 +2899,21 @@ const useGameRoomElement = () => {
 
     return () => window.removeEventListener("resize", updateDockMode);
   }, []);
+
+  useEffect(() => {
+    if (!isDesktopSideDock) {
+      if (chatForcedByDesktopRef.current && isChatPanelOpen) {
+        chatForcedByDesktopRef.current = false;
+        setChatPanelOpen(false);
+      }
+      return;
+    }
+
+    if (!isChatPanelOpen) {
+      chatForcedByDesktopRef.current = true;
+      setChatPanelOpen(true);
+    }
+  }, [isChatPanelOpen, isDesktopSideDock, setChatPanelOpen]);
 
   const clearActionAlertTimers = useCallback(() => {
     if (actionAlertHideTimeoutRef.current !== null) {
@@ -2974,11 +3032,32 @@ const useGameRoomElement = () => {
     });
   }, [maxStack]);
 
+  const updateDragState = useCallback((nextState: DragState) => {
+    dragStateRef.current = nextState;
+    setDragState(nextState);
+  }, []);
+
+  const clearDragState = useCallback((pointerId?: number | null) => {
+    const dragActivatorNode = dragActivatorRef.current;
+    if (
+      dragActivatorNode &&
+      pointerId !== null &&
+      pointerId !== undefined &&
+      dragActivatorNode.hasPointerCapture(pointerId)
+    ) {
+      dragActivatorNode.releasePointerCapture(pointerId);
+    }
+
+    dragActivatorRef.current = null;
+    updateDragState(EMPTY_DRAG_STATE);
+  }, [updateDragState]);
+
   const resetTurnInteractionState = useCallback(() => {
     setTrayAmount(0);
     setQuickConfirmAction(null);
-    setDragState(EMPTY_DRAG_STATE);
-  }, []);
+    setShowTrayConfirm(false);
+    clearDragState(dragStateRef.current.pointerId);
+  }, [clearDragState]);
 
   useEffect(() => {
     if (!showTurnActionDock) {
@@ -3021,6 +3100,14 @@ const useGameRoomElement = () => {
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
+
+  useEffect(() => {
+    if (!showTrayConfirm || desktopTraySubmitIntent) {
+      return;
+    }
+
+    setShowTrayConfirm(false);
+  }, [desktopTraySubmitIntent, showTrayConfirm]);
 
   useEffect(() => {
     animatedPotRef.current = animatedPotValue;
@@ -3188,11 +3275,13 @@ const useGameRoomElement = () => {
     if (showHandResultsModal) setShowHandResultsModal(false);
     if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
     if (quickConfirmAction) setQuickConfirmAction(null);
+    if (showTrayConfirm) setShowTrayConfirm(false);
   }, [
     clearError,
     isGameEnded,
     lastError,
     quickConfirmAction,
+    showTrayConfirm,
     setShowLeaveConfirmModal,
     setShowEndGameConfirmModal,
     showHandResultsModal,
@@ -3218,7 +3307,8 @@ const useGameRoomElement = () => {
       !showEndGameConfirmModal &&
       !showHandResultsModal &&
       !showFinalSummaryModal &&
-      !quickConfirmAction
+      !quickConfirmAction &&
+      !showTrayConfirm
     ) {
       return;
     }
@@ -3241,6 +3331,7 @@ const useGameRoomElement = () => {
     showRulesModal,
     showSettingsModal,
     showLiveAudioModal,
+    showTrayConfirm,
   ]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
@@ -3248,13 +3339,26 @@ const useGameRoomElement = () => {
     if (!dropZone) return false;
 
     const rect = dropZone.getBoundingClientRect();
+    const hoveredNode = document.elementFromPoint(clientX, clientY);
+    const isHoveringDropZone =
+      hoveredNode instanceof Element &&
+      Boolean(hoveredNode.closest('[data-testid="pot-drop-zone"]'));
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     const radius = Math.max(rect.width, rect.height) / 2 + DRAG_SNAP_RADIUS_PX;
     const deltaX = clientX - centerX;
     const deltaY = clientY - centerY;
+    const isWithinExpandedRect =
+      clientX >= rect.left - DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientX <= rect.right + DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientY >= rect.top - DRAG_DROP_ZONE_RECT_MARGIN_PX &&
+      clientY <= rect.bottom + DRAG_DROP_ZONE_RECT_MARGIN_PX;
 
-    return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+    return (
+      isHoveringDropZone ||
+      isWithinExpandedRect ||
+      deltaX * deltaX + deltaY * deltaY <= radius * radius
+    );
   }, []);
 
   const commitTrayDrop = useCallback(() => {
@@ -3267,9 +3371,115 @@ const useGameRoomElement = () => {
     }
 
     setQuickConfirmAction(null);
+    setShowTrayConfirm(false);
     performAction(dropResolution.intent.action, dropResolution.intent.amount);
     setTrayAmount(0);
   }, [dropResolution.intent, isYourTurn, performAction]);
+
+  const updateDragPointer = useCallback((pointerId: number, clientX: number, clientY: number) => {
+    const currentDragState = dragStateRef.current;
+    if (!currentDragState.active || currentDragState.pointerId !== pointerId) {
+      return;
+    }
+
+    const nextOverDropZone = isPointInDropZone(clientX, clientY);
+    if (
+      currentDragState.clientX === clientX &&
+      currentDragState.clientY === clientY &&
+      currentDragState.overDropZone === nextOverDropZone
+    ) {
+      return;
+    }
+
+    updateDragState({
+      ...currentDragState,
+      clientX,
+      clientY,
+      overDropZone: nextOverDropZone,
+    });
+  }, [isPointInDropZone, updateDragState]);
+
+  const finishDragPointer = useCallback(({
+    pointerId,
+    clientX,
+    clientY,
+    cancelled,
+  }: {
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    cancelled: boolean;
+  }) => {
+    const currentDragState = dragStateRef.current;
+    if (!currentDragState.active || currentDragState.pointerId !== pointerId) {
+      return;
+    }
+
+    const shouldCommit =
+      !cancelled &&
+      (currentDragState.overDropZone || isPointInDropZone(clientX, clientY));
+
+    clearDragState(pointerId);
+
+    if (shouldCommit) {
+      commitTrayDrop();
+    }
+  }, [clearDragState, commitTrayDrop, isPointInDropZone]);
+
+  useEffect(() => {
+    if (!dragState.active || dragState.pointerId === null) {
+      return;
+    }
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      updateDragPointer(event.pointerId, event.clientX, event.clientY);
+    };
+    const handleWindowPointerUp = (event: PointerEvent) => {
+      finishDragPointer({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        cancelled: false,
+      });
+    };
+    const handleWindowPointerCancel = (event: PointerEvent) => {
+      finishDragPointer({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        cancelled: true,
+      });
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp, true);
+    window.addEventListener("pointercancel", handleWindowPointerCancel, true);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp, true);
+      window.removeEventListener("pointercancel", handleWindowPointerCancel, true);
+    };
+  }, [dragState.active, dragState.pointerId, finishDragPointer, updateDragPointer]);
+
+  const requestTraySubmit = useCallback(() => {
+    if (!desktopTraySubmitIntent) {
+      return;
+    }
+
+    setQuickConfirmAction(null);
+    setShowTrayConfirm(true);
+  }, [desktopTraySubmitIntent]);
+
+  const acceptTraySubmit = useCallback(() => {
+    if (!desktopTraySubmitIntent) {
+      return;
+    }
+
+    setShowTrayConfirm(false);
+    performAction(desktopTraySubmitIntent.action, desktopTraySubmitIntent.amount);
+    setTrayAmount(0);
+  }, [desktopTraySubmitIntent, performAction]);
 
   const setTrayDirectly = (nextAmount: number) => {
     if (!isYourTurn) return;
@@ -3315,8 +3525,9 @@ const useGameRoomElement = () => {
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragActivatorRef.current = event.currentTarget;
 
-    setDragState({
+    updateDragState({
       active: true,
       pointerId: event.pointerId,
       clientX: event.clientX,
@@ -3326,39 +3537,16 @@ const useGameRoomElement = () => {
   };
 
   const handleDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    setDragState((prev) => {
-      if (!prev.active || prev.pointerId !== event.pointerId) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        overDropZone: isPointInDropZone(event.clientX, event.clientY),
-      };
-    });
+    updateDragPointer(event.pointerId, event.clientX, event.clientY);
   };
 
   const handleDragEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const isSamePointer = dragState.active && dragState.pointerId === event.pointerId;
-    const isCancelled = event.type === "pointercancel";
-    const shouldCommit =
-      isSamePointer &&
-      !isCancelled &&
-      (dragState.overDropZone || isPointInDropZone(event.clientX, event.clientY));
-
-    setDragState((prev) =>
-      !prev.active || prev.pointerId !== event.pointerId ? prev : EMPTY_DRAG_STATE,
-    );
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    if (shouldCommit) {
-      commitTrayDrop();
-    }
+    finishDragPointer({
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      cancelled: event.type === "pointercancel",
+    });
   };
 
   const handleCopyInviteLink = async () => {
@@ -3675,6 +3863,7 @@ const useGameRoomElement = () => {
       }
 
       setQuickConfirmAction(null);
+      setShowTrayConfirm(false);
       performAction("raise", legacyRaiseAmount);
       return;
     }
@@ -3682,6 +3871,7 @@ const useGameRoomElement = () => {
     if (action !== "check" && action !== "fold") {
       setQuickConfirmAction(null);
     }
+    setShowTrayConfirm(false);
     performAction(action);
   };
 
@@ -3690,10 +3880,12 @@ const useGameRoomElement = () => {
     if (action === "check" && !canCheck) return;
 
     if (isAutomationMode) {
+      setShowTrayConfirm(false);
       performAction(action);
       return;
     }
 
+    setShowTrayConfirm(false);
     setQuickConfirmAction(action);
   };
 
@@ -3754,6 +3946,35 @@ const useGameRoomElement = () => {
     [locale, rulesVariant],
   );
 
+  const hiddenHudCopy = {
+    potLabel: t("game.pot", { amount: displayPot }),
+    chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
+    roundLabel: currentHand
+      ? t("game.round", { round: currentHand.bettingRound })
+      : null,
+    turnLabel: currentTurnPlayer
+      ? t("game.turn", { name: currentTurnPlayer.name })
+      : null,
+  };
+  const chatPreview =
+    !activePreviewMessage || isDesktopSideDock
+      ? null
+      : {
+          title: t("game.chat.preview.title"),
+          senderName: activePreviewMessage.sender.playerName,
+          senderEmoji: activePreviewMessage.sender.playerEmoji,
+          message: toChatPreviewText(activePreviewMessage, t),
+          timeIso: new Date(activePreviewMessage.createdAt).toISOString(),
+          timeLabel: formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow),
+          dismissLabel: t("game.chat.preview.dismiss"),
+        };
+  const desktopMainDockClassName = isDesktopSideDock
+    ? "chip-composer-dock--desktop-main"
+    : undefined;
+  const desktopOperationDockClassName = isDesktopSideDock
+    ? "chip-composer-dock--operation chip-composer-dock--desktop-main"
+    : "chip-composer-dock--operation";
+
   if (!room || !player) {
     return (
       <main className="min-h-screen px-4 py-10">
@@ -3775,148 +3996,409 @@ const useGameRoomElement = () => {
 
   return (
     <TableShell
+      isDesktopTwoColumn={isDesktopSideDock}
       showDesktopTurnDock={showTurnActionDock && isDesktopSideDock}
       showDesktopOperationDock={(showOperationBar || showReadyActionArea) && isDesktopSideDock}
       desktopBottomBarHeight={bottomBarHeight}
-      isChatPanelOpen={isChatPanelOpen}
+      isChatPanelOpen={shouldShowChatPanel}
     >
-      <TableTopBar
-        roomTitle={t("game.room", { roomId: room.id })}
-        playerCountLabel={t("game.playersCount", {
-          count: tablePlayers.length,
-          max: room.config.maxPlayers,
-        })}
-        ruleVariantLabel={ruleVariantLabel}
-        inviteCopyLabel={t("game.copyInvite")}
-        inviteCopyStatus={inviteCopyStatus}
-        inviteCopyStatusTone={inviteCopyStatusTone}
-        leaveLabel={t("common.leave")}
-        settingsLabel={t("common.settings")}
-        rulesLabel={rulesCopy.buttonLabel}
-        rankingsLabel={t("game.rankings")}
-        chatLabel={
-          chatUnreadCount > 0
-            ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
-            : t("game.chat.button")
-        }
-        liveAudioLabel={t("game.audio.title")}
-        liveAudioJoined={isLiveAudioJoined}
-        finalResultsLabel={t("game.final.title")}
-        startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
-        startDisabled={hasReadiedCurrentPhase}
-        hiddenHudCopy={{
-          potLabel: t("game.pot", { amount: displayPot }),
-          chipsLabel: t("game.yourChips", { amount: currentPlayer?.chips ?? 0 }),
-          roundLabel: currentHand
-            ? t("game.round", { round: currentHand.bettingRound })
-            : null,
-          turnLabel: currentTurnPlayer
-            ? t("game.turn", { name: currentTurnPlayer.name })
-            : null,
-        }}
-        isChatPanelOpen={isChatPanelOpen}
-        chatPreview={
-          !activePreviewMessage
-            ? null
-            : {
-                title: t("game.chat.preview.title"),
-                senderName: activePreviewMessage.sender.playerName,
-                senderEmoji: activePreviewMessage.sender.playerEmoji,
-                message: toChatPreviewText(activePreviewMessage, t),
-                timeIso: new Date(activePreviewMessage.createdAt).toISOString(),
-                timeLabel: formatRelativeTime(activePreviewMessage.createdAt, locale, relativeNow),
-                dismissLabel: t("game.chat.preview.dismiss"),
+      <div className="table-shell__desktop-layout">
+        <div
+          className="table-shell__game-column"
+          data-testid={shouldShowDesktopRail ? "desktop-game-column" : undefined}
+        >
+          <TableTopBar
+            roomTitle={t("game.room", { roomId: room.id })}
+            playerCountLabel={t("game.playersCount", {
+              count: tablePlayers.length,
+              max: room.config.maxPlayers,
+            })}
+            ruleVariantLabel={ruleVariantLabel}
+            inviteCopyLabel={t("game.copyInvite")}
+            inviteCopyStatus={inviteCopyStatus}
+            inviteCopyStatusTone={inviteCopyStatusTone}
+            leaveLabel={t("common.leave")}
+            settingsLabel={t("common.settings")}
+            rulesLabel={rulesCopy.buttonLabel}
+            rankingsLabel={t("game.rankings")}
+            chatLabel={
+              chatUnreadCount > 0
+                ? t("game.chat.buttonWithUnread", { count: chatUnreadCount })
+                : t("game.chat.button")
+            }
+            liveAudioLabel={t("game.audio.title")}
+            liveAudioJoined={isLiveAudioJoined}
+            finalResultsLabel={t("game.final.title")}
+            startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
+            startDisabled={hasReadiedCurrentPhase}
+            hiddenHudCopy={hiddenHudCopy}
+            isChatPanelOpen={shouldShowChatPanel}
+            showChatButton={!isDesktopSideDock}
+            showChatPreview={!isDesktopSideDock}
+            chatPreview={chatPreview}
+            showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
+            showStartGameButton={false}
+            onCopyInvite={handleCopyInviteLink}
+            onLeave={handleRequestLeave}
+            onOpenSettings={() => {
+              if (user) {
+                setProfileDisplayNameDraft(user.displayName);
+                setProfileAvatarEmojiDraft(user.avatarEmoji);
               }
-        }
-        showFinalResultsButton={isGameEnded && Boolean(finalGameResult)}
-        showStartGameButton={false}
-        onCopyInvite={handleCopyInviteLink}
-        onLeave={handleRequestLeave}
-        onOpenSettings={() => {
-          if (user) {
-            setProfileDisplayNameDraft(user.displayName);
-            setProfileAvatarEmojiDraft(user.avatarEmoji);
-          }
-          setProfileFeedback(null);
-          setShowSettingsModal(true);
-        }}
-        onOpenRules={() => setShowRulesModal(true)}
-        onOpenRankings={() => setShowRankingsModal(true)}
-        onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
-        onOpenLiveAudio={() => setShowLiveAudioModal(true)}
-        onOpenFinalResults={() => setShowFinalSummaryModal(true)}
-        onStartGame={markReady}
-        onOpenChatFromPreview={handleOpenChatFromPreview}
-        onDismissPreview={handleDismissPreview}
-      />
+              setProfileFeedback(null);
+              setShowSettingsModal(true);
+            }}
+            onOpenRules={() => setShowRulesModal(true)}
+            onOpenRankings={() => setShowRankingsModal(true)}
+            onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
+            onOpenLiveAudio={() => setShowLiveAudioModal(true)}
+            onOpenFinalResults={() => setShowFinalSummaryModal(true)}
+            onStartGame={markReady}
+            onOpenChatFromPreview={handleOpenChatFromPreview}
+            onDismissPreview={handleDismissPreview}
+          />
 
-      {isChatPanelOpen && (
+          {isWaitingForNextHand && (
+            <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">
+              {t("game.cardsAppearWhenHandStarts")}
+            </section>
+          )}
+
+          {turnAlertToken !== null && (
+            <div aria-live="assertive" key={`turn-alert-${turnAlertToken}`}>
+              <TurnCenterAlert
+                eyebrow={t("game.turnAlert.eyebrow")}
+                title={t("game.turnAlert.title")}
+              />
+            </div>
+          )}
+
+          <div className="table-shell__board-stage">
+            {shouldRenderCardsInBoardStage && (
+              <YourCardsFlyout
+                isOpen={isCardsFlyoutOpen}
+                hasHoleCards={hasHoleCards}
+                cards={displayHoleCards ?? []}
+                shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
+                bottomBarHeight={bottomBarHeight}
+                placement={cardsFlyoutPlacement}
+                title={t("game.yourCards")}
+                emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+                emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+                hideLabel={t("game.hide")}
+                showLabel={t("game.show")}
+                onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+              />
+            )}
+
+            {actionCenterAlert !== null && (
+              <ActionCenterAlertOverlay
+                key={`action-alert-${actionCenterAlert.id}`}
+                pointerVector={actionPointerVector}
+                eyebrow={t("game.actionAlert.eyebrow")}
+                actor={actionCenterAlert.playerName}
+                title={actionCenterAlert.text}
+                tone={actionCenterAlert.tone}
+                exiting={actionCenterAlert.exiting}
+                cardRef={actionCenterAlertRef}
+              />
+            )}
+
+            <TableBoard
+              feltOvalRef={feltOvalRef}
+              boardCenterStackRef={boardCenterStackRef}
+              communityLaneRef={communityLaneRef}
+              potDropZoneRef={potDropZoneRef}
+              setSeatNodeRef={(playerId, node) => {
+                seatNodeRefs.current[playerId] = node;
+              }}
+              communitySlots={communitySlots}
+              isYourTurn={isYourTurn}
+              isDragOverDropZone={dragState.overDropZone}
+              potLabel={t("game.potCenter")}
+              potValue={`$${animatedPotValue}`}
+              potHint={isYourTurn ? t("game.dragHint") : null}
+              potPulse={potAnimationTick >= 0}
+              seatOrbitItems={seatOrbitItems}
+            />
+          </div>
+
+          {operationBarMode !== null && (
+            <ChipComposerDock
+              ref={bottomBarOverlayRef}
+              className={desktopOperationDockClassName}
+              testId="operation-overlay"
+            >
+              {showResolvedRunoutBoardsPreview && (
+                <section className="showdown-revealed-hands" data-testid="showdown-runout-boards">
+                  <div className="showdown-revealed-hands__header">
+                    <h4 className="showdown-revealed-hands__title">{t("game.runouts.title")}</h4>
+                  </div>
+                  <div className="showdown-revealed-hands__list">
+                    {resolvedRunoutBoards.map((board, runIndex) => (
+                      <div
+                        key={`showdown-runout-board-${runIndex}`}
+                        className="showdown-revealed-hands__item"
+                        data-testid={`showdown-runout-board-${runIndex}`}
+                      >
+                        <span className="showdown-revealed-hands__name">
+                          {t("game.runouts.runLabel", { index: runIndex + 1 })}
+                        </span>
+                        <div className="showdown-revealed-hands__cards">
+                          {board.map((card, cardIndex) => (
+                            <Card
+                              key={`showdown-runout-card-${runIndex}-${card.suit}-${card.rank}-${cardIndex}`}
+                              card={card}
+                              size="small"
+                              dataTestId={`showdown-runout-card-${runIndex}-${cardIndex}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
+                <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
+                  <div className="showdown-revealed-hands__header">
+                    <h4 className="showdown-revealed-hands__title">{t("game.showdown.revealedHandsTitle")}</h4>
+                  </div>
+                  <div className="showdown-revealed-hands__list">
+                    {revealedShowdownHands.map((entry) => (
+                      <div
+                        key={entry.playerId}
+                        className="showdown-revealed-hands__item"
+                        data-testid={`showdown-revealed-hand-${entry.playerId}`}
+                      >
+                        <span className="showdown-revealed-hands__name">{entry.playerName}</span>
+                        <div className="showdown-revealed-hands__cards">
+                          {entry.cards.map((card, cardIndex) => (
+                            <Card
+                              key={`${entry.playerId}-${card.suit}-${card.rank}-${cardIndex}`}
+                              card={card}
+                              size="small"
+                              dataTestId={`showdown-revealed-card-${entry.playerId}-${cardIndex}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <OperationActionBar
+                mode={operationBarMode}
+                isAutomationMode={isAutomationMode}
+                runCountCanChoose={canChooseRunCount}
+                runCountHasChosenTwice={hasChosenRunTwice}
+                runCountReadyCount={runCountTwiceAgreedPlayerIdSet.size}
+                runCountTotalCount={runCountDecisionState?.eligiblePlayerIds.length ?? 0}
+                runCountWaitingPlayerNames={runCountWaitingPlayerNames}
+                isResultRevealStep={isResultRevealStep}
+                canRevealNextStreet={canRevealNextStreet}
+                hasRevealedNextStreet={hasRevealedNextStreet}
+                canShowMyHand={canShowMyHandAtShowdown}
+                hasShownMyHand={hasShownMyHandAtShowdown}
+                canFoldMyHand={canFoldMyHandAtShowdown}
+                hasFoldedMyHand={hasFoldedMyHandAtShowdown}
+                showdownIsDecisionTurn={isMyShowdownDecisionTurn}
+                showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
+                showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
+                onChooseRunOnce={() => decideRunCount(1)}
+                onChooseRunTwice={() => decideRunCount(2)}
+                onRevealNextStreet={revealNextStreet}
+                onShowMyHand={showMyHand}
+                onFoldMyHand={muckMyHand}
+                t={t}
+              />
+            </ChipComposerDock>
+          )}
+
+          {showPreGameReadyArea && (
+            <ChipComposerDock
+              ref={bottomBarOverlayRef}
+              className={desktopOperationDockClassName}
+              testId="operation-overlay"
+            >
+              <ReadyActionArea
+                phase={readyActionPhase}
+                canReady={canReadyInReadyActionArea}
+                hasReadied={hasReadiedCurrentPhase}
+                canEndGame={canHostEndGame}
+                isHost={isHost}
+                robots={robotPlayers.map((entry) => ({
+                  id: entry.id,
+                  name: entry.name,
+                  emoji: entry.emoji,
+                }))}
+                onReady={markReady}
+                onOpenEndGameConfirm={() => {
+                  if (!canHostEndGame) return;
+                  setShowEndGameConfirmModal(true);
+                }}
+                onAddRobot={() => addRobotPlayer()}
+                onRemoveRobot={(robotPlayerId) => removeRobotPlayer(robotPlayerId)}
+                t={t}
+              />
+            </ChipComposerDock>
+          )}
+
+          {showNextHandActionArea && !showHandResultsModal && (
+            <ChipComposerDock
+              ref={bottomBarOverlayRef}
+              className={desktopOperationDockClassName}
+              testId="operation-overlay"
+            >
+              <NextHandActionArea
+                canReadyNextHand={canReadyNextHand}
+                hasReadiedNextHand={hasReadiedCurrentPhase}
+                canEndGame={canHostEndGame}
+                onReadyNextHand={markReady}
+                onOpenEndGameConfirm={() => {
+                  if (!canHostEndGame) return;
+                  setShowEndGameConfirmModal(true);
+                }}
+                t={t}
+              />
+            </ChipComposerDock>
+          )}
+
+          {shouldRenderStandaloneDesktopCardsFlyout && (
+            <div className="desktop-dock-cluster desktop-dock-cluster--cards-only">
+              <YourCardsFlyout
+                isOpen={isCardsFlyoutOpen}
+                hasHoleCards={hasHoleCards}
+                cards={displayHoleCards ?? []}
+                shouldAnchorToBottomBar={false}
+                bottomBarHeight={bottomBarHeight}
+                placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
+                title={t("game.yourCards")}
+                emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+                emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+                hideLabel={t("game.hide")}
+                showLabel={t("game.show")}
+                onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+              />
+              <div
+                className="desktop-dock-cluster__anchor"
+                data-testid="desktop-dock-anchor"
+                aria-hidden="true"
+              />
+            </div>
+          )}
+
+          {showTurnActionDock && (
+            <div className={isDesktopSideDock ? "desktop-dock-cluster" : undefined}>
+              {shouldRenderCardsBesideDesktopDock && (
+                <YourCardsFlyout
+                  isOpen={isCardsFlyoutOpen}
+                  hasHoleCards={hasHoleCards}
+                  cards={displayHoleCards ?? []}
+                  shouldAnchorToBottomBar={false}
+                  bottomBarHeight={bottomBarHeight}
+                  placement={desktopCardsFlyoutLayout.placement ?? "dock-left"}
+                  title={t("game.yourCards")}
+                  emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
+                  emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
+                  hideLabel={t("game.hide")}
+                  showLabel={t("game.show")}
+                  onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
+                />
+              )}
+              <ChipComposerDock ref={bottomBarOverlayRef} className={desktopMainDockClassName}>
+                <TurnActionDock
+                  callAmount={callAmount}
+                  minRaise={minRaise}
+                  maxStack={maxStack}
+                  trayAmount={trayAmount}
+                  trayInputValue={trayInputValue}
+                  isDesktopClickBetting={isDesktopSideDock}
+                  canStartDrag={canStartDrag}
+                  isDragActive={dragState.active}
+                  isYourTurn={isYourTurn}
+                  canCheck={canCheck}
+                  isAutomationMode={isAutomationMode}
+                  legacyRaiseAmount={legacyRaiseAmount}
+                  trayPresetButtons={trayPresetButtons}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onSetTrayDirectly={setTrayDirectly}
+                  onTrayInputChange={handleCustomTrayInputChange}
+                  onTrayInputBlur={handleCustomTrayInputBlur}
+                  onClearTray={clearTray}
+                  onSubmitTray={requestTraySubmit}
+                  onQuickDecisionAction={handleQuickDecisionAction}
+                  quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
+                  onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
+                  onQuickConfirmAccept={(action) => {
+                    setQuickConfirmAction(null);
+                    performAction(action);
+                  }}
+                  traySubmitLabel={desktopTraySubmitIntent?.label ?? null}
+                  showTrayConfirm={showTrayConfirm}
+                  onTrayConfirmDismiss={() => setShowTrayConfirm(false)}
+                  onTrayConfirmAccept={acceptTraySubmit}
+                  onLegacyAction={handleLegacyAction}
+                  onLegacyRaiseAmountChange={setLegacyRaiseAmount}
+                  t={t}
+                />
+              </ChipComposerDock>
+            </div>
+          )}
+        </div>
+
+        {shouldShowDesktopRail && (
+          <aside className="desktop-right-rail" data-testid="desktop-right-rail">
+            <div className="desktop-rail-live-audio" data-testid="desktop-rail-live-audio">
+              <LiveAudioPanel
+                title={t("game.audio.title")}
+                subtitle={t("game.audio.subtitle")}
+                joinLabel={t("game.audio.join")}
+                leaveLabel={t("game.audio.leave")}
+                muteLabel={t("game.audio.mute")}
+                unmuteLabel={t("game.audio.unmute")}
+                enableAudioLabel={t("game.audio.enableAudio")}
+                connectingLabel={t("game.audio.connecting")}
+                connectedLabel={t("game.audio.connected")}
+                reconnectingLabel={t("game.audio.reconnecting")}
+                mutedLabel={t("game.audio.muted")}
+                unavailableLabel={t("game.audio.unavailable")}
+                rosterLabel={t("game.audio.roster")}
+                localParticipantLabel={t("game.audio.you")}
+                error={
+                  liveAudioError?.startsWith("game.audio.error.")
+                    ? t(liveAudioError as MessageKey)
+                    : liveAudioError
+                }
+                available={isLiveAudioAvailable}
+                isConfigLoaded={isLiveAudioConfigLoaded}
+                isConnecting={isLiveAudioConnecting}
+                isJoined={isLiveAudioJoined}
+                isMuted={isLiveAudioMuted}
+                isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
+                isReconnecting={isLiveAudioReconnecting}
+                participants={liveAudioParticipants}
+                onJoin={joinAudio}
+                onLeave={leaveAudio}
+                onMute={muteAudio}
+                onUnmute={unmuteAudio}
+                onEnableAudio={enableAudio}
+              />
+            </div>
+            <div className="chat-panel-shell chat-panel-shell--desktop-rail">
+              <ChatPanel onClose={() => undefined} showCloseButton={false} />
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {!shouldShowDesktopRail && shouldShowChatPanel && (
         <div className="chat-panel-shell">
           <ChatPanel onClose={() => setChatPanelOpen(false)} />
         </div>
       )}
-
-      {isWaitingForNextHand && (
-        <section className="mx-3 mt-2 rounded-xl border border-cyan-400/45 bg-cyan-900/25 px-3 py-2 text-xs font-semibold text-cyan-100">
-          {t("game.cardsAppearWhenHandStarts")}
-        </section>
-      )}
-
-      {turnAlertToken !== null && (
-        <div aria-live="assertive" key={`turn-alert-${turnAlertToken}`}>
-          <TurnCenterAlert
-            eyebrow={t("game.turnAlert.eyebrow")}
-            title={t("game.turnAlert.title")}
-          />
-        </div>
-      )}
-
-      {shouldRenderCardsFlyout && (
-        <YourCardsFlyout
-          isOpen={isCardsFlyoutOpen}
-          hasHoleCards={hasHoleCards}
-          cards={displayHoleCards ?? []}
-          shouldAnchorToBottomBar={shouldAnchorCardsFlyoutToBottomBar}
-          bottomBarHeight={bottomBarHeight}
-          title={t("game.yourCards")}
-          emptyOpenStateLabel={t("game.cardsAppearWhenHandStarts")}
-          emptyClosedStateLabel={`${t("game.hide")} ${t("game.yourCards")}`}
-          hideLabel={t("game.hide")}
-          showLabel={t("game.show")}
-          onToggle={() => setIsCardsFlyoutOpen((prev) => !prev)}
-        />
-      )}
-
-      {actionCenterAlert !== null && (
-        <ActionCenterAlertOverlay
-          key={`action-alert-${actionCenterAlert.id}`}
-          pointerVector={actionPointerVector}
-          eyebrow={t("game.actionAlert.eyebrow")}
-          actor={actionCenterAlert.playerName}
-          title={actionCenterAlert.text}
-          tone={actionCenterAlert.tone}
-          exiting={actionCenterAlert.exiting}
-          cardRef={actionCenterAlertRef}
-        />
-      )}
-
-      <TableBoard
-        feltOvalRef={feltOvalRef}
-        boardCenterStackRef={boardCenterStackRef}
-        communityLaneRef={communityLaneRef}
-        potDropZoneRef={potDropZoneRef}
-        setSeatNodeRef={(playerId, node) => {
-          seatNodeRefs.current[playerId] = node;
-        }}
-        communitySlots={communitySlots}
-        isYourTurn={isYourTurn}
-        isDragOverDropZone={dragState.overDropZone}
-        potLabel={t("game.potCenter")}
-        potValue={`$${animatedPotValue}`}
-        potHint={isYourTurn ? t("game.dragHint") : null}
-        potPulse={potAnimationTick >= 0}
-        seatOrbitItems={seatOrbitItems}
-      />
 
       {showHandResultsModal && lastHandResult && !finalGameResult && (
         <HandResultsModal
@@ -3978,183 +4460,6 @@ const useGameRoomElement = () => {
             t={t}
           />
         </HandResultsModal>
-      )}
-
-      {operationBarMode !== null && (
-        <ChipComposerDock
-          ref={bottomBarOverlayRef}
-          className="chip-composer-dock--operation"
-          testId="operation-overlay"
-        >
-          {showResolvedRunoutBoardsPreview && (
-            <section className="showdown-revealed-hands" data-testid="showdown-runout-boards">
-              <div className="showdown-revealed-hands__header">
-                <h4 className="showdown-revealed-hands__title">{t("game.runouts.title")}</h4>
-              </div>
-              <div className="showdown-revealed-hands__list">
-                {resolvedRunoutBoards.map((board, runIndex) => (
-                  <div
-                    key={`showdown-runout-board-${runIndex}`}
-                    className="showdown-revealed-hands__item"
-                    data-testid={`showdown-runout-board-${runIndex}`}
-                  >
-                    <span className="showdown-revealed-hands__name">
-                      {t("game.runouts.runLabel", { index: runIndex + 1 })}
-                    </span>
-                    <div className="showdown-revealed-hands__cards">
-                      {board.map((card, cardIndex) => (
-                        <Card
-                          key={`showdown-runout-card-${runIndex}-${card.suit}-${card.rank}-${cardIndex}`}
-                          card={card}
-                          size="small"
-                          dataTestId={`showdown-runout-card-${runIndex}-${cardIndex}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          {operationBarMode === "showdown" && revealedShowdownHands.length > 0 && (
-            <section className="showdown-revealed-hands" data-testid="showdown-revealed-hands">
-              <div className="showdown-revealed-hands__header">
-                <h4 className="showdown-revealed-hands__title">{t("game.showdown.revealedHandsTitle")}</h4>
-              </div>
-              <div className="showdown-revealed-hands__list">
-                {revealedShowdownHands.map((entry) => (
-                  <div
-                    key={entry.playerId}
-                    className="showdown-revealed-hands__item"
-                    data-testid={`showdown-revealed-hand-${entry.playerId}`}
-                  >
-                    <span className="showdown-revealed-hands__name">{entry.playerName}</span>
-                    <div className="showdown-revealed-hands__cards">
-                      {entry.cards.map((card, cardIndex) => (
-                        <Card
-                          key={`${entry.playerId}-${card.suit}-${card.rank}-${cardIndex}`}
-                          card={card}
-                          size="small"
-                          dataTestId={`showdown-revealed-card-${entry.playerId}-${cardIndex}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          <OperationActionBar
-            mode={operationBarMode}
-            isAutomationMode={isAutomationMode}
-            runCountCanChoose={canChooseRunCount}
-            runCountHasChosenTwice={hasChosenRunTwice}
-            runCountReadyCount={runCountTwiceAgreedPlayerIdSet.size}
-            runCountTotalCount={runCountDecisionState?.eligiblePlayerIds.length ?? 0}
-            runCountWaitingPlayerNames={runCountWaitingPlayerNames}
-            isResultRevealStep={isResultRevealStep}
-            canRevealNextStreet={canRevealNextStreet}
-            hasRevealedNextStreet={hasRevealedNextStreet}
-            canShowMyHand={canShowMyHandAtShowdown}
-            hasShownMyHand={hasShownMyHandAtShowdown}
-            canFoldMyHand={canFoldMyHandAtShowdown}
-            hasFoldedMyHand={hasFoldedMyHandAtShowdown}
-            showdownIsDecisionTurn={isMyShowdownDecisionTurn}
-            showdownWaitingPlayerName={showdownDecisionWaitingPlayerName}
-            showdownIsForcedRevealTurn={isShowdownForcedRevealTurn}
-            onChooseRunOnce={() => decideRunCount(1)}
-            onChooseRunTwice={() => decideRunCount(2)}
-            onRevealNextStreet={revealNextStreet}
-            onShowMyHand={showMyHand}
-            onFoldMyHand={muckMyHand}
-            t={t}
-          />
-        </ChipComposerDock>
-      )}
-
-      {showPreGameReadyArea && (
-        <ChipComposerDock
-          ref={bottomBarOverlayRef}
-          className="chip-composer-dock--operation"
-          testId="operation-overlay"
-        >
-          <ReadyActionArea
-            phase={readyActionPhase}
-            canReady={canReadyInReadyActionArea}
-            hasReadied={hasReadiedCurrentPhase}
-            canEndGame={canHostEndGame}
-            isHost={isHost}
-            robots={robotPlayers.map((entry) => ({
-              id: entry.id,
-              name: entry.name,
-              emoji: entry.emoji,
-            }))}
-            onReady={markReady}
-            onOpenEndGameConfirm={() => {
-              if (!canHostEndGame) return;
-              setShowEndGameConfirmModal(true);
-            }}
-            onAddRobot={() => addRobotPlayer()}
-            onRemoveRobot={(robotPlayerId) => removeRobotPlayer(robotPlayerId)}
-            t={t}
-          />
-        </ChipComposerDock>
-      )}
-
-      {showNextHandActionArea && !showHandResultsModal && (
-        <ChipComposerDock
-          ref={bottomBarOverlayRef}
-          className="chip-composer-dock--operation"
-          testId="operation-overlay"
-        >
-          <NextHandActionArea
-            canReadyNextHand={canReadyNextHand}
-            hasReadiedNextHand={hasReadiedCurrentPhase}
-            canEndGame={canHostEndGame}
-            onReadyNextHand={markReady}
-            onOpenEndGameConfirm={() => {
-              if (!canHostEndGame) return;
-              setShowEndGameConfirmModal(true);
-            }}
-            t={t}
-          />
-        </ChipComposerDock>
-      )}
-
-      {showTurnActionDock && (
-        <ChipComposerDock ref={bottomBarOverlayRef}>
-          <TurnActionDock
-            callAmount={callAmount}
-            minRaise={minRaise}
-            maxStack={maxStack}
-            trayAmount={trayAmount}
-            trayInputValue={trayInputValue}
-            canStartDrag={canStartDrag}
-            isDragActive={dragState.active}
-            isYourTurn={isYourTurn}
-            canCheck={canCheck}
-            isAutomationMode={isAutomationMode}
-            legacyRaiseAmount={legacyRaiseAmount}
-            trayPresetButtons={trayPresetButtons}
-            onDragStart={handleDragStart}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-            onSetTrayDirectly={setTrayDirectly}
-            onTrayInputChange={handleCustomTrayInputChange}
-            onTrayInputBlur={handleCustomTrayInputBlur}
-            onClearTray={clearTray}
-            onQuickDecisionAction={handleQuickDecisionAction}
-            quickConfirmAction={!isAutomationMode ? quickConfirmAction : null}
-            onQuickConfirmDismiss={() => setQuickConfirmAction(null)}
-            onQuickConfirmAccept={(action) => {
-              setQuickConfirmAction(null);
-              performAction(action);
-            }}
-            onLegacyAction={handleLegacyAction}
-            onLegacyRaiseAmountChange={setLegacyRaiseAmount}
-            t={t}
-          />
-        </ChipComposerDock>
       )}
 
       {dragState.active && (
