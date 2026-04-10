@@ -107,6 +107,7 @@ const meta = {
   tags: ["autodocs"],
   args: {
     callAmount: 40,
+    isOpeningBetAction: false,
     minRaise: 80,
     maxStack: 980,
     trayAmount: 120,
@@ -172,6 +173,7 @@ export const CheckAvailable: Story = {
   args: {
     canCheck: true,
     callAmount: 0,
+    isOpeningBetAction: true,
     trayPresetButtons: noBetPresets,
   },
 };

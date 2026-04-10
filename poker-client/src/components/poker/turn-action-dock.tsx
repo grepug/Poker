@@ -17,6 +17,7 @@ type MobilePresetPartition = {
 
 type TurnActionDockProps = {
   callAmount: number;
+  isOpeningBetAction: boolean;
   minRaise: number;
   maxStack: number;
   trayAmount: number;
@@ -78,6 +79,7 @@ export const partitionCompactMobilePresets = (
 
 export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   callAmount,
+  isOpeningBetAction,
   minRaise,
   maxStack,
   trayAmount,
@@ -145,6 +147,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
       : null;
   const hasCompactMobileRaiseMenu =
     isCompactMobileLayout && menuPresets.length > 0 && !directCompactMobileMenuPreset;
+  const compactRaiseMenuLabelKey: MessageKey =
+    isOpeningBetAction ? "game.preset.bet" : "game.raise";
+  const compactRaiseMenuLabel = t(compactRaiseMenuLabelKey);
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
   const quickConfirmStyle = useAnchoredPopover({
@@ -176,6 +181,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     popoverRef: mobileChipPopoverRef,
     preferredPlacement: "top",
     align: "center",
+    strategy: "fixed",
   });
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
   const showDesktopSubmitTrayButton =
@@ -305,13 +311,13 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
       <div
         ref={raiseMenuPopoverRef}
         role="dialog"
-        aria-label={t("game.raise")}
+        aria-label={compactRaiseMenuLabel}
         data-testid="raise-action-popover"
         className="action-quick-confirm-popover action-quick-confirm-popover--wide chip-raise-menu-popover"
         style={raiseMenuStyle}
       >
         <div className="chip-raise-menu-popover__header">
-          <span className="chip-raise-menu-popover__title">{t("game.raise")}</span>
+          <span className="chip-raise-menu-popover__title">{compactRaiseMenuLabel}</span>
           <button
             type="button"
             onClick={() => setIsRaiseMenuOpen(false)}
@@ -325,6 +331,73 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
           {menuPresets.map((preset) =>
             renderPresetButton(preset, `chip-quick chip-quick--preset chip-quick--${preset.tone}`),
           )}
+        </div>
+      </div>
+    ) : null;
+  const mobileChipPopover =
+    !isDesktopClickBetting && showMobileChipPopover ? (
+      <div
+        ref={mobileChipPopoverRef}
+        role="dialog"
+        aria-label={t("game.mobileChipInput.title")}
+        data-testid="chip-mobile-input-popover"
+        className="action-quick-confirm-popover chip-mobile-input-popover"
+        style={mobileChipPopoverStyle}
+      >
+        <p className="chip-mobile-input-popover__title">{t("game.mobileChipInput.title")}</p>
+        <div
+          className="chip-mobile-input-popover__display"
+          data-testid="chip-mobile-input-display"
+        >
+          ${mobileChipDisplayValue}
+        </div>
+        <div className="chip-mobile-input-popover__keypad">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((digit) => (
+            <button
+              key={digit}
+              type="button"
+              onClick={() => onMobileChipDigit(digit)}
+              data-testid={`chip-mobile-digit-${digit}`}
+              className="chip-mobile-input-popover__key"
+            >
+              {digit}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onMobileChipBackspace}
+            data-testid="chip-mobile-backspace"
+            aria-label={t("game.mobileChipInput.backspace")}
+            className="chip-mobile-input-popover__key chip-mobile-input-popover__key--wide"
+          >
+            {t("game.mobileChipInput.backspace")}
+          </button>
+        </div>
+        <div className="chip-mobile-input-popover__actions">
+          <button
+            type="button"
+            onClick={onMobileChipClearDraft}
+            data-testid="chip-mobile-popover-clear"
+            className="chip-mobile-input-popover__secondary"
+          >
+            {t("common.clear")}
+          </button>
+          <button
+            type="button"
+            onClick={onCloseMobileChipPopover}
+            data-testid="chip-mobile-popover-cancel"
+            className="chip-mobile-input-popover__secondary"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onMobileChipConfirm}
+            data-testid="chip-mobile-popover-confirm"
+            className="chip-mobile-input-popover__confirm"
+          >
+            {t("common.confirm")}
+          </button>
         </div>
       </div>
     ) : null;
@@ -447,7 +520,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                       aria-expanded={isRaiseMenuOpen}
                       aria-haspopup="dialog"
                     >
-                      <span>{t("game.raise")}</span>
+                      <span>{compactRaiseMenuLabel}</span>
                     </button>
                   )}
                 </div>
@@ -544,73 +617,6 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
               </div>
             )}
 
-            {!isDesktopClickBetting && showMobileChipPopover && (
-              <div
-                ref={mobileChipPopoverRef}
-                role="dialog"
-                aria-label={t("game.mobileChipInput.title")}
-                data-testid="chip-mobile-input-popover"
-                className="action-quick-confirm-popover chip-mobile-input-popover"
-                style={mobileChipPopoverStyle}
-              >
-                <p className="chip-mobile-input-popover__title">{t("game.mobileChipInput.title")}</p>
-                <div
-                  className="chip-mobile-input-popover__display"
-                  data-testid="chip-mobile-input-display"
-                >
-                  ${mobileChipDisplayValue}
-                </div>
-                <div className="chip-mobile-input-popover__keypad">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((digit) => (
-                    <button
-                      key={digit}
-                      type="button"
-                      onClick={() => onMobileChipDigit(digit)}
-                      data-testid={`chip-mobile-digit-${digit}`}
-                      className="chip-mobile-input-popover__key"
-                    >
-                      {digit}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={onMobileChipBackspace}
-                    data-testid="chip-mobile-backspace"
-                    aria-label={t("game.mobileChipInput.backspace")}
-                    className="chip-mobile-input-popover__key chip-mobile-input-popover__key--wide"
-                  >
-                    {t("game.mobileChipInput.backspace")}
-                  </button>
-                </div>
-                <div className="chip-mobile-input-popover__actions">
-                  <button
-                    type="button"
-                    onClick={onMobileChipClearDraft}
-                    data-testid="chip-mobile-popover-clear"
-                    className="chip-mobile-input-popover__secondary"
-                  >
-                    {t("common.clear")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onCloseMobileChipPopover}
-                    data-testid="chip-mobile-popover-cancel"
-                    className="chip-mobile-input-popover__secondary"
-                  >
-                    {t("common.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onMobileChipConfirm}
-                    data-testid="chip-mobile-popover-confirm"
-                    className="chip-mobile-input-popover__confirm"
-                  >
-                    {t("common.confirm")}
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="chip-composer-dock__footer">
               <button
                 ref={checkActionButtonRef}
@@ -637,6 +643,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
 
       {raiseMenuPopover &&
         (typeof document !== "undefined" ? createPortal(raiseMenuPopover, document.body) : null)}
+
+      {mobileChipPopover &&
+        (typeof document !== "undefined" ? createPortal(mobileChipPopover, document.body) : null)}
 
       {isAutomationMode && (
         <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">

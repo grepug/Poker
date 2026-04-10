@@ -4447,6 +4447,7 @@ const useGameRoomElement = () => {
               <ChipComposerDock ref={bottomBarOverlayRef} className={desktopMainDockClassName}>
                 <TurnActionDock
                   callAmount={callAmount}
+                  isOpeningBetAction={(currentHand?.currentBet ?? 0) <= 0}
                   minRaise={minRaise}
                   maxStack={maxStack}
                   trayAmount={trayAmount}

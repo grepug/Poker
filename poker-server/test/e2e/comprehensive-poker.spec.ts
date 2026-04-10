@@ -555,6 +555,7 @@ async function startGameFromLobby(
     [alicePage, bobPage],
     desiredStreetReveal,
   );
+  await closeChatPanelIfOpen(alicePage);
   await alicePage.click('[data-testid="start-game-button"]');
   await Promise.all([
     alicePage.waitForSelector('[data-testid="round-value"]', {
@@ -950,6 +951,23 @@ async function openChatPanel(page: Page) {
   await page.click('[data-testid="open-chat-button"]');
   await page.waitForSelector('[data-testid="chat-panel"]', {
     state: 'visible',
+    timeout: 5000,
+  });
+}
+
+async function closeChatPanelIfOpen(page: Page) {
+  const closeButton = page.locator('[data-testid="close-chat-button"]');
+  if ((await closeButton.count()) === 0) {
+    return;
+  }
+
+  if (!(await closeButton.isVisible())) {
+    return;
+  }
+
+  await closeButton.click();
+  await page.waitForSelector('[data-testid="chat-panel"]', {
+    state: 'hidden',
     timeout: 5000,
   });
 }
@@ -5484,7 +5502,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.setViewportSize({ width: 390, height: 844 }),
         bobPage.setViewportSize({ width: 390, height: 844 }),
       ]);
+      await Promise.all([
+        closeChatPanelIfOpen(alicePage),
+        closeChatPanelIfOpen(bobPage),
+      ]);
       await startGameFromLobby(alicePage, bobPage);
+      await Promise.all([
+        closeChatPanelIfOpen(alicePage),
+        closeChatPanelIfOpen(bobPage),
+      ]);
 
       // Remove pre-flop call pressure so min raise becomes the opening amount.
       await waitForPlayerTurn(bobPage, 'Bob');
@@ -5505,6 +5531,30 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         '[data-testid="chip-load-continue"]',
       );
       await expect(continueButton).toHaveCount(0);
+      const openRaiseMenuButton = bobPage.locator(
+        '[data-testid="action-open-raise-menu"]',
+      );
+      await expect(openRaiseMenuButton).toBeVisible();
+      await expect(openRaiseMenuButton).toContainText('Bet');
+      await openRaiseMenuButton.click();
+      await expect(
+        bobPage.locator('[data-testid="raise-action-popover"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="raise-action-popover"]'),
+      ).toHaveAttribute('aria-label', 'Bet');
+      await expect(
+        bobPage.locator('.chip-raise-menu-popover__title'),
+      ).toContainText('Bet');
+      await expect(
+        bobPage.locator(
+          '[data-testid="raise-action-popover"] [data-testid="chip-load-all-in"]',
+        ),
+      ).toBeVisible();
+      await openRaiseMenuButton.click();
+      await expect(
+        bobPage.locator('[data-testid="raise-action-popover"]'),
+      ).toHaveCount(0);
 
       const raiseButton = bobPage.locator('[data-testid="chip-load-raise"]');
       await expect(raiseButton).toBeVisible();
@@ -5512,7 +5562,6 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       const raiseButtonText = (await raiseButton.textContent()) ?? '';
       const raiseAmountMatch = raiseButtonText.match(/\$([0-9]+)/);
       expect(raiseAmountMatch).not.toBeNull();
-      await expect(bobPage.locator('[data-testid="chip-load-all-in"]')).toBeVisible();
       expect(
         await bobPage.locator('[data-testid="chip-load-3bet"]').count(),
       ).toBe(0);
@@ -5536,6 +5585,55 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.locator('[data-testid="chip-mobile-input-popover"]'),
       ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="your-cards-section"]'),
+      ).toBeVisible();
+      const mobileChipOverlayCheck = await bobPage.evaluate(() => {
+        const popover = document.querySelector<HTMLElement>(
+          '[data-testid="chip-mobile-input-popover"]',
+        );
+        const cards = document.querySelector<HTMLElement>(
+          '[data-testid="your-cards-section"]',
+        );
+        if (!popover || !cards) {
+          return null;
+        }
+
+        const popoverRect = popover.getBoundingClientRect();
+        const cardsRect = cards.getBoundingClientRect();
+        const overlapLeft = Math.max(popoverRect.left, cardsRect.left);
+        const overlapRight = Math.min(popoverRect.right, cardsRect.right);
+        const overlapTop = Math.max(popoverRect.top, cardsRect.top);
+        const overlapBottom = Math.min(popoverRect.bottom, cardsRect.bottom);
+        const hasOverlap =
+          overlapLeft < overlapRight && overlapTop < overlapBottom;
+        const sampleX = hasOverlap
+          ? overlapLeft + (overlapRight - overlapLeft) / 2
+          : popoverRect.left + Math.min(popoverRect.width * 0.2, 40);
+        const sampleY = hasOverlap
+          ? overlapTop + (overlapBottom - overlapTop) / 2
+          : popoverRect.top + Math.min(popoverRect.height * 0.2, 40);
+        const topElement = document.elementFromPoint(sampleX, sampleY);
+
+        return {
+          hasOverlap,
+          topTestId:
+            topElement instanceof HTMLElement
+              ? topElement.dataset.testid ??
+                topElement.closest<HTMLElement>('[data-testid]')?.dataset
+                  .testid ??
+                null
+              : null,
+          popoverOwnsTopElement:
+            topElement instanceof HTMLElement &&
+            (topElement === popover || popover.contains(topElement)),
+        };
+      });
+      expect(mobileChipOverlayCheck).not.toBeNull();
+      expect(
+        (mobileChipOverlayCheck?.hasOverlap ?? false) === false ||
+          mobileChipOverlayCheck?.popoverOwnsTopElement === true,
+      ).toBe(true);
       await bobPage.click('[data-testid="chip-mobile-popover-clear"]');
       for (let index = 0; index < 6; index += 1) {
         await bobPage.click('[data-testid="chip-mobile-digit-9"]');
