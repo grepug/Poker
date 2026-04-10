@@ -274,6 +274,10 @@ describe("SavedGameDetailView", () => {
     expect(html).toContain('data-testid="saved-history-mobile-tab-actions"');
     expect(html).toContain('data-testid="saved-history-mobile-tab-review"');
     expect(html).toContain('data-testid="saved-history-mobile-tab-session"');
+    expect(html).toContain('data-testid="saved-history-mobile-tab-overview" aria-pressed="true"');
+    expect(html).toContain('data-testid="saved-history-mobile-tab-actions" aria-pressed="false"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-pressed="false"');
   });
 
   it("keeps dedicated desktop standings and hand list regions while mobile gets its own supporting sections", () => {

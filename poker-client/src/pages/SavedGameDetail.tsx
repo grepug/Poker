@@ -229,7 +229,7 @@ const ParticipantStandingsTable: React.FC<{
                 participant.profit >= 0 ? "text-emerald-300" : "text-rose-300"
               }`}
             >
-              {participant.profit >= 0 ? "+" : ""}${participant.profit}
+              {formatCurrency(participant.profit)}
             </td>
           </tr>
         ))}
@@ -266,7 +266,7 @@ const ParticipantStandingsCards: React.FC<{
               participant.profit >= 0 ? "text-emerald-300" : "text-rose-300"
             }`}
           >
-            {participant.profit >= 0 ? "+" : ""}${participant.profit}
+            {formatCurrency(participant.profit)}
           </p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -441,6 +441,7 @@ const MobileSectionTabButton: React.FC<{
     type="button"
     onClick={() => onClick(id)}
     data-testid={`saved-history-mobile-tab-${id}`}
+    aria-pressed={isActive}
     className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
       isActive
         ? "border-emerald-300 bg-emerald-400/15 text-white"
@@ -461,6 +462,7 @@ const MobileHandStripButton: React.FC<{
   <button
     type="button"
     onClick={() => onSelect(hand.handNumber)}
+    aria-pressed={isActive}
     className={`min-w-[9rem] snap-start rounded-2xl border px-4 py-3 text-left transition ${
       isActive
         ? "border-emerald-300 bg-emerald-400/15 text-white"
