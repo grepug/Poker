@@ -9299,6 +9299,77 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.15c: Abandoned Room Auto-Archives Saved History After Last Disconnect Timeout', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+    let bobReturnContext: BrowserContext | null = null;
+
+    try {
+      const { alicePage, bobPage, roomCode, aliceContext, bobContext } = session;
+      await setTestDeckForCurrentRoom(alicePage, [
+        { suit: 'hearts', rank: 'A' }, // Alice
+        { suit: 'hearts', rank: 'K' }, // Alice
+        { suit: 'spades', rank: 'Q' }, // Bob
+        { suit: 'spades', rank: 'J' }, // Bob
+        { suit: 'clubs', rank: '2' }, // Flop 1
+        { suit: 'diamonds', rank: '5' }, // Flop 2
+        { suit: 'spades', rank: '8' }, // Flop 3
+        { suit: 'hearts', rank: '9' }, // Turn
+        { suit: 'diamonds', rank: 'K' }, // River
+      ]);
+
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await startGameFromLobby(alicePage, bobPage);
+      await playCheckCheckToShowdown(alicePage, bobPage);
+      await handCompletePromise;
+
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+
+      bobReturnContext = await browser.newContext();
+      const bobReturnPage = await bobReturnContext.newPage();
+      await authenticateTestUser(bobReturnPage, 'test2', {
+        displayName: 'Bob',
+        avatarEmoji: '🐻',
+      });
+
+      await expect
+        .poll(
+          async () => {
+            const response = await bobReturnPage.context().request.get(
+              `${BACKEND_URL}/api/history/games`,
+            );
+            if (!response.ok()) {
+              return false;
+            }
+
+            const games = (await response.json()) as Array<{ roomId?: string }>;
+            return games.some((game) => game.roomId === roomCode);
+          },
+          { timeout: 10000, intervals: [500, 1000, 1500] },
+        )
+        .toBe(true);
+
+      await bobReturnPage.getByRole('button', { name: 'History' }).click();
+      await expect(
+        bobReturnPage.locator('[data-testid="saved-games-page"]'),
+      ).toBeVisible();
+      await expect(
+        bobReturnPage.locator(`[data-testid="saved-game-card-${roomCode}"]`),
+      ).toBeVisible();
+    } finally {
+      await Promise.allSettled([
+        teardownTwoPlayerSession(session),
+        bobReturnContext?.close(),
+      ]);
+    }
+  });
+
   test('8.16: Non-Showdown Result Keeps Hole Cards Hidden', async ({
     browser,
   }) => {

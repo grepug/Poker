@@ -140,6 +140,7 @@ export class EventsGateway
 
   private readonly logger = new Logger(EventsGateway.name);
   private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private abandonedRoomSince: Map<string, number> = new Map();
   private runCountDecisionTimers: Map<string, NodeJS.Timeout> = new Map();
   private socketToPlayer: Map<string, { roomId: string; playerId: string }> =
     new Map();
@@ -301,6 +302,7 @@ export class EventsGateway
       clearTimeout(timer);
     }
     this.runCountDecisionTimers.clear();
+    this.abandonedRoomSince.clear();
   }
 
   private extractSocketToken(client: Socket): string {
@@ -368,6 +370,199 @@ export class EventsGateway
       .filter((player: any) => player.status !== 'left')
       .filter((player: any) => !this.isPlayerDisconnected(player))
       .map((player: any) => player.id);
+  }
+
+  private hasConnectedHumanPlayers(room: any): boolean {
+    return (room?.players ?? []).some(
+      (player: any) =>
+        !player?.isRobot &&
+        player?.status !== 'left' &&
+        !this.isPlayerDisconnected(player),
+    );
+  }
+
+  private isSafeToFinalizeRoom(room: any): boolean {
+    return Boolean(
+      room?.gameState === 'IN_PROGRESS' &&
+        room?.currentHand &&
+        room.currentHand.currentPlayerTurn === null &&
+        room.currentHand.lastResult,
+    );
+  }
+
+  private updateAbandonedRoomTracking(room: any): void {
+    if (!room?.id) {
+      return;
+    }
+
+    if (room.gameState !== 'IN_PROGRESS' || this.hasConnectedHumanPlayers(room)) {
+      this.abandonedRoomSince.delete(room.id);
+      return;
+    }
+
+    if (!this.abandonedRoomSince.has(room.id)) {
+      this.abandonedRoomSince.set(room.id, Date.now());
+    }
+  }
+
+  private cancelPendingDisconnectTimersForRoom(room: any): void {
+    for (const player of room?.players ?? []) {
+      const timer = this.disconnectTimers.get(player.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.disconnectTimers.delete(player.id);
+      }
+    }
+  }
+
+  private async finalizeRoomAndArchive(
+    room: Room,
+    actorPlayerId?: string,
+  ): Promise<void> {
+    const standings = [...room.players]
+      .filter((seatPlayer) => shouldIncludeLiveRankingPlayer(seatPlayer))
+      .map((seatPlayer) => {
+        const finalChips = seatPlayer.chips + (seatPlayer.currentBet || 0);
+        const totalBuyIn = seatPlayer.totalBuyIn || 0;
+        return {
+          playerId: seatPlayer.id,
+          playerName: seatPlayer.name,
+          finalChips,
+          totalBuyIn,
+          profit: finalChips - totalBuyIn,
+          handsPlayedCount: seatPlayer.handsPlayedCount ?? 0,
+          handsWonCount: seatPlayer.handsWonCount ?? 0,
+          vpipHandsCount: seatPlayer.vpipHandsCount ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (b.finalChips !== a.finalChips) return b.finalChips - a.finalChips;
+        if (b.profit !== a.profit) return b.profit - a.profit;
+        return a.playerName.localeCompare(b.playerName);
+      });
+
+    const totalPlayers = standings.length;
+    const totalBuyIn = standings.reduce(
+      (sum, entry) => sum + entry.totalBuyIn,
+      0,
+    );
+    const totalChipsInPlay = standings.reduce(
+      (sum, entry) => sum + entry.finalChips,
+      0,
+    );
+    const profitablePlayers = standings.filter(
+      (entry) => entry.profit > 0,
+    ).length;
+    const averageFinalStack =
+      totalPlayers > 0 ? Math.round(totalChipsInPlay / totalPlayers) : 0;
+    const handsPlayed = room.currentHand?.handNumber ?? 0;
+    const chipLeader = standings[0]
+      ? {
+          playerId: standings[0].playerId,
+          playerName: standings[0].playerName,
+          amount: standings[0].finalChips,
+        }
+      : null;
+
+    const biggestWinner = standings
+      .filter((entry) => entry.profit > 0)
+      .sort((a, b) => b.profit - a.profit)[0];
+    const biggestLoss = standings
+      .filter((entry) => entry.profit < 0)
+      .sort((a, b) => a.profit - b.profit)[0];
+
+    room.gameState = 'ENDED';
+    room.currentHand = null;
+    room.readyPhase = null;
+    room.readyPlayerIds = [];
+    room.lastActivityAt = Date.now();
+    room.players = room.players.map((seatPlayer) => ({
+      ...seatPlayer,
+      cards: null,
+      currentBet: 0,
+      lastAction: null,
+      status: seatPlayer.status === 'left' ? 'left' : 'waiting',
+    }));
+
+    await this.storageService.persistRoom(
+      room,
+      roomWrite(
+        roomEvent({
+          roomId: room.id,
+          type: 'ROOM_CONFIG_UPDATED',
+          actor: actorPlayerId
+            ? { source: 'EVENTS_GATEWAY', playerId: actorPlayerId }
+            : { source: 'EVENTS_GATEWAY' },
+          payload: {
+            config: room.config,
+          },
+        }),
+      ),
+    );
+    const archived = await this.savedGameArchiveStorageService.archiveEndedRoom(
+      room.id,
+    );
+    if (archived?.archiveId) {
+      await this.savedGameReviewService.scheduleArchiveReview(
+        archived.archiveId,
+      );
+    }
+
+    const gameEndedData: GameEndedData = {
+      standings,
+      summary: {
+        totalPlayers,
+        handsPlayed,
+        totalBuyIn,
+        totalChipsInPlay,
+        profitablePlayers,
+        averageFinalStack,
+        chipLeader,
+        biggestWinner: biggestWinner
+          ? {
+              playerId: biggestWinner.playerId,
+              playerName: biggestWinner.playerName,
+              amount: biggestWinner.profit,
+            }
+          : null,
+        biggestLoss: biggestLoss
+          ? {
+              playerId: biggestLoss.playerId,
+              playerName: biggestLoss.playerName,
+              amount: Math.abs(biggestLoss.profit),
+            }
+          : null,
+      },
+    };
+
+    this.abandonedRoomSince.delete(room.id);
+    this.cancelPendingDisconnectTimersForRoom(room);
+    this.server.to(room.id).emit('GAME_ENDED', gameEndedData);
+  }
+
+  private async maybeFinalizeAbandonedRoom(room: any): Promise<boolean> {
+    if (!room?.id || room.gameState !== 'IN_PROGRESS') {
+      return false;
+    }
+
+    if (this.hasConnectedHumanPlayers(room)) {
+      this.abandonedRoomSince.delete(room.id);
+      return false;
+    }
+
+    const abandonedSince = this.abandonedRoomSince.get(room.id);
+    const gracePeriod = room.config?.reconnectGracePeriod ?? 120000;
+    if (!abandonedSince || Date.now() - abandonedSince < gracePeriod) {
+      return false;
+    }
+
+    if (!this.isSafeToFinalizeRoom(room)) {
+      return false;
+    }
+
+    await this.finalizeRoomAndArchive(room);
+    this.logger.log(`Game auto-finalized in abandoned room ${room.id}`);
+    return true;
   }
 
   private syncRoomReadyState(room: any): void {
@@ -606,6 +801,7 @@ export class EventsGateway
           playerId,
         );
         if (updatedRoom) {
+          this.updateAbandonedRoomTracking(updatedRoom);
           this.syncRoomReadyState(updatedRoom);
           await this.storageService.persistRoom(
             updatedRoom,
@@ -752,6 +948,7 @@ export class EventsGateway
         this.logger.log(
           `Player ${player.name} ${rejoined ? 'rejoined' : 'joined'} room ${room.id}`,
         );
+        this.updateAbandonedRoomTracking(room);
         this.syncRoomReadyState(room);
         await this.storageService.persistRoom(
           room,
@@ -817,6 +1014,7 @@ export class EventsGateway
         if (!room) {
           throw new Error('Room not found');
         }
+        this.updateAbandonedRoomTracking(room);
         this.syncRoomReadyState(room);
         await this.storageService.persistRoom(
           room,
@@ -1255,123 +1453,7 @@ export class EventsGateway
       if (room.currentHand.currentPlayerTurn) {
         throw new Error('Can only end game between hands');
       }
-
-      const standings = [...room.players]
-        .filter((seatPlayer) => shouldIncludeLiveRankingPlayer(seatPlayer))
-        .map((seatPlayer) => {
-          const finalChips = seatPlayer.chips + (seatPlayer.currentBet || 0);
-          const totalBuyIn = seatPlayer.totalBuyIn || 0;
-          return {
-            playerId: seatPlayer.id,
-            playerName: seatPlayer.name,
-            finalChips,
-            totalBuyIn,
-            profit: finalChips - totalBuyIn,
-            handsPlayedCount: seatPlayer.handsPlayedCount ?? 0,
-            handsWonCount: seatPlayer.handsWonCount ?? 0,
-            vpipHandsCount: seatPlayer.vpipHandsCount ?? 0,
-          };
-        })
-        .sort((a, b) => {
-          if (b.finalChips !== a.finalChips) return b.finalChips - a.finalChips;
-          if (b.profit !== a.profit) return b.profit - a.profit;
-          return a.playerName.localeCompare(b.playerName);
-        });
-
-      const totalPlayers = standings.length;
-      const totalBuyIn = standings.reduce(
-        (sum, entry) => sum + entry.totalBuyIn,
-        0,
-      );
-      const totalChipsInPlay = standings.reduce(
-        (sum, entry) => sum + entry.finalChips,
-        0,
-      );
-      const profitablePlayers = standings.filter(
-        (entry) => entry.profit > 0,
-      ).length;
-      const averageFinalStack =
-        totalPlayers > 0 ? Math.round(totalChipsInPlay / totalPlayers) : 0;
-      const handsPlayed = room.currentHand.handNumber ?? 0;
-      const chipLeader = standings[0]
-        ? {
-            playerId: standings[0].playerId,
-            playerName: standings[0].playerName,
-            amount: standings[0].finalChips,
-          }
-        : null;
-
-      const biggestWinner = standings
-        .filter((entry) => entry.profit > 0)
-        .sort((a, b) => b.profit - a.profit)[0];
-      const biggestLoss = standings
-        .filter((entry) => entry.profit < 0)
-        .sort((a, b) => a.profit - b.profit)[0];
-
-      room.gameState = 'ENDED';
-      room.currentHand = null;
-      room.readyPhase = null;
-      room.readyPlayerIds = [];
-      room.lastActivityAt = Date.now();
-      room.players = room.players.map((seatPlayer) => {
-        return {
-          ...seatPlayer,
-          cards: null,
-          currentBet: 0,
-          lastAction: null,
-          status: seatPlayer.status === 'left' ? 'left' : 'waiting',
-        };
-      });
-      await this.storageService.persistRoom(
-        room,
-        roomWrite(
-          roomEvent({
-            roomId: room.id,
-            type: 'ROOM_CONFIG_UPDATED',
-            actor: { source: 'EVENTS_GATEWAY', playerId: playerInfo.playerId },
-            payload: {
-              config: room.config,
-            },
-          }),
-        ),
-      );
-      const archived = await this.savedGameArchiveStorageService.archiveEndedRoom(
-        room.id,
-      );
-      if (archived?.archiveId) {
-        await this.savedGameReviewService.scheduleArchiveReview(
-          archived.archiveId,
-        );
-      }
-
-      const gameEndedData: GameEndedData = {
-        standings,
-        summary: {
-          totalPlayers,
-          handsPlayed,
-          totalBuyIn,
-          totalChipsInPlay,
-          profitablePlayers,
-          averageFinalStack,
-          chipLeader,
-          biggestWinner: biggestWinner
-            ? {
-                playerId: biggestWinner.playerId,
-                playerName: biggestWinner.playerName,
-                amount: biggestWinner.profit,
-              }
-            : null,
-          biggestLoss: biggestLoss
-            ? {
-                playerId: biggestLoss.playerId,
-                playerName: biggestLoss.playerName,
-                amount: Math.abs(biggestLoss.profit),
-              }
-            : null,
-        },
-      };
-
-      this.server.to(room.id).emit('GAME_ENDED', gameEndedData);
+      await this.finalizeRoomAndArchive(room, playerInfo.playerId);
       this.logger.log(
         `Game ended in room ${room.id} by host ${playerInfo.playerId}`,
       );
@@ -3662,8 +3744,17 @@ export class EventsGateway
   private async handleDisconnectTimeout(roomId: string, playerId: string) {
     try {
       await this.runRoomActionSequentially(roomId, async () => {
+        const timer = this.disconnectTimers.get(playerId);
+        if (timer) {
+          clearTimeout(timer);
+          this.disconnectTimers.delete(playerId);
+        }
+
         const room = await this.getRoom(roomId);
         if (!room) {
+          return;
+        }
+        if (room.gameState === 'ENDED') {
           return;
         }
 
@@ -3700,6 +3791,11 @@ export class EventsGateway
           !twiceAgreedPlayerIds.has(playerId)
         ) {
           await this.resolveRunCountDecision(room, 1);
+          const resolvedRoom = await this.getRoom(roomId);
+          if (resolvedRoom) {
+            this.updateAbandonedRoomTracking(resolvedRoom);
+            await this.maybeFinalizeAbandonedRoom(resolvedRoom);
+          }
           return;
         }
 
@@ -3718,6 +3814,7 @@ export class EventsGateway
             const disconnectedRoom =
               await this.gameService.markPlayerDisconnected(roomId, playerId);
             if (disconnectedRoom) {
+              this.updateAbandonedRoomTracking(disconnectedRoom);
               this.syncRoomReadyState(disconnectedRoom);
               await this.storageService.persistRoom(disconnectedRoom);
               const started = await this.maybeStartReadyPhaseIfAllReady(
@@ -3727,6 +3824,7 @@ export class EventsGateway
               if (!started) {
                 this.emitReadyStateUpdated(roomId, disconnectedRoom);
               }
+              await this.maybeFinalizeAbandonedRoom(disconnectedRoom);
             }
             return;
           }
@@ -3748,6 +3846,7 @@ export class EventsGateway
           playerId,
         );
         if (disconnectedRoom) {
+          this.updateAbandonedRoomTracking(disconnectedRoom);
           this.syncRoomReadyState(disconnectedRoom);
           await this.storageService.persistRoom(disconnectedRoom);
           const started = await this.maybeStartReadyPhaseIfAllReady(
@@ -3757,6 +3856,7 @@ export class EventsGateway
           if (!started) {
             this.emitReadyStateUpdated(roomId, disconnectedRoom);
           }
+          await this.maybeFinalizeAbandonedRoom(disconnectedRoom);
         }
       });
     } catch (error) {

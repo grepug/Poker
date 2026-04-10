@@ -197,6 +197,25 @@ describe('EventsGateway membership mutation serialization', () => {
           return updatedRoom;
         },
       ),
+      markPlayerDisconnected: jest.fn(async (roomId: string, playerId: string) => {
+        if (roomId !== 'ROOM1') {
+          return null;
+        }
+
+        let updatedRoom: any = null;
+        await persistViaStaleSnapshot((draft) => {
+          const player = draft.players.find((entry: any) => entry.id === playerId);
+          if (!player) {
+            return;
+          }
+
+          player.connectionStatus = 'disconnected';
+          draft.lastActivityAt = Date.now();
+          updatedRoom = deepClone(draft);
+        });
+
+        return updatedRoom;
+      }),
     };
 
     handService = {
@@ -791,5 +810,424 @@ describe('EventsGateway membership mutation serialization', () => {
         }),
       ]),
     );
+  });
+
+  it('auto-finalizes and archives an abandoned room between hands after disconnect timeout', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'waiting',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'waiting',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'disconnected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: [],
+      bettingRound: 'SHOWDOWN',
+      currentBet: 0,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        winningHand: null,
+        potAmount: 0,
+        playerHands: [],
+      },
+    };
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(storageService.archiveEndedRoom).toHaveBeenCalledWith('ROOM1');
+    expect(
+      (gateway as any).savedGameReviewService.scheduleArchiveReview,
+    ).toHaveBeenCalledWith('ROOM1');
+    const savedRoom = storageService.persistRoom.mock.calls.at(-1)?.[0];
+    expect(savedRoom?.gameState).toBe('ENDED');
+  });
+
+  it('does not auto-finalize after disconnect timeout while another human is still connected', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'waiting',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'waiting',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'connected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: [],
+      bettingRound: 'SHOWDOWN',
+      currentBet: 0,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        winningHand: null,
+        potAmount: 0,
+        playerHands: [],
+      },
+    };
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(storageService.archiveEndedRoom).not.toHaveBeenCalled();
+    expect(
+      (gateway as any).savedGameReviewService.scheduleArchiveReview,
+    ).not.toHaveBeenCalled();
+    expect((gateway as any).abandonedRoomSince.has('ROOM1')).toBe(false);
+  });
+
+  it('does not auto-finalize an abandoned room while a hand is still in progress', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'connected',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'connected',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'disconnected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 15,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'PRE_FLOP',
+      currentBet: 10,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+    };
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(storageService.archiveEndedRoom).not.toHaveBeenCalled();
+    const savedRoom = storageService.persistRoom.mock.calls.at(-1)?.[0];
+    expect(savedRoom?.gameState).toBe('IN_PROGRESS');
+  });
+
+  it('clears abandoned-room tracking when a player reconnects before finalization', async () => {
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+    const reconnectClient = createClient('socket-reconnect', {
+      cookieToken: 'token-bob',
+    });
+
+    const reconnectResult = await gateway.handleReconnect(reconnectClient as any, {
+      roomId: 'ROOM1',
+      playerName: 'Bob',
+      playerId: 'p-bob',
+    });
+
+    expect(reconnectResult).toEqual({ success: true });
+    expect((gateway as any).abandonedRoomSince.has('ROOM1')).toBe(false);
+  });
+
+  it('auto-finalizes after run-count timeout resolution reaches a safe paused phase', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'connected',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'connected',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'disconnected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 20,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'TURN',
+      currentBet: 10,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+      runCountDecision: {
+        requestedByPlayerId: 'p-bob',
+        eligiblePlayerIds: ['p-host', 'p-bob'],
+        twiceAgreedPlayerIds: ['p-bob'],
+        currentSelectionByPlayerId: {},
+        expiresAt: Date.now() + 5000,
+      },
+    };
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+
+    jest
+      .spyOn(gateway as any, 'resolveRunCountDecision')
+      .mockImplementation(async () => {
+        roomState.currentHand = {
+          ...roomState.currentHand,
+          bettingRound: 'SHOWDOWN',
+          currentPlayerTurn: null,
+          runCountDecision: null,
+          lastResult: {
+            winners: [],
+            winningHand: null,
+            potAmount: 20,
+            playerHands: [],
+          },
+        };
+      });
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(storageService.archiveEndedRoom).toHaveBeenCalledWith('ROOM1');
+    expect(
+      (gateway as any).savedGameReviewService.scheduleArchiveReview,
+    ).toHaveBeenCalledWith('ROOM1');
+  });
+
+  it('clears abandoned-room tracking during module teardown', () => {
+    (gateway as any).abandonedRoomSince.set('ROOM1', Date.now());
+
+    gateway.onModuleDestroy();
+
+    expect((gateway as any).abandonedRoomSince.size).toBe(0);
+  });
+
+  it('treats stale disconnect timers as a no-op after the room has already ended', async () => {
+    roomState.gameState = 'ENDED';
+    roomState.currentHand = null;
+    roomState.players[0].connectionStatus = 'disconnected';
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.markPlayerDisconnected).not.toHaveBeenCalled();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
+    expect(storageService.archiveEndedRoom).not.toHaveBeenCalled();
+  });
+
+  it('clears pending room disconnect timers when abandoned-room finalization succeeds', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'waiting',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'waiting',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'disconnected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: [],
+      bettingRound: 'SHOWDOWN',
+      currentBet: 0,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        winningHand: null,
+        potAmount: 0,
+        playerHands: [],
+      },
+    };
+    (gateway as any).abandonedRoomSince.set(
+      'ROOM1',
+      Date.now() - roomState.config.reconnectGracePeriod - 1,
+    );
+    (gateway as any).disconnectTimers.set('p-host', setTimeout(() => {}, 1000));
+    (gateway as any).disconnectTimers.set('p-bob', setTimeout(() => {}, 1000));
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect((gateway as any).disconnectTimers.size).toBe(0);
   });
 });
