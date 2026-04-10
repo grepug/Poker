@@ -7056,6 +7056,220 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8g: Desktop table board stays aligned with the top bar and game column', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await expect(
+        alicePage.locator('[data-testid="desktop-game-column"]'),
+      ).toBeVisible();
+      await expect(alicePage.locator('.table-micro-hud')).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="table-board-section"]'),
+      ).toBeVisible();
+
+      const alignment = await alicePage.evaluate(() => {
+        const gameColumn = document.querySelector<HTMLElement>(
+          '[data-testid="desktop-game-column"]',
+        );
+        const topBar = document.querySelector<HTMLElement>('.table-micro-hud');
+        const boardSection = document.querySelector<HTMLElement>(
+          '[data-testid="table-board-section"]',
+        );
+
+        if (!gameColumn || !topBar || !boardSection) {
+          return null;
+        }
+
+        const gameRect = gameColumn.getBoundingClientRect();
+        const topBarRect = topBar.getBoundingClientRect();
+        const boardRect = boardSection.getBoundingClientRect();
+
+        return {
+          boardLeftDeltaFromTopBar: Math.abs(boardRect.left - topBarRect.left),
+          boardRightDeltaFromTopBar: Math.abs(boardRect.right - topBarRect.right),
+          boardLeftDeltaFromGameColumn: Math.abs(boardRect.left - gameRect.left),
+          boardRightDeltaFromGameColumn: Math.abs(boardRect.right - gameRect.right),
+        };
+      });
+
+      expect(alignment).not.toBeNull();
+      expect(alignment?.boardLeftDeltaFromTopBar).toBeLessThanOrEqual(2);
+      expect(alignment?.boardRightDeltaFromTopBar).toBeLessThanOrEqual(2);
+      expect(alignment?.boardLeftDeltaFromGameColumn).toBeLessThanOrEqual(2);
+      expect(alignment?.boardRightDeltaFromGameColumn).toBeLessThanOrEqual(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8h: Desktop action alert centers on the table stage and keeps aiming at the acting seat', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.call());
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const alertCard = alicePage.locator('[data-testid="action-center-alert-card"]');
+      await alicePage.click('[data-testid="action-check"]');
+      await expect(
+        alicePage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toBeVisible();
+      await Promise.all([
+        expect(alertCard).toBeVisible(),
+        alicePage.click('[data-testid="action-quick-confirm-accept"]'),
+      ]);
+
+      const geometry = await alicePage.evaluate(() => {
+        const boardStage = document.querySelector<HTMLElement>('.table-shell__board-stage');
+        const alert = document.querySelector<HTMLElement>(
+          '[data-testid="action-center-alert-card"]',
+        );
+        const arrow = document.querySelector<HTMLElement>('.action-center-alert__arrow');
+        const arrowHead = document.querySelector<HTMLElement>('.action-center-alert__arrow-head');
+        const seatNodes = Array.from(
+          document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
+        );
+        const aliceSeat = seatNodes.find((node) => node.textContent?.includes('Alice'));
+
+        if (!boardStage || !alert || !arrow || !arrowHead || !aliceSeat) {
+          return null;
+        }
+
+        const stageRect = boardStage.getBoundingClientRect();
+        const alertRect = alert.getBoundingClientRect();
+        const arrowRect = arrow.getBoundingClientRect();
+        const arrowHeadRect = arrowHead.getBoundingClientRect();
+        const seatRect = aliceSeat.getBoundingClientRect();
+        const alertCenterX = alertRect.left + alertRect.width / 2;
+        const alertCenterY = alertRect.top + alertRect.height / 2;
+        const arrowMidX = arrowRect.left + arrowRect.width / 2;
+        const arrowMidY = arrowRect.top + arrowRect.height / 2;
+        const arrowHeadCenterX = arrowHeadRect.left + arrowHeadRect.width / 2;
+        const arrowHeadCenterY = arrowHeadRect.top + arrowHeadRect.height / 2;
+        const seatCenterX = seatRect.left + seatRect.width / 2;
+        const seatCenterY = seatRect.top + seatRect.height / 2;
+        const stageCenterX = stageRect.left + stageRect.width / 2;
+        const viewportCenterX = window.innerWidth / 2;
+        const lineDeltaX = seatCenterX - alertCenterX;
+        const lineDeltaY = seatCenterY - alertCenterY;
+        const lineLength = Math.hypot(lineDeltaX, lineDeltaY);
+        const alertDistanceToSeat = Math.hypot(
+          seatCenterX - alertCenterX,
+          seatCenterY - alertCenterY,
+        );
+        const arrowHeadDistanceToSeat = Math.hypot(
+          seatCenterX - arrowHeadCenterX,
+          seatCenterY - arrowHeadCenterY,
+        );
+        const arrowMidpointDistanceFromSeatLine =
+          lineLength <= 1
+            ? Number.POSITIVE_INFINITY
+            : Math.abs(
+                lineDeltaY * arrowMidX -
+                  lineDeltaX * arrowMidY +
+                  seatCenterX * alertCenterY -
+                  seatCenterY * alertCenterX,
+              ) / lineLength;
+
+        return {
+          alertCenterDeltaFromStage: Math.abs(alertCenterX - stageCenterX),
+          alertCenterDeltaFromViewport: Math.abs(alertCenterX - viewportCenterX),
+          arrowMidpointDistanceFromSeatLine,
+          arrowHeadDistanceToSeat,
+          alertDistanceToSeat,
+        };
+      });
+
+      expect(geometry).not.toBeNull();
+      expect(geometry?.alertCenterDeltaFromStage).toBeLessThanOrEqual(4);
+      expect(geometry?.alertCenterDeltaFromViewport).toBeGreaterThan(40);
+      expect(geometry?.arrowMidpointDistanceFromSeatLine).toBeLessThanOrEqual(8);
+      expect(geometry?.arrowHeadDistanceToSeat).toBeLessThan(
+        (geometry?.alertDistanceToSeat ?? 0) * 0.45,
+      );
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('@critical 8.8i: Desktop turn alert centers on the table stage instead of the viewport', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.call());
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const turnAlert = alicePage.locator('[data-testid="turn-center-alert"]');
+      await expect(turnAlert).toBeVisible();
+
+      const geometry = await alicePage.evaluate(() => {
+        const boardStage = document.querySelector<HTMLElement>('.table-shell__board-stage');
+        const alert = document.querySelector<HTMLElement>('[data-testid="turn-center-alert"]');
+
+        if (!boardStage || !alert) {
+          return null;
+        }
+
+        const stageRect = boardStage.getBoundingClientRect();
+        const alertRect = alert.getBoundingClientRect();
+        const alertCenterX = alertRect.left + alertRect.width / 2;
+        const stageCenterX = stageRect.left + stageRect.width / 2;
+        const viewportCenterX = window.innerWidth / 2;
+
+        return {
+          alertCenterDeltaFromStage: Math.abs(alertCenterX - stageCenterX),
+          alertCenterDeltaFromViewport: Math.abs(alertCenterX - viewportCenterX),
+        };
+      });
+
+      expect(geometry).not.toBeNull();
+      expect(geometry?.alertCenterDeltaFromStage).toBeLessThanOrEqual(4);
+      expect(geometry?.alertCenterDeltaFromViewport).toBeGreaterThan(40);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {

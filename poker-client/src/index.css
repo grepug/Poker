@@ -1254,6 +1254,10 @@ body {
   pointer-events: none;
 }
 
+.action-center-alert-layer--table-stage {
+  position: absolute;
+}
+
 .action-center-alert {
   position: fixed;
   left: 50%;
@@ -1272,6 +1276,10 @@ body {
   text-align: center;
   padding: 0.75rem 1rem 0.85rem;
   animation: actionCenterAlertIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.action-center-alert--table-stage {
+  position: absolute;
 }
 
 .action-center-alert--neutral {
@@ -1342,6 +1350,10 @@ body {
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.56);
 }
 
+.action-center-alert__arrow--table-stage {
+  position: absolute;
+}
+
 .action-center-alert__arrow-head {
   position: absolute;
   right: -1px;
@@ -1365,6 +1377,11 @@ body {
   padding: 1rem;
 }
 
+.turn-center-alert-layer--table-stage {
+  position: absolute;
+  padding: 0;
+}
+
 .turn-center-alert {
   border-radius: 1rem;
   border: 1px solid rgba(252, 211, 77, 0.72);
@@ -1379,6 +1396,10 @@ body {
   text-align: center;
   padding: 0.95rem 1.2rem;
   animation: turnCenterAlert 1.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.turn-center-alert--table-stage {
+  min-width: min(100%, 22rem);
 }
 
 .turn-center-alert__eyebrow {
@@ -2731,10 +2752,6 @@ body {
     display: grid;
     gap: 0.8rem;
     align-content: start;
-  }
-
-  .table-shell--desktop-two-column .table-shell__board-stage {
-    padding-right: clamp(10rem, 16vw, 12.5rem);
   }
 
   .table-shell--desktop-two-column .table-micro-hud {
