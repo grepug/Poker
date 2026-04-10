@@ -7054,23 +7054,27 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           '[data-testid="action-center-alert-card"]',
         );
         const arrow = document.querySelector<HTMLElement>('.action-center-alert__arrow');
+        const arrowHead = document.querySelector<HTMLElement>('.action-center-alert__arrow-head');
         const seatNodes = Array.from(
           document.querySelectorAll<HTMLElement>('[data-testid^="player-seat-"]'),
         );
         const aliceSeat = seatNodes.find((node) => node.textContent?.includes('Alice'));
 
-        if (!boardStage || !alert || !arrow || !aliceSeat) {
+        if (!boardStage || !alert || !arrow || !arrowHead || !aliceSeat) {
           return null;
         }
 
         const stageRect = boardStage.getBoundingClientRect();
         const alertRect = alert.getBoundingClientRect();
         const arrowRect = arrow.getBoundingClientRect();
+        const arrowHeadRect = arrowHead.getBoundingClientRect();
         const seatRect = aliceSeat.getBoundingClientRect();
         const alertCenterX = alertRect.left + alertRect.width / 2;
         const alertCenterY = alertRect.top + alertRect.height / 2;
         const arrowMidX = arrowRect.left + arrowRect.width / 2;
         const arrowMidY = arrowRect.top + arrowRect.height / 2;
+        const arrowHeadCenterX = arrowHeadRect.left + arrowHeadRect.width / 2;
+        const arrowHeadCenterY = arrowHeadRect.top + arrowHeadRect.height / 2;
         const seatCenterX = seatRect.left + seatRect.width / 2;
         const seatCenterY = seatRect.top + seatRect.height / 2;
         const stageCenterX = stageRect.left + stageRect.width / 2;
@@ -7078,6 +7082,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const lineDeltaX = seatCenterX - alertCenterX;
         const lineDeltaY = seatCenterY - alertCenterY;
         const lineLength = Math.hypot(lineDeltaX, lineDeltaY);
+        const alertDistanceToSeat = Math.hypot(
+          seatCenterX - alertCenterX,
+          seatCenterY - alertCenterY,
+        );
+        const arrowHeadDistanceToSeat = Math.hypot(
+          seatCenterX - arrowHeadCenterX,
+          seatCenterY - arrowHeadCenterY,
+        );
         const arrowMidpointDistanceFromSeatLine =
           lineLength <= 1
             ? Number.POSITIVE_INFINITY
@@ -7092,6 +7104,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           alertCenterDeltaFromStage: Math.abs(alertCenterX - stageCenterX),
           alertCenterDeltaFromViewport: Math.abs(alertCenterX - viewportCenterX),
           arrowMidpointDistanceFromSeatLine,
+          arrowHeadDistanceToSeat,
+          alertDistanceToSeat,
         };
       });
 
@@ -7099,6 +7113,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(geometry?.alertCenterDeltaFromStage).toBeLessThanOrEqual(4);
       expect(geometry?.alertCenterDeltaFromViewport).toBeGreaterThan(40);
       expect(geometry?.arrowMidpointDistanceFromSeatLine).toBeLessThanOrEqual(8);
+      expect(geometry?.arrowHeadDistanceToSeat).toBeLessThan(
+        (geometry?.alertDistanceToSeat ?? 0) * 0.45,
+      );
     } finally {
       await teardownTwoPlayerSession(session);
     }

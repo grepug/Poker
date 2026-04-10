@@ -2894,14 +2894,14 @@ const useGameRoomElement = () => {
     const seatNode = seatNodeRefs.current[actionCenterAlert.playerId];
     const alertNode = actionCenterAlertRef.current;
     const boardStageNode = boardStageRef.current;
-    if (!seatNode || !alertNode || !boardStageNode) {
+    if (!seatNode || !alertNode || (isDesktopSideDock && !boardStageNode)) {
       setActionPointerVector(null);
       return;
     }
 
     const seatRect = seatNode.getBoundingClientRect();
     const alertRect = alertNode.getBoundingClientRect();
-    const boardStageRect = boardStageNode.getBoundingClientRect();
+    const boardStageRect = boardStageNode?.getBoundingClientRect() ?? null;
 
     const centerX = alertRect.left + alertRect.width / 2;
     const centerY = alertRect.top + alertRect.height / 2;
@@ -2927,12 +2927,12 @@ const useGameRoomElement = () => {
     const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
 
     setActionPointerVector({
-      x: startX - boardStageRect.left,
-      y: startY - boardStageRect.top,
+      x: isDesktopSideDock && boardStageRect ? startX - boardStageRect.left : startX,
+      y: isDesktopSideDock && boardStageRect ? startY - boardStageRect.top : startY,
       angle,
       length: lineLength,
     });
-  }, [actionCenterAlert]);
+  }, [actionCenterAlert, isDesktopSideDock]);
 
   const triggerTurnAlert = useCallback(() => {
     if (turnAlertTimeoutRef.current) {
@@ -4219,6 +4219,7 @@ const useGameRoomElement = () => {
                 tone={actionCenterAlert.tone}
                 exiting={actionCenterAlert.exiting}
                 cardRef={actionCenterAlertRef}
+                anchorToStage={isDesktopSideDock}
               />
             )}
 

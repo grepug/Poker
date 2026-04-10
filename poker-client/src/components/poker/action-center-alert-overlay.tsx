@@ -1,4 +1,5 @@
 import React from "react";
+import { cn } from "@/lib/utils";
 import { ActionCenterAlert } from "@/components/poker/action-center-alert";
 
 type ActionPointerVector = {
@@ -16,6 +17,7 @@ type ActionCenterAlertOverlayProps = {
   tone: "neutral" | "aggressive" | "fold" | "allin";
   exiting: boolean;
   cardRef: React.RefObject<HTMLDivElement | null>;
+  anchorToStage?: boolean;
 };
 
 export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> = ({
@@ -26,16 +28,23 @@ export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> =
   tone,
   exiting,
   cardRef,
+  anchorToStage = false,
 }) => {
   return (
     <div
-      className="action-center-alert-layer action-center-alert-layer--table-stage"
+      className={cn(
+        "action-center-alert-layer",
+        anchorToStage && "action-center-alert-layer--table-stage",
+      )}
       aria-live="polite"
       data-testid="action-center-alert"
     >
       {pointerVector && (
         <div
-          className="action-center-alert__arrow action-center-alert__arrow--table-stage"
+          className={cn(
+            "action-center-alert__arrow",
+            anchorToStage && "action-center-alert__arrow--table-stage",
+          )}
           style={{
             left: `${pointerVector.x}px`,
             top: `${pointerVector.y}px`,
@@ -54,8 +63,8 @@ export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> =
           tone={tone}
           exiting={exiting}
           testId="action-center-alert-card"
-          wrapInLayer={false}
-          cardClassName="action-center-alert--table-stage"
+          wrapInLayer={!anchorToStage}
+          cardClassName={anchorToStage ? "action-center-alert--table-stage" : undefined}
         />
       </div>
     </div>
