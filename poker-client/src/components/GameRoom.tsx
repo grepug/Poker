@@ -74,6 +74,28 @@ const DESKTOP_SIDE_DOCK_QUERY = "(min-width: 1024px)";
 const COMPACT_MOBILE_DOCK_QUERY = "(max-width: 767px)";
 const CHAT_PREVIEW_TEXT_MAX_LENGTH = 80;
 
+const hasMeaningfulRobotRankingActivity = (
+  rankedPlayer: Pick<
+    Player,
+    | "chips"
+    | "currentBet"
+    | "totalBuyIn"
+    | "handsPlayedCount"
+    | "handsWonCount"
+    | "vpipHandsCount"
+  >,
+) =>
+  rankedPlayer.totalBuyIn > 0 ||
+  rankedPlayer.handsPlayedCount > 0 ||
+  rankedPlayer.handsWonCount > 0 ||
+  rankedPlayer.vpipHandsCount > 0 ||
+  rankedPlayer.chips + (rankedPlayer.currentBet || 0) > 0;
+
+const shouldIncludeLiveRankingPlayer = (rankedPlayer: Player) =>
+  !rankedPlayer.isRobot ||
+  rankedPlayer.status !== "left" ||
+  hasMeaningfulRobotRankingActivity(rankedPlayer);
+
 const truncatePreviewText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) {
     return text;
@@ -2519,6 +2541,7 @@ const useGameRoomElement = () => {
     () => {
       if (!room) return [];
       return [...room.players]
+        .filter((rankedPlayer) => shouldIncludeLiveRankingPlayer(rankedPlayer))
         .map((rankedPlayer) => {
           const tableStack = rankedPlayer.chips + (rankedPlayer.currentBet || 0);
           const net = tableStack - rankedPlayer.totalBuyIn;

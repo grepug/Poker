@@ -1419,6 +1419,87 @@ describe('JsonStorageService', () => {
       expect(unauthorizedDetail).toBeNull();
     });
 
+    it('omits zero-activity left robots from archived saved-game participants', async () => {
+      const roomId = 'ROOMARCHIVE-ROBOTS';
+      await seedCompletedHands(roomId);
+
+      const endedRoom = await service.getRoom(roomId);
+      if (!endedRoom) {
+        throw new Error('Expected ended room to exist');
+      }
+
+      endedRoom.players = endedRoom.players
+        .map((player) => {
+          if (player.id === 'alice') {
+            return { ...player, userId: 'user-alice' };
+          }
+          if (player.id === 'bob') {
+            return { ...player, userId: 'user-bob' };
+          }
+          return player;
+        })
+        .concat([
+          {
+            id: 'robot-idle',
+            socketId: '',
+            name: 'Robot 1',
+            emoji: '🤖',
+            isRobot: true,
+            chips: 0,
+            totalBuyIn: 0,
+            handsPlayedCount: 0,
+            handsWonCount: 0,
+            vpipHandsCount: 0,
+            position: 2,
+            status: 'left' as const,
+            cards: null,
+            currentBet: 0,
+            lastAction: null,
+            lastConnectedAt: Date.now(),
+          },
+        ]);
+      endedRoom.lastActivityAt = 2700;
+      await service.persistRoom(endedRoom);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      const aliceDetail = await getSavedGameDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+      );
+
+      expect(aliceDetail?.participants).toEqual(
+        expect.not.arrayContaining([
+          expect.objectContaining({
+            playerId: 'robot-idle',
+          }),
+        ]),
+      );
+    });
+
     it('merges a localized locale entry without dropping other locales or changing canonical updatedAt', async () => {
       const roomId = 'ROOMARCHIVE2';
       await seedCompletedHands(roomId);
