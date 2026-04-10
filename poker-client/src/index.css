@@ -2,6 +2,9 @@
 
 :root {
   --radius: 0.7rem;
+  --ios-standalone-safe-area-top: 0px;
+  --ios-standalone-safe-area-right: 0px;
+  --ios-standalone-safe-area-left: 0px;
 
   --background: #05150f;
   --foreground: #e5f5eb;
@@ -54,6 +57,12 @@
   --state-warning: #f97316;
   --state-danger: #ef4444;
   --state-safe: #22c55e;
+}
+
+html[data-ios-standalone="true"] {
+  --ios-standalone-safe-area-top: env(safe-area-inset-top, 0px);
+  --ios-standalone-safe-area-right: env(safe-area-inset-right, 0px);
+  --ios-standalone-safe-area-left: env(safe-area-inset-left, 0px);
 }
 
 @theme inline {
@@ -110,13 +119,24 @@ body,
   min-height: 100%;
 }
 
+html {
+  background-color: var(--bg-deep);
+}
+
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   color: var(--text-main);
   background:
     radial-gradient(circle at 15% 20%, rgba(33, 94, 65, 0.35) 0%, transparent 35%),
     radial-gradient(circle at 80% 15%, rgba(56, 120, 88, 0.2) 0%, transparent 45%),
     linear-gradient(170deg, var(--bg-mid) 0%, var(--bg-deep) 72%);
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .surface-panel {
@@ -142,8 +162,8 @@ body {
 
 .ios-install-banner {
   position: fixed;
-  left: 0.75rem;
-  right: 0.75rem;
+  left: calc(0.75rem + var(--ios-standalone-safe-area-left));
+  right: calc(0.75rem + var(--ios-standalone-safe-area-right));
   bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   z-index: 70;
   display: flex;
@@ -281,7 +301,10 @@ body {
 
 .table-shell {
   min-height: 100vh;
-  padding-top: 0.6rem;
+  min-height: 100dvh;
+  padding-top: calc(0.6rem + var(--ios-standalone-safe-area-top));
+  padding-left: var(--ios-standalone-safe-area-left);
+  padding-right: var(--ios-standalone-safe-area-right);
   padding-bottom: calc(var(--mobile-bottom-safe-height, 14.5rem) + env(safe-area-inset-bottom, 0px));
   background:
     radial-gradient(circle at 20% 12%, rgba(52, 211, 153, 0.15), transparent 34%),
@@ -308,7 +331,7 @@ body {
 
 .table-micro-hud {
   position: sticky;
-  top: 0.5rem;
+  top: calc(0.5rem + var(--ios-standalone-safe-area-top));
   z-index: 40;
   margin: 0 0.75rem;
   display: grid;
@@ -1576,8 +1599,8 @@ body {
 
 .chip-composer-dock {
   position: fixed;
-  left: 0.55rem;
-  right: 0.55rem;
+  left: calc(0.55rem + var(--ios-standalone-safe-area-left));
+  right: calc(0.55rem + var(--ios-standalone-safe-area-right));
   bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
   z-index: 60;
   border: 1px solid rgba(16, 185, 129, 0.55);
@@ -1592,8 +1615,8 @@ body {
 }
 
 .chip-composer-dock--operation {
-  left: 0.55rem;
-  right: 0.55rem;
+  left: calc(0.55rem + var(--ios-standalone-safe-area-left));
+  right: calc(0.55rem + var(--ios-standalone-safe-area-right));
   width: auto;
   max-width: none;
   max-height: none;
@@ -2312,8 +2335,8 @@ body {
 
 .chat-panel-shell {
   position: fixed;
-  left: 0.55rem;
-  right: 0.55rem;
+  left: calc(0.55rem + var(--ios-standalone-safe-area-left));
+  right: calc(0.55rem + var(--ios-standalone-safe-area-right));
   bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
   height: min(60vh, 34rem);
   max-height: min(60vh, 34rem);
@@ -2652,13 +2675,15 @@ body {
 @media (min-width: 768px) {
   .ios-install-banner {
     left: auto;
-    right: 1rem;
+    right: calc(1rem + var(--ios-standalone-safe-area-right));
     width: min(30rem, 52vw);
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
   .table-shell {
-    padding: 1rem;
+    padding-top: calc(1rem + var(--ios-standalone-safe-area-top));
+    padding-right: calc(1rem + var(--ios-standalone-safe-area-right));
+    padding-left: calc(1rem + var(--ios-standalone-safe-area-left));
     padding-bottom: calc(max(12.5rem, var(--mobile-bottom-safe-height, 12.5rem)) + env(safe-area-inset-bottom, 0px));
   }
 
@@ -2731,12 +2756,14 @@ body {
 
 @media (min-width: 1024px) {
   .table-shell--desktop-two-column {
-    padding: 1rem;
+    padding-top: calc(1rem + var(--ios-standalone-safe-area-top));
+    padding-right: calc(1rem + var(--ios-standalone-safe-area-right));
+    padding-left: calc(1rem + var(--ios-standalone-safe-area-left));
     padding-bottom: 1rem;
   }
 
   .table-shell--desktop-two-column.table-shell--desktop-turn-dock {
-    padding-right: 1rem;
+    padding-right: calc(1rem + var(--ios-standalone-safe-area-right));
   }
 
   .table-shell--desktop-two-column .table-shell__desktop-layout {
@@ -2757,7 +2784,7 @@ body {
   .table-shell--desktop-two-column .table-micro-hud {
     margin: 0;
     max-width: none;
-    top: 0;
+    top: var(--ios-standalone-safe-area-top);
   }
 
   .table-shell--desktop-two-column .table-board-wrap {
@@ -2772,8 +2799,8 @@ body {
     gap: 0.85rem;
     align-self: start;
     position: sticky;
-    top: 1rem;
-    min-height: calc(100vh - 2rem);
+    top: calc(1rem + var(--ios-standalone-safe-area-top));
+    min-height: calc(100dvh - 2rem - var(--ios-standalone-safe-area-top));
   }
 
   .table-shell--desktop-two-column .desktop-dock-cluster {
