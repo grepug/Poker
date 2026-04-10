@@ -6,6 +6,7 @@ import { storyTranslate } from "./storybook-fixtures";
 
 const baseProps = {
   callAmount: 40,
+  isOpeningBetAction: false,
   minRaise: 80,
   maxStack: 980,
   trayAmount: 120,
@@ -137,8 +138,8 @@ describe("TurnActionDock", () => {
 
     expect(html).not.toContain('data-testid="chip-custom-input"');
     expect(html).toContain('data-testid="chip-mobile-input-trigger"');
-    expect(html).toContain('data-testid="chip-mobile-input-popover"');
-    expect(html).toContain('data-testid="chip-mobile-popover-confirm"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).not.toContain('data-testid="chip-mobile-input-popover"');
   });
 
   it("collapses mobile-only extra raise presets into a raise popover trigger while keeping call visible", () => {
@@ -212,6 +213,7 @@ describe("TurnActionDock", () => {
       React.createElement(TurnActionDock, {
         ...baseProps,
         callAmount: 0,
+        isOpeningBetAction: true,
         isDesktopClickBetting: false,
         isCompactMobileLayout: true,
         trayPresetButtons: [
@@ -247,6 +249,47 @@ describe("TurnActionDock", () => {
     expect(html).toContain('data-testid="action-open-raise-menu"');
     expect(html).not.toContain('data-testid="preset-third-pot"');
     expect(html).not.toContain('data-testid="preset-half-pot"');
+  });
+
+  it("uses bet wording for the compact mobile menu opener when no bet is facing the player", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TurnActionDock, {
+        ...baseProps,
+        callAmount: 0,
+        isOpeningBetAction: true,
+        isDesktopClickBetting: false,
+        isCompactMobileLayout: true,
+        trayPresetButtons: [
+          {
+            key: "min-raise",
+            label: "Min Bet",
+            amount: 80,
+            testId: "chip-load-raise",
+            tone: "raise" as const,
+            enabled: true,
+          },
+          {
+            key: "third-pot",
+            label: "1/3 Pot",
+            amount: 120,
+            testId: "preset-third-pot",
+            tone: "raise" as const,
+            enabled: true,
+          },
+          {
+            key: "half-pot",
+            label: "1/2 Pot",
+            amount: 180,
+            testId: "preset-half-pot",
+            tone: "raise" as const,
+            enabled: true,
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-testid="action-open-raise-menu"');
+    expect(html).toContain(">game.preset.bet<");
   });
 
   it("partitions compact mobile presets so only call or min-bet remain standalone", () => {
