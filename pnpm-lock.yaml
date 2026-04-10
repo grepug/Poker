@@ -176,6 +176,9 @@ importers:
       ai:
         specifier: ^6.0.116
         version: 6.0.153(zod@3.25.76)
+      express:
+        specifier: ^4.22.1
+        version: 4.22.1
       livekit-server-sdk:
         specifier: ^2.15.1
         version: 2.15.1
