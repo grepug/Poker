@@ -7584,6 +7584,108 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12g: Same User Can Move An Active Seat To Another Device', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+    const takeoverContext = await browser.newContext();
+    const takeoverPage = await takeoverContext.newPage();
+
+    try {
+      const { alicePage, bobPage, roomCode } = session;
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      const bobBefore = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        const cards = (window as any).pokerDebug?.getCards?.();
+        return {
+          roomId: room?.id ?? null,
+          playerId: player?.id ?? null,
+          playerName: player?.name ?? null,
+          handNumber: room?.currentHand?.handNumber ?? null,
+          currentPlayerTurn: room?.currentHand?.currentPlayerTurn ?? null,
+          hasCards: Array.isArray(cards) && cards.length === 2,
+        };
+      });
+
+      expect(bobBefore.roomId).toBe(roomCode);
+      expect(bobBefore.playerName).toBe('Bob');
+      expect(bobBefore.playerId).toBeTruthy();
+      expect(bobBefore.currentPlayerTurn).toBe(bobBefore.playerId);
+      expect(bobBefore.hasCards).toBe(true);
+
+      const displacedPromise = captureNextSocketEvent(
+        bobPage,
+        'SESSION_DISPLACED',
+        10000,
+      );
+      const reconnectedPromise = captureNextSocketEvent(
+        alicePage,
+        'PLAYER_RECONNECTED',
+        10000,
+      );
+
+      await authenticateTestUser(takeoverPage, 'test2', {
+        displayName: 'Bob',
+        avatarEmoji: '🐻',
+      });
+      await takeoverPage.click('[data-testid="join-toggle-button"]');
+      await takeoverPage.fill('[data-testid="room-id-input"]', roomCode);
+      await takeoverPage.click('[data-testid="join-room-button"]');
+
+      const displacedEvent = await displacedPromise;
+      expect(displacedEvent.playerId).toBe(bobBefore.playerId);
+      expect(displacedEvent.roomId).toBe(roomCode);
+
+      const reconnectedEvent = await reconnectedPromise;
+      expect(reconnectedEvent.playerId).toBe(bobBefore.playerId);
+
+      await takeoverPage.waitForSelector('[data-testid="room-title"]');
+      await waitForHoleCards(takeoverPage);
+
+      const takeoverState = await takeoverPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const player = (window as any).pokerDebug?.getPlayer?.();
+        const cards = (window as any).pokerDebug?.getCards?.();
+        return {
+          roomId: room?.id ?? null,
+          playerId: player?.id ?? null,
+          playerName: player?.name ?? null,
+          handNumber: room?.currentHand?.handNumber ?? null,
+          currentPlayerTurn: room?.currentHand?.currentPlayerTurn ?? null,
+          hasCards: Array.isArray(cards) && cards.length === 2,
+        };
+      });
+
+      expect(takeoverState.roomId).toBe(bobBefore.roomId);
+      expect(takeoverState.playerId).toBe(bobBefore.playerId);
+      expect(takeoverState.playerName).toBe('Bob');
+      expect(takeoverState.handNumber).toBe(bobBefore.handNumber);
+      expect(takeoverState.currentPlayerTurn).toBe(bobBefore.playerId);
+      expect(takeoverState.hasCards).toBe(true);
+
+      await bobPage.waitForSelector('[data-testid="connection-status"]', {
+        timeout: 10000,
+      });
+      await expect(bobPage.locator('[data-testid="room-title"]')).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="form-feedback"]'),
+      ).toContainText('moved to another device');
+
+      await takeoverPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      await expect(bobPage.locator('[data-testid="room-title"]')).toHaveCount(0);
+    } finally {
+      await Promise.allSettled([
+        teardownTwoPlayerSession(session),
+        takeoverContext.close(),
+      ]);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {

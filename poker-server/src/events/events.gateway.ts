@@ -711,6 +711,7 @@ export class EventsGateway
             authenticatedUser.id,
           );
 
+        this.displacePlayerSocket(room.id, player.id, client.id);
         client.join(room.id);
 
         this.trackPlayerSocket(client.id, room.id, player.id);
@@ -740,6 +741,11 @@ export class EventsGateway
           player: this.sanitizePlayer(player),
           room: this.sanitizeRoom(room),
         });
+        if (Array.isArray(player.cards) && player.cards.length > 0) {
+          client.emit('YOUR_CARDS', {
+            cards: player.cards,
+          } as YourCardsData);
+        }
         await this.emitInitialChatHistory(client, room.id);
 
         this.logger.log(
@@ -800,6 +806,7 @@ export class EventsGateway
           this.disconnectTimers.delete(player.id);
         }
 
+        this.displacePlayerSocket(data.roomId, player.id, client.id);
         client.join(data.roomId);
 
         this.trackPlayerSocket(client.id, data.roomId, player.id);
@@ -3802,6 +3809,40 @@ export class EventsGateway
 
   private async getRoom(roomId: string): Promise<any> {
     return await this.storageService.getRoom(roomId);
+  }
+
+  private displacePlayerSocket(
+    roomId: string,
+    playerId: string,
+    nextSocketId: string,
+  ): void {
+    for (const [trackedSocketId, tracked] of this.socketToPlayer.entries()) {
+      if (tracked.playerId !== playerId || trackedSocketId === nextSocketId) {
+        continue;
+      }
+
+      const displacedSocket =
+        this.server.sockets.sockets.get(trackedSocketId) || null;
+      if (displacedSocket) {
+        if (tracked.roomId !== roomId) {
+          this.logger.warn(
+            `Displacing socket ${trackedSocketId} for player ${playerId} with mismatched room ids: requested=${roomId}, tracked=${tracked.roomId}`,
+          );
+        }
+
+        displacedSocket.emit('SESSION_DISPLACED', {
+          roomId: tracked.roomId,
+          playerId,
+          message: 'This table was moved to another device.',
+        });
+        displacedSocket.leave(tracked.roomId);
+        if (tracked.roomId !== roomId) {
+          displacedSocket.leave(roomId);
+        }
+      }
+
+      this.socketToPlayer.delete(trackedSocketId);
+    }
   }
 
   private trackPlayerSocket(

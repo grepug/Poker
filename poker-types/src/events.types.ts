@@ -287,6 +287,12 @@ export interface PlayerReconnectedData {
   connectionStatus?: PlayerConnectionStatus;
 }
 
+export interface SessionDisplacedData {
+  roomId: string;
+  playerId: string;
+  message: string;
+}
+
 export interface PlayerProfileUpdatedData {
   playerId: string;
   playerName: string;
@@ -391,6 +397,7 @@ export interface ServerToClientEvents {
   NEW_HAND_STARTING: () => void;
   PLAYER_DISCONNECTED: (data: PlayerDisconnectedData) => void;
   PLAYER_RECONNECTED: (data: PlayerReconnectedData) => void;
+  SESSION_DISPLACED: (data: SessionDisplacedData) => void;
   PLAYER_PROFILE_UPDATED: (data: PlayerProfileUpdatedData) => void;
   PLAYER_AUTO_FOLDED: (data: PlayerAutoFoldedData) => void;
   HOST_CHANGED: (data: HostChangedData) => void;

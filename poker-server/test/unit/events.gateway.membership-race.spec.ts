@@ -14,6 +14,7 @@ describe('EventsGateway membership mutation serialization', () => {
   let chatStorageService: any;
   let chatMediaStorageService: any;
   let authService: any;
+  let persistViaStaleSnapshot: (mutate: (draft: any) => void) => Promise<any>;
 
   const createPlayer = (params: {
     id: string;
@@ -92,7 +93,7 @@ describe('EventsGateway membership mutation serialization', () => {
       lastActivityAt: Date.now(),
     };
 
-    const persistViaStaleSnapshot = async (mutate: (draft: any) => void) => {
+    persistViaStaleSnapshot = async (mutate: (draft: any) => void) => {
       const snapshot = deepClone(roomState);
       await wait(25);
       mutate(snapshot);
@@ -329,6 +330,91 @@ describe('EventsGateway membership mutation serialization', () => {
     expect(reconnectClient.join).toHaveBeenCalledWith('ROOM1');
     expect(gameService.addPlayerToRoom).toHaveBeenCalledTimes(1);
     expect(gameService.updatePlayerSocket).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the old socket when the same authenticated user joins from another device', async () => {
+    roomState.players[1].status = 'connected';
+    roomState.players[1].connectionStatus = 'connected';
+
+    gameService.addPlayerToRoom.mockImplementationOnce(
+      async (roomId: string, socketId: string) => {
+        if (roomId !== 'ROOM1') {
+          throw new Error('Room not found');
+        }
+
+        let updatedPlayer: any = null;
+        const room = await persistViaStaleSnapshot((draft) => {
+          const player = draft.players.find((entry: any) => entry.id === 'p-bob');
+          if (!player) {
+            throw new Error('Player not found');
+          }
+
+          player.socketId = socketId;
+          player.connectionStatus = 'connected';
+          player.lastConnectedAt = Date.now();
+          draft.lastActivityAt = Date.now();
+          updatedPlayer = deepClone(player);
+        });
+
+        return { room, player: updatedPlayer, rejoined: true };
+      },
+    );
+
+    const displacedClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    const takeoverClient = createClient('socket-bob-new', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+    (gateway.server as any).sockets.sockets.set('socket-bob-old', displacedClient);
+
+    const result = await gateway.handleJoinRoom(takeoverClient as any, {
+      roomId: 'ROOM1',
+      playerName: 'Bob',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(displacedClient.emit).toHaveBeenCalledWith(
+      'SESSION_DISPLACED',
+      expect.objectContaining({
+        roomId: 'ROOM1',
+        playerId: 'p-bob',
+      }),
+    );
+    expect(displacedClient.leave).toHaveBeenCalledWith('ROOM1');
+    expect(takeoverClient.join).toHaveBeenCalledWith('ROOM1');
+    expect((gateway as any).socketToPlayer.get('socket-bob-new')).toEqual({
+      roomId: 'ROOM1',
+      playerId: 'p-bob',
+    });
+    expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
+  });
+
+  it('uses tracked room metadata when displacing a stale socket mapping', () => {
+    const displacedClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM2',
+      playerId: 'p-bob',
+    });
+    (gateway.server as any).sockets.sockets.set('socket-bob-old', displacedClient);
+
+    (gateway as any).displacePlayerSocket('ROOM1', 'p-bob', 'socket-bob-new');
+
+    expect(displacedClient.emit).toHaveBeenCalledWith(
+      'SESSION_DISPLACED',
+      expect.objectContaining({
+        roomId: 'ROOM2',
+        playerId: 'p-bob',
+      }),
+    );
+    expect(displacedClient.leave).toHaveBeenCalledWith('ROOM2');
+    expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
   });
 
   it('allows leave between hands before the player readies the next hand', async () => {
