@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import type { MessageKey } from "@/i18n/messages";
 import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
 import type { TrayPresetButton } from "@/components/poker/turn-action-presets";
@@ -103,6 +104,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   t,
 }) => {
   const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
+  const actionDockRef = React.useRef<HTMLDivElement | null>(null);
   const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
@@ -142,10 +144,12 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   });
   const raiseMenuStyle = useAnchoredPopover({
     isOpen: !isAutomationMode && hasCompactMobileRaiseMenu && isRaiseMenuOpen,
-    anchorRef: raiseMenuButtonRef,
+    anchorRef: actionDockRef,
     popoverRef: raiseMenuPopoverRef,
     preferredPlacement: "top",
     align: "end",
+    offset: 10,
+    strategy: "fixed",
   });
   const isQuickDecisionLocked = isQuickDecisionAvailable && isQuickDecisionTemporarilyLocked;
   const showDesktopSubmitTrayButton =
@@ -240,8 +244,37 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     </button>
   );
 
+  const raiseMenuPopover =
+    hasCompactMobileRaiseMenu && isRaiseMenuOpen ? (
+      <div
+        ref={raiseMenuPopoverRef}
+        role="dialog"
+        aria-label={t("game.raise")}
+        data-testid="raise-action-popover"
+        className="action-quick-confirm-popover action-quick-confirm-popover--wide chip-raise-menu-popover"
+        style={raiseMenuStyle}
+      >
+        <div className="chip-raise-menu-popover__header">
+          <span className="chip-raise-menu-popover__title">{t("game.raise")}</span>
+          <button
+            type="button"
+            onClick={() => setIsRaiseMenuOpen(false)}
+            className="chip-raise-menu-popover__dismiss"
+            data-testid="raise-action-popover-dismiss"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+        <div className="chip-raise-menu-popover__grid">
+          {menuPresets.map((preset) =>
+            renderPresetButton(preset, `chip-quick chip-quick--preset chip-quick--${preset.tone}`),
+          )}
+        </div>
+      </div>
+    ) : null;
+
   return (
-    <div data-testid="action-dock" className="chip-composer-dock__action-area">
+    <div ref={actionDockRef} data-testid="action-dock" className="chip-composer-dock__action-area">
       <div className="chip-composer-dock__header">
         <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
         <span className="chip-composer-dock__meta">{t("game.toCall", { amount: callAmount })}</span>
@@ -315,26 +348,6 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                     </button>
                   )}
                 </div>
-
-                {hasCompactMobileRaiseMenu && isRaiseMenuOpen && (
-                  <div
-                    ref={raiseMenuPopoverRef}
-                    role="dialog"
-                    aria-label={t("game.raise")}
-                    data-testid="raise-action-popover"
-                    className="action-quick-confirm-popover action-quick-confirm-popover--wide chip-raise-menu-popover"
-                    style={raiseMenuStyle}
-                  >
-                    <div className="chip-raise-menu-popover__grid">
-                      {menuPresets.map((preset) =>
-                        renderPresetButton(
-                          preset,
-                          `chip-quick chip-quick--preset chip-quick--${preset.tone}`,
-                        ),
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 <div className="chip-composer-dock__manual">
                   <input
@@ -491,6 +504,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
           </div>
         </div>
       </div>
+
+      {raiseMenuPopover &&
+        (typeof document !== "undefined" ? createPortal(raiseMenuPopover, document.body) : null)}
 
       {isAutomationMode && (
         <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">

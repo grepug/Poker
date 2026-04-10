@@ -3,6 +3,7 @@ import type { CSSProperties, RefObject } from "react";
 
 type Placement = "top" | "bottom";
 type Align = "start" | "center" | "end";
+type Strategy = "absolute" | "fixed";
 
 type UseAnchoredPopoverParams = {
   isOpen: boolean;
@@ -12,6 +13,7 @@ type UseAnchoredPopoverParams = {
   align?: Align;
   offset?: number;
   viewportPadding?: number;
+  strategy?: Strategy;
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -24,6 +26,7 @@ export const useAnchoredPopover = ({
   align = "end",
   offset = 8,
   viewportPadding = 8,
+  strategy = "absolute",
 }: UseAnchoredPopoverParams): CSSProperties => {
   const [position, setPosition] = useState<{ left: number; top: number }>({
     left: -9999,
@@ -54,7 +57,7 @@ export const useAnchoredPopover = ({
       const anchor = anchorRef.current;
       const popover = popoverRef.current;
       const offsetParentRect =
-        popover?.offsetParent instanceof HTMLElement
+        strategy === "absolute" && popover?.offsetParent instanceof HTMLElement
           ? popover.offsetParent.getBoundingClientRect()
           : ({ left: 0, top: 0 } as const);
       if (!popover) {
@@ -134,6 +137,7 @@ export const useAnchoredPopover = ({
     offset,
     popoverRef,
     preferredPlacement,
+    strategy,
     viewportPadding,
   ]);
 
@@ -141,9 +145,9 @@ export const useAnchoredPopover = ({
     () => ({
       left: `${position.left}px`,
       top: `${position.top}px`,
-      position: "absolute" as const,
+      position: strategy,
       zIndex: 120,
     }),
-    [position.left, position.top],
+    [position.left, position.top, strategy],
   );
 };
