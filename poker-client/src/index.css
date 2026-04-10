@@ -1377,6 +1377,11 @@ body {
   padding: 1rem;
 }
 
+.turn-center-alert-layer--table-stage {
+  position: absolute;
+  padding: 0;
+}
+
 .turn-center-alert {
   border-radius: 1rem;
   border: 1px solid rgba(252, 211, 77, 0.72);
@@ -1391,6 +1396,10 @@ body {
   text-align: center;
   padding: 0.95rem 1.2rem;
   animation: turnCenterAlert 1.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.turn-center-alert--table-stage {
+  min-width: min(100%, 22rem);
 }
 
 .turn-center-alert__eyebrow {

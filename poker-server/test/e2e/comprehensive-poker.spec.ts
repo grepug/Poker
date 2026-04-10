@@ -7121,6 +7121,57 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('@critical 8.8i: Desktop turn alert centers on the table stage instead of the viewport', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      forceNonAutomationMode: true,
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 1440, height: 900 }),
+        bobPage.setViewportSize({ width: 1440, height: 900 }),
+      ]);
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+
+      await bobPage.evaluate(() => (window as any).pokerDebug.call());
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const turnAlert = alicePage.locator('[data-testid="turn-center-alert"]');
+      await expect(turnAlert).toBeVisible();
+
+      const geometry = await alicePage.evaluate(() => {
+        const boardStage = document.querySelector<HTMLElement>('.table-shell__board-stage');
+        const alert = document.querySelector<HTMLElement>('[data-testid="turn-center-alert"]');
+
+        if (!boardStage || !alert) {
+          return null;
+        }
+
+        const stageRect = boardStage.getBoundingClientRect();
+        const alertRect = alert.getBoundingClientRect();
+        const alertCenterX = alertRect.left + alertRect.width / 2;
+        const stageCenterX = stageRect.left + stageRect.width / 2;
+        const viewportCenterX = window.innerWidth / 2;
+
+        return {
+          alertCenterDeltaFromStage: Math.abs(alertCenterX - stageCenterX),
+          alertCenterDeltaFromViewport: Math.abs(alertCenterX - viewportCenterX),
+        };
+      });
+
+      expect(geometry).not.toBeNull();
+      expect(geometry?.alertCenterDeltaFromStage).toBeLessThanOrEqual(4);
+      expect(geometry?.alertCenterDeltaFromViewport).toBeGreaterThan(40);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.9: Rankings Modal and Card Toggle Reset on New Hand', async ({
     browser,
   }) => {

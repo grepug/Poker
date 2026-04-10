@@ -4182,16 +4182,17 @@ const useGameRoomElement = () => {
             </section>
           )}
 
-          {turnAlertToken !== null && (
-            <div aria-live="assertive" key={`turn-alert-${turnAlertToken}`}>
-              <TurnCenterAlert
-                eyebrow={t("game.turnAlert.eyebrow")}
-                title={t("game.turnAlert.title")}
-              />
-            </div>
-          )}
-
           <div ref={boardStageRef} className="table-shell__board-stage">
+            {turnAlertToken !== null && (
+              <div aria-live="assertive" key={`turn-alert-${turnAlertToken}`}>
+                <TurnCenterAlert
+                  eyebrow={t("game.turnAlert.eyebrow")}
+                  title={t("game.turnAlert.title")}
+                  anchorToStage={isDesktopSideDock}
+                />
+              </div>
+            )}
+
             {shouldRenderCardsInBoardStage && (
               <YourCardsFlyout
                 ref={mobileCardsFlyoutRef}
