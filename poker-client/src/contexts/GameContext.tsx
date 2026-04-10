@@ -26,6 +26,7 @@ import type {
   ClientToServerEvents,
   ChatHistorySyncData,
   ChatMessage,
+  SessionDisplacedData,
   SendChatMessageData,
   VoiceMessagePayload,
 } from "poker-types";
@@ -466,6 +467,45 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     writeLastPlayerEmoji(player.emoji);
   }, [player?.emoji]);
 
+  const clearActiveRoomState = useCallback(
+    ({
+      markJustLeft = false,
+      errorMessage = null,
+    }: {
+      markJustLeft?: boolean;
+      errorMessage?: string | null;
+    } = {}) => {
+      const currentRoomId = roomRef.current?.id;
+      if (currentRoomId) {
+        clearStoredFinalResult(currentRoomId);
+      }
+      if (typeof window !== "undefined" && markJustLeft) {
+        window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
+      }
+      clearStoredSession();
+      setRoom(null);
+      setPlayer(null);
+      setYourCards(null);
+      setLastHandResult(null);
+      setFinalGameResult(null);
+      setLastPlayerActionEvent(null);
+      setRevealedHandPlayerIds([]);
+      setShowdownDecisionState(null);
+      setRunCountDecisionState(null);
+      setRevealedShowdownHandsByPlayerId({});
+      setNextStreetRevealState(null);
+      setIsRecoveringSession(false);
+      setLastError(errorMessage);
+      setChatMessages([]);
+      setChatHasMore(false);
+      setChatNextBeforeSeq(null);
+      setChatLoadingHistory(false);
+      setChatUnreadCount(0);
+      setIsChatPanelOpenState(false);
+    },
+    [],
+  );
+
   const registerSocketStateListeners = useCallback(
     (socketInstance: NonNullable<typeof socket>) => {
       const socket = socketInstance;
@@ -583,10 +623,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         setRunCountDecisionState(null);
         setRevealedShowdownHandsByPlayerId({});
         if (isInvalidReconnectReason(reason)) {
-          clearStoredSession();
-          setRoom(null);
-          setPlayer(null);
-          setYourCards(null);
+          clearActiveRoomState({ errorMessage: reason });
+          return;
         }
         setLastError(reason);
       });
@@ -676,6 +714,23 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
               }
             : prev,
         );
+      });
+
+      socket.on("SESSION_DISPLACED", (data: SessionDisplacedData) => {
+        const activeRoomId = roomRef.current?.id;
+        const activePlayerId = playerRef.current?.id;
+        if (
+          (activeRoomId && data.roomId !== activeRoomId) ||
+          (activePlayerId && data.playerId !== activePlayerId)
+        ) {
+          return;
+        }
+
+        reconnectInFlightRef.current = false;
+        clearActiveRoomState({
+          markJustLeft: true,
+          errorMessage: data.message || "This table was moved to another device.",
+        });
       });
 
       socket.on("PLAYER_PROFILE_UPDATED", (data) => {
@@ -1268,6 +1323,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         socket.off("PLAYER_LEFT");
         socket.off("PLAYER_DISCONNECTED");
         socket.off("PLAYER_RECONNECTED");
+        socket.off("SESSION_DISPLACED");
         socket.off("PLAYER_PROFILE_UPDATED");
         socket.off("PLAYER_AUTO_FOLDED");
         socket.off("HOST_CHANGED");
@@ -1292,7 +1348,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         socket.off("ERROR");
       };
     },
-    [],
+    [clearActiveRoomState],
   );
 
   useEffect(() => {
@@ -1333,14 +1389,8 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
             const reason = response.error || "Reconnect failed";
             setIsRecoveringSession(false);
             if (isInvalidReconnectReason(reason)) {
-              clearStoredSession();
-              setRoom(null);
-              setPlayer(null);
-              setYourCards(null);
-              setRunCountDecisionState(null);
-              setShowdownDecisionState(null);
-              setRevealedShowdownHandsByPlayerId({});
-              setNextStreetRevealState(null);
+              clearActiveRoomState({ errorMessage: reason });
+              return;
             }
             setLastError(reason);
           }
@@ -1371,7 +1421,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
         socket.off("disconnect", handleDisconnect);
       };
     },
-    [],
+    [clearActiveRoomState],
   );
 
   useEffect(() => {
@@ -1592,32 +1642,10 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
     if (currentRoomId) {
       clearStoredFinalResult(currentRoomId);
     }
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(JUST_LEFT_ROOM_STORAGE_KEY, "1");
-    }
-    clearStoredSession();
-    setRoom(null);
-    setPlayer(null);
-    setYourCards(null);
-    setLastHandResult(null);
-    setFinalGameResult(null);
-    setLastPlayerActionEvent(null);
-    setRevealedHandPlayerIds([]);
-    setShowdownDecisionState(null);
-    setRunCountDecisionState(null);
-    setRevealedShowdownHandsByPlayerId({});
-    setNextStreetRevealState(null);
-    setIsRecoveringSession(false);
-    setLastError(null);
-    setChatMessages([]);
-    setChatHasMore(false);
-    setChatNextBeforeSeq(null);
-    setChatLoadingHistory(false);
-    setChatUnreadCount(0);
-    setIsChatPanelOpenState(false);
+    clearActiveRoomState({ markJustLeft: true });
 
     return true;
-  }, [socket]);
+  }, [clearActiveRoomState, socket]);
 
   const requestRebuy = useCallback(
     (amount: number) => {

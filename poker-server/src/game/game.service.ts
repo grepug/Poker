@@ -171,11 +171,12 @@ export class GameService {
     }
     const existingPlayer = existingPlayerByUserId ?? existingPlayerByName;
     if (existingPlayer) {
+      const sameAuthenticatedUser =
+        Boolean(userId) && existingPlayerByUserId?.id === existingPlayer.id;
       if (!isDisconnected(existingPlayer) && existingPlayer.status !== 'left') {
-        if (existingPlayerByUserId?.id === existingPlayer.id) {
-          throw new Error('You are already in this room');
+        if (!sameAuthenticatedUser) {
+          throw new Error('Name already taken');
         }
-        throw new Error('Name already taken');
       }
 
       const priorStatus = existingPlayer.status;
@@ -568,6 +569,9 @@ export class GameService {
       return null;
     }
     if (player.status === 'left') {
+      return null;
+    }
+    if (userId && player.userId && player.userId !== userId) {
       return null;
     }
 

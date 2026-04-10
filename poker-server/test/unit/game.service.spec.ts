@@ -525,7 +525,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(player.chips).toBe(425);
   });
 
-  it('reports that the same authenticated user is already in the room instead of a name collision', async () => {
+  it('allows the same authenticated user to take over an active seat from another device', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',
       players: [
@@ -557,15 +557,69 @@ describe('GameService addPlayerToRoom', () => {
     });
     storageService.getRoom.mockResolvedValue(room);
 
-    await expect(
-      gameService.addPlayerToRoom(
-        'ROOM01',
-        's-bob-new',
-        'Bob',
-        '🤠',
-        'user-bob',
-      ),
-    ).rejects.toThrow('You are already in this room');
+    const { player, rejoined } = await gameService.addPlayerToRoom(
+      'ROOM01',
+      's-bob-new',
+      'Bob',
+      '🤠',
+      'user-bob',
+    );
+
+    expect(rejoined).toBe(true);
+    expect(player.id).toBe('p-bob');
+    expect(player.socketId).toBe('s-bob-new');
+    expect(player.status).toBe('connected');
+    expect((player as any).connectionStatus).toBe('connected');
+    expect(player.chips).toBe(900);
+    expect((player as any).emoji).toBe('🤠');
+    expect(storageService.persistRoom).toHaveBeenCalledWith(
+      room,
+      expect.anything(),
+    );
+  });
+
+  it('rejects reconnecting a player seat owned by another authenticated user', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        {
+          ...createPlayer({
+            id: 'p-alice',
+            socketId: 's-alice',
+            name: 'Alice',
+            position: 0,
+            chips: 1000,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          userId: 'user-alice',
+        } as Player & { userId: string },
+        {
+          ...createPlayer({
+            id: 'p-bob',
+            socketId: 's-bob',
+            name: 'Bob',
+            position: 1,
+            chips: 900,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          userId: 'user-bob',
+        } as Player & { userId: string },
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const player = await gameService.updatePlayerSocket(
+      'ROOM01',
+      'Mallory',
+      's-mallory',
+      'p-bob',
+      'user-mallory',
+    );
+
+    expect(player).toBeNull();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
   it('rejects reclaiming a left player seat by name when it belongs to another authenticated user', async () => {
