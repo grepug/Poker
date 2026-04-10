@@ -9164,7 +9164,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         '[data-testid^="your-card-"]',
       );
       await expect(resultCardLocator).toHaveCount(2);
-      await expect(flyoutCardLocator).toHaveCount(2);
+      await expect(flyoutCardLocator).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
 
       const resultCards = await resultCardLocator.evaluateAll((nodes) =>
         nodes.map((node) => ({
@@ -9172,13 +9175,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           suit: node.getAttribute('data-suit'),
         })),
       );
-      const flyoutCards = await flyoutCardLocator.evaluateAll((nodes) =>
-        nodes.map((node) => ({
-          rank: node.getAttribute('data-rank'),
-          suit: node.getAttribute('data-suit'),
-        })),
-      );
-      expect(flyoutCards).toEqual(resultCards);
+      expect(
+        resultCards
+          .map((card) => `${card.rank}-${card.suit}`)
+          .sort(),
+      ).toEqual(['A-hearts', 'K-hearts']);
 
       await alicePage
         .locator('[data-testid="close-hand-results-button"]')
@@ -9272,6 +9273,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(gameExport.handCount).toBe(1);
       expect(gameExport.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
 
+      await bobPage.setViewportSize({ width: 390, height: 844 });
       await bobPage.click('[data-testid="open-saved-history-button"]');
       await expect(
         bobPage.locator('[data-testid="saved-game-detail-page"]'),
@@ -9280,8 +9282,44 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.getByRole('heading', { name: `Room ${roomCode}` }),
       ).toBeVisible();
-      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
       await expect(bobPage.getByRole('button', { name: 'Hand #1' })).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-hand-strip"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-selected-hand"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-section-tabs"]'),
+      ).toBeVisible();
+      const mobileHistoryLayout = await bobPage.evaluate(() => {
+        const handStrip = document.querySelector(
+          '[data-testid="saved-history-mobile-hand-strip"]',
+        );
+        const selectedHand = document.querySelector(
+          '[data-testid="saved-history-mobile-selected-hand"]',
+        );
+        if (!handStrip || !selectedHand) {
+          return null;
+        }
+
+        const handStripRect = handStrip.getBoundingClientRect();
+        const selectedHandRect = selectedHand.getBoundingClientRect();
+        return {
+          handStripTop: handStripRect.top,
+          selectedHandTop: selectedHandRect.top,
+        };
+      });
+      expect(mobileHistoryLayout).not.toBeNull();
+      expect(
+        (mobileHistoryLayout?.handStripTop ?? Number.POSITIVE_INFINITY) <
+          (mobileHistoryLayout?.selectedHandTop ?? Number.NEGATIVE_INFINITY),
+      ).toBe(true);
+      await bobPage.click('[data-testid="saved-history-mobile-tab-session"]');
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
+      ).toBeVisible();
+      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
       const savedHandDetail = bobPage
         .locator('section')
         .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });
