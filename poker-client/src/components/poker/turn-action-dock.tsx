@@ -67,17 +67,6 @@ export const partitionCompactMobilePresets = (
   };
 };
 
-const getCompactMobileRaiseMenuLabel = (
-  menuPresets: TrayPresetButton[],
-  t: Translate,
-) => {
-  if (menuPresets.length === 1 && menuPresets[0]?.key === "all-in") {
-    return menuPresets[0].label;
-  }
-
-  return t("game.raise");
-};
-
 export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   callAmount,
   minRaise,
@@ -129,8 +118,12 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     trayPresetButtons,
     callAmount,
   );
-  const compactMobileRaiseMenuLabel = getCompactMobileRaiseMenuLabel(menuPresets, t);
-  const hasCompactMobileRaiseMenu = isCompactMobileLayout && menuPresets.length > 0;
+  const directCompactMobileMenuPreset =
+    isCompactMobileLayout && standalonePresets.length === 0 && menuPresets.length === 1
+      ? menuPresets[0]
+      : null;
+  const hasCompactMobileRaiseMenu =
+    isCompactMobileLayout && menuPresets.length > 0 && !directCompactMobileMenuPreset;
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
   const quickConfirmStyle = useAnchoredPopover({
@@ -303,6 +296,11 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                       `chip-quick chip-quick--preset chip-quick--${preset.tone} chip-composer-dock__mobile-preset-button`,
                     ),
                   )}
+                  {directCompactMobileMenuPreset &&
+                    renderPresetButton(
+                      directCompactMobileMenuPreset,
+                      `chip-quick chip-quick--preset chip-quick--${directCompactMobileMenuPreset.tone} chip-composer-dock__mobile-preset-button`,
+                    )}
                   {hasCompactMobileRaiseMenu && (
                     <button
                       ref={raiseMenuButtonRef}
@@ -313,7 +311,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
                       aria-expanded={isRaiseMenuOpen}
                       aria-haspopup="dialog"
                     >
-                      <span>{compactMobileRaiseMenuLabel}</span>
+                      <span>{t("game.raise")}</span>
                     </button>
                   )}
                 </div>
