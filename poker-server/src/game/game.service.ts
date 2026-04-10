@@ -571,8 +571,13 @@ export class GameService {
     if (player.status === 'left') {
       return null;
     }
-    if (userId && player.userId && player.userId !== userId) {
+    if (player.isRobot) {
       return null;
+    }
+    if (userId) {
+      if (!player.userId || player.userId !== userId) {
+        return null;
+      }
     }
 
     player.socketId = newSocketId;

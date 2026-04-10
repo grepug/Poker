@@ -622,6 +622,50 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.persistRoom).not.toHaveBeenCalled();
   });
 
+  it('rejects reconnecting a robot or legacy seat without a matching authenticated user id', async () => {
+    const room = createRoom({
+      gameState: 'IN_PROGRESS',
+      players: [
+        {
+          ...createPlayer({
+            id: 'p-alice',
+            socketId: 's-alice',
+            name: 'Alice',
+            position: 0,
+            chips: 1000,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          userId: 'user-alice',
+        } as Player & { userId: string },
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: 's-robot',
+            name: 'Robot',
+            position: 1,
+            chips: 900,
+            totalBuyIn: 1000,
+            status: 'connected',
+          }),
+          isRobot: true,
+        } as Player,
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const player = await gameService.updatePlayerSocket(
+      'ROOM01',
+      'Mallory',
+      's-mallory',
+      'p-robot',
+      'user-mallory',
+    );
+
+    expect(player).toBeNull();
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
+  });
+
   it('rejects reclaiming a left player seat by name when it belongs to another authenticated user', async () => {
     const room = createRoom({
       gameState: 'IN_PROGRESS',

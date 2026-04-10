@@ -394,6 +394,29 @@ describe('EventsGateway membership mutation serialization', () => {
     expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
   });
 
+  it('uses tracked room metadata when displacing a stale socket mapping', () => {
+    const displacedClient = createClient('socket-bob-old', {
+      cookieToken: 'token-bob',
+    });
+    (gateway as any).socketToPlayer.set('socket-bob-old', {
+      roomId: 'ROOM2',
+      playerId: 'p-bob',
+    });
+    (gateway.server as any).sockets.sockets.set('socket-bob-old', displacedClient);
+
+    (gateway as any).displacePlayerSocket('ROOM1', 'p-bob', 'socket-bob-new');
+
+    expect(displacedClient.emit).toHaveBeenCalledWith(
+      'SESSION_DISPLACED',
+      expect.objectContaining({
+        roomId: 'ROOM2',
+        playerId: 'p-bob',
+      }),
+    );
+    expect(displacedClient.leave).toHaveBeenCalledWith('ROOM2');
+    expect((gateway as any).socketToPlayer.has('socket-bob-old')).toBe(false);
+  });
+
   it('allows leave between hands before the player readies the next hand', async () => {
     roomState.players[1].status = 'waiting';
     roomState.readyPhase = 'NEXT_HAND';

@@ -3824,12 +3824,21 @@ export class EventsGateway
       const displacedSocket =
         this.server.sockets.sockets.get(trackedSocketId) || null;
       if (displacedSocket) {
+        if (tracked.roomId !== roomId) {
+          this.logger.warn(
+            `Displacing socket ${trackedSocketId} for player ${playerId} with mismatched room ids: requested=${roomId}, tracked=${tracked.roomId}`,
+          );
+        }
+
         displacedSocket.emit('SESSION_DISPLACED', {
-          roomId,
+          roomId: tracked.roomId,
           playerId,
           message: 'This table was moved to another device.',
         });
         displacedSocket.leave(tracked.roomId);
+        if (tracked.roomId !== roomId) {
+          displacedSocket.leave(roomId);
+        }
       }
 
       this.socketToPlayer.delete(trackedSocketId);
