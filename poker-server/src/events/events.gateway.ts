@@ -302,6 +302,7 @@ export class EventsGateway
       clearTimeout(timer);
     }
     this.runCountDecisionTimers.clear();
+    this.abandonedRoomSince.clear();
   }
 
   private extractSocketToken(client: Socket): string {
@@ -401,6 +402,16 @@ export class EventsGateway
 
     if (!this.abandonedRoomSince.has(room.id)) {
       this.abandonedRoomSince.set(room.id, Date.now());
+    }
+  }
+
+  private cancelPendingDisconnectTimersForRoom(room: any): void {
+    for (const player of room?.players ?? []) {
+      const timer = this.disconnectTimers.get(player.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.disconnectTimers.delete(player.id);
+      }
     }
   }
 
@@ -525,6 +536,7 @@ export class EventsGateway
     };
 
     this.abandonedRoomSince.delete(room.id);
+    this.cancelPendingDisconnectTimersForRoom(room);
     this.server.to(room.id).emit('GAME_ENDED', gameEndedData);
   }
 
@@ -3732,8 +3744,17 @@ export class EventsGateway
   private async handleDisconnectTimeout(roomId: string, playerId: string) {
     try {
       await this.runRoomActionSequentially(roomId, async () => {
+        const timer = this.disconnectTimers.get(playerId);
+        if (timer) {
+          clearTimeout(timer);
+          this.disconnectTimers.delete(playerId);
+        }
+
         const room = await this.getRoom(roomId);
         if (!room) {
+          return;
+        }
+        if (room.gameState === 'ENDED') {
           return;
         }
 
