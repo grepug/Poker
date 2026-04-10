@@ -1254,6 +1254,10 @@ body {
   pointer-events: none;
 }
 
+.action-center-alert-layer--table-stage {
+  position: absolute;
+}
+
 .action-center-alert {
   position: fixed;
   left: 50%;
@@ -1272,6 +1276,10 @@ body {
   text-align: center;
   padding: 0.75rem 1rem 0.85rem;
   animation: actionCenterAlertIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.action-center-alert--table-stage {
+  position: absolute;
 }
 
 .action-center-alert--neutral {
@@ -1340,6 +1348,10 @@ body {
   background: linear-gradient(90deg, rgba(125, 211, 252, 0.95), rgba(56, 189, 248, 0.36));
   transform-origin: left center;
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.56);
+}
+
+.action-center-alert__arrow--table-stage {
+  position: absolute;
 }
 
 .action-center-alert__arrow-head {
@@ -2731,10 +2743,6 @@ body {
     display: grid;
     gap: 0.8rem;
     align-content: start;
-  }
-
-  .table-shell--desktop-two-column .table-shell__board-stage {
-    padding-right: clamp(10rem, 16vw, 12.5rem);
   }
 
   .table-shell--desktop-two-column .table-micro-hud {

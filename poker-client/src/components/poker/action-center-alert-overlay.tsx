@@ -28,10 +28,14 @@ export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> =
   cardRef,
 }) => {
   return (
-    <div className="action-center-alert-layer" aria-live="polite" data-testid="action-center-alert">
+    <div
+      className="action-center-alert-layer action-center-alert-layer--table-stage"
+      aria-live="polite"
+      data-testid="action-center-alert"
+    >
       {pointerVector && (
         <div
-          className="action-center-alert__arrow"
+          className="action-center-alert__arrow action-center-alert__arrow--table-stage"
           style={{
             left: `${pointerVector.x}px`,
             top: `${pointerVector.y}px`,
@@ -50,6 +54,8 @@ export const ActionCenterAlertOverlay: React.FC<ActionCenterAlertOverlayProps> =
           tone={tone}
           exiting={exiting}
           testId="action-center-alert-card"
+          wrapInLayer={false}
+          cardClassName="action-center-alert--table-stage"
         />
       </div>
     </div>

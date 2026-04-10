@@ -1811,6 +1811,7 @@ const useGameRoomElement = () => {
   const chatForcedByDesktopRef = useRef(false);
   const feltOvalRef = useRef<HTMLDivElement | null>(null);
   const boardCenterStackRef = useRef<HTMLDivElement | null>(null);
+  const boardStageRef = useRef<HTMLDivElement | null>(null);
   const communityLaneRef = useRef<HTMLDivElement | null>(null);
   const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
   const actionAlertHideTimeoutRef = useRef<number | null>(null);
@@ -2892,13 +2893,15 @@ const useGameRoomElement = () => {
 
     const seatNode = seatNodeRefs.current[actionCenterAlert.playerId];
     const alertNode = actionCenterAlertRef.current;
-    if (!seatNode || !alertNode) {
+    const boardStageNode = boardStageRef.current;
+    if (!seatNode || !alertNode || !boardStageNode) {
       setActionPointerVector(null);
       return;
     }
 
     const seatRect = seatNode.getBoundingClientRect();
     const alertRect = alertNode.getBoundingClientRect();
+    const boardStageRect = boardStageNode.getBoundingClientRect();
 
     const centerX = alertRect.left + alertRect.width / 2;
     const centerY = alertRect.top + alertRect.height / 2;
@@ -2924,8 +2927,8 @@ const useGameRoomElement = () => {
     const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
 
     setActionPointerVector({
-      x: startX,
-      y: startY,
+      x: startX - boardStageRect.left,
+      y: startY - boardStageRect.top,
       angle,
       length: lineLength,
     });
@@ -4188,7 +4191,7 @@ const useGameRoomElement = () => {
             </div>
           )}
 
-          <div className="table-shell__board-stage">
+          <div ref={boardStageRef} className="table-shell__board-stage">
             {shouldRenderCardsInBoardStage && (
               <YourCardsFlyout
                 ref={mobileCardsFlyoutRef}
