@@ -7,6 +7,7 @@ type TableShellProps = {
   showDesktopTurnDock: boolean;
   showDesktopOperationDock: boolean;
   desktopBottomBarHeight: number;
+  mobileBottomSafeHeight: number;
   isChatPanelOpen: boolean;
 };
 
@@ -16,6 +17,7 @@ export const TableShell: React.FC<TableShellProps> = ({
   showDesktopTurnDock,
   showDesktopOperationDock,
   desktopBottomBarHeight,
+  mobileBottomSafeHeight,
   isChatPanelOpen,
 }) => {
   return (
@@ -23,6 +25,7 @@ export const TableShell: React.FC<TableShellProps> = ({
       style={
         {
           "--desktop-active-bottom-bar-height": `${Math.max(0, desktopBottomBarHeight)}px`,
+          "--mobile-bottom-safe-height": `${Math.max(0, mobileBottomSafeHeight)}px`,
         } as React.CSSProperties
       }
       className={cn(

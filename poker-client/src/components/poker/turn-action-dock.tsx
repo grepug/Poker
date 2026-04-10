@@ -1,23 +1,19 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import type { MessageKey } from "@/i18n/messages";
 import { useAnchoredPopover } from "@/components/poker/use-anchored-popover";
+import type { TrayPresetButton } from "@/components/poker/turn-action-presets";
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
-
-type TrayPresetTone = "call" | "raise" | "allin";
-
-type TrayPresetButton = {
-  key: string;
-  label: string;
-  amount: number;
-  testId: string;
-  tone: TrayPresetTone;
-  enabled: boolean;
-};
 
 type QuickDecisionAction = "check" | "fold";
 type LegacyAction = "check" | "call" | "all-in" | "raise";
 const QUICK_DECISION_SAFETY_LOCK_MS = 2000;
+
+type MobilePresetPartition = {
+  standalonePresets: TrayPresetButton[];
+  menuPresets: TrayPresetButton[];
+};
 
 type TurnActionDockProps = {
   callAmount: number;
@@ -28,6 +24,7 @@ type TurnActionDockProps = {
   mobileChipDraftValue: string;
   showMobileChipPopover: boolean;
   isDesktopClickBetting?: boolean;
+  isCompactMobileLayout?: boolean;
   canStartDrag: boolean;
   isDragActive: boolean;
   isYourTurn: boolean;
@@ -62,6 +59,23 @@ type TurnActionDockProps = {
   t: Translate;
 };
 
+export const partitionCompactMobilePresets = (
+  trayPresetButtons: TrayPresetButton[],
+  callAmount: number,
+): MobilePresetPartition => {
+  if (callAmount > 0) {
+    return {
+      standalonePresets: trayPresetButtons.filter((preset) => preset.key === "call"),
+      menuPresets: trayPresetButtons.filter((preset) => preset.key !== "call"),
+    };
+  }
+
+  return {
+    standalonePresets: trayPresetButtons.filter((preset) => preset.key === "min-raise"),
+    menuPresets: trayPresetButtons.filter((preset) => preset.key !== "min-raise"),
+  };
+};
+
 export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   callAmount,
   minRaise,
@@ -71,6 +85,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   mobileChipDraftValue,
   showMobileChipPopover,
   isDesktopClickBetting = false,
+  isCompactMobileLayout = false,
   canStartDrag,
   isDragActive,
   isYourTurn,
@@ -105,17 +120,31 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   t,
 }) => {
   const isQuickDecisionAvailable = !isAutomationMode && isYourTurn;
+  const actionDockRef = React.useRef<HTMLDivElement | null>(null);
   const checkActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const foldActionButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const quickConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const traySubmitButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const trayConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const raiseMenuButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const raiseMenuPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const mobileChipTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const mobileChipPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const latestCloseMobileChipPopoverRef = React.useRef(onCloseMobileChipPopover);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
     React.useState(isQuickDecisionAvailable);
+  const [isRaiseMenuOpen, setIsRaiseMenuOpen] = React.useState(false);
+  const { standalonePresets, menuPresets } = partitionCompactMobilePresets(
+    trayPresetButtons,
+    callAmount,
+  );
+  const directCompactMobileMenuPreset =
+    isCompactMobileLayout && standalonePresets.length === 0 && menuPresets.length === 1
+      ? menuPresets[0]
+      : null;
+  const hasCompactMobileRaiseMenu =
+    isCompactMobileLayout && menuPresets.length > 0 && !directCompactMobileMenuPreset;
   const quickConfirmAnchorRef =
     quickConfirmAction === "check" ? checkActionButtonRef : foldActionButtonRef;
   const quickConfirmStyle = useAnchoredPopover({
@@ -131,6 +160,15 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     popoverRef: trayConfirmPopoverRef,
     preferredPlacement: "top",
     align: "end",
+  });
+  const raiseMenuStyle = useAnchoredPopover({
+    isOpen: !isAutomationMode && hasCompactMobileRaiseMenu && isRaiseMenuOpen,
+    anchorRef: actionDockRef,
+    popoverRef: raiseMenuPopoverRef,
+    preferredPlacement: "top",
+    align: "end",
+    offset: 10,
+    strategy: "fixed",
   });
   const mobileChipPopoverStyle = useAnchoredPopover({
     isOpen: showMobileChipPopover,
@@ -198,8 +236,145 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
     return () => window.removeEventListener("pointerdown", handlePointerDown, true);
   }, [showMobileChipPopover]);
 
+  React.useEffect(() => {
+    if (!hasCompactMobileRaiseMenu || !isYourTurn || showMobileChipPopover) {
+      setIsRaiseMenuOpen(false);
+    }
+  }, [hasCompactMobileRaiseMenu, isYourTurn, showMobileChipPopover]);
+
+  React.useEffect(() => {
+    if (!isRaiseMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (
+        raiseMenuPopoverRef.current?.contains(target) ||
+        raiseMenuButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      setIsRaiseMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsRaiseMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isRaiseMenuOpen]);
+
+  const renderPresetButton = (
+    preset: TrayPresetButton,
+    className: string,
+    extraProps?: Partial<React.ButtonHTMLAttributes<HTMLButtonElement>>,
+  ) => (
+    <button
+      key={preset.key}
+      onClick={() => {
+        onSetTrayDirectly(preset.amount);
+        setIsRaiseMenuOpen(false);
+      }}
+      className={className}
+      disabled={!preset.enabled}
+      data-testid={preset.testId}
+      data-tray-preset={preset.key}
+      {...extraProps}
+    >
+      <span>{preset.label}</span>
+      <span>${preset.amount}</span>
+    </button>
+  );
+
+  const raiseMenuPopover =
+    hasCompactMobileRaiseMenu && isRaiseMenuOpen ? (
+      <div
+        ref={raiseMenuPopoverRef}
+        role="dialog"
+        aria-label={t("game.raise")}
+        data-testid="raise-action-popover"
+        className="action-quick-confirm-popover action-quick-confirm-popover--wide chip-raise-menu-popover"
+        style={raiseMenuStyle}
+      >
+        <div className="chip-raise-menu-popover__header">
+          <span className="chip-raise-menu-popover__title">{t("game.raise")}</span>
+          <button
+            type="button"
+            onClick={() => setIsRaiseMenuOpen(false)}
+            className="chip-raise-menu-popover__dismiss"
+            data-testid="raise-action-popover-dismiss"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+        <div className="chip-raise-menu-popover__grid">
+          {menuPresets.map((preset) =>
+            renderPresetButton(preset, `chip-quick chip-quick--preset chip-quick--${preset.tone}`),
+          )}
+        </div>
+      </div>
+    ) : null;
+
+  const renderManualComposer = () => (
+    <div className="chip-composer-dock__manual">
+      {isDesktopClickBetting ? (
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={trayInputValue}
+          onChange={onTrayInputChange}
+          onBlur={onTrayInputBlur}
+          data-testid="chip-custom-input"
+          aria-label={t("game.trayAmountAria")}
+          className="chip-input"
+        />
+      ) : (
+        <button
+          ref={mobileChipTriggerRef}
+          type="button"
+          onClick={() => {
+            setIsRaiseMenuOpen(false);
+            onOpenMobileChipPopover();
+          }}
+          data-testid="chip-mobile-input-trigger"
+          aria-label={t("game.mobileChipInput.open")}
+          aria-expanded={showMobileChipPopover}
+          aria-haspopup="dialog"
+          className="chip-mobile-input-trigger"
+        >
+          <span className="chip-mobile-input-trigger__label">{t("game.mobileChipInput.edit")}</span>
+          <span className="chip-mobile-input-trigger__value">${trayAmount}</span>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClearTray}
+        className="chip-clear"
+        disabled={!isYourTurn || trayAmount <= 0}
+        data-testid="chip-clear"
+      >
+        {t("common.clear")}
+      </button>
+    </div>
+  );
+
   return (
-    <div data-testid="action-dock" className="chip-composer-dock__action-area">
+    <div ref={actionDockRef} data-testid="action-dock" className="chip-composer-dock__action-area">
       <div className="chip-composer-dock__header">
         <span className="chip-composer-dock__title">{t("game.yourTurn")}</span>
         <span className="chip-composer-dock__meta">{t("game.toCall", { amount: callAmount })}</span>
@@ -244,59 +419,55 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
         </div>
 
         <div className="chip-composer-dock__control-panel">
-          <div className="chip-composer-dock__presets">
-            {trayPresetButtons.map((preset) => (
-              <button
-                key={preset.key}
-                onClick={() => onSetTrayDirectly(preset.amount)}
-                className={`chip-quick chip-quick--preset chip-quick--${preset.tone}`}
-                disabled={!preset.enabled}
-                data-testid={preset.testId}
-                data-tray-preset={preset.key}
-              >
-                <span>{preset.label}</span>
-                <span>${preset.amount}</span>
-              </button>
-            ))}
-          </div>
+          <div className="chip-composer-dock__composer-row">
+            {isCompactMobileLayout ? (
+              <div className="chip-composer-dock__mobile-composer">
+                <div className="chip-composer-dock__mobile-presets">
+                  {standalonePresets.map((preset) =>
+                    renderPresetButton(
+                      preset,
+                      `chip-quick chip-quick--preset chip-quick--${preset.tone} chip-composer-dock__mobile-preset-button`,
+                    ),
+                  )}
+                  {directCompactMobileMenuPreset &&
+                    renderPresetButton(
+                      directCompactMobileMenuPreset,
+                      `chip-quick chip-quick--preset chip-quick--${directCompactMobileMenuPreset.tone} chip-composer-dock__mobile-preset-button`,
+                    )}
+                  {hasCompactMobileRaiseMenu && (
+                    <button
+                      ref={raiseMenuButtonRef}
+                      type="button"
+                      onClick={() => {
+                        onCloseMobileChipPopover();
+                        setIsRaiseMenuOpen((prev) => !prev);
+                      }}
+                      className="chip-quick chip-quick--preset chip-quick--raise chip-composer-dock__mobile-preset-button chip-composer-dock__mobile-preset-button--menu"
+                      data-testid="action-open-raise-menu"
+                      aria-expanded={isRaiseMenuOpen}
+                      aria-haspopup="dialog"
+                    >
+                      <span>{t("game.raise")}</span>
+                    </button>
+                  )}
+                </div>
 
-          <div className="chip-composer-dock__manual">
-            {isDesktopClickBetting ? (
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={trayInputValue}
-                onChange={onTrayInputChange}
-                onBlur={onTrayInputBlur}
-                data-testid="chip-custom-input"
-                aria-label={t("game.trayAmountAria")}
-                className="chip-input"
-              />
+                {renderManualComposer()}
+              </div>
             ) : (
-              <button
-                ref={mobileChipTriggerRef}
-                type="button"
-                onClick={onOpenMobileChipPopover}
-                data-testid="chip-mobile-input-trigger"
-                aria-label={t("game.mobileChipInput.open")}
-                aria-expanded={showMobileChipPopover}
-                aria-haspopup="dialog"
-                className="chip-mobile-input-trigger"
-              >
-                <span className="chip-mobile-input-trigger__label">{t("game.mobileChipInput.edit")}</span>
-                <span className="chip-mobile-input-trigger__value">${trayAmount}</span>
-              </button>
+              <>
+                <div className="chip-composer-dock__presets">
+                  {trayPresetButtons.map((preset) =>
+                    renderPresetButton(
+                      preset,
+                      `chip-quick chip-quick--preset chip-quick--${preset.tone}`,
+                    ),
+                  )}
+                </div>
+
+                {renderManualComposer()}
+              </>
             )}
-            <button
-              type="button"
-              onClick={onClearTray}
-              className="chip-clear"
-              disabled={!isYourTurn || trayAmount <= 0}
-              data-testid="chip-clear"
-            >
-              {t("common.clear")}
-            </button>
           </div>
 
           <div className="relative">
@@ -441,26 +612,15 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
             )}
 
             <div className="chip-composer-dock__footer">
-              {canCheck ? (
-                <button
-                  ref={checkActionButtonRef}
-                  onClick={() => onQuickDecisionAction("check")}
-                  disabled={isQuickDecisionLocked}
-                  data-testid="action-check"
-                  className="chip-action chip-action--check"
-                >
-                  {t("common.check")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onLegacyAction("call")}
-                  data-testid={isAutomationMode ? "action-call-modern" : "action-call"}
-                  className="chip-action chip-action--call"
-                >
-                  {t("game.callWithAmount", { amount: callAmount })}
-                </button>
-              )}
+              <button
+                ref={checkActionButtonRef}
+                onClick={() => onQuickDecisionAction("check")}
+                disabled={!canCheck || isQuickDecisionLocked}
+                data-testid="action-check"
+                className="chip-action chip-action--check"
+              >
+                {t("common.check")}
+              </button>
               <button
                 ref={foldActionButtonRef}
                 onClick={() => onQuickDecisionAction("fold")}
@@ -474,6 +634,9 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
           </div>
         </div>
       </div>
+
+      {raiseMenuPopover &&
+        (typeof document !== "undefined" ? createPortal(raiseMenuPopover, document.body) : null)}
 
       {isAutomationMode && (
         <div className="chip-composer-dock__legacy" data-testid="legacy-action-controls">

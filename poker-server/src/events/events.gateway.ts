@@ -3896,6 +3896,7 @@ export class EventsGateway
 
           return {
             ...safeCurrentHand,
+            minRaise: this.bettingService.calculateMinRaise(room),
             lastResult: this.sanitizeHandResult(room.currentHand.lastResult),
           };
         })()

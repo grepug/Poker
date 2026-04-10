@@ -182,7 +182,9 @@ export const EN_MESSAGES = {
   "game.preset.call": "Call",
   "game.preset.raise": "Raise",
   "game.preset.double": "2x",
+  "game.preset.thirdPot": "1/3 Pot",
   "game.preset.halfPot": "1/2 Pot",
+  "game.preset.pot": "Pot",
   "game.preset.allIn": "All-In",
 
   "game.potCenter": "Pot",
@@ -644,7 +646,9 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.preset.call": "跟注",
   "game.preset.raise": "加注",
   "game.preset.double": "2倍",
+  "game.preset.thirdPot": "三分之一池",
   "game.preset.halfPot": "半池",
+  "game.preset.pot": "满池",
   "game.preset.allIn": "全下",
 
   "game.potCenter": "底池",

@@ -76,7 +76,7 @@ export interface Hand {
   runCount?: RunCount; // Runtime-only: resolved run count for this hand
   runoutBoards?: Card[][]; // Runtime-only: full board per run when the hand is run multiple times
   startedAt: number;
-  minRaise?: number; // Runtime-only: sent via PLAYER_TURN event, not persisted
+  minRaise?: number; // Runtime-only: computed for turn snapshots / PLAYER_TURN, not persisted
 }
 
 export interface PotPayout {
