@@ -4034,16 +4034,15 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
       });
       console.log(`Alice facing bet of $${afterBobRaise.currentBet}`);
 
-      // Verify Check button is NOT present when facing a bet
-      const checkButtonCount = await alicePage
-        .locator('[data-testid="action-check"]')
-        .count();
-      expect(checkButtonCount).toBe(0);
-      console.log('✓ Check button not present when Alice faces a bet');
+      // Verify Check button remains visible but disabled when facing a bet
+      const checkButton = alicePage.locator('[data-testid="action-check"]');
+      await expect(checkButton).toHaveCount(1);
+      await expect(checkButton).toBeDisabled();
+      console.log('✓ Check button remains visible but disabled when Alice faces a bet');
 
-      // Verify Call button is available
+      // Verify Call button is available through the tray presets
       const callButtonEnabled = await alicePage
-        .locator('[data-testid="action-call"]')
+        .locator('[data-testid="chip-load-continue"]')
         .isEnabled();
       expect(callButtonEnabled).toBe(true);
       console.log('✓ Call button is enabled');
@@ -4057,7 +4056,7 @@ test.describe('Poker E2E - Test Suite 4: Edge Cases', () => {
 
       // Verify All-In button is available
       const allInButtonEnabled = await alicePage
-        .locator('[data-testid="action-all-in"]')
+        .locator('[data-testid="chip-load-all-in"]')
         .isEnabled();
       expect(allInButtonEnabled).toBe(true);
       console.log('✓ All-In button is enabled');
@@ -5481,6 +5480,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { alicePage, bobPage } = session;
+      await Promise.all([
+        alicePage.setViewportSize({ width: 390, height: 844 }),
+        bobPage.setViewportSize({ width: 390, height: 844 }),
+      ]);
       await startGameFromLobby(alicePage, bobPage);
 
       // Remove pre-flop call pressure so min raise becomes the opening amount.
@@ -5521,13 +5524,41 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await expect(
         bobPage.locator('[data-testid="chip-custom-input"]'),
-      ).toBeVisible();
+      ).toHaveCount(0);
+      const mobileChipTrigger = bobPage.locator(
+        '[data-testid="chip-mobile-input-trigger"]',
+      );
+      await expect(mobileChipTrigger).toBeVisible();
       const stackSnapshot = await getRoomSnapshot(bobPage);
       const bobStack = stackSnapshot.bobChips;
-      await bobPage.fill('[data-testid="chip-custom-input"]', '999999');
+
+      await mobileChipTrigger.click();
       await expect(
-        bobPage.locator('[data-testid="chip-custom-input"]'),
-      ).toHaveValue(String(bobStack));
+        bobPage.locator('[data-testid="chip-mobile-input-popover"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="chip-mobile-popover-clear"]');
+      for (let index = 0; index < 6; index += 1) {
+        await bobPage.click('[data-testid="chip-mobile-digit-9"]');
+      }
+      await bobPage.click('[data-testid="chip-mobile-popover-confirm"]');
+      await expect(
+        bobPage.locator('[data-testid="chip-mobile-input-trigger"]'),
+      ).toContainText(`$${bobStack}`);
+      await expect(
+        bobPage.locator('[data-testid="tray-amount-value"]'),
+      ).toContainText(`$${bobStack}`);
+
+      await mobileChipTrigger.click();
+      await expect(
+        bobPage.locator('[data-testid="chip-mobile-input-display"]'),
+      ).toContainText(`$${bobStack}`);
+      await bobPage.click('[data-testid="chip-mobile-popover-clear"]');
+      await bobPage.click('[data-testid="chip-mobile-digit-5"]');
+      await bobPage.click('[data-testid="chip-mobile-popover-cancel"]');
+      await expect(
+        bobPage.locator('[data-testid="chip-mobile-input-popover"]'),
+      ).toHaveCount(0);
+      await expect(mobileChipTrigger).toContainText(`$${bobStack}`);
       await expect(
         bobPage.locator('[data-testid="tray-amount-value"]'),
       ).toContainText(`$${bobStack}`);
@@ -5566,8 +5597,8 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="tray-amount-value"]'),
       ).toContainText('$0');
       await expect(
-        bobPage.locator('[data-testid="chip-custom-input"]'),
-      ).toHaveValue('0');
+        bobPage.locator('[data-testid="chip-mobile-input-trigger"]'),
+      ).toContainText('$0');
     } finally {
       await teardownTwoPlayerSession(session);
     }

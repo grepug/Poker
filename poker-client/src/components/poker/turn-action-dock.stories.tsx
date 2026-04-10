@@ -5,20 +5,97 @@ import { TurnActionDock } from "@/components/poker/turn-action-dock";
 import { storyTranslate } from "@/components/poker/storybook-fixtures";
 
 const facingBetPresets = [
-  { key: "call", label: "Call", amount: 40, testId: "chip-load-continue", tone: "call" as const, enabled: true },
-  { key: "min-raise", label: "Min Raise", amount: 120, testId: "chip-load-raise", tone: "raise" as const, enabled: true },
-  { key: "third-pot", label: "1/3 Pot", amount: 173, testId: "preset-third-pot", tone: "raise" as const, enabled: true },
-  { key: "half-pot", label: "1/2 Pot", amount: 240, testId: "preset-half-pot", tone: "raise" as const, enabled: true },
-  { key: "pot", label: "Pot", amount: 440, testId: "preset-pot", tone: "raise" as const, enabled: true },
-  { key: "all-in", label: "All-in", amount: 980, testId: "chip-load-all-in", tone: "allin" as const, enabled: true },
+  {
+    key: "call",
+    label: "Call",
+    amount: 40,
+    testId: "chip-load-continue",
+    tone: "call" as const,
+    enabled: true,
+  },
+  {
+    key: "min-raise",
+    label: "Min Raise",
+    amount: 120,
+    testId: "chip-load-raise",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "third-pot",
+    label: "1/3 Pot",
+    amount: 173,
+    testId: "preset-third-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "half-pot",
+    label: "1/2 Pot",
+    amount: 240,
+    testId: "preset-half-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "pot",
+    label: "Pot",
+    amount: 440,
+    testId: "preset-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "all-in",
+    label: "All-in",
+    amount: 980,
+    testId: "chip-load-all-in",
+    tone: "allin" as const,
+    enabled: true,
+  },
 ] satisfies NonNullable<ComponentProps<typeof TurnActionDock>["trayPresetButtons"]>;
 
 const noBetPresets = [
-  { key: "min-raise", label: "Min Bet", amount: 80, testId: "chip-load-raise", tone: "raise" as const, enabled: true },
-  { key: "third-pot", label: "1/3 Pot", amount: 120, testId: "preset-third-pot", tone: "raise" as const, enabled: true },
-  { key: "half-pot", label: "1/2 Pot", amount: 180, testId: "preset-half-pot", tone: "raise" as const, enabled: true },
-  { key: "pot", label: "Pot", amount: 360, testId: "preset-pot", tone: "raise" as const, enabled: true },
-  { key: "all-in", label: "All-in", amount: 980, testId: "chip-load-all-in", tone: "allin" as const, enabled: true },
+  {
+    key: "min-raise",
+    label: "Min Bet",
+    amount: 80,
+    testId: "chip-load-raise",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "third-pot",
+    label: "1/3 Pot",
+    amount: 120,
+    testId: "preset-third-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "half-pot",
+    label: "1/2 Pot",
+    amount: 180,
+    testId: "preset-half-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "pot",
+    label: "Pot",
+    amount: 360,
+    testId: "preset-pot",
+    tone: "raise" as const,
+    enabled: true,
+  },
+  {
+    key: "all-in",
+    label: "All-in",
+    amount: 980,
+    testId: "chip-load-all-in",
+    tone: "allin" as const,
+    enabled: true,
+  },
 ] satisfies NonNullable<ComponentProps<typeof TurnActionDock>["trayPresetButtons"]>;
 
 const meta = {
@@ -34,6 +111,9 @@ const meta = {
     maxStack: 980,
     trayAmount: 120,
     trayInputValue: "120",
+    mobileChipDraftValue: "120",
+    showMobileChipPopover: false,
+    isDesktopClickBetting: true,
     isCompactMobileLayout: false,
     canStartDrag: true,
     isDragActive: false,
@@ -48,6 +128,12 @@ const meta = {
     onSetTrayDirectly: () => {},
     onTrayInputChange: () => {},
     onTrayInputBlur: () => {},
+    onOpenMobileChipPopover: () => {},
+    onCloseMobileChipPopover: () => {},
+    onMobileChipDigit: () => {},
+    onMobileChipBackspace: () => {},
+    onMobileChipClearDraft: () => {},
+    onMobileChipConfirm: () => {},
     onClearTray: () => {},
     onQuickDecisionAction: () => {},
     quickConfirmAction: null,
@@ -92,11 +178,28 @@ export const CheckAvailable: Story = {
 
 export const MobileFacingBet: Story = {
   args: {
+    isDesktopClickBetting: false,
     isCompactMobileLayout: true,
     trayPresetButtons: facingBetPresets,
   },
   render: (args) => (
-    <div style={{ width: 420 }}>
+    <div style={{ width: 390 }}>
+      <ChipComposerDock>
+        <TurnActionDock {...args} />
+      </ChipComposerDock>
+    </div>
+  ),
+};
+
+export const MobilePopover: Story = {
+  args: {
+    isDesktopClickBetting: false,
+    isCompactMobileLayout: true,
+    showMobileChipPopover: true,
+    mobileChipDraftValue: "240",
+  },
+  render: (args) => (
+    <div style={{ width: 390 }}>
       <ChipComposerDock>
         <TurnActionDock {...args} />
       </ChipComposerDock>

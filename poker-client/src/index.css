@@ -1793,6 +1793,31 @@ body {
   gap: 0.32rem;
 }
 
+.chip-mobile-input-trigger {
+  width: 100%;
+  display: grid;
+  justify-items: start;
+  gap: 0.12rem;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  border-radius: 0.58rem;
+  background: rgba(2, 44, 34, 0.85);
+  color: #ecfdf5;
+  font-weight: 700;
+  padding: 0.38rem 0.55rem;
+  text-align: left;
+}
+
+.chip-mobile-input-trigger__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.82);
+}
+
+.chip-mobile-input-trigger__value {
+  font-size: 0.84rem;
+}
+
 .chip-input {
   width: 100%;
   border: 1px solid rgba(52, 211, 153, 0.45);
@@ -1808,6 +1833,78 @@ body {
 .chip-input:focus {
   border-color: rgba(52, 211, 153, 0.88);
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.28);
+}
+
+.chip-mobile-input-popover {
+  min-width: min(18rem, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+}
+
+.chip-mobile-input-popover__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(209, 250, 229, 0.92);
+}
+
+.chip-mobile-input-popover__display {
+  margin-top: 0.55rem;
+  border-radius: 0.72rem;
+  border: 1px solid rgba(110, 231, 183, 0.28);
+  background: rgba(2, 44, 34, 0.85);
+  padding: 0.6rem 0.72rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #f0fdf4;
+  text-align: right;
+}
+
+.chip-mobile-input-popover__keypad {
+  margin-top: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.chip-mobile-input-popover__key {
+  min-height: 2.55rem;
+  border-radius: 0.72rem;
+  border: 1px solid rgba(110, 231, 183, 0.28);
+  background: rgba(4, 120, 87, 0.22);
+  color: #ecfdf5;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.chip-mobile-input-popover__key--wide {
+  grid-column: span 3;
+  font-size: 0.84rem;
+}
+
+.chip-mobile-input-popover__actions {
+  margin-top: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.chip-mobile-input-popover__secondary,
+.chip-mobile-input-popover__confirm {
+  min-height: 2.35rem;
+  border-radius: 0.72rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.chip-mobile-input-popover__secondary {
+  border: 1px solid rgba(148, 163, 184, 0.54);
+  background: rgba(15, 23, 42, 0.58);
+  color: #cbd5e1;
+}
+
+.chip-mobile-input-popover__confirm {
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.94);
+  color: #422006;
 }
 
 .chip-clear {

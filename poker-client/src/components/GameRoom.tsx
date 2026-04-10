@@ -1757,6 +1757,8 @@ const useGameRoomElement = () => {
   );
   const [trayAmount, setTrayAmount] = useState(0);
   const [trayInputValue, setTrayInputValue] = useState("0");
+  const [mobileChipDraftValue, setMobileChipDraftValue] = useState("0");
+  const [showMobileChipPopover, setShowMobileChipPopover] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showLiveAudioModal, setShowLiveAudioModal] = useState(false);
   const [profileDisplayNameDraft, setProfileDisplayNameDraft] = useState("");
@@ -3018,6 +3020,9 @@ const useGameRoomElement = () => {
 
   const resetTurnInteractionState = useCallback(() => {
     setTrayAmount(0);
+    setTrayInputValue("0");
+    setMobileChipDraftValue("0");
+    setShowMobileChipPopover(false);
     setQuickConfirmAction(null);
     setShowTrayConfirm(false);
     clearDragState(dragStateRef.current.pointerId);
@@ -3096,6 +3101,23 @@ const useGameRoomElement = () => {
   useEffect(() => {
     setTrayInputValue(String(trayAmount));
   }, [trayAmount]);
+
+  useEffect(() => {
+    if (showMobileChipPopover) {
+      return;
+    }
+
+    setMobileChipDraftValue(String(trayAmount));
+  }, [showMobileChipPopover, trayAmount]);
+
+  useEffect(() => {
+    if (!isDesktopSideDock) {
+      return;
+    }
+
+    setShowMobileChipPopover(false);
+    setMobileChipDraftValue(String(trayAmount));
+  }, [isDesktopSideDock, trayAmount]);
 
   useEffect(() => {
     if (!showTrayConfirm || desktopTraySubmitIntent) {
@@ -3270,13 +3292,16 @@ const useGameRoomElement = () => {
     if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
     if (showHandResultsModal) setShowHandResultsModal(false);
     if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
+    if (showMobileChipPopover) closeMobileChipPopover();
     if (quickConfirmAction) setQuickConfirmAction(null);
     if (showTrayConfirm) setShowTrayConfirm(false);
   }, [
     clearError,
+    closeMobileChipPopover,
     isGameEnded,
     lastError,
     quickConfirmAction,
+    showMobileChipPopover,
     showTrayConfirm,
     setShowLeaveConfirmModal,
     setShowEndGameConfirmModal,
@@ -3303,6 +3328,7 @@ const useGameRoomElement = () => {
       !showEndGameConfirmModal &&
       !showHandResultsModal &&
       !showFinalSummaryModal &&
+      !showMobileChipPopover &&
       !quickConfirmAction &&
       !showTrayConfirm
     ) {
@@ -3323,6 +3349,7 @@ const useGameRoomElement = () => {
     showEndGameConfirmModal,
     showHandResultsModal,
     showFinalSummaryModal,
+    showMobileChipPopover,
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
@@ -3463,6 +3490,7 @@ const useGameRoomElement = () => {
       return;
     }
 
+    setShowMobileChipPopover(false);
     setQuickConfirmAction(null);
     setShowTrayConfirm(true);
   }, [desktopTraySubmitIntent]);
@@ -3473,6 +3501,7 @@ const useGameRoomElement = () => {
     }
 
     setShowTrayConfirm(false);
+    setShowMobileChipPopover(false);
     performAction(desktopTraySubmitIntent.action, desktopTraySubmitIntent.amount);
     setTrayAmount(0);
   }, [desktopTraySubmitIntent, performAction]);
@@ -3488,6 +3517,31 @@ const useGameRoomElement = () => {
     if (!isYourTurn) return;
     setTrayAmount(0);
   };
+
+  function normalizeMobileChipDraft(value: string) {
+    const numericText = value.replace(/\D/g, "");
+    const trimmed = numericText.replace(/^0+(?=\d)/, "");
+    return trimmed || "0";
+  }
+
+  function commitTrayAmountText(value: string) {
+    const numericText = value.replace(/\D/g, "");
+    if (!numericText) {
+      setTrayInputValue("0");
+      setTrayAmount(0);
+      return 0;
+    }
+
+    const parsed = Number(numericText);
+    if (Number.isNaN(parsed)) {
+      return trayAmount;
+    }
+
+    const clamped = clampTrayAmount(parsed);
+    setTrayInputValue(String(clamped));
+    setTrayAmount(clamped);
+    return clamped;
+  }
 
   const handleCustomTrayInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!isYourTurn) return;
@@ -3513,6 +3567,59 @@ const useGameRoomElement = () => {
     if (!isYourTurn) return;
     setTrayInputValue(String(trayAmount));
   };
+
+  function openMobileChipPopover() {
+    if (!isYourTurn || isDesktopSideDock) {
+      return;
+    }
+
+    setQuickConfirmAction(null);
+    setShowTrayConfirm(false);
+    setMobileChipDraftValue(normalizeMobileChipDraft(String(trayAmount)));
+    setShowMobileChipPopover(true);
+  }
+
+  function closeMobileChipPopover() {
+    setShowMobileChipPopover(false);
+    setMobileChipDraftValue(String(trayAmount));
+  }
+
+  function handleMobileChipDigit(digit: string) {
+    if (!showMobileChipPopover) {
+      return;
+    }
+
+    setMobileChipDraftValue((prev) => {
+      const nextValue = prev === "0" ? digit : `${prev}${digit}`;
+      return normalizeMobileChipDraft(nextValue);
+    });
+  }
+
+  function handleMobileChipBackspace() {
+    if (!showMobileChipPopover) {
+      return;
+    }
+
+    setMobileChipDraftValue((prev) => (prev.length <= 1 ? "0" : prev.slice(0, -1)));
+  }
+
+  function handleMobileChipClearDraft() {
+    if (!showMobileChipPopover) {
+      return;
+    }
+
+    setMobileChipDraftValue("0");
+  }
+
+  function handleMobileChipConfirm() {
+    if (!showMobileChipPopover) {
+      return;
+    }
+
+    const committedAmount = commitTrayAmountText(mobileChipDraftValue);
+    setMobileChipDraftValue(String(committedAmount));
+    setShowMobileChipPopover(false);
+  }
 
   const handleDragStart = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (!canStartDrag) {
@@ -3858,6 +3965,7 @@ const useGameRoomElement = () => {
         return;
       }
 
+      setShowMobileChipPopover(false);
       setQuickConfirmAction(null);
       setShowTrayConfirm(false);
       performAction("raise", legacyRaiseAmount);
@@ -3867,6 +3975,7 @@ const useGameRoomElement = () => {
     if (action !== "check" && action !== "fold") {
       setQuickConfirmAction(null);
     }
+    setShowMobileChipPopover(false);
     setShowTrayConfirm(false);
     performAction(action);
   };
@@ -3876,11 +3985,13 @@ const useGameRoomElement = () => {
     if (action === "check" && !canCheck) return;
 
     if (isAutomationMode) {
+      setShowMobileChipPopover(false);
       setShowTrayConfirm(false);
       performAction(action);
       return;
     }
 
+    setShowMobileChipPopover(false);
     setShowTrayConfirm(false);
     setQuickConfirmAction(action);
   };
@@ -4315,6 +4426,8 @@ const useGameRoomElement = () => {
                   maxStack={maxStack}
                   trayAmount={trayAmount}
                   trayInputValue={trayInputValue}
+                  mobileChipDraftValue={mobileChipDraftValue}
+                  showMobileChipPopover={showMobileChipPopover}
                   isDesktopClickBetting={isDesktopSideDock}
                   isCompactMobileLayout={isCompactMobileDock}
                   canStartDrag={canStartDrag}
@@ -4330,6 +4443,12 @@ const useGameRoomElement = () => {
                   onSetTrayDirectly={setTrayDirectly}
                   onTrayInputChange={handleCustomTrayInputChange}
                   onTrayInputBlur={handleCustomTrayInputBlur}
+                  onOpenMobileChipPopover={openMobileChipPopover}
+                  onCloseMobileChipPopover={closeMobileChipPopover}
+                  onMobileChipDigit={handleMobileChipDigit}
+                  onMobileChipBackspace={handleMobileChipBackspace}
+                  onMobileChipClearDraft={handleMobileChipClearDraft}
+                  onMobileChipConfirm={handleMobileChipConfirm}
                   onClearTray={clearTray}
                   onSubmitTray={requestTraySubmit}
                   onQuickDecisionAction={handleQuickDecisionAction}

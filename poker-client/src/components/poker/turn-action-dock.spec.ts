@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { TurnActionDock, partitionCompactMobilePresets } from "./turn-action-dock";
+import { storyTranslate } from "./storybook-fixtures";
 
 const baseProps = {
   callAmount: 40,
@@ -9,7 +10,9 @@ const baseProps = {
   maxStack: 980,
   trayAmount: 120,
   trayInputValue: "120",
-  isDesktopClickBetting: false,
+  mobileChipDraftValue: "120",
+  showMobileChipPopover: false,
+  isDesktopClickBetting: true,
   canStartDrag: true,
   isDragActive: false,
   isYourTurn: true,
@@ -17,12 +20,54 @@ const baseProps = {
   isAutomationMode: false,
   legacyRaiseAmount: 120,
   trayPresetButtons: [
-    { key: "call", label: "Call", amount: 40, testId: "chip-load-continue", tone: "call" as const, enabled: true },
-    { key: "third-pot", label: "1/3 Pot", amount: 80, testId: "preset-third-pot", tone: "raise" as const, enabled: true },
-    { key: "half-pot", label: "1/2 Pot", amount: 120, testId: "preset-half-pot", tone: "raise" as const, enabled: true },
-    { key: "pot", label: "Pot", amount: 240, testId: "preset-pot", tone: "raise" as const, enabled: true },
-    { key: "min-raise", label: "Min Raise", amount: 160, testId: "chip-load-raise", tone: "raise" as const, enabled: true },
-    { key: "all-in", label: "All-In", amount: 980, testId: "chip-load-all-in", tone: "allin" as const, enabled: true },
+    {
+      key: "call",
+      label: "Call",
+      amount: 40,
+      testId: "chip-load-continue",
+      tone: "call" as const,
+      enabled: true,
+    },
+    {
+      key: "third-pot",
+      label: "1/3 Pot",
+      amount: 80,
+      testId: "preset-third-pot",
+      tone: "raise" as const,
+      enabled: true,
+    },
+    {
+      key: "half-pot",
+      label: "1/2 Pot",
+      amount: 120,
+      testId: "preset-half-pot",
+      tone: "raise" as const,
+      enabled: true,
+    },
+    {
+      key: "pot",
+      label: "Pot",
+      amount: 240,
+      testId: "preset-pot",
+      tone: "raise" as const,
+      enabled: true,
+    },
+    {
+      key: "min-raise",
+      label: "Min Raise",
+      amount: 160,
+      testId: "chip-load-raise",
+      tone: "raise" as const,
+      enabled: true,
+    },
+    {
+      key: "all-in",
+      label: "All-In",
+      amount: 980,
+      testId: "chip-load-all-in",
+      tone: "allin" as const,
+      enabled: true,
+    },
   ],
   onDragStart: vi.fn(),
   onDragMove: vi.fn(),
@@ -30,6 +75,12 @@ const baseProps = {
   onSetTrayDirectly: vi.fn(),
   onTrayInputChange: vi.fn(),
   onTrayInputBlur: vi.fn(),
+  onOpenMobileChipPopover: vi.fn(),
+  onCloseMobileChipPopover: vi.fn(),
+  onMobileChipDigit: vi.fn(),
+  onMobileChipBackspace: vi.fn(),
+  onMobileChipClearDraft: vi.fn(),
+  onMobileChipConfirm: vi.fn(),
   onClearTray: vi.fn(),
   onSubmitTray: vi.fn(),
   onQuickDecisionAction: vi.fn(),
@@ -42,7 +93,7 @@ const baseProps = {
   onTrayConfirmAccept: vi.fn(),
   onLegacyAction: vi.fn(),
   onLegacyRaiseAmountChange: vi.fn(),
-  t: (key: string) => key,
+  t: storyTranslate,
 };
 
 describe("TurnActionDock", () => {
@@ -60,7 +111,7 @@ describe("TurnActionDock", () => {
     expect(html).not.toContain('data-testid="action-call"');
   });
 
-  it("renders the expanded preset composer before the custom amount input", () => {
+  it("renders the expanded preset composer before the custom amount input on desktop", () => {
     const html = renderToStaticMarkup(React.createElement(TurnActionDock, baseProps));
 
     expect(html).toContain("chip-composer-dock__composer-row");
@@ -70,26 +121,38 @@ describe("TurnActionDock", () => {
     expect(html).toContain('data-testid="preset-half-pot"');
     expect(html).toContain('data-testid="preset-pot"');
     expect(html).toContain('data-testid="chip-load-all-in"');
-
-    const callIndex = html.indexOf('data-testid="chip-load-continue"');
-    const minRaiseIndex = html.indexOf('data-testid="chip-load-raise"');
-    const inputIndex = html.indexOf('data-testid="chip-custom-input"');
-    expect(callIndex).toBeGreaterThanOrEqual(0);
-    expect(minRaiseIndex).toBeGreaterThan(callIndex);
-    expect(inputIndex).toBeGreaterThan(minRaiseIndex);
+    expect(html).toContain('data-testid="chip-custom-input"');
+    expect(html).not.toContain('data-testid="chip-mobile-input-trigger"');
   });
 
-  it("collapses mobile-only extra raise presets into a raise popover trigger while keeping call and min-raise visible", () => {
+  it("renders the mobile chip popover trigger instead of the inline input", () => {
     const html = renderToStaticMarkup(
       React.createElement(TurnActionDock, {
         ...baseProps,
+        isDesktopClickBetting: false,
+        showMobileChipPopover: true,
+        mobileChipDraftValue: "240",
+      }),
+    );
+
+    expect(html).not.toContain('data-testid="chip-custom-input"');
+    expect(html).toContain('data-testid="chip-mobile-input-trigger"');
+    expect(html).toContain('data-testid="chip-mobile-input-popover"');
+    expect(html).toContain('data-testid="chip-mobile-popover-confirm"');
+  });
+
+  it("collapses mobile-only extra raise presets into a raise popover trigger while keeping call visible", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TurnActionDock, {
+        ...baseProps,
+        isDesktopClickBetting: false,
         isCompactMobileLayout: true,
       }),
     );
 
     expect(html).toContain('data-testid="chip-load-continue"');
     expect(html).toContain('data-testid="action-open-raise-menu"');
-    expect(html).toContain('data-testid="chip-custom-input"');
+    expect(html).toContain('data-testid="chip-mobile-input-trigger"');
     expect(html).not.toContain('data-testid="chip-load-raise"');
     expect(html).not.toContain('data-testid="preset-third-pot"');
     expect(html).not.toContain('data-testid="preset-half-pot"');
@@ -101,9 +164,17 @@ describe("TurnActionDock", () => {
     const html = renderToStaticMarkup(
       React.createElement(TurnActionDock, {
         ...baseProps,
+        isDesktopClickBetting: false,
         isCompactMobileLayout: true,
         trayPresetButtons: [
-          { key: "call", label: "Call", amount: 40, testId: "chip-load-continue", tone: "call" as const, enabled: true },
+          {
+            key: "call",
+            label: "Call",
+            amount: 40,
+            testId: "chip-load-continue",
+            tone: "call" as const,
+            enabled: true,
+          },
         ],
       }),
     );
@@ -117,6 +188,7 @@ describe("TurnActionDock", () => {
     const html = renderToStaticMarkup(
       React.createElement(TurnActionDock, {
         ...baseProps,
+        isDesktopClickBetting: false,
         isCompactMobileLayout: true,
         trayPresetButtons: [
           {
@@ -140,11 +212,33 @@ describe("TurnActionDock", () => {
       React.createElement(TurnActionDock, {
         ...baseProps,
         callAmount: 0,
+        isDesktopClickBetting: false,
         isCompactMobileLayout: true,
         trayPresetButtons: [
-          { key: "min-raise", label: "Min Bet", amount: 80, testId: "chip-load-raise", tone: "raise" as const, enabled: true },
-          { key: "third-pot", label: "1/3 Pot", amount: 120, testId: "preset-third-pot", tone: "raise" as const, enabled: true },
-          { key: "half-pot", label: "1/2 Pot", amount: 180, testId: "preset-half-pot", tone: "raise" as const, enabled: true },
+          {
+            key: "min-raise",
+            label: "Min Bet",
+            amount: 80,
+            testId: "chip-load-raise",
+            tone: "raise" as const,
+            enabled: true,
+          },
+          {
+            key: "third-pot",
+            label: "1/3 Pot",
+            amount: 120,
+            testId: "preset-third-pot",
+            tone: "raise" as const,
+            enabled: true,
+          },
+          {
+            key: "half-pot",
+            label: "1/2 Pot",
+            amount: 180,
+            testId: "preset-half-pot",
+            tone: "raise" as const,
+            enabled: true,
+          },
         ],
       }),
     );
@@ -170,8 +264,22 @@ describe("TurnActionDock", () => {
     expect(
       partitionCompactMobilePresets(
         [
-          { key: "min-raise", label: "Min Bet", amount: 80, testId: "chip-load-raise", tone: "raise" as const, enabled: true },
-          { key: "third-pot", label: "1/3 Pot", amount: 120, testId: "preset-third-pot", tone: "raise" as const, enabled: true },
+          {
+            key: "min-raise",
+            label: "Min Bet",
+            amount: 80,
+            testId: "chip-load-raise",
+            tone: "raise" as const,
+            enabled: true,
+          },
+          {
+            key: "third-pot",
+            label: "1/3 Pot",
+            amount: 120,
+            testId: "preset-third-pot",
+            tone: "raise" as const,
+            enabled: true,
+          },
         ],
         0,
       ).standalonePresets.map((preset) => preset.key),
