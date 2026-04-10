@@ -112,6 +112,7 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   const trayConfirmPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const mobileChipTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const mobileChipPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const latestCloseMobileChipPopoverRef = React.useRef(onCloseMobileChipPopover);
   const quickDecisionLockTimeoutRef = React.useRef<number | null>(null);
   const [isQuickDecisionTemporarilyLocked, setIsQuickDecisionTemporarilyLocked] =
     React.useState(isQuickDecisionAvailable);
@@ -169,6 +170,10 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
   }, [isQuickDecisionAvailable]);
 
   React.useEffect(() => {
+    latestCloseMobileChipPopoverRef.current = onCloseMobileChipPopover;
+  }, [onCloseMobileChipPopover]);
+
+  React.useEffect(() => {
     if (!showMobileChipPopover) {
       return;
     }
@@ -186,12 +191,12 @@ export const TurnActionDock: React.FC<TurnActionDockProps> = ({
         return;
       }
 
-      onCloseMobileChipPopover();
+      latestCloseMobileChipPopoverRef.current();
     };
 
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () => window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [onCloseMobileChipPopover, showMobileChipPopover]);
+  }, [showMobileChipPopover]);
 
   return (
     <div data-testid="action-dock" className="chip-composer-dock__action-area">
