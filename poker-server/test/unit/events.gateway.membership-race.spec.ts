@@ -145,6 +145,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
             player.socketId = newSocketId;
             player.status = 'connected';
+            player.connectionStatus = 'connected';
             player.lastConnectedAt = Date.now();
             draft.lastActivityAt = Date.now();
             updatedPlayer = deepClone(player);
@@ -169,6 +170,7 @@ describe('EventsGateway membership mutation serialization', () => {
             }
 
             player.status = 'left';
+            player.connectionStatus = 'disconnected';
             player.socketId = '';
             player.cards = null;
             player.currentBet = 0;
@@ -469,6 +471,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('allows leave between hands before the player readies the next hand', async () => {
     roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.readyPhase = 'NEXT_HAND';
     roomState.readyPlayerIds = [];
     roomState.currentHand = {
@@ -550,6 +553,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('rejects leave while a hand is still in progress', async () => {
     roomState.players[1].status = 'connected';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.currentHand = {
       handNumber: 1,
       dealerPosition: 0,
@@ -599,6 +603,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('rejects leave after the player has already readied the next hand', async () => {
     roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.readyPhase = 'NEXT_HAND';
     roomState.readyPlayerIds = ['p-bob'];
     roomState.currentHand = {

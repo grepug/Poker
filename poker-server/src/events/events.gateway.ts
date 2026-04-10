@@ -2162,11 +2162,7 @@ export class EventsGateway
             // If host changed
             const oldHostId = playerInfo.playerId;
             if (room.hostId !== oldHostId) {
-              const newHost = room.players.find((p) => p.id === room.hostId)!;
-              this.server.to(playerInfo.roomId).emit('HOST_CHANGED', {
-                newHostId: newHost.id,
-                newHostName: newHost.name,
-              });
+              this.emitHostChanged(playerInfo.roomId, room);
             }
 
             if (
