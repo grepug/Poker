@@ -8,3 +8,4 @@ export * from "./chat.types";
 export * from "./auth.types";
 export * from "./storage.types";
 export * from "./history.types";
+export * from "./rankings";

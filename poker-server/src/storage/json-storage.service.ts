@@ -19,6 +19,7 @@ import {
   SavedGameParticipant,
   SavedGameReviewTargets,
   SavedGameSummary,
+  shouldIncludeArchivedRankingParticipant,
 } from 'poker-types';
 import { randomUUID } from 'crypto';
 import { IStorageService } from '../common/interfaces/storage.interface';
@@ -557,6 +558,9 @@ export class JsonStorageService
       const concludedAt = Number(room.lastActivityAt || Date.now());
       const participants = archivedPlayers
         .map((player) => this.toSavedGameParticipant(player))
+        .filter((participant) =>
+          shouldIncludeArchivedRankingParticipant(participant),
+        )
         .sort((left, right) => {
           if (right.finalChips !== left.finalChips) {
             return right.finalChips - left.finalChips;

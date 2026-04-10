@@ -6965,6 +6965,37 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
     try {
       const { alicePage, bobPage } = session;
+      await alicePage.click('[data-testid="add-robot-button"]');
+      await alicePage.waitForFunction(
+        () =>
+          ((window as any).pokerDebug?.getRoom?.()?.players ?? []).some(
+            (player: any) => player.isRobot && player.status !== 'left',
+          ),
+        { timeout: 10000 },
+      );
+      const robot = await alicePage.evaluate(() => {
+        const players = (window as any).pokerDebug?.getRoom?.()?.players ?? [];
+        const seat = players.find(
+          (player: any) => player.isRobot && player.status !== 'left',
+        );
+        return seat ? { id: seat.id, name: seat.name } : null;
+      });
+
+      expect(robot).not.toBeNull();
+      if (!robot) {
+        throw new Error('Robot was not added before rankings coverage');
+      }
+
+      await alicePage.click(`[data-testid="remove-robot-${robot.id}"]`);
+      await alicePage.waitForFunction(
+        (robotId) =>
+          !((window as any).pokerDebug?.getRoom?.()?.players ?? []).some(
+            (player: any) => player.id === robotId && player.status !== 'left',
+          ),
+        robot.id,
+        { timeout: 10000 },
+      );
+
       await startGameFromLobby(alicePage, bobPage);
 
       await alicePage.click('[data-testid="open-rankings-button"]');
@@ -6977,6 +7008,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="rankings-modal"]'),
       ).toContainText('Player Rankings');
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).not.toContainText(robot.name);
       await alicePage.click('[data-testid="close-rankings-button"]');
       await expect(
         alicePage.locator('[data-testid="rankings-modal"]'),

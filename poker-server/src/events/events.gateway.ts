@@ -80,6 +80,7 @@ import {
   HandResult,
   Room,
   RunCount,
+  shouldIncludeLiveRankingPlayer,
 } from 'poker-types';
 import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
@@ -1256,6 +1257,7 @@ export class EventsGateway
       }
 
       const standings = [...room.players]
+        .filter((seatPlayer) => shouldIncludeLiveRankingPlayer(seatPlayer))
         .map((seatPlayer) => {
           const finalChips = seatPlayer.chips + (seatPlayer.currentBet || 0);
           const totalBuyIn = seatPlayer.totalBuyIn || 0;

@@ -685,4 +685,111 @@ describe('EventsGateway membership mutation serialization', () => {
       (gateway as any).savedGameReviewService.scheduleArchiveReview,
     ).toHaveBeenCalledWith('ROOM1');
   });
+
+  it('excludes zero-activity left robots from end-game standings', async () => {
+    roomState.players = [
+      createPlayer({
+        id: 'p-host',
+        socketId: 'socket-host',
+        name: 'Host',
+        status: 'connected',
+        position: 0,
+        userId: 'user-alice',
+      }),
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: '',
+          name: 'Bob',
+          status: 'left',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        chips: 425,
+        totalBuyIn: 1000,
+      },
+      {
+        ...createPlayer({
+          id: 'p-robot-idle',
+          socketId: '',
+          name: 'Robot 1',
+          status: 'left',
+          position: 2,
+        }),
+        isRobot: true,
+        chips: 0,
+        totalBuyIn: 0,
+        handsPlayedCount: 0,
+        handsWonCount: 0,
+        vpipHandsCount: 0,
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 0,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: [],
+      bettingRound: 'SHOWDOWN',
+      currentBet: 0,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        winningHand: null,
+        potAmount: 0,
+        playerHands: [],
+      },
+    };
+
+    (gateway as any).socketToPlayer.set('socket-host', {
+      roomId: 'ROOM1',
+      playerId: 'p-host',
+    });
+    const hostClient = createClient('socket-host', {
+      cookieToken: 'token-alice',
+    });
+
+    const result = await gateway.handleEndGame(hostClient as any);
+
+    expect(result).toEqual({ success: true });
+    const gameEndedPayload = (gateway.server.to as jest.Mock).mock.results
+      .map((result) => result.value.emit.mock.calls)
+      .flat()
+      .find(([eventName]) => eventName === 'GAME_ENDED')?.[1];
+
+    expect(gameEndedPayload?.standings).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({
+          playerId: 'p-robot-idle',
+        }),
+      ]),
+    );
+    expect(gameEndedPayload?.standings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          playerId: 'p-host',
+        }),
+        expect.objectContaining({
+          playerId: 'p-bob',
+        }),
+      ]),
+    );
+  });
 });
