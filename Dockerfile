@@ -30,6 +30,7 @@ FROM node:22.12-alpine AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+ENV DATABASE_URL=
 ENV DATA_DIR=/app/data
 ENV FRONTEND_DIST_PATH=/app/poker-client/dist
 
@@ -38,6 +39,7 @@ WORKDIR /app/poker-server
 COPY --from=build --chown=node:node /prod/poker-server/package.json ./
 COPY --from=build --chown=node:node /prod/poker-server/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/poker-server/dist ./dist
+COPY --from=build --chown=node:node /app/poker-server/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/poker-client/dist /app/poker-client/dist
 
 RUN mkdir -p /app/data && chown -R node:node /app/data

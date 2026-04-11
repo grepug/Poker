@@ -948,11 +948,15 @@ async function requestRebuy(page: Page, amount: number) {
 }
 
 async function openChatPanel(page: Page) {
-  await page.click('[data-testid="open-chat-button"]');
-  await page.waitForSelector('[data-testid="chat-panel"]', {
-    state: 'visible',
-    timeout: 5000,
-  });
+  const chatPanel = page.locator('[data-testid="chat-panel"]').first();
+  if ((await chatPanel.count()) > 0 && (await chatPanel.isVisible())) {
+    return;
+  }
+
+  const openChatButton = page.locator('[data-testid="open-chat-button"]').first();
+  await expect(openChatButton).toBeVisible({ timeout: 5000 });
+  await openChatButton.click();
+  await expect(chatPanel).toBeVisible({ timeout: 5000 });
 }
 
 async function closeChatPanelIfOpen(page: Page) {
@@ -9470,20 +9474,25 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         (mobileHistoryLayout?.handStripTop ?? Number.POSITIVE_INFINITY) <
           (mobileHistoryLayout?.selectedHandTop ?? Number.NEGATIVE_INFINITY),
       ).toBe(true);
+      await expect(
+        bobPage
+          .locator('[data-testid="saved-history-mobile-overview-panel"]')
+          .getByText(/Q♠\s+J♠/),
+      ).toBeVisible();
       await bobPage.click('[data-testid="saved-history-mobile-tab-session"]');
       await expect(
         bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
       ).toBeVisible();
-      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
+      await expect(
+        bobPage
+          .locator('[data-testid="saved-history-mobile-session-panel"]')
+          .getByRole('heading', { name: 'Session Statistics' }),
+      ).toBeVisible();
       await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
       await bobPage.setViewportSize({ width: 1440, height: 900 });
       await expect(
         bobPage.getByRole('columnheader', { name: 'Buy-in' }),
       ).toBeVisible();
-      const savedHandDetail = bobPage
-        .locator('section')
-        .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });
-      await expect(savedHandDetail.getByText(/Q♠\s+J♠/)).toBeVisible();
 
       await bobPage.getByRole('button', { name: 'Back to History' }).click();
       await expect(

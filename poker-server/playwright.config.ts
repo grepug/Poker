@@ -54,6 +54,9 @@ function definedEnv(
 const backendEnv = {
   PORT: BACKEND_PORT,
   DATA_DIR: E2E_DATA_DIR,
+  DATABASE_URL:
+    process.env.DATABASE_URL ??
+    `postgres://postgres:postgres@127.0.0.1:${process.env.PG_TEST_PORT ?? '55432'}/poker_e2e_${BACKEND_PORT}`,
   CORS_ORIGIN: FRONTEND_URL,
   CLIENT_URL: FRONTEND_URL,
   TEST_MODE: 'true',

@@ -19,7 +19,7 @@ A full-stack Texas Hold'em poker web application built with React, NestJS, and W
 
 - **WebSocket Gateway**: Real-time communication with Socket.io
 - **Game Services**: GameService, HandService, BettingService
-- **Storage Layer**: Abstract storage interface with JSON file implementation
+- **Storage Layer**: Abstract storage interface with Drizzle-backed Postgres implementation
 - **Utilities**: Deck management, hand evaluator, ID generation
 - **Shared Types**: TypeScript interfaces shared between client and server
 
@@ -74,6 +74,21 @@ Poker/
    cp .env.example .env
    ```
 
+2. **Make sure Postgres is reachable through `DATABASE_URL` before starting the backend.**
+   For local development, the quickest path is running the bundled Docker Compose stack or your own local Postgres instance.
+
+3. **If you are migrating legacy JSON data into Postgres, use the guarded backfill commands from `poker-server/`:**
+
+   ```bash
+   pnpm run db:backfill
+   ```
+
+   This command refuses to overwrite populated Postgres tables by default. If replacement is intentional, use:
+
+   ```bash
+   pnpm run db:backfill:force
+   ```
+
 ### Running the Application
 
 1. **Start the backend server:**
@@ -118,20 +133,22 @@ Available endpoints:
 This repository includes a production Docker setup where:
 
 - NestJS serves both API/WebSocket traffic and the built SPA
-- Room state is persisted with JSON files under `/app/data`
-- `/app/data` is mounted as a Docker volume so data survives container restarts and redeploys
-- The physical Docker volume defaults to `poker_data` so persistence does not depend on the Compose project name
+- Canonical app persistence lives in Postgres through `DATABASE_URL`
+- Uploaded chat-audio files remain under `/app/data`
+- Docker Compose provisions both the app and a Postgres service by default
+- The physical Docker volumes default to `poker_data` and `poker_postgres` so persistence does not depend on the Compose project name
 
 ### Zeabur
 
-Zeabur does not use this repository's `docker-compose.yml` when deploying `PREBUILT_V2` services. For Zeabur deployments, persistence must be configured in the Zeabur service itself by mounting a Zeabur Volume at `/app/data`.
+Zeabur does not use this repository's `docker-compose.yml` when deploying `PREBUILT_V2` services. For Zeabur deployments, persistence must be configured in the Zeabur services themselves by provisioning a Postgres database for `DATABASE_URL` and mounting a Zeabur Volume at `/app/data` for uploaded audio.
 
 Recommended Zeabur setup:
 
+- Provision a Zeabur Postgres service and set `DATABASE_URL` on the app service
 - Mount a Zeabur Volume such as `poker-staging-data` to `/app/data`
-- Keep `DATA_DIR=/app/data`
+- Keep `DATA_DIR=/app/data` for uploaded chat audio
 
-Without that Zeabur volume mount, users, sessions, rooms, chat history, and uploaded chat audio will be lost on redeploy because the container filesystem is ephemeral.
+Without the Postgres service, canonical app data will be unavailable. Without the volume mount, uploaded chat audio will be lost on redeploy because the container filesystem is ephemeral.
 
 ### Run with Docker Compose
 
@@ -173,8 +190,8 @@ docker compose down
 docker compose down -v
 ```
 
-`docker compose down -v` removes the configured Docker volume and permanently
-deletes stored users, sessions, rooms, chat history, and uploaded chat audio.
+`docker compose down -v` removes the configured Docker volumes and permanently
+deletes Postgres-backed app data plus uploaded chat audio.
 
 ## 🎮 How to Play
 
