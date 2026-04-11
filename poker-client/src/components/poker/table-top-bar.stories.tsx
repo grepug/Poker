@@ -22,6 +22,8 @@ const meta = {
     chatLabel: "Chat (2)",
     liveAudioLabel: "Live Audio",
     liveAudioJoined: true,
+    liveAudioMuted: false,
+    liveAudioSpeaking: false,
     finalResultsLabel: "Final Results",
     startLabel: "Start",
     hiddenHudCopy: {

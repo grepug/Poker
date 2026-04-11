@@ -26,7 +26,7 @@ describe("SeatPod", () => {
 
     expect(html).toContain("data-testid=\"player-seat-player-1-live-audio-badge\"");
     expect(html).toContain("aria-label=\"Muted\"");
-    expect(html).toContain("seat-pod__live-audio-badge--muted");
+    expect(html).toContain("live-audio-status-badge--muted");
     expect(html).toContain("lucide-mic-off");
   });
 });

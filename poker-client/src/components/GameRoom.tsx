@@ -1781,6 +1781,8 @@ const useGameRoomElement = () => {
     unmuteAudio,
     enableAudio,
   } = useLiveAudio();
+  const localLiveAudioParticipant = liveAudioParticipants.find((participant) => participant.isLocal);
+  const isLiveAudioSpeaking = localLiveAudioParticipant?.isSpeaking ?? false;
 
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [inviteCopyStatusTone, setInviteCopyStatusTone] = useState<"success" | "error" | null>(
@@ -4220,6 +4222,8 @@ const useGameRoomElement = () => {
             }
             liveAudioLabel={t("game.audio.title")}
             liveAudioJoined={isLiveAudioJoined}
+            liveAudioMuted={isLiveAudioMuted}
+            liveAudioSpeaking={isLiveAudioSpeaking}
             liveAudioButtonRef={liveAudioButtonRef}
             finalResultsLabel={t("game.final.title")}
             startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}

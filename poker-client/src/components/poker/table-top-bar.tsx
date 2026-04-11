@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils";
+import { LiveAudioStatusBadge } from "./live-audio-status-badge";
 
 type HiddenHudCopy = {
   potLabel: string;
@@ -32,6 +33,8 @@ type TableTopBarProps = {
   chatLabel: string;
   liveAudioLabel: string;
   liveAudioJoined: boolean;
+  liveAudioMuted?: boolean;
+  liveAudioSpeaking?: boolean;
   liveAudioButtonRef?: React.Ref<HTMLButtonElement>;
   finalResultsLabel: string;
   startLabel: string;
@@ -70,6 +73,8 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   chatLabel,
   liveAudioLabel,
   liveAudioJoined,
+  liveAudioMuted = false,
+  liveAudioSpeaking = false,
   liveAudioButtonRef,
   finalResultsLabel,
   startLabel,
@@ -203,9 +208,10 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         >
           <span>{liveAudioLabel}</span>
           {liveAudioJoined && (
-            <span
-              className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.9)]"
-              data-testid="live-audio-joined-indicator"
+            <LiveAudioStatusBadge
+              kind={liveAudioSpeaking ? "speaking" : liveAudioMuted ? "muted" : "on-mic"}
+              className="table-top-bar__live-audio-badge"
+              testId="live-audio-joined-indicator"
             />
           )}
         </button>
