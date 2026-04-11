@@ -972,6 +972,128 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.deleteRoom).not.toHaveBeenCalled();
   });
 
+  it('transfers a disconnected host to the next connected human after timeout flow', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        {
+          ...createPlayer({
+            id: 'p-host',
+            socketId: '',
+            name: 'Host',
+            position: 0,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          connectionStatus: 'disconnected',
+        },
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+        {
+          ...createPlayer({
+            id: 'p-user-disconnected',
+            socketId: '',
+            name: 'Offline User',
+            position: 2,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          connectionStatus: 'disconnected',
+        },
+        createPlayer({
+          id: 'p-user',
+          socketId: 's-user',
+          name: 'User',
+          position: 3,
+          chips: 0,
+          totalBuyIn: 0,
+          status: 'waiting',
+        }),
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.transferHostOnDisconnectTimeout(
+      'ROOM01',
+      'p-host',
+    );
+
+    expect(updated).not.toBeNull();
+    expect(updated?.hostId).toBe('p-user');
+    expect(storageService.persistRoom).toHaveBeenCalledWith(room, expect.anything());
+    expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
+      'HOST_CHANGED',
+    ]);
+  });
+
+  it('keeps host ownership unchanged when no connected human replacement exists after timeout flow', async () => {
+    const room = createRoom({
+      gameState: 'WAITING',
+      hostId: 'p-host',
+      players: [
+        {
+          ...createPlayer({
+            id: 'p-host',
+            socketId: '',
+            name: 'Host',
+            position: 0,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          connectionStatus: 'disconnected',
+        },
+        {
+          ...createPlayer({
+            id: 'p-robot',
+            socketId: '',
+            name: 'Robot 1',
+            position: 1,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          isRobot: true,
+        },
+        {
+          ...createPlayer({
+            id: 'p-user-disconnected',
+            socketId: '',
+            name: 'Offline User',
+            position: 2,
+            chips: 0,
+            totalBuyIn: 0,
+            status: 'waiting',
+          }),
+          connectionStatus: 'disconnected',
+        },
+      ],
+    });
+    storageService.getRoom.mockResolvedValue(room);
+
+    const updated = await gameService.transferHostOnDisconnectTimeout(
+      'ROOM01',
+      'p-host',
+    );
+
+    expect(updated).toBe(room);
+    expect(updated?.hostId).toBe('p-host');
+    expect(storageService.persistRoom).not.toHaveBeenCalled();
+  });
+
   it('deletes the room when the last human leaves and only robots remain', async () => {
     const room = createRoom({
       gameState: 'WAITING',

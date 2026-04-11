@@ -8306,6 +8306,81 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12h: Host Ownership Transfers Only After Hand Settlement Following Disconnect Timeout', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+
+    try {
+      const { alicePage, bobPage, aliceContext } = session;
+      const aliceIdentity = await getPagePlayerIdentity(alicePage);
+      const bobIdentity = await getPagePlayerIdentity(bobPage);
+      if (!aliceIdentity || !bobIdentity) {
+        throw new Error('Missing player identity for host transfer assertion');
+      }
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const disconnectedPromise = captureNextSocketEvent(
+        bobPage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const autoFoldPromise = captureNextSocketEvent(
+        bobPage,
+        'PLAYER_AUTO_FOLDED',
+        8000,
+      );
+      const hostChangedPromise = captureNextSocketEvent(
+        bobPage,
+        'HOST_CHANGED',
+        12000,
+      );
+      const handCompletePromise = captureNextHandComplete(bobPage, 12000, [
+        bobPage,
+      ]);
+
+      await aliceContext.close();
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerId).toBe(aliceIdentity.id);
+
+      await bobPage.waitForTimeout(600);
+      const hostBeforeSettlement = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.hostId ?? null;
+      });
+      expect(hostBeforeSettlement).toBe(aliceIdentity.id);
+
+      const autoFoldEvent = await autoFoldPromise;
+      expect(autoFoldEvent.playerId).toBe(aliceIdentity.id);
+
+      await handCompletePromise;
+
+      const hostChangedEvent = await hostChangedPromise;
+      expect(hostChangedEvent.newHostId).toBe(bobIdentity.id);
+      expect(hostChangedEvent.newHostName).toBe('Bob');
+
+      await bobPage.waitForFunction(
+        (playerId) => {
+          const room = (window as any).pokerDebug?.getRoom?.();
+          return room?.hostId === playerId;
+        },
+        bobIdentity.id,
+        { timeout: 5000 },
+      );
+      const endGameResponse = await emitSocketEventAck(bobPage, 'END_GAME');
+      expect(endGameResponse.success).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {

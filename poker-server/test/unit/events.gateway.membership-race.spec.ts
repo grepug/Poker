@@ -14,6 +14,7 @@ describe('EventsGateway membership mutation serialization', () => {
   let chatStorageService: any;
   let chatMediaStorageService: any;
   let authService: any;
+  let roomEmitter: any;
   let persistViaStaleSnapshot: (mutate: (draft: any) => void) => Promise<any>;
 
   const createPlayer = (params: {
@@ -145,6 +146,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
             player.socketId = newSocketId;
             player.status = 'connected';
+            player.connectionStatus = 'connected';
             player.lastConnectedAt = Date.now();
             draft.lastActivityAt = Date.now();
             updatedPlayer = deepClone(player);
@@ -169,6 +171,7 @@ describe('EventsGateway membership mutation serialization', () => {
             }
 
             player.status = 'left';
+            player.connectionStatus = 'disconnected';
             player.socketId = '';
             player.cards = null;
             player.currentBet = 0;
@@ -210,6 +213,37 @@ describe('EventsGateway membership mutation serialization', () => {
           }
 
           player.connectionStatus = 'disconnected';
+          draft.lastActivityAt = Date.now();
+          updatedRoom = deepClone(draft);
+        });
+
+        return updatedRoom;
+      }),
+      transferHostOnDisconnectTimeout: jest.fn(async (roomId: string, playerId: string) => {
+        if (roomId !== 'ROOM1') {
+          return null;
+        }
+
+        let updatedRoom: any = null;
+        await persistViaStaleSnapshot((draft) => {
+          if (draft.hostId !== playerId) {
+            updatedRoom = deepClone(draft);
+            return;
+          }
+
+          const nextHost = draft.players.find(
+            (entry: any) =>
+              entry.id !== playerId &&
+              !entry.isRobot &&
+              entry.status !== 'left' &&
+              entry.connectionStatus !== 'disconnected',
+          );
+          if (!nextHost) {
+            updatedRoom = deepClone(draft);
+            return;
+          }
+
+          draft.hostId = nextHost.id;
           draft.lastActivityAt = Date.now();
           updatedRoom = deepClone(draft);
         });
@@ -302,7 +336,7 @@ describe('EventsGateway membership mutation serialization', () => {
       chatMediaStorageService,
     );
 
-    const roomEmitter = { emit: jest.fn() };
+    roomEmitter = { emit: jest.fn() };
     gateway.server = {
       to: jest.fn().mockReturnValue(roomEmitter),
       sockets: { sockets: new Map() },
@@ -438,6 +472,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('allows leave between hands before the player readies the next hand', async () => {
     roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.readyPhase = 'NEXT_HAND';
     roomState.readyPlayerIds = [];
     roomState.currentHand = {
@@ -519,6 +554,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('rejects leave while a hand is still in progress', async () => {
     roomState.players[1].status = 'connected';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.currentHand = {
       handNumber: 1,
       dealerPosition: 0,
@@ -568,6 +604,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
   it('rejects leave after the player has already readied the next hand', async () => {
     roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
     roomState.readyPhase = 'NEXT_HAND';
     roomState.readyPlayerIds = ['p-bob'];
     roomState.currentHand = {
@@ -1139,6 +1176,100 @@ describe('EventsGateway membership mutation serialization', () => {
     ).toHaveBeenCalledWith('ROOM1');
   });
 
+  it('transfers disconnected host ownership after run-count timeout resolution reaches a safe paused phase', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'connected',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'connected',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'connected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 20,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'TURN',
+      currentBet: 10,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+      runCountDecision: {
+        requestedByPlayerId: 'p-bob',
+        eligiblePlayerIds: ['p-host', 'p-bob'],
+        twiceAgreedPlayerIds: ['p-bob'],
+        currentSelectionByPlayerId: {},
+        expiresAt: Date.now() + 5000,
+      },
+    };
+
+    jest
+      .spyOn(gateway as any, 'resolveRunCountDecision')
+      .mockImplementation(async () => {
+        roomState.currentHand = {
+          ...roomState.currentHand,
+          bettingRound: 'SHOWDOWN',
+          currentPlayerTurn: null,
+          runCountDecision: null,
+          lastResult: {
+            winners: [],
+            playerHands: [],
+            pot: 20,
+            timestamp: Date.now(),
+          },
+        };
+      });
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-host',
+    );
+    expect(roomState.hostId).toBe('p-bob');
+    expect(roomEmitter.emit).toHaveBeenCalledWith('HOST_CHANGED', {
+      newHostId: 'p-bob',
+      newHostName: 'Bob',
+    });
+    expect(storageService.archiveEndedRoom).not.toHaveBeenCalled();
+  });
+
   it('clears abandoned-room tracking during module teardown', () => {
     (gateway as any).abandonedRoomSince.set('ROOM1', Date.now());
 
@@ -1229,5 +1360,107 @@ describe('EventsGateway membership mutation serialization', () => {
     await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
 
     expect((gateway as any).disconnectTimers.size).toBe(0);
+  });
+
+  it('does not transfer disconnected host ownership while a hand is still live after timeout', async () => {
+    roomState.players[0].connectionStatus = 'disconnected';
+    roomState.currentHand = {
+      handNumber: 5,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      pot: 30,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'PRE_FLOP',
+      currentBet: 20,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+    };
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).not.toHaveBeenCalled();
+    expect(roomState.hostId).toBe('p-host');
+    expect(roomEmitter.emit).not.toHaveBeenCalledWith(
+      'HOST_CHANGED',
+      expect.anything(),
+    );
+  });
+
+  it('transfers disconnected host ownership after timeout when the room is between hands', async () => {
+    roomState.players[0].connectionStatus = 'disconnected';
+    roomState.players[1].status = 'waiting';
+    roomState.players[1].connectionStatus = 'connected';
+    roomState.players.push(
+      createPlayer({
+        id: 'p-charlie',
+        socketId: 'socket-charlie',
+        name: 'Charlie',
+        status: 'waiting',
+        position: 2,
+        userId: 'user-charlie',
+      }),
+    );
+    roomState.currentHand = {
+      handNumber: 6,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 0,
+      pot: 30,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob', 'p-charlie'],
+      bettingRound: 'RIVER',
+      currentBet: 20,
+      currentPlayerTurn: null,
+      roundActions: {},
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: {
+        winners: [],
+        playerHands: [],
+        pot: 30,
+        timestamp: Date.now(),
+      },
+    };
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-host',
+    );
+    expect(roomState.hostId).toBe('p-bob');
+    expect(roomEmitter.emit).toHaveBeenCalledWith('HOST_CHANGED', {
+      newHostId: 'p-bob',
+      newHostName: 'Bob',
+    });
   });
 });

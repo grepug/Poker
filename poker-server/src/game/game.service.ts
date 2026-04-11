@@ -794,7 +794,42 @@ export class GameService {
       throw new Error('New host not found in room');
     }
 
-    room.hostId = newHostId;
+    await this.persistHostTransfer(roomId, room, newHost);
+
+    return room;
+  }
+
+  async transferHostOnDisconnectTimeout(
+    roomId: string,
+    disconnectedHostId: string,
+  ): Promise<Room | null> {
+    const room = await this.storageService.getRoom(roomId);
+
+    if (!room) {
+      return null;
+    }
+
+    if (room.hostId !== disconnectedHostId) {
+      return room;
+    }
+
+    const replacementHost = this.getConnectedSeatedHumanPlayers(room).find(
+      (player) => player.id !== disconnectedHostId,
+    );
+    if (!replacementHost) {
+      return room;
+    }
+
+    await this.persistHostTransfer(roomId, room, replacementHost);
+    return room;
+  }
+
+  private async persistHostTransfer(
+    roomId: string,
+    room: Room,
+    newHost: Player,
+  ): Promise<void> {
+    room.hostId = newHost.id;
     room.lastActivityAt = Date.now();
 
     await this.storageService.persistRoom(
@@ -805,15 +840,13 @@ export class GameService {
           type: 'HOST_CHANGED',
           actor: { source: 'ROOM_SERVICE' },
           payload: {
-            hostId: newHostId,
+            hostId: newHost.id,
             hostName: newHost.name,
           },
         }),
       ),
     );
     this.logger.log(`Host transferred to ${newHost.name} in room ${roomId}`);
-
-    return room;
   }
 
   /**
@@ -842,5 +875,11 @@ export class GameService {
 
   private getSeatedHumanPlayers(room: Room): Player[] {
     return this.getSeatedPlayers(room).filter((player) => !player.isRobot);
+  }
+
+  private getConnectedSeatedHumanPlayers(room: Room): Player[] {
+    return this.getSeatedHumanPlayers(room).filter(
+      (player) => !isDisconnected(player),
+    );
   }
 }
