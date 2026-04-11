@@ -35,14 +35,15 @@ export const WeChatBrowserGate: React.FC<WeChatBrowserGateProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-emerald-950/92 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-emerald-950/92 p-4 backdrop-blur-sm sm:items-center"
       data-testid="wechat-browser-gate"
     >
       <div
-        className="surface-panel w-full max-w-xl p-5 sm:p-6"
+        className="surface-panel my-4 max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto p-5 sm:my-0 sm:p-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="wechat-browser-gate-title"
+        data-testid="wechat-browser-gate-panel"
       >
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/80">
           {t("wechatGate.eyebrow")}

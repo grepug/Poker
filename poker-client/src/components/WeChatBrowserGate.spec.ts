@@ -21,4 +21,18 @@ describe("WeChatBrowserGate", () => {
     expect(html).toContain("https://poker.example.com/room/ABCD");
     expect(html).toContain("data-testid=\"wechat-browser-copy-link\"");
   });
+
+  it("uses an overflow-safe fullscreen shell for tall mobile content", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(LocalizationProvider, {
+        children: React.createElement(WeChatBrowserGate, {
+          currentUrl: "https://poker.example.com/room/ABCD",
+        }),
+      }),
+    );
+
+    expect(html).toContain("overflow-y-auto");
+    expect(html).toContain("max-h-[calc(100vh-2rem)]");
+    expect(html).toContain("data-testid=\"wechat-browser-gate-panel\"");
+  });
 });
