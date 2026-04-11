@@ -6,7 +6,6 @@ import { getPwaDisplayModeState } from "./utils/pwa-display-mode";
 
 const pwaDisplayModeState = getPwaDisplayModeState(window);
 
-document.documentElement.dataset.pwaDisplayMode = pwaDisplayModeState.displayMode;
 document.documentElement.dataset.iosStandalone = pwaDisplayModeState.isIosStandalone
   ? "true"
   : "false";

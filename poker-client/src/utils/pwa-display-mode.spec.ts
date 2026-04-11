@@ -15,14 +15,18 @@ type TestWindowLike = {
 
 const createWindowLike = ({
   standaloneDisplayMode = false,
+  includeMatchMedia = true,
   navigator,
 }: {
   standaloneDisplayMode?: boolean;
+  includeMatchMedia?: boolean;
   navigator?: TestNavigator;
 } = {}): TestWindowLike => ({
-  matchMedia: (query: string) => ({
-    matches: query === "(display-mode: standalone)" ? standaloneDisplayMode : false,
-  }),
+  matchMedia: includeMatchMedia
+    ? (query: string) => ({
+        matches: query === "(display-mode: standalone)" ? standaloneDisplayMode : false,
+      })
+    : undefined,
   navigator,
 });
 
@@ -60,6 +64,25 @@ describe("getPwaDisplayModeState", () => {
         }),
       ),
     ).toEqual({
+      displayMode: "standalone",
+      isIosStandalone: true,
+    });
+  });
+
+  it("handles missing matchMedia and still falls back to navigator.standalone", () => {
+    const legacyIosWindow = createWindowLike({
+      includeMatchMedia: false,
+      navigator: {
+        userAgent:
+          "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
+        platform: "MacIntel",
+        maxTouchPoints: 5,
+        standalone: true,
+      },
+    });
+
+    expect(() => getPwaDisplayModeState(legacyIosWindow)).not.toThrow();
+    expect(getPwaDisplayModeState(legacyIosWindow)).toEqual({
       displayMode: "standalone",
       isIosStandalone: true,
     });

@@ -3,7 +3,7 @@ export type PwaDisplayModeState = {
   isIosStandalone: boolean;
 };
 
-type NavigatorLike = {
+export type NavigatorLike = {
   userAgent?: string;
   platform?: string;
   maxTouchPoints?: number;
@@ -15,7 +15,7 @@ type WindowLike = {
   navigator?: NavigatorLike;
 };
 
-const isIosNavigator = (navigatorLike?: NavigatorLike): boolean => {
+export const isIosNavigator = (navigatorLike?: NavigatorLike): boolean => {
   if (!navigatorLike) {
     return false;
   }
@@ -35,8 +35,10 @@ const isStandaloneDisplayMode = (windowLike?: WindowLike): boolean => {
     return false;
   }
 
+  const standaloneMediaQuery = windowLike.matchMedia?.("(display-mode: standalone)");
+
   return (
-    windowLike.matchMedia?.("(display-mode: standalone)").matches === true ||
+    standaloneMediaQuery?.matches === true ||
     Boolean(windowLike.navigator?.standalone)
   );
 };

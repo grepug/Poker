@@ -1,17 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLocalization } from "../contexts/LocalizationContext";
+import { getPwaDisplayModeState, isIosNavigator } from "../utils/pwa-display-mode";
 
 const IOS_INSTALL_PROMPT_DISMISSED_KEY = "poker.iosInstallPromptDismissed";
-
-const isIosDevice = () => {
-  if (typeof navigator === "undefined") return false;
-  const userAgent = navigator.userAgent ?? "";
-  const isIphoneFamily = /iPhone|iPad|iPod/i.test(userAgent);
-  const isIpadDesktopMode =
-    navigator.platform === "MacIntel" && typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 1;
-  return isIphoneFamily || isIpadDesktopMode;
-};
 
 const isSafariOnIos = () => {
   if (typeof navigator === "undefined") return false;
@@ -21,16 +13,12 @@ const isSafariOnIos = () => {
   return isWebKit && !hasOtherBrowserToken;
 };
 
-const isStandaloneMode = () => {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-  );
-};
-
 const resolveInitialPromptVisibility = (canShowPrompt: boolean) => {
-  if (!canShowPrompt || isStandaloneMode()) {
+  if (!canShowPrompt) {
+    return false;
+  }
+
+  if (typeof window !== "undefined" && getPwaDisplayModeState(window).displayMode === "standalone") {
     return false;
   }
 
@@ -45,7 +33,10 @@ const resolveInitialPromptVisibility = (canShowPrompt: boolean) => {
 export const IosInstallPrompt: React.FC = () => {
   const location = useLocation();
   const { t } = useLocalization();
-  const canShowPrompt = useMemo(() => isIosDevice() && isSafariOnIos(), []);
+  const canShowPrompt = useMemo(
+    () => isIosNavigator(typeof navigator === "undefined" ? undefined : navigator) && isSafariOnIos(),
+    [],
+  );
   const [visible, setVisible] = useState(() => resolveInitialPromptVisibility(canShowPrompt));
 
   const handleDismiss = () => {
