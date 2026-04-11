@@ -6011,6 +6011,69 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4ac: Signed-out invite links preserve room code through auth without manual re-entry', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await authenticateTestUser(alicePage, 'test1', {
+        displayName: 'Alice',
+        avatarEmoji: '🦊',
+      });
+      const roomCode = await createRoomViaSocket(alicePage, 'Alice');
+
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.goto(`${FRONTEND_URL}/room/${roomCode}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await bobPage.unroute(roomRoutePattern);
+      await bobPage.waitForSelector('[data-testid="auth-page"]');
+      await expect(bobPage).toHaveURL(
+        new RegExp(`/auth\\?roomId=${roomCode}$`),
+      );
+
+      await authenticateTestUser(bobPage, 'test2', {
+        displayName: 'Bob',
+        avatarEmoji: '🐻',
+      });
+
+      await bobPage.evaluate((nextRoomCode) => {
+        window.history.pushState({}, '', `/auth?roomId=${nextRoomCode}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, roomCode);
+
+      await bobPage.waitForSelector('[data-testid="home-panel"]');
+      await expect(bobPage).toHaveURL(
+        new RegExp(`\\/\\?roomId=${roomCode}$`),
+      );
+      await expect(bobPage.locator('[data-testid="room-id-input"]')).toHaveValue(
+        roomCode,
+      );
+      await expect(bobPage.locator('[data-testid="room-id-input"]')).toBeDisabled();
+
+      await bobPage.click('[data-testid="join-room-button"]');
+      await bobPage.waitForSelector('[data-testid="room-title"]');
+      await expect(bobPage.locator('[data-testid="room-title"]')).toContainText(
+        roomCode,
+      );
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+    }
+  });
+
   test('8.4b: Home Reuses Saved Profile After Leaving Room', async ({
     browser,
   }) => {
