@@ -306,8 +306,20 @@ describe("SavedGameDetailView", () => {
 
   it("renders the desktop standings buy-in column from archived participant totals", () => {
     const html = renderView();
+    const standingsSectionStart = html.indexOf(
+      'data-testid="saved-history-desktop-standings"',
+    );
+    const desktopHandListStart = html.indexOf(
+      'data-testid="saved-history-desktop-hand-list"',
+    );
+    const standingsSection = html.slice(
+      standingsSectionStart,
+      desktopHandListStart,
+    );
 
-    expect(html).toContain("game.rankings.buyIn");
-    expect(html).toContain("$1000");
+    expect(standingsSectionStart).toBeGreaterThanOrEqual(0);
+    expect(desktopHandListStart).toBeGreaterThan(standingsSectionStart);
+    expect(standingsSection).toContain("game.rankings.buyIn");
+    expect(standingsSection).toContain("$1000");
   });
 });
