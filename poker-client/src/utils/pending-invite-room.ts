@@ -120,10 +120,8 @@ export const syncPendingInviteRoomFromSearch = (
 export const consumePendingInviteRoom = (
   search: string,
   storage: StorageLike | null,
-  now: number = Date.now(),
 ): string | null => {
-  const roomId =
-    readPendingInviteRoomIdFromSearch(search) ?? readPendingInviteRoom(storage, now);
+  const roomId = readPendingInviteRoomIdFromSearch(search);
   clearPendingInviteRoom(storage);
   return roomId;
 };

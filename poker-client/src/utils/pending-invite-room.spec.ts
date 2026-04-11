@@ -55,11 +55,12 @@ describe("pending invite room helpers", () => {
     expect(readPendingInviteRoom(storage, 200)).toBeNull();
   });
 
-  it("falls back to the stored room id when the auth URL loses the query", () => {
+  it("does not revive a stored room id when /auth has no roomId query", () => {
     const storage = createStorage();
     writePendingInviteRoom("ZX34QP", storage, 100);
 
-    expect(consumePendingInviteRoom("", storage, 200)).toBe("ZX34QP");
+    expect(readPendingInviteRoom(storage, 200)).toBe("ZX34QP");
+    expect(consumePendingInviteRoom("", storage)).toBeNull();
     expect(readPendingInviteRoom(storage, 200)).toBeNull();
   });
 
