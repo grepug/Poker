@@ -31,8 +31,12 @@ describe("WeChatBrowserGate", () => {
       }),
     );
 
-    expect(html).toContain("overflow-y-auto");
-    expect(html).toContain("max-h-[calc(100vh-2rem)]");
-    expect(html).toContain("data-testid=\"wechat-browser-gate-panel\"");
+    const panelTagMatch = html.match(
+      /<[^>]*data-testid="wechat-browser-gate-panel"[^>]*>/,
+    );
+
+    expect(panelTagMatch).not.toBeNull();
+    expect(panelTagMatch?.[0]).toContain("overflow-y-auto");
+    expect(panelTagMatch?.[0]).toContain("max-h-[calc(100vh-2rem)]");
   });
 });
