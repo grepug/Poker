@@ -3833,7 +3833,19 @@ export class EventsGateway
           const resolvedRoom = await this.getRoom(roomId);
           if (resolvedRoom) {
             this.updateAbandonedRoomTracking(resolvedRoom);
-            await this.maybeFinalizeAbandonedRoom(resolvedRoom);
+            const roomAfterHostTransfer =
+              await this.maybeTransferDisconnectedHostIfEligible(
+                roomId,
+                resolvedRoom,
+              );
+            const started = await this.maybeStartReadyPhaseIfAllReady(
+              roomId,
+              roomAfterHostTransfer,
+            );
+            if (!started) {
+              this.emitReadyStateUpdated(roomId, roomAfterHostTransfer);
+            }
+            await this.maybeFinalizeAbandonedRoom(roomAfterHostTransfer);
           }
           return;
         }

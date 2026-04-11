@@ -1176,6 +1176,100 @@ describe('EventsGateway membership mutation serialization', () => {
     ).toHaveBeenCalledWith('ROOM1');
   });
 
+  it('transfers disconnected host ownership after run-count timeout resolution reaches a safe paused phase', async () => {
+    roomState.hostId = 'p-host';
+    roomState.gameState = 'IN_PROGRESS';
+    roomState.players = [
+      {
+        ...createPlayer({
+          id: 'p-host',
+          socketId: 'socket-host',
+          name: 'Host',
+          status: 'connected',
+          position: 0,
+          userId: 'user-alice',
+        }),
+        connectionStatus: 'disconnected',
+      },
+      {
+        ...createPlayer({
+          id: 'p-bob',
+          socketId: 'socket-bob-old',
+          name: 'Bob',
+          status: 'connected',
+          position: 1,
+          userId: 'user-bob',
+        }),
+        connectionStatus: 'connected',
+      },
+    ];
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 0,
+      bigBlindPosition: 1,
+      pot: 20,
+      sidePots: [],
+      communityCards: [],
+      activePlayers: ['p-host', 'p-bob'],
+      bettingRound: 'TURN',
+      currentBet: 10,
+      currentPlayerTurn: 'p-bob',
+      roundActions: { 'p-host': true },
+      lastRaiseSize: 10,
+      deck: [],
+      blindStructure: { smallBlind: 5, bigBlind: 10 },
+      allInPlayers: [],
+      winners: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      firstPlayerToAct: 'p-host',
+      lastAggressor: null,
+      pendingStreetRevealRound: null,
+      nextStreetReadyPlayerIds: [],
+      nextStreetRequiredPlayerIds: [],
+      revealedPlayerIds: [],
+      lastResult: null,
+      runCountDecision: {
+        requestedByPlayerId: 'p-bob',
+        eligiblePlayerIds: ['p-host', 'p-bob'],
+        twiceAgreedPlayerIds: ['p-bob'],
+        currentSelectionByPlayerId: {},
+        expiresAt: Date.now() + 5000,
+      },
+    };
+
+    jest
+      .spyOn(gateway as any, 'resolveRunCountDecision')
+      .mockImplementation(async () => {
+        roomState.currentHand = {
+          ...roomState.currentHand,
+          bettingRound: 'SHOWDOWN',
+          currentPlayerTurn: null,
+          runCountDecision: null,
+          lastResult: {
+            winners: [],
+            playerHands: [],
+            pot: 20,
+            timestamp: Date.now(),
+          },
+        };
+      });
+
+    await (gateway as any).handleDisconnectTimeout('ROOM1', 'p-host');
+
+    expect(gameService.transferHostOnDisconnectTimeout).toHaveBeenCalledWith(
+      'ROOM1',
+      'p-host',
+    );
+    expect(roomState.hostId).toBe('p-bob');
+    expect(roomEmitter.emit).toHaveBeenCalledWith('HOST_CHANGED', {
+      newHostId: 'p-bob',
+      newHostName: 'Bob',
+    });
+    expect(storageService.archiveEndedRoom).not.toHaveBeenCalled();
+  });
+
   it('clears abandoned-room tracking during module teardown', () => {
     (gateway as any).abandonedRoomSince.set('ROOM1', Date.now());
 
