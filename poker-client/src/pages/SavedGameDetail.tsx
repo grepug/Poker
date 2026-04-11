@@ -155,6 +155,16 @@ type SavedGameDetailViewProps = {
   onSelectHandNumber: (handNumber: number) => void;
 };
 
+type SavedGameDetailShellProps = {
+  title: string;
+  subtitle?: string | null;
+  onBackToHistory: () => void;
+  onBackToLobby: () => void;
+  t: TranslationFn;
+  children: React.ReactNode;
+  testId?: string;
+};
+
 type MobileDetailSection = "overview" | "actions" | "review" | "session";
 
 const MOBILE_DETAIL_SECTIONS: Array<{
@@ -508,6 +518,47 @@ const SessionMetaCards: React.FC<{
   </div>
 );
 
+export const SavedGameDetailShell: React.FC<SavedGameDetailShellProps> = ({
+  title,
+  subtitle,
+  onBackToHistory,
+  onBackToLobby,
+  t,
+  children,
+  testId,
+}) => (
+  <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
+    <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
+      <section className="surface-panel w-full space-y-6 p-6 md:p-8" data-testid={testId}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={onBackToHistory}
+              className="text-sm font-semibold text-emerald-300 transition hover:text-emerald-200"
+            >
+              {t("history.backToHistory")}
+            </button>
+            <h1 className="text-3xl font-black tracking-tight text-white">{title}</h1>
+            {subtitle ? (
+              <p className="text-sm text-emerald-100/75">{subtitle}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onBackToLobby}
+            className="rounded-xl border border-emerald-500/70 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
+          >
+            {t("history.backToLobby")}
+          </button>
+        </div>
+
+        {children}
+      </section>
+    </div>
+  </main>
+);
+
 export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
   detail,
   selectedHandNumber,
@@ -527,38 +578,15 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
     : null;
 
   return (
-    <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
-      <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
-        <section
-          className="surface-panel w-full space-y-6 p-6 md:p-8"
-          data-testid="saved-game-detail-page"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={onBackToHistory}
-                className="text-sm font-semibold text-emerald-300 transition hover:text-emerald-200"
-              >
-                {t("history.backToHistory")}
-              </button>
-              <h1 className="text-3xl font-black tracking-tight text-white">
-                {t("history.roomLabel", { roomId: detail.roomId })}
-              </h1>
-              <p className="text-sm text-emerald-100/75">
-                {formatDateTime(detail.concludedAt, localeTag)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onBackToLobby}
-              className="rounded-xl border border-emerald-500/70 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
-            >
-              {t("history.backToLobby")}
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <SavedGameDetailShell
+      title={t("history.roomLabel", { roomId: detail.roomId })}
+      subtitle={formatDateTime(detail.concludedAt, localeTag)}
+      onBackToHistory={onBackToHistory}
+      onBackToLobby={onBackToLobby}
+      t={t}
+      testId="saved-game-detail-page"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryStatCard label={t("history.hands")} value={detail.handCount} />
             <SummaryStatCard
               label={t("history.blinds")}
@@ -574,9 +602,9 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
               value={formatDateTime(detail.concludedAt, localeTag)}
               valueClassName="text-sm leading-5"
             />
-          </div>
+      </div>
 
-          <div className="space-y-4 lg:hidden">
+      <div className="space-y-4 lg:hidden">
             <SectionShell testId="saved-history-mobile-hand-strip">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -750,9 +778,9 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
                 )}
               </>
             )}
-          </div>
+      </div>
 
-          <div className="hidden gap-6 lg:grid lg:grid-cols-[1.15fr_0.85fr]">
+      <div className="hidden gap-6 lg:grid lg:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-6">
               <SectionShell testId="saved-history-desktop-standings">
                 <div className="flex items-center justify-between gap-3">
@@ -892,10 +920,8 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
                 </SectionShell>
               )}
             </aside>
-          </div>
-        </section>
       </div>
-    </main>
+    </SavedGameDetailShell>
   );
 };
 
@@ -963,27 +989,29 @@ export const SavedGameDetailPage: React.FC = () => {
   return (
     <>
       {isLoading && (
-        <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
-          <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
-            <section className="surface-panel w-full space-y-6 p-6 md:p-8">
-              <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/35 px-4 py-5 text-sm text-emerald-100/80">
-                {t("history.detailLoading")}
-              </div>
-            </section>
+        <SavedGameDetailShell
+          title={t("history.detailTitle")}
+          onBackToHistory={() => navigate("/history")}
+          onBackToLobby={() => navigate("/", { replace: true })}
+          t={t}
+        >
+          <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/35 px-4 py-5 text-sm text-emerald-100/80">
+            {t("history.detailLoading")}
           </div>
-        </main>
+        </SavedGameDetailShell>
       )}
 
       {error && !isLoading && (
-        <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
-          <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
-            <section className="surface-panel w-full space-y-6 p-6 md:p-8">
-              <div className="rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-5 text-sm text-rose-100">
-                {error}
-              </div>
-            </section>
+        <SavedGameDetailShell
+          title={t("history.detailTitle")}
+          onBackToHistory={() => navigate("/history")}
+          onBackToLobby={() => navigate("/", { replace: true })}
+          t={t}
+        >
+          <div className="rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-5 text-sm text-rose-100">
+            {error}
           </div>
-        </main>
+        </SavedGameDetailShell>
       )}
 
       {!isLoading && !error && detail && (

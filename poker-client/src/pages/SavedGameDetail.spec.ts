@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { MessageKey, Locale } from "@/i18n/messages";
-import { SavedGameDetailView } from "./SavedGameDetail";
+import { SavedGameDetailShell, SavedGameDetailView } from "./SavedGameDetail";
 
 const buildDetail = () => ({
   archiveId: "G5V69T",
@@ -261,6 +261,22 @@ const renderView = () =>
   );
 
 describe("SavedGameDetailView", () => {
+  it("keeps history and lobby navigation visible in shell states like loading or error", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailShell, {
+        title: "Saved Game",
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        t,
+        children: React.createElement("div", null, "Placeholder state"),
+      }),
+    );
+
+    expect(html).toContain("history.backToHistory");
+    expect(html).toContain("history.backToLobby");
+    expect(html).toContain("Placeholder state");
+  });
+
   it("puts the mobile hand switcher before the selected-hand detail and exposes mobile section tabs", () => {
     const html = renderView();
 
