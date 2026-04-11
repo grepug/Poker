@@ -136,7 +136,20 @@ describe("createLiveAudioController", () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
-  it("joins a room, keeps the user muted by default, and tracks roster updates", async () => {
+  it("joins a room with the microphone enabled by default and tracks roster updates", async () => {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: vi.fn(),
+        },
+      },
+    });
+    Object.defineProperty(globalThis, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+
     const room = new FakeRoom(
       new FakeParticipant({
         identity: joinPayload.participantIdentity,
@@ -154,69 +167,152 @@ describe("createLiveAudioController", () => {
       createRoom: vi.fn(() => room),
     });
 
-    await controller.join("ROOM83");
+    try {
+      await controller.join("ROOM83");
 
-    expect(room.startAudio).toHaveBeenCalledTimes(1);
-    expect(room.prepareConnection).toHaveBeenCalledWith(
-      joinPayload.serverUrl,
-      joinPayload.token,
-    );
-    expect(room.connect).toHaveBeenCalledWith(
-      joinPayload.serverUrl,
-      joinPayload.token,
-    );
-    expect(controller.getState()).toEqual(
-      expect.objectContaining({
-        available: true,
-        isJoined: true,
-        isMuted: true,
-        joinedRoomId: "ROOM83",
-        participants: [
-          expect.objectContaining({
-            identity: joinPayload.participantIdentity,
-            playerId: "player-1",
-            userId: "user-1",
-            displayName: "Alice",
-            avatarEmoji: "🦊",
-            isLocal: true,
-            isMuted: true,
-            isSpeaking: false,
-          }),
-        ],
-      }),
-    );
-
-    const remoteParticipant = new FakeParticipant({
-      identity: "user-2:player-2",
-      name: "Bob",
-      metadata: JSON.stringify({
-        roomId: "ROOM83",
-        playerId: "player-2",
-        userId: "user-2",
-        displayName: "Bob",
-        avatarEmoji: "🐻",
-      }),
-      isMicrophoneEnabled: true,
-    });
-    room.remoteParticipants.set(remoteParticipant.identity, remoteParticipant);
-    room.activeSpeakers = [remoteParticipant];
-    room.emit("participantConnected", remoteParticipant);
-    room.emit("activeSpeakersChanged", room.activeSpeakers);
-
-    expect(controller.getState().participants).toEqual(
-      expect.arrayContaining([
+      expect(room.startAudio).toHaveBeenCalledTimes(1);
+      expect(room.prepareConnection).toHaveBeenCalledWith(
+        joinPayload.serverUrl,
+        joinPayload.token,
+      );
+      expect(room.connect).toHaveBeenCalledWith(
+        joinPayload.serverUrl,
+        joinPayload.token,
+      );
+      expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+      expect(controller.getState()).toEqual(
         expect.objectContaining({
-          identity: "user-2:player-2",
+          available: true,
+          isJoined: true,
+          isMuted: false,
+          joinedRoomId: "ROOM83",
+          participants: [
+            expect.objectContaining({
+              identity: joinPayload.participantIdentity,
+              playerId: "player-1",
+              userId: "user-1",
+              displayName: "Alice",
+              avatarEmoji: "🦊",
+              isLocal: true,
+              isMuted: false,
+              isSpeaking: false,
+            }),
+          ],
+        }),
+      );
+
+      const remoteParticipant = new FakeParticipant({
+        identity: "user-2:player-2",
+        name: "Bob",
+        metadata: JSON.stringify({
+          roomId: "ROOM83",
           playerId: "player-2",
           userId: "user-2",
           displayName: "Bob",
           avatarEmoji: "🐻",
-          isLocal: false,
-          isMuted: false,
-          isSpeaking: true,
         }),
-      ]),
-    );
+        isMicrophoneEnabled: true,
+      });
+      room.remoteParticipants.set(remoteParticipant.identity, remoteParticipant);
+      room.activeSpeakers = [remoteParticipant];
+      room.emit("participantConnected", remoteParticipant);
+      room.emit("activeSpeakersChanged", room.activeSpeakers);
+
+      expect(controller.getState().participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            identity: "user-2:player-2",
+            playerId: "player-2",
+            userId: "user-2",
+            displayName: "Bob",
+            avatarEmoji: "🐻",
+            isLocal: false,
+            isMuted: false,
+            isSpeaking: true,
+          }),
+        ]),
+      );
+    } finally {
+      if (originalNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", originalNavigatorDescriptor);
+      } else {
+        delete (globalThis as Record<string, unknown>).navigator;
+      }
+
+      if (originalSecureContextDescriptor) {
+        Object.defineProperty(
+          globalThis,
+          "isSecureContext",
+          originalSecureContextDescriptor,
+        );
+      } else {
+        delete (globalThis as Record<string, unknown>).isSecureContext;
+      }
+    }
+  });
+
+  it("keeps the room joined in listen-only mode when microphone enable fails during join", async () => {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: vi.fn(),
+        },
+      },
+    });
+    Object.defineProperty(globalThis, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+
+    const localParticipant = new FakeParticipant({
+      identity: joinPayload.participantIdentity,
+      name: joinPayload.participantName,
+      metadata: joinPayload.participantMetadata,
+      isMicrophoneEnabled: false,
+    });
+    localParticipant.setMicrophoneEnabled = vi.fn(async () => {
+      throw new DOMException("Permission denied", "NotAllowedError");
+    });
+    const room = new FakeRoom(localParticipant);
+    const controller = createLiveAudioController({
+      loadConfig: vi.fn(async () => ({
+        enabled: true,
+        serverUrl: joinPayload.serverUrl,
+      })),
+      requestJoinToken: vi.fn(async () => joinPayload),
+      createRoom: vi.fn(() => room),
+    });
+
+    try {
+      await controller.join("ROOM83");
+
+      expect(room.connect).toHaveBeenCalledWith(joinPayload.serverUrl, joinPayload.token);
+      expect(controller.getState()).toEqual(
+        expect.objectContaining({
+          isJoined: true,
+          isMuted: true,
+          joinedRoomId: "ROOM83",
+          error: "game.audio.error.microphoneDenied",
+        }),
+      );
+    } finally {
+      if (originalNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", originalNavigatorDescriptor);
+      } else {
+        delete (globalThis as Record<string, unknown>).navigator;
+      }
+
+      if (originalSecureContextDescriptor) {
+        Object.defineProperty(
+          globalThis,
+          "isSecureContext",
+          originalSecureContextDescriptor,
+        );
+      } else {
+        delete (globalThis as Record<string, unknown>).isSecureContext;
+      }
+    }
   });
 
   it("attaches remote audio tracks when subscribed and detaches them on leave", async () => {
@@ -440,6 +536,15 @@ describe("createLiveAudioController", () => {
 
     try {
       await controller.join("ROOM83");
+      expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+      expect(controller.getState()).toEqual(
+        expect.objectContaining({
+          isJoined: true,
+          isMuted: true,
+          error: "game.audio.error.microphoneRequiresSecureContext",
+        }),
+      );
+
       await controller.setMuted(false);
 
       expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
