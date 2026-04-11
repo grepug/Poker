@@ -136,7 +136,7 @@ describe("createLiveAudioController", () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
-  it("joins a room, keeps the user muted by default, and tracks roster updates", async () => {
+  it("joins a room with the microphone enabled by default and tracks roster updates", async () => {
     const room = new FakeRoom(
       new FakeParticipant({
         identity: joinPayload.participantIdentity,
@@ -165,11 +165,12 @@ describe("createLiveAudioController", () => {
       joinPayload.serverUrl,
       joinPayload.token,
     );
+    expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
     expect(controller.getState()).toEqual(
       expect.objectContaining({
         available: true,
         isJoined: true,
-        isMuted: true,
+        isMuted: false,
         joinedRoomId: "ROOM83",
         participants: [
           expect.objectContaining({
@@ -179,7 +180,7 @@ describe("createLiveAudioController", () => {
             displayName: "Alice",
             avatarEmoji: "🦊",
             isLocal: true,
-            isMuted: true,
+            isMuted: false,
             isSpeaking: false,
           }),
         ],
@@ -440,6 +441,7 @@ describe("createLiveAudioController", () => {
 
     try {
       await controller.join("ROOM83");
+      room.localParticipant.setMicrophoneEnabled.mockClear();
       await controller.setMuted(false);
 
       expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();

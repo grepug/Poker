@@ -148,6 +148,8 @@ export const EN_MESSAGES = {
   "game.audio.connected": "Connected",
   "game.audio.reconnecting": "Reconnecting…",
   "game.audio.muted": "Muted",
+  "game.audio.joinPopoverTitle": "Join Table Audio",
+  "game.audio.controlPopoverTitle": "Audio Controls",
   "game.audio.unavailable": "Live audio is unavailable for this table.",
   "game.audio.roster": "Audio roster",
   "game.audio.you": "(You)",
@@ -162,6 +164,7 @@ export const EN_MESSAGES = {
     "Browser audio playback is blocked. Tap Enable Audio.",
   "game.audio.badge.speaking": "Speaking",
   "game.audio.badge.onMic": "Mic On",
+  "game.audio.badge.muted": "Muted",
   "pwa.iosInstallTitle": "Add this app to your Home Screen",
   "pwa.iosInstallBody": "In Safari, tap Share and choose Add to Home Screen for a full-screen app.",
 
@@ -614,6 +617,8 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.audio.connected": "已连接",
   "game.audio.reconnecting": "重连中…",
   "game.audio.muted": "已静音",
+  "game.audio.joinPopoverTitle": "加入牌桌语音",
+  "game.audio.controlPopoverTitle": "语音控制",
   "game.audio.unavailable": "当前牌桌暂不可用实时语音。",
   "game.audio.roster": "语音成员",
   "game.audio.you": "（你）",
@@ -626,6 +631,7 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "game.audio.error.playbackBlocked": "浏览器拦截了音频播放，请点“启用音频”。",
   "game.audio.badge.speaking": "正在说话",
   "game.audio.badge.onMic": "麦克风开启",
+  "game.audio.badge.muted": "已静音",
   "pwa.iosInstallTitle": "把应用添加到主屏幕",
   "pwa.iosInstallBody": "在 Safari 中点“分享”，再点“添加到主屏幕”，即可像 App 一样全屏打开。",
 

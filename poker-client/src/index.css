@@ -1139,6 +1139,15 @@ body {
   animation: seat-audio-speaking-pulse 1.15s ease-out infinite;
 }
 
+.seat-pod__live-audio-badge--muted {
+  border-color: rgba(253, 186, 116, 0.82);
+  background: rgba(120, 53, 15, 0.96);
+  color: #fed7aa;
+  box-shadow:
+    0 6px 14px rgba(2, 6, 23, 0.36),
+    inset 0 0 0 1px rgba(255, 237, 213, 0.14);
+}
+
 @keyframes seat-audio-speaking-pulse {
   0% {
     opacity: 0.9;

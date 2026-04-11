@@ -1,12 +1,16 @@
 import React from "react";
+import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { LiveAudioModal } from "./live-audio-modal";
+import { LiveAudioPopover } from "./live-audio-popover";
 
-describe("LiveAudioModal", () => {
-  it("renders the live audio modal chrome and panel content", () => {
+describe("LiveAudioPopover", () => {
+  it("renders the compact popover shell instead of the old full-screen modal", () => {
+    const anchorRef = createRef<HTMLButtonElement>();
     const html = renderToStaticMarkup(
-      React.createElement(LiveAudioModal, {
+      React.createElement(LiveAudioPopover, {
+        anchorRef,
+        isOpen: true,
         title: "Live Audio",
         subtitle: "Join the room audio and hear the table in real time.",
         joinLabel: "Join Audio",
@@ -19,20 +23,16 @@ describe("LiveAudioModal", () => {
         reconnectingLabel: "Reconnecting",
         mutedLabel: "Muted",
         unavailableLabel: "Unavailable",
-        rosterLabel: "Audio roster",
-        localParticipantLabel: "(You)",
-        closeLabel: "Close",
-        modalTitle: "Table Audio",
-        modalSubtitle: "Voice controls and roster live here.",
+        joinPopoverTitle: "Join Table Audio",
+        controlPopoverTitle: "Audio Controls",
         error: null,
         available: true,
         isConfigLoaded: true,
         isConnecting: false,
         isJoined: false,
-        isMuted: true,
+        isMuted: false,
         isAudioPlaybackBlocked: false,
         isReconnecting: false,
-        participants: [],
         onJoin: vi.fn(),
         onLeave: vi.fn(),
         onMute: vi.fn(),
@@ -42,10 +42,9 @@ describe("LiveAudioModal", () => {
       }),
     );
 
-    expect(html).toContain("data-testid=\"live-audio-modal\"");
-    expect(html).toContain("Table Audio");
-    expect(html).toContain("Voice controls and roster live here.");
-    expect(html).toContain("Close");
+    expect(html).toContain("data-testid=\"live-audio-popover\"");
+    expect(html).toContain("Join Table Audio");
     expect(html).toContain("Join Audio");
+    expect(html).not.toContain("data-testid=\"live-audio-modal\"");
   });
 });

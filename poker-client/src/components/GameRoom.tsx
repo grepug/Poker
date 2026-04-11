@@ -34,8 +34,7 @@ import {
   HandResultsContent,
   HandResultsModal,
   LeaveRoomConfirmModal,
-  LiveAudioModal,
-  LiveAudioPanel,
+  LiveAudioPopover,
   NextHandActionArea,
   OperationActionBar,
   ReadyActionArea,
@@ -1474,9 +1473,10 @@ const buildSeatLiveAudioBadge = (
   labels: {
     speaking: string;
     onMic: string;
+    muted: string;
   },
 ): SeatLiveAudioBadge | null => {
-  if (!liveAudioParticipant || liveAudioParticipant.isMuted) {
+  if (!liveAudioParticipant) {
     return null;
   }
 
@@ -1484,6 +1484,13 @@ const buildSeatLiveAudioBadge = (
     return {
       kind: "speaking",
       ariaLabel: labels.speaking,
+    };
+  }
+
+  if (liveAudioParticipant.isMuted) {
+    return {
+      kind: "muted",
+      ariaLabel: labels.muted,
     };
   }
 
@@ -1784,7 +1791,7 @@ const useGameRoomElement = () => {
   const [mobileChipDraftValue, setMobileChipDraftValue] = useState("0");
   const [showMobileChipPopover, setShowMobileChipPopover] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showLiveAudioModal, setShowLiveAudioModal] = useState(false);
+  const [showLiveAudioPopover, setShowLiveAudioPopover] = useState(false);
   const [profileDisplayNameDraft, setProfileDisplayNameDraft] = useState("");
   const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
@@ -1838,6 +1845,7 @@ const useGameRoomElement = () => {
   const boardStageRef = useRef<HTMLDivElement | null>(null);
   const communityLaneRef = useRef<HTMLDivElement | null>(null);
   const seatNodeRefs = useRef<Record<string, HTMLElement | null>>({});
+  const liveAudioButtonRef = useRef<HTMLButtonElement | null>(null);
   const actionAlertHideTimeoutRef = useRef<number | null>(null);
   const actionAlertClearTimeoutRef = useRef<number | null>(null);
   const turnAlertTimeoutRef = useRef<number | null>(null);
@@ -2716,6 +2724,7 @@ const useGameRoomElement = () => {
           {
             speaking: t("game.audio.badge.speaking"),
             onMic: t("game.audio.badge.onMic"),
+            muted: t("game.audio.badge.muted"),
           },
         );
         const isCurrentTurnSeat = currentHand?.currentPlayerTurn === seatPlayerId;
@@ -3316,7 +3325,7 @@ const useGameRoomElement = () => {
     if (showRankingsModal) setShowRankingsModal(false);
     if (showRulesModal) setShowRulesModal(false);
     if (showSettingsModal) setShowSettingsModal(false);
-    if (showLiveAudioModal) setShowLiveAudioModal(false);
+    if (showLiveAudioPopover) setShowLiveAudioPopover(false);
     if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
     if (showHandResultsModal) setShowHandResultsModal(false);
     if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
@@ -3342,7 +3351,7 @@ const useGameRoomElement = () => {
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
-    showLiveAudioModal,
+    showLiveAudioPopover,
   ]);
 
   useEffect(() => {
@@ -3351,7 +3360,7 @@ const useGameRoomElement = () => {
       !showRankingsModal &&
       !showRulesModal &&
       !showSettingsModal &&
-      !showLiveAudioModal &&
+      !showLiveAudioPopover &&
       !showLeaveConfirmModal &&
       !showEndGameConfirmModal &&
       !showHandResultsModal &&
@@ -3381,9 +3390,49 @@ const useGameRoomElement = () => {
     showRankingsModal,
     showRulesModal,
     showSettingsModal,
-    showLiveAudioModal,
+    showLiveAudioPopover,
     showTrayConfirm,
   ]);
+
+  const closeLiveAudioPopover = useCallback(() => {
+    setShowLiveAudioPopover(false);
+  }, []);
+
+  const handleToggleLiveAudioPopover = useCallback(() => {
+    setShowLiveAudioPopover((previous) => !previous);
+  }, []);
+
+  const handleJoinLiveAudio = useCallback(() => {
+    void joinAudio()
+      .then(() => {
+        setShowLiveAudioPopover(false);
+      })
+      .catch(() => undefined);
+  }, [joinAudio]);
+
+  const handleLeaveLiveAudio = useCallback(() => {
+    void leaveAudio()
+      .then(() => {
+        setShowLiveAudioPopover(false);
+      })
+      .catch(() => undefined);
+  }, [leaveAudio]);
+
+  const handleMuteLiveAudio = useCallback(() => {
+    void muteAudio()
+      .then(() => {
+        setShowLiveAudioPopover(false);
+      })
+      .catch(() => undefined);
+  }, [muteAudio]);
+
+  const handleUnmuteLiveAudio = useCallback(() => {
+    void unmuteAudio()
+      .then(() => {
+        setShowLiveAudioPopover(false);
+      })
+      .catch(() => undefined);
+  }, [unmuteAudio]);
 
   const isPointInDropZone = useCallback((clientX: number, clientY: number) => {
     const dropZone = potDropZoneRef.current;
@@ -4171,6 +4220,7 @@ const useGameRoomElement = () => {
             }
             liveAudioLabel={t("game.audio.title")}
             liveAudioJoined={isLiveAudioJoined}
+            liveAudioButtonRef={liveAudioButtonRef}
             finalResultsLabel={t("game.final.title")}
             startLabel={hasReadiedCurrentPhase ? t("game.ready.waitingOthers") : t("common.ready")}
             startDisabled={hasReadiedCurrentPhase}
@@ -4194,7 +4244,7 @@ const useGameRoomElement = () => {
             onOpenRules={() => setShowRulesModal(true)}
             onOpenRankings={() => setShowRankingsModal(true)}
             onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
-            onOpenLiveAudio={() => setShowLiveAudioModal(true)}
+            onOpenLiveAudio={handleToggleLiveAudioPopover}
             onOpenFinalResults={() => setShowFinalSummaryModal(true)}
             onStartGame={markReady}
             onOpenChatFromPreview={handleOpenChatFromPreview}
@@ -4504,42 +4554,6 @@ const useGameRoomElement = () => {
 
         {shouldShowDesktopRail && (
           <aside className="desktop-right-rail" data-testid="desktop-right-rail">
-            <div className="desktop-rail-live-audio" data-testid="desktop-rail-live-audio">
-              <LiveAudioPanel
-                title={t("game.audio.title")}
-                subtitle={t("game.audio.subtitle")}
-                joinLabel={t("game.audio.join")}
-                leaveLabel={t("game.audio.leave")}
-                muteLabel={t("game.audio.mute")}
-                unmuteLabel={t("game.audio.unmute")}
-                enableAudioLabel={t("game.audio.enableAudio")}
-                connectingLabel={t("game.audio.connecting")}
-                connectedLabel={t("game.audio.connected")}
-                reconnectingLabel={t("game.audio.reconnecting")}
-                mutedLabel={t("game.audio.muted")}
-                unavailableLabel={t("game.audio.unavailable")}
-                rosterLabel={t("game.audio.roster")}
-                localParticipantLabel={t("game.audio.you")}
-                error={
-                  liveAudioError?.startsWith("game.audio.error.")
-                    ? t(liveAudioError as MessageKey)
-                    : liveAudioError
-                }
-                available={isLiveAudioAvailable}
-                isConfigLoaded={isLiveAudioConfigLoaded}
-                isConnecting={isLiveAudioConnecting}
-                isJoined={isLiveAudioJoined}
-                isMuted={isLiveAudioMuted}
-                isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
-                isReconnecting={isLiveAudioReconnecting}
-                participants={liveAudioParticipants}
-                onJoin={joinAudio}
-                onLeave={leaveAudio}
-                onMute={muteAudio}
-                onUnmute={unmuteAudio}
-                onEnableAudio={enableAudio}
-              />
-            </div>
             <div className="chat-panel-shell chat-panel-shell--desktop-rail">
               <ChatPanel onClose={() => undefined} showCloseButton={false} />
             </div>
@@ -4649,60 +4663,46 @@ const useGameRoomElement = () => {
         />
       )}
 
-      {showLiveAudioModal &&
-        (isLiveAudioAvailable ||
-          isLiveAudioJoined ||
-          isLiveAudioConnecting ||
-          (isLiveAudioConfigLoaded && room !== null)) && (
-          <LiveAudioModal
-            title={t("game.audio.title")}
-            subtitle={t("game.audio.subtitle")}
-            joinLabel={t("game.audio.join")}
-            leaveLabel={t("game.audio.leave")}
-            muteLabel={t("game.audio.mute")}
-            unmuteLabel={t("game.audio.unmute")}
-            enableAudioLabel={t("game.audio.enableAudio")}
-            connectingLabel={t("game.audio.connecting")}
-            connectedLabel={t("game.audio.connected")}
-            reconnectingLabel={t("game.audio.reconnecting")}
-            mutedLabel={t("game.audio.muted")}
-            unavailableLabel={t("game.audio.unavailable")}
-            rosterLabel={t("game.audio.roster")}
-            localParticipantLabel={t("game.audio.you")}
-            closeLabel={t("common.close")}
-            modalTitle={t("game.audio.modalTitle")}
-            modalSubtitle={t("game.audio.modalSubtitle")}
-            error={
-              liveAudioError?.startsWith("game.audio.error.")
-                ? t(liveAudioError as MessageKey)
-                : liveAudioError
-            }
-            available={isLiveAudioAvailable}
-            isConfigLoaded={isLiveAudioConfigLoaded}
-            isConnecting={isLiveAudioConnecting}
-            isJoined={isLiveAudioJoined}
-            isMuted={isLiveAudioMuted}
-            isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
-            isReconnecting={isLiveAudioReconnecting}
-            participants={liveAudioParticipants}
-            onJoin={() => {
-              void joinAudio();
-            }}
-            onLeave={() => {
-              void leaveAudio();
-            }}
-            onMute={() => {
-              void muteAudio();
-            }}
-            onUnmute={() => {
-              void unmuteAudio();
-            }}
-            onEnableAudio={() => {
-              void enableAudio();
-            }}
-            onClose={() => setShowLiveAudioModal(false)}
-          />
-        )}
+      {showLiveAudioPopover && room !== null && (
+        <LiveAudioPopover
+          anchorRef={liveAudioButtonRef}
+          isOpen={showLiveAudioPopover}
+          title={t("game.audio.title")}
+          subtitle={t("game.audio.subtitle")}
+          joinLabel={t("game.audio.join")}
+          leaveLabel={t("game.audio.leave")}
+          muteLabel={t("game.audio.mute")}
+          unmuteLabel={t("game.audio.unmute")}
+          enableAudioLabel={t("game.audio.enableAudio")}
+          connectingLabel={t("game.audio.connecting")}
+          connectedLabel={t("game.audio.connected")}
+          reconnectingLabel={t("game.audio.reconnecting")}
+          mutedLabel={t("game.audio.muted")}
+          unavailableLabel={t("game.audio.unavailable")}
+          joinPopoverTitle={t("game.audio.joinPopoverTitle")}
+          controlPopoverTitle={t("game.audio.controlPopoverTitle")}
+          error={
+            liveAudioError?.startsWith("game.audio.error.")
+              ? t(liveAudioError as MessageKey)
+              : liveAudioError
+          }
+          available={isLiveAudioAvailable}
+          isConfigLoaded={isLiveAudioConfigLoaded}
+          isConnecting={isLiveAudioConnecting}
+          isJoined={isLiveAudioJoined}
+          isMuted={isLiveAudioMuted}
+          isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
+          isReconnecting={isLiveAudioReconnecting}
+          onJoin={handleJoinLiveAudio}
+          onLeave={handleLeaveLiveAudio}
+          onMute={handleMuteLiveAudio}
+          onUnmute={handleUnmuteLiveAudio}
+          onEnableAudio={() => {
+            void enableAudio();
+          }}
+          onClose={closeLiveAudioPopover}
+        />
+      )}
 
       {showRankingsModal && (
         <RankingsModal

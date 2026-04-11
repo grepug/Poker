@@ -527,8 +527,8 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
         bindRoom(nextRoom);
         await nextRoom.prepareConnection(joinPayload.serverUrl, joinPayload.token);
         await nextRoom.connect(joinPayload.serverUrl, joinPayload.token);
-        if (nextRoom.localParticipant.isMicrophoneEnabled) {
-          await nextRoom.localParticipant.setMicrophoneEnabled(false);
+        if (!nextRoom.localParticipant.isMicrophoneEnabled) {
+          await nextRoom.localParticipant.setMicrophoneEnabled(true);
         }
         patchState({
           isConfigLoaded: true,

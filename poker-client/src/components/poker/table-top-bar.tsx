@@ -32,6 +32,7 @@ type TableTopBarProps = {
   chatLabel: string;
   liveAudioLabel: string;
   liveAudioJoined: boolean;
+  liveAudioButtonRef?: React.Ref<HTMLButtonElement>;
   finalResultsLabel: string;
   startLabel: string;
   startDisabled?: boolean;
@@ -69,6 +70,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   chatLabel,
   liveAudioLabel,
   liveAudioJoined,
+  liveAudioButtonRef,
   finalResultsLabel,
   startLabel,
   startDisabled = false,
@@ -194,6 +196,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
           </button>
         )}
         <button
+          ref={liveAudioButtonRef}
           onClick={onOpenLiveAudio}
           data-testid="open-live-audio-button"
           className="inline-flex items-center gap-2 rounded-full border border-cyan-300/65 bg-cyan-900/35 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-800/45"

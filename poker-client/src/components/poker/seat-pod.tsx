@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
-import { AudioLines, Mic } from "lucide-react";
+import { AudioLines, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type SeatState =
@@ -21,7 +21,7 @@ export type SeatBadge = {
 };
 
 export type SeatLiveAudioBadge = {
-  kind: "speaking" | "on-mic";
+  kind: "speaking" | "on-mic" | "muted";
   ariaLabel: string;
 };
 
@@ -392,6 +392,8 @@ export const SeatPod: React.FC<SeatPodProps> = ({
         >
           {liveAudioBadge.kind === "speaking" ? (
             <AudioLines size={10} strokeWidth={2.4} aria-hidden="true" />
+          ) : liveAudioBadge.kind === "muted" ? (
+            <MicOff size={10} strokeWidth={2.4} aria-hidden="true" />
           ) : (
             <Mic size={10} strokeWidth={2.4} aria-hidden="true" />
           )}

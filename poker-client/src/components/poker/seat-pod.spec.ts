@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SeatPod } from "./seat-pod";
 
 describe("SeatPod", () => {
-  it("renders the bottom-right live audio badge when provided", () => {
+  it("renders the bottom-right muted live audio badge with a slashed mic icon", () => {
     const html = renderToStaticMarkup(
       React.createElement(SeatPod, {
         testId: "player-seat-player-1",
@@ -12,7 +12,7 @@ describe("SeatPod", () => {
         playerName: "Alice",
         isYou: false,
         badge: null,
-        liveAudioBadge: { kind: "speaking", ariaLabel: "Speaking" },
+        liveAudioBadge: { kind: "muted", ariaLabel: "Muted" },
         externalStatusLabel: null,
         externalStatusToneClass: "",
         internalStatusLabel: null,
@@ -25,7 +25,8 @@ describe("SeatPod", () => {
     );
 
     expect(html).toContain("data-testid=\"player-seat-player-1-live-audio-badge\"");
-    expect(html).toContain("aria-label=\"Speaking\"");
-    expect(html).toContain("seat-pod__live-audio-badge--speaking");
+    expect(html).toContain("aria-label=\"Muted\"");
+    expect(html).toContain("seat-pod__live-audio-badge--muted");
+    expect(html).toContain("lucide-mic-off");
   });
 });
