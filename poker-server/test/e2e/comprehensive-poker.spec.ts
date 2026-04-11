@@ -9320,6 +9320,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
       ).toBeVisible();
       await expect(bobPage.getByText('Session Statistics')).toBeVisible();
+      await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
+      await bobPage.setViewportSize({ width: 1440, height: 900 });
+      await expect(
+        bobPage.getByRole('columnheader', { name: 'Buy-in' }),
+      ).toBeVisible();
       const savedHandDetail = bobPage
         .locator('section')
         .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });

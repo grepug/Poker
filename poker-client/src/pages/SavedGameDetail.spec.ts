@@ -303,4 +303,11 @@ describe("SavedGameDetailView", () => {
     expect(html).toContain('data-testid="saved-history-desktop-hand-list"');
     expect(html).toContain('data-testid="saved-history-mobile-overview-panel"');
   });
+
+  it("renders the desktop standings buy-in column from archived participant totals", () => {
+    const html = renderView();
+
+    expect(html).toContain("game.rankings.buyIn");
+    expect(html).toContain("$1000");
+  });
 });

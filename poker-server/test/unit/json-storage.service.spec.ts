@@ -1500,6 +1500,136 @@ describe('JsonStorageService', () => {
       );
     });
 
+    it('normalizes legacy zero-activity robots out of saved-game summary and detail reads', async () => {
+      const roomId = 'ROOMARCHIVE-LEGACY-ROBOTS';
+      await seedCompletedHands(roomId);
+
+      const endedRoom = await service.getRoom(roomId);
+      if (!endedRoom) {
+        throw new Error('Expected ended room to exist');
+      }
+
+      endedRoom.players = endedRoom.players.map((player) => {
+        if (player.id === 'alice') {
+          return { ...player, userId: 'user-alice' };
+        }
+        if (player.id === 'bob') {
+          return { ...player, userId: 'user-bob' };
+        }
+        return player;
+      });
+      endedRoom.lastActivityAt = 2800;
+      await service.persistRoom(endedRoom);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const listSavedGamesForUser = (
+        service as JsonStorageService & {
+          listSavedGamesForUser?: (userId: string) => Promise<any[]>;
+        }
+      ).listSavedGamesForUser;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof listSavedGamesForUser).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof listSavedGamesForUser !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      const archiveId = archived?.archiveId;
+      if (!archiveId) {
+        throw new Error('Expected archive id');
+      }
+
+      const legacyRobotParticipant = {
+        playerId: 'robot-idle',
+        userId: null,
+        playerName: 'Robot 1',
+        avatarEmoji: '🤖',
+        isRobot: true,
+        finalChips: 0,
+        totalBuyIn: 0,
+        profit: 0,
+        handsPlayedCount: 0,
+        handsWonCount: 0,
+        vpipHandsCount: 0,
+        vpipRate: 0,
+      };
+      const userIndexPath = path.join(
+        testDataDir,
+        'saved-games',
+        'users',
+        'user-alice.json',
+      );
+      const archivePath = path.join(
+        testDataDir,
+        'saved-games',
+        'archives',
+        `${archiveId}.json`,
+      );
+      const savedGames = JSON.parse(
+        await fs.readFile(userIndexPath, 'utf8'),
+      ) as Array<{ participants: unknown[] }>;
+      savedGames[0].participants.push(legacyRobotParticipant);
+      await fs.writeFile(userIndexPath, JSON.stringify(savedGames, null, 2));
+
+      const archiveRecord = JSON.parse(
+        await fs.readFile(archivePath, 'utf8'),
+      ) as { participants: unknown[] };
+      archiveRecord.participants.push(legacyRobotParticipant);
+      await fs.writeFile(archivePath, JSON.stringify(archiveRecord, null, 2));
+
+      const aliceGames = await listSavedGamesForUser.call(service, 'user-alice');
+      expect(aliceGames[0]?.participants).toEqual(
+        expect.not.arrayContaining([
+          expect.objectContaining({
+            playerId: 'robot-idle',
+          }),
+        ]),
+      );
+      expect(aliceGames[0]?.participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ playerId: 'alice' }),
+          expect.objectContaining({ playerId: 'bob' }),
+        ]),
+      );
+
+      const aliceDetail = await getSavedGameDetailForUser.call(
+        service,
+        archiveId,
+        'user-alice',
+      );
+      expect(aliceDetail?.participants).toEqual(
+        expect.not.arrayContaining([
+          expect.objectContaining({
+            playerId: 'robot-idle',
+          }),
+        ]),
+      );
+      expect(aliceDetail?.participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ playerId: 'alice' }),
+          expect.objectContaining({ playerId: 'bob' }),
+        ]),
+      );
+    });
+
     it('merges a localized locale entry without dropping other locales or changing canonical updatedAt', async () => {
       const roomId = 'ROOMARCHIVE2';
       await seedCompletedHands(roomId);

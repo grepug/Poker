@@ -211,6 +211,7 @@ const ParticipantStandingsTable: React.FC<{
         <tr>
           <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
           <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
           <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.handsWon")}</th>
           <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.vpipHands")}</th>
           <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
@@ -230,6 +231,7 @@ const ParticipantStandingsTable: React.FC<{
                 : ""}
             </td>
             <td className="px-3 py-2 text-right">${participant.finalChips}</td>
+            <td className="px-3 py-2 text-right">${participant.totalBuyIn}</td>
             <td className="px-3 py-2 text-right">{participant.handsWonCount}</td>
             <td className="px-3 py-2 text-right">
               {participant.vpipHandsCount} ({Math.round(participant.vpipRate * 100)}%)
