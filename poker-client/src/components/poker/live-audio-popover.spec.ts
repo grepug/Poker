@@ -25,6 +25,7 @@ describe("LiveAudioPopover", () => {
         unavailableLabel: "Unavailable",
         joinPopoverTitle: "Join Table Audio",
         controlPopoverTitle: "Audio Controls",
+        closeLabel: "Close",
         error: null,
         available: true,
         isConfigLoaded: true,
@@ -45,6 +46,7 @@ describe("LiveAudioPopover", () => {
     expect(html).toContain("data-testid=\"live-audio-popover\"");
     expect(html).toContain("Join Table Audio");
     expect(html).toContain("Join Audio");
+    expect(html).toContain("aria-label=\"Close\"");
     expect(html).not.toContain("data-testid=\"live-audio-modal\"");
   });
 });

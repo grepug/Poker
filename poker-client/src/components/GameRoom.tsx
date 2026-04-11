@@ -4681,6 +4681,7 @@ const useGameRoomElement = () => {
           unavailableLabel={t("game.audio.unavailable")}
           joinPopoverTitle={t("game.audio.joinPopoverTitle")}
           controlPopoverTitle={t("game.audio.controlPopoverTitle")}
+          closeLabel={t("common.close")}
           error={
             liveAudioError?.startsWith("game.audio.error.")
               ? t(liveAudioError as MessageKey)

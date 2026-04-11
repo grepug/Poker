@@ -20,6 +20,7 @@ type LiveAudioPopoverProps = {
   unavailableLabel: string;
   joinPopoverTitle: string;
   controlPopoverTitle: string;
+  closeLabel: string;
   error: string | null;
   available: boolean;
   isConfigLoaded: boolean;
@@ -53,6 +54,7 @@ export const LiveAudioPopover: React.FC<LiveAudioPopoverProps> = ({
   unavailableLabel,
   joinPopoverTitle,
   controlPopoverTitle,
+  closeLabel,
   error,
   available,
   isConfigLoaded,
@@ -141,6 +143,7 @@ export const LiveAudioPopover: React.FC<LiveAudioPopoverProps> = ({
         <button
           type="button"
           onClick={onClose}
+          aria-label={closeLabel}
           data-testid="close-live-audio-popover-button"
           className="rounded-full border border-emerald-500/50 bg-emerald-950/30 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-900/45"
         >

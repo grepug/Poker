@@ -18,6 +18,18 @@ type UseAnchoredPopoverParams = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+export const shouldUseBottomPlacement = (
+  preferredPlacement: Placement,
+  topFits: boolean,
+  bottomFits: boolean,
+): boolean => {
+  if (preferredPlacement === "bottom") {
+    return bottomFits || !topFits;
+  }
+
+  return !topFits && bottomFits;
+};
+
 export const useAnchoredPopover = ({
   isOpen,
   anchorRef,
@@ -102,8 +114,7 @@ export const useAnchoredPopover = ({
       const bottomCandidate = anchorRect.bottom + offset;
       const topFits = topCandidate >= minTop;
       const bottomFits = bottomCandidate + popoverRect.height <= maxTop;
-      const useBottom =
-        preferredPlacement === "bottom" ? !bottomFits && topFits : !topFits && bottomFits;
+      const useBottom = shouldUseBottomPlacement(preferredPlacement, topFits, bottomFits);
       const rawTop = useBottom ? bottomCandidate : topCandidate;
 
       const clampedLeft = clamp(rawLeft, minLeft, Math.max(minLeft, maxLeft - popoverRect.width));

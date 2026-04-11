@@ -7001,7 +7001,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="desktop-right-rail"]'),
       ).toBeVisible();
-      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="open-live-audio-button"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
       await expect(
         alicePage.locator('[data-testid="desktop-side-status"]'),
@@ -7009,6 +7009,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="chat-preview-strip"]'),
       ).toHaveCount(0);
+      await alicePage.click('[data-testid="open-live-audio-button"]');
+      await expect(alicePage.locator('[data-testid="live-audio-popover"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
 
       const layout = await alicePage.evaluate(() => {
         const gameColumn = document.querySelector<HTMLElement>(
@@ -7021,14 +7024,25 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const flyout = document.querySelector<HTMLElement>(
           '[data-testid="your-cards-flyout"]',
         );
-        const liveAudio = document.querySelector<HTMLElement>(
-          '[data-testid="live-audio-panel"]',
+        const liveAudioButton = document.querySelector<HTMLElement>(
+          '[data-testid="open-live-audio-button"]',
+        );
+        const liveAudioPopover = document.querySelector<HTMLElement>(
+          '[data-testid="live-audio-popover"]',
         );
         const chatPanel = document.querySelector<HTMLElement>(
           '[data-testid="chat-panel"]',
         );
 
-        if (!gameColumn || !rightRail || !felt || !flyout || !liveAudio || !chatPanel) {
+        if (
+          !gameColumn ||
+          !rightRail ||
+          !felt ||
+          !flyout ||
+          !liveAudioButton ||
+          !liveAudioPopover ||
+          !chatPanel
+        ) {
           return null;
         }
 
@@ -7036,19 +7050,22 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const railRect = rightRail.getBoundingClientRect();
         const feltRect = felt.getBoundingClientRect();
         const flyoutRect = flyout.getBoundingClientRect();
-        const liveAudioRect = liveAudio.getBoundingClientRect();
+        const liveAudioButtonRect = liveAudioButton.getBoundingClientRect();
+        const liveAudioPopoverRect = liveAudioPopover.getBoundingClientRect();
         const chatRect = chatPanel.getBoundingClientRect();
 
         return {
           railStartsAfterGameColumn: railRect.left >= gameRect.right - 1,
-          liveAudioSitsAboveChat: liveAudioRect.bottom <= chatRect.top + 1,
+          liveAudioPopoverOpensBelowButton: liveAudioPopoverRect.top >= liveAudioButtonRect.bottom - 1,
+          liveAudioPopoverStaysLeftOfRightRail: liveAudioPopoverRect.right <= chatRect.left + 1,
           cardsStayOutOfRightRail: flyoutRect.right <= railRect.left + 1,
         };
       });
 
       expect(layout).not.toBeNull();
       expect(layout?.railStartsAfterGameColumn).toBe(true);
-      expect(layout?.liveAudioSitsAboveChat).toBe(true);
+      expect(layout?.liveAudioPopoverOpensBelowButton).toBe(true);
+      expect(layout?.liveAudioPopoverStaysLeftOfRightRail).toBe(true);
       expect(layout?.cardsStayOutOfRightRail).toBe(true);
       await expectYourCardsFlyoutLeftOfActionArea(alicePage, 'desktop-dock-anchor');
     } finally {
