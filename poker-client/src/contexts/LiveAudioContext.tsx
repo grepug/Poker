@@ -15,9 +15,21 @@ import {
   createDefaultLiveAudioController,
   type LiveAudioState,
 } from "@/services/live-audio.service";
+import { ACTIVE_ROOM_SESSION_STORAGE_KEY } from "@/constants/storage-keys";
+import {
+  clearStoredLiveAudioRestoreIntent,
+  type LiveAudioRestoreIntent,
+  normalizeLiveAudioRoomId,
+  readStoredLiveAudioRestoreIntent,
+  shouldOfferLiveAudioReconnect,
+  writeStoredLiveAudioRestoreIntent,
+} from "@/utils/live-audio-restore-intent";
 
 type LiveAudioContextValue = LiveAudioState & {
+  hasReconnectPrompt: boolean;
   joinAudio: () => Promise<void>;
+  reconnectAudio: () => Promise<void>;
+  dismissReconnectPrompt: () => void;
   leaveAudio: () => Promise<void>;
   muteAudio: () => Promise<void>;
   unmuteAudio: () => Promise<void>;
@@ -26,6 +38,14 @@ type LiveAudioContextValue = LiveAudioState & {
 };
 
 const LiveAudioContext = createContext<LiveAudioContextValue | null>(null);
+
+const hasStoredActiveRoomSession = () => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return Boolean(window.sessionStorage.getItem(ACTIVE_ROOM_SESSION_STORAGE_KEY));
+};
 
 export const useLiveAudio = () => {
   const context = useContext(LiveAudioContext);
@@ -38,44 +58,167 @@ export const useLiveAudio = () => {
 export const LiveAudioProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const { user, isAuthenticated } = useAuth();
-  const { room } = useGame();
+  const { user, isAuthenticated, isInitializing } = useAuth();
+  const { room, isRecoveringSession } = useGame();
   const [state, setState] = useState<LiveAudioState>(INITIAL_LIVE_AUDIO_STATE);
   const controllerRef = useRef(
     createDefaultLiveAudioController({
       onStateChange: setState,
     }),
   );
+  const reconnectPromptedRoomIdRef = useRef<string | null>(null);
+  const [pendingReconnectIntent, setPendingReconnectIntent] =
+    useState<LiveAudioRestoreIntent | null>(null);
+  const roomId = room?.id ? normalizeLiveAudioRoomId(room.id) : null;
 
   useEffect(() => {
+    if (isInitializing) {
+      return;
+    }
+
     if (!isAuthenticated || !user) {
+      clearStoredLiveAudioRestoreIntent();
+      reconnectPromptedRoomIdRef.current = null;
+      setPendingReconnectIntent(null);
       void controllerRef.current.leave();
       return;
     }
 
     void controllerRef.current.refreshConfig().catch(() => undefined);
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, isInitializing, user?.id]);
 
   useEffect(() => {
-    if (!room?.id) {
-      void controllerRef.current.leave();
+    if (isInitializing) {
       return;
+    }
+
+    if (isRecoveringSession) {
+      return;
+    }
+
+    if (!roomId) {
+      if (hasStoredActiveRoomSession()) {
+        return;
+      }
+
+      clearStoredLiveAudioRestoreIntent();
+      reconnectPromptedRoomIdRef.current = null;
+      setPendingReconnectIntent(null);
+      if (state.isJoined || state.joinedRoomId) {
+        void controllerRef.current.leave();
+      }
+      return;
+    }
+
+    const storedIntent = readStoredLiveAudioRestoreIntent();
+    if (storedIntent && storedIntent.roomId !== roomId) {
+      clearStoredLiveAudioRestoreIntent();
+      setPendingReconnectIntent(null);
     }
 
     if (
       state.isJoined &&
       state.joinedRoomId &&
-      state.joinedRoomId !== room.id.toUpperCase()
+      state.joinedRoomId !== roomId
     ) {
+      clearStoredLiveAudioRestoreIntent();
+      reconnectPromptedRoomIdRef.current = null;
+      setPendingReconnectIntent(null);
       void controllerRef.current.leave();
     }
-  }, [room?.id, state.isJoined, state.joinedRoomId]);
+  }, [
+    isInitializing,
+    isRecoveringSession,
+    roomId,
+    state.isJoined,
+    state.joinedRoomId,
+  ]);
 
   useEffect(() => {
     if (room?.gameState === "ENDED" && state.isJoined) {
+      clearStoredLiveAudioRestoreIntent();
+      reconnectPromptedRoomIdRef.current = null;
+      setPendingReconnectIntent(null);
       void controllerRef.current.leave();
     }
   }, [room?.gameState, state.isJoined]);
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    if (state.isJoined && state.joinedRoomId === roomId) {
+      writeStoredLiveAudioRestoreIntent({
+        roomId,
+        muted: state.isMuted,
+      });
+      setPendingReconnectIntent(null);
+      return;
+    }
+
+    if (!state.isJoined && !isRecoveringSession) {
+      const storedIntent = readStoredLiveAudioRestoreIntent();
+      if (storedIntent?.roomId !== roomId) {
+        reconnectPromptedRoomIdRef.current = null;
+        setPendingReconnectIntent(null);
+      }
+    }
+  }, [isRecoveringSession, roomId, state.isJoined, state.isMuted, state.joinedRoomId]);
+
+  useEffect(() => {
+    const storedIntent = readStoredLiveAudioRestoreIntent();
+    if (
+      !shouldOfferLiveAudioReconnect({
+        isAuthInitializing: isInitializing,
+        isAuthenticated,
+        hasUser: Boolean(user),
+        roomId,
+        isRecoveringSession,
+        isJoined: state.isJoined,
+        joinedRoomId: state.joinedRoomId,
+        isConnecting: state.isConnecting,
+        promptedRoomId: reconnectPromptedRoomIdRef.current,
+        storedIntent,
+      })
+    ) {
+      if (
+        !storedIntent ||
+        storedIntent.roomId !== roomId ||
+        state.isJoined ||
+        state.isConnecting
+      ) {
+        setPendingReconnectIntent(null);
+      }
+      return;
+    }
+
+    if (!roomId || !storedIntent) {
+      return;
+    }
+
+    reconnectPromptedRoomIdRef.current = roomId;
+    setPendingReconnectIntent(storedIntent);
+  }, [
+    isAuthenticated,
+    isInitializing,
+    isRecoveringSession,
+    roomId,
+    state.isConnecting,
+    state.isJoined,
+    state.joinedRoomId,
+    user,
+  ]);
+
+  const joinRoomAudio = async (
+    nextRoomId: string,
+    intent: LiveAudioRestoreIntent | null,
+  ) => {
+    await controllerRef.current.join(nextRoomId);
+    if (intent?.muted) {
+      await controllerRef.current.setMuted(true);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -86,13 +229,33 @@ export const LiveAudioProvider: React.FC<{ children: ReactNode }> = ({
   const value = useMemo<LiveAudioContextValue>(
     () => ({
       ...state,
+      hasReconnectPrompt:
+        !state.isJoined &&
+        !state.isConnecting &&
+        pendingReconnectIntent?.roomId === roomId,
       joinAudio: async () => {
         if (!room?.id) {
           return;
         }
-        await controllerRef.current.join(room.id);
+        await joinRoomAudio(room.id, null);
+      },
+      reconnectAudio: async () => {
+        if (!roomId || pendingReconnectIntent?.roomId !== roomId) {
+          return;
+        }
+
+        setPendingReconnectIntent(null);
+        await joinRoomAudio(roomId, pendingReconnectIntent);
+      },
+      dismissReconnectPrompt: () => {
+        clearStoredLiveAudioRestoreIntent();
+        reconnectPromptedRoomIdRef.current = roomId;
+        setPendingReconnectIntent(null);
       },
       leaveAudio: async () => {
+        clearStoredLiveAudioRestoreIntent();
+        reconnectPromptedRoomIdRef.current = null;
+        setPendingReconnectIntent(null);
         await controllerRef.current.leave();
       },
       muteAudio: async () => {
@@ -108,7 +271,7 @@ export const LiveAudioProvider: React.FC<{ children: ReactNode }> = ({
         controllerRef.current.clearError();
       },
     }),
-    [room?.id, state],
+    [pendingReconnectIntent, room?.id, roomId, state],
   );
 
   return (

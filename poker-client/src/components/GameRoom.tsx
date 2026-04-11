@@ -1756,7 +1756,10 @@ const useGameRoomElement = () => {
     isReconnecting: isLiveAudioReconnecting,
     participants: liveAudioParticipants,
     error: liveAudioError,
+    hasReconnectPrompt: hasLiveAudioReconnectPrompt,
     joinAudio,
+    reconnectAudio,
+    dismissReconnectPrompt,
     leaveAudio,
     muteAudio,
     unmuteAudio,
@@ -3378,12 +3381,28 @@ const useGameRoomElement = () => {
   ]);
 
   const closeLiveAudioPopover = useCallback(() => {
+    if (hasLiveAudioReconnectPrompt) {
+      dismissReconnectPrompt();
+    }
     setShowLiveAudioPopover(false);
-  }, []);
+  }, [dismissReconnectPrompt, hasLiveAudioReconnectPrompt]);
+
+  useEffect(() => {
+    if (!hasLiveAudioReconnectPrompt) {
+      return;
+    }
+
+    setShowLiveAudioPopover(true);
+  }, [hasLiveAudioReconnectPrompt]);
 
   const handleToggleLiveAudioPopover = useCallback(() => {
-    setShowLiveAudioPopover((previous) => !previous);
-  }, []);
+    if (showLiveAudioPopover) {
+      closeLiveAudioPopover();
+      return;
+    }
+
+    setShowLiveAudioPopover(true);
+  }, [closeLiveAudioPopover, showLiveAudioPopover]);
 
   const handleJoinLiveAudio = useCallback(() => {
     void joinAudio()
@@ -3392,6 +3411,19 @@ const useGameRoomElement = () => {
       })
       .catch(() => undefined);
   }, [joinAudio]);
+
+  const handleReconnectLiveAudio = useCallback(() => {
+    void reconnectAudio()
+      .then(() => {
+        setShowLiveAudioPopover(false);
+      })
+      .catch(() => undefined);
+  }, [reconnectAudio]);
+
+  const handleDismissLiveAudioReconnectPrompt = useCallback(() => {
+    dismissReconnectPrompt();
+    setShowLiveAudioPopover(false);
+  }, [dismissReconnectPrompt]);
 
   const handleLeaveLiveAudio = useCallback(() => {
     void leaveAudio()
@@ -4662,6 +4694,10 @@ const useGameRoomElement = () => {
           reconnectingLabel={t("game.audio.reconnecting")}
           mutedLabel={t("game.audio.muted")}
           unavailableLabel={t("game.audio.unavailable")}
+          reconnectPromptTitle={t("game.audio.reconnectPromptTitle")}
+          reconnectPromptSubtitle={t("game.audio.reconnectPromptSubtitle")}
+          reconnectLabel={t("game.audio.reconnect")}
+          reconnectDismissLabel={t("game.audio.reconnectDismiss")}
           joinPopoverTitle={t("game.audio.joinPopoverTitle")}
           controlPopoverTitle={t("game.audio.controlPopoverTitle")}
           closeLabel={t("common.close")}
@@ -4677,7 +4713,10 @@ const useGameRoomElement = () => {
           isMuted={isLiveAudioMuted}
           isAudioPlaybackBlocked={isLiveAudioPlaybackBlocked}
           isReconnecting={isLiveAudioReconnecting}
+          showReconnectPrompt={hasLiveAudioReconnectPrompt}
           onJoin={handleJoinLiveAudio}
+          onReconnect={handleReconnectLiveAudio}
+          onDismissReconnect={handleDismissLiveAudioReconnectPrompt}
           onLeave={handleLeaveLiveAudio}
           onMute={handleMuteLiveAudio}
           onUnmute={handleUnmuteLiveAudio}
