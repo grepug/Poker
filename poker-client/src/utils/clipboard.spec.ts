@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { writeTextToClipboard } from "./clipboard";
+import { fallbackCopyText, writeTextToClipboard } from "./clipboard";
 
 describe("writeTextToClipboard", () => {
   it("prefers the Clipboard API when it succeeds", async () => {
@@ -36,5 +36,10 @@ describe("writeTextToClipboard", () => {
     });
 
     expect(copied).toBe(false);
+  });
+
+  it("returns false instead of throwing when no DOM document is available", () => {
+    expect(() => fallbackCopyText("https://poker.example.com/room/ABCD", undefined)).not.toThrow();
+    expect(fallbackCopyText("https://poker.example.com/room/ABCD", undefined)).toBe(false);
   });
 });

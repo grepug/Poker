@@ -1,4 +1,8 @@
-export const fallbackCopyText = (text: string, doc: Document = document) => {
+export const fallbackCopyText = (text: string, doc?: Document) => {
+  if (!doc?.body || typeof doc.execCommand !== "function") {
+    return false;
+  }
+
   const textArea = doc.createElement("textarea");
   textArea.value = text;
   textArea.style.position = "fixed";

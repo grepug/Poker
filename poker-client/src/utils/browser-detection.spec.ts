@@ -34,7 +34,7 @@ describe("browser-detection", () => {
 
     expect(isWeChatInAppBrowser()).toBe(true);
     expect(isIosDevice()).toBe(true);
-    expect(isSafariOnIos()).toBe(true);
+    expect(isSafariOnIos()).toBe(false);
   });
 
   it("does not mark non-WeChat iOS Safari as blocked", () => {

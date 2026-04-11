@@ -12,9 +12,10 @@ export const isIosDevice = () => {
 export const isSafariOnIos = () => {
   if (typeof navigator === "undefined") return false;
   const userAgent = navigator.userAgent ?? "";
-  const isWebKit = /WebKit/i.test(userAgent);
-  const hasOtherBrowserToken = /CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser/i.test(userAgent);
-  return isWebKit && !hasOtherBrowserToken;
+  const hasSafariTokens = /Version\/.*Safari\//i.test(userAgent);
+  const hasOtherBrowserToken =
+    /CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser|MicroMessenger/i.test(userAgent);
+  return isIosDevice() && hasSafariTokens && !hasOtherBrowserToken;
 };
 
 export const isWeChatInAppBrowser = () => {
