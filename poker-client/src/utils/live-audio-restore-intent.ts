@@ -36,15 +36,20 @@ export const readStoredLiveAudioRestoreIntent =
 
     try {
       const parsed = JSON.parse(raw) as Partial<LiveAudioRestoreIntent>;
-      if (typeof parsed.roomId !== "string" || !parsed.roomId) {
+      if (typeof parsed.roomId !== "string") {
         return null;
       }
       if (typeof parsed.muted !== "boolean") {
         return null;
       }
 
+      const normalizedRoomId = normalizeLiveAudioRoomId(parsed.roomId);
+      if (!normalizedRoomId) {
+        return null;
+      }
+
       return {
-        roomId: normalizeLiveAudioRoomId(parsed.roomId),
+        roomId: normalizedRoomId,
         muted: parsed.muted,
       };
     } catch {
@@ -59,10 +64,15 @@ export const writeStoredLiveAudioRestoreIntent = (
     return;
   }
 
+  const normalizedRoomId = normalizeLiveAudioRoomId(intent.roomId);
+  if (!normalizedRoomId) {
+    return;
+  }
+
   window.sessionStorage.setItem(
     LIVE_AUDIO_RESTORE_INTENT_STORAGE_KEY,
     JSON.stringify({
-      roomId: normalizeLiveAudioRoomId(intent.roomId),
+      roomId: normalizedRoomId,
       muted: intent.muted,
     }),
   );

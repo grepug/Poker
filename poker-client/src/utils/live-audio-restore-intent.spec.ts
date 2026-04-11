@@ -52,6 +52,25 @@ describe("live audio restore intent", () => {
     expect(readStoredLiveAudioRestoreIntent()).toBeNull();
   });
 
+  it("rejects whitespace-only room ids when reading or writing intent", () => {
+    writeStoredLiveAudioRestoreIntent({
+      roomId: "   ",
+      muted: true,
+    });
+
+    expect(readStoredLiveAudioRestoreIntent()).toBeNull();
+
+    window.sessionStorage.setItem(
+      "poker.liveAudioRestoreIntent",
+      JSON.stringify({
+        roomId: "   ",
+        muted: true,
+      }),
+    );
+
+    expect(readStoredLiveAudioRestoreIntent()).toBeNull();
+  });
+
   it("offers reconnect only for the recovered matching room", () => {
     expect(
       shouldOfferLiveAudioReconnect({

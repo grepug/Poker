@@ -15,6 +15,7 @@ import {
   createDefaultLiveAudioController,
   type LiveAudioState,
 } from "@/services/live-audio.service";
+import { ACTIVE_ROOM_SESSION_STORAGE_KEY } from "@/constants/storage-keys";
 import {
   clearStoredLiveAudioRestoreIntent,
   type LiveAudioRestoreIntent,
@@ -37,7 +38,6 @@ type LiveAudioContextValue = LiveAudioState & {
 };
 
 const LiveAudioContext = createContext<LiveAudioContextValue | null>(null);
-const ACTIVE_ROOM_SESSION_STORAGE_KEY = "poker.activeSession";
 
 const hasStoredActiveRoomSession = () => {
   if (typeof window === "undefined") {

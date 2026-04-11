@@ -3415,8 +3415,13 @@ const useGameRoomElement = () => {
   }, [hasLiveAudioReconnectPrompt]);
 
   const handleToggleLiveAudioPopover = useCallback(() => {
-    setShowLiveAudioPopover((previous) => !previous);
-  }, []);
+    if (showLiveAudioPopover) {
+      closeLiveAudioPopover();
+      return;
+    }
+
+    setShowLiveAudioPopover(true);
+  }, [closeLiveAudioPopover, showLiveAudioPopover]);
 
   const handleJoinLiveAudio = useCallback(() => {
     void joinAudio()

@@ -139,7 +139,7 @@ export const LiveAudioPopover: React.FC<LiveAudioPopoverProps> = ({
     : showReconnectPrompt
       ? reconnectPromptTitle
       : joinPopoverTitle;
-  const popoverSubtitle = showReconnectPrompt ? reconnectPromptSubtitle : subtitle;
+  const popoverSubtitle = subtitle;
 
   return (
     <div
