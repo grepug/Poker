@@ -22,6 +22,7 @@ import {
   playTurnNotification,
 } from "../services/turn-notification.service";
 import { playVoicePlayback } from "../services/voice-playback.service";
+import { writeTextToClipboard } from "../utils/clipboard";
 import { formatRelativeTime } from "../utils/relative-time";
 import { resolveVoiceAudioUrl } from "../utils/voice-message";
 import { Card } from "@/components/Card";
@@ -245,26 +246,6 @@ const EMPTY_DRAG_STATE: DragState = {
   clientX: 0,
   clientY: 0,
   overDropZone: false,
-};
-
-const fallbackCopyText = (text: string) => {
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.style.position = "fixed";
-  textArea.style.left = "-9999px";
-  textArea.style.top = "0";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-
-  let copied = false;
-  try {
-    copied = document.execCommand("copy");
-  } finally {
-    document.body.removeChild(textArea);
-  }
-
-  return copied;
 };
 
 const HAND_RANK_LABELS: Record<Locale, Record<HandEvaluation["rank"], string>> = {
@@ -3735,9 +3716,7 @@ const useGameRoomElement = () => {
     if (!inviteUrl) return;
 
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(inviteUrl);
-      } else if (!fallbackCopyText(inviteUrl)) {
+      if (!(await writeTextToClipboard(inviteUrl))) {
         throw new Error("Clipboard API unavailable");
       }
 

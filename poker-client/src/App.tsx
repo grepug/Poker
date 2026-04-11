@@ -19,6 +19,11 @@ import { SavedGamesPage } from "./pages/SavedGames";
 import { SavedGameDetailPage } from "./pages/SavedGameDetail";
 import { GameRoom } from "./components/GameRoom";
 import { IosInstallPrompt } from "./components/IosInstallPrompt";
+import { WeChatBrowserGate } from "./components/WeChatBrowserGate";
+import {
+  getCurrentBrowserUrl,
+  isWeChatInAppBrowser,
+} from "./utils/browser-detection";
 
 const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
 
@@ -178,13 +183,29 @@ const AppRoutes: React.FC = () => {
   );
 };
 
+export const AppShell: React.FC<{
+  blockWeChatBrowser?: boolean;
+  currentUrl?: string;
+}> = ({
+  blockWeChatBrowser = isWeChatInAppBrowser(),
+  currentUrl = getCurrentBrowserUrl(),
+}) => {
+  if (blockWeChatBrowser) {
+    return <WeChatBrowserGate currentUrl={currentUrl} />;
+  }
+
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  );
+};
+
 function App() {
   return (
     <LocalizationProvider>
       <Router>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
+        <AppShell />
       </Router>
     </LocalizationProvider>
   );

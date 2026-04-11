@@ -1,25 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLocalization } from "../contexts/LocalizationContext";
+import { isIosDevice, isSafariOnIos } from "@/utils/browser-detection";
 
 const IOS_INSTALL_PROMPT_DISMISSED_KEY = "poker.iosInstallPromptDismissed";
-
-const isIosDevice = () => {
-  if (typeof navigator === "undefined") return false;
-  const userAgent = navigator.userAgent ?? "";
-  const isIphoneFamily = /iPhone|iPad|iPod/i.test(userAgent);
-  const isIpadDesktopMode =
-    navigator.platform === "MacIntel" && typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 1;
-  return isIphoneFamily || isIpadDesktopMode;
-};
-
-const isSafariOnIos = () => {
-  if (typeof navigator === "undefined") return false;
-  const userAgent = navigator.userAgent ?? "";
-  const isWebKit = /WebKit/i.test(userAgent);
-  const hasOtherBrowserToken = /CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser/i.test(userAgent);
-  return isWebKit && !hasOtherBrowserToken;
-};
 
 const isStandaloneMode = () => {
   if (typeof window === "undefined") return false;
