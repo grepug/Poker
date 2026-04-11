@@ -615,9 +615,15 @@ export class JsonStorageService
 
   async listSavedGamesForUser(userId: string): Promise<SavedGameSummary[]> {
     await this.ensureDirectories();
-    return (await readJsonFile<SavedGameSummary[]>(
-      this.getSavedGameUserIndexPath(userId),
-    )) ?? [];
+    const savedGames =
+      (await readJsonFile<SavedGameSummary[]>(
+        this.getSavedGameUserIndexPath(userId),
+      )) ?? [];
+
+    return savedGames.map((summary) => ({
+      ...summary,
+      participants: this.normalizeSavedGameParticipants(summary.participants),
+    }));
   }
 
   async getSavedGameDetailForUser(
@@ -635,6 +641,10 @@ export class JsonStorageService
       return null;
     }
 
+    const participants = this.normalizeSavedGameParticipants(
+      archive.participants,
+    );
+
     return {
       archiveId: archive.archiveId,
       roomId: archive.roomId,
@@ -645,7 +655,7 @@ export class JsonStorageService
       concludedAt: archive.concludedAt,
       handCount: archive.handCount,
       blinds: archive.blinds,
-      participants: archive.participants,
+      participants,
       hands: playerView.hands.map((hand) => ({
         ...hand,
         analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
@@ -1163,6 +1173,14 @@ export class JsonStorageService
           ? Number((vpipHandsCount / handsPlayedCount).toFixed(4))
           : 0,
     };
+  }
+
+  private normalizeSavedGameParticipants(
+    participants: SavedGameParticipant[],
+  ): SavedGameParticipant[] {
+    return participants.filter((participant) =>
+      shouldIncludeArchivedRankingParticipant(participant),
+    );
   }
 
   private async readSavedGameArchive(
