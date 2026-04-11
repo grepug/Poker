@@ -11,7 +11,7 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "poker-types": ["../poker-types/dist"]
+      "poker-types": ["../poker-types/src"]
     },
     "incremental": true,
     "skipLibCheck": true,
