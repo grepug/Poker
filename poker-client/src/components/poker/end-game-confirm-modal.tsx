@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -17,11 +18,12 @@ export const EndGameConfirmModal: React.FC<EndGameConfirmModalProps> = ({
   onConfirm,
   t,
 }) => (
-  <div
-    className="fixed inset-0 z-[79] flex items-center justify-center bg-emerald-950/88 p-4 backdrop-blur-sm"
-    data-testid="end-game-confirm-modal"
+  <PokerModalShell
+    layout="centered"
+    testId="end-game-confirm-modal"
+    zIndexClassName="z-[79]"
   >
-    <div className="surface-panel w-full max-w-md p-5">
+    <PokerModalPanel className="max-w-md p-5" ariaLabel={t("game.endGameConfirm.title")}>
       <h3 className="text-lg font-black text-white">{t("game.endGameConfirm.title")}</h3>
       <p className="mt-2 text-sm text-emerald-100/85">{t("game.endGameConfirm.body")}</p>
       <p className="mt-3 rounded-lg border border-amber-300/60 bg-amber-300/15 px-3 py-2 text-xs font-semibold text-amber-100">
@@ -43,6 +45,6 @@ export const EndGameConfirmModal: React.FC<EndGameConfirmModalProps> = ({
           {t("game.endGameConfirm.confirm")}
         </button>
       </div>
-    </div>
-  </div>
+    </PokerModalPanel>
+  </PokerModalShell>
 );
