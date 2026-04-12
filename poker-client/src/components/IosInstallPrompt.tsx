@@ -1,29 +1,26 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLocalization } from "../contexts/LocalizationContext";
-import { getPwaDisplayModeState, isIosNavigator } from "../utils/pwa-display-mode";
+import { isIosDevice, isSafariOnIos } from "@/utils/browser-detection";
+import { getPwaDisplayModeState } from "../utils/pwa-display-mode";
 
 const IOS_INSTALL_PROMPT_DISMISSED_KEY = "poker.iosInstallPromptDismissed";
-
-const isSafariOnIos = () => {
-  if (typeof navigator === "undefined") return false;
-  const userAgent = navigator.userAgent ?? "";
-  const isWebKit = /WebKit/i.test(userAgent);
-  const hasOtherBrowserToken = /CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser/i.test(userAgent);
-  return isWebKit && !hasOtherBrowserToken;
-};
 
 const resolveInitialPromptVisibility = (canShowPrompt: boolean) => {
   if (!canShowPrompt) {
     return false;
   }
 
-  if (typeof window !== "undefined" && getPwaDisplayModeState(window).displayMode === "standalone") {
+  if (
+    typeof window !== "undefined" &&
+    getPwaDisplayModeState(window).displayMode === "standalone"
+  ) {
     return false;
   }
 
   try {
-    const dismissed = window.localStorage.getItem(IOS_INSTALL_PROMPT_DISMISSED_KEY) === "1";
+    const dismissed =
+      window.localStorage.getItem(IOS_INSTALL_PROMPT_DISMISSED_KEY) === "1";
     return !dismissed;
   } catch {
     return true;
@@ -33,11 +30,10 @@ const resolveInitialPromptVisibility = (canShowPrompt: boolean) => {
 export const IosInstallPrompt: React.FC = () => {
   const location = useLocation();
   const { t } = useLocalization();
-  const canShowPrompt = useMemo(
-    () => isIosNavigator(typeof navigator === "undefined" ? undefined : navigator) && isSafariOnIos(),
-    [],
+  const canShowPrompt = useMemo(() => isIosDevice() && isSafariOnIos(), []);
+  const [visible, setVisible] = useState(() =>
+    resolveInitialPromptVisibility(canShowPrompt),
   );
-  const [visible, setVisible] = useState(() => resolveInitialPromptVisibility(canShowPrompt));
 
   const handleDismiss = () => {
     try {

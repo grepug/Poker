@@ -36,6 +36,7 @@ import {
   writeLastPlayerEmoji,
   writeLastPlayerName,
 } from "../utils/player-name-storage";
+import { ACTIVE_ROOM_SESSION_STORAGE_KEY } from "@/constants/storage-keys";
 
 export interface PlayerActionFlashEvent {
   id: string;
@@ -229,7 +230,6 @@ type StoredSession = {
   playerName: string;
 };
 
-const SESSION_STORAGE_KEY = "poker.activeSession";
 const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
 const FINAL_RESULT_STORAGE_PREFIX = "poker.finalResult.";
 const createActionId = () =>
@@ -240,7 +240,7 @@ const createActionId = () =>
 function readStoredSession(): StoredSession | null {
   if (typeof window === "undefined") return null;
 
-  const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+  const raw = window.sessionStorage.getItem(ACTIVE_ROOM_SESSION_STORAGE_KEY);
   if (!raw) return null;
 
   try {
@@ -263,13 +263,16 @@ function readStoredSession(): StoredSession | null {
 
 function writeStoredSession(session: StoredSession) {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  window.sessionStorage.setItem(
+    ACTIVE_ROOM_SESSION_STORAGE_KEY,
+    JSON.stringify(session),
+  );
 }
 
 function clearStoredSession() {
   if (typeof window === "undefined") return;
-  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
-  window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  window.sessionStorage.removeItem(ACTIVE_ROOM_SESSION_STORAGE_KEY);
+  window.localStorage.removeItem(ACTIVE_ROOM_SESSION_STORAGE_KEY);
 }
 
 function readStoredFinalResult(roomId: string): GameEndedData | null {

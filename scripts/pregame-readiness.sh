@@ -109,7 +109,7 @@ restart_or_start_pm2 \
   "$ROOT_DIR/poker-client"
 restart_or_start_pm2 \
   "poker-server" \
-  "node dist/src/main.js" \
+  "node dist/main.js" \
   "$ROOT_DIR/poker-server"
 
 sleep 2

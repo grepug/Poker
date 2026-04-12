@@ -1,6 +1,9 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
-import { AudioLines, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  LiveAudioStatusBadge,
+  type LiveAudioStatusBadgeKind,
+} from "./live-audio-status-badge";
 
 type SeatState =
   | "turn"
@@ -21,7 +24,7 @@ export type SeatBadge = {
 };
 
 export type SeatLiveAudioBadge = {
-  kind: "speaking" | "on-mic";
+  kind: LiveAudioStatusBadgeKind;
   ariaLabel: string;
 };
 
@@ -381,21 +384,12 @@ export const SeatPod: React.FC<SeatPodProps> = ({
       )}
 
       {liveAudioBadge && (
-        <div
-          className={cn(
-            "seat-pod__live-audio-badge",
-            `seat-pod__live-audio-badge--${liveAudioBadge.kind}`,
-          )}
-          data-testid={`${testId}-live-audio-badge`}
-          aria-label={liveAudioBadge.ariaLabel}
-          title={liveAudioBadge.ariaLabel}
-        >
-          {liveAudioBadge.kind === "speaking" ? (
-            <AudioLines size={10} strokeWidth={2.4} aria-hidden="true" />
-          ) : (
-            <Mic size={10} strokeWidth={2.4} aria-hidden="true" />
-          )}
-        </div>
+        <LiveAudioStatusBadge
+          kind={liveAudioBadge.kind}
+          className="seat-pod__live-audio-badge"
+          testId={`${testId}-live-audio-badge`}
+          ariaLabel={liveAudioBadge.ariaLabel}
+        />
       )}
 
       <div className="seat-pod__row seat-pod__row--identity">

@@ -1,4 +1,13 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "rootDir": "./src",
+    "baseUrl": "./",
+    "paths": {
+      "poker-types": ["../poker-types/dist"]
+    }
+  },
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
 }

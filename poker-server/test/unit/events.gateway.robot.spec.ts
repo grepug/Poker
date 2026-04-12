@@ -56,6 +56,7 @@ describe('EventsGateway robot player controls', () => {
     gameService = {
       addRobotToRoom: jest.fn(),
       removeRobotFromRoom: jest.fn(),
+      transferHostOnDisconnectTimeout: jest.fn(),
     };
 
     handService = {

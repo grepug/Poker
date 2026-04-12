@@ -6011,6 +6011,69 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4ac: Signed-out invite links preserve room code through auth without manual re-entry', async ({
+    browser,
+  }) => {
+    const aliceContext = await browser.newContext();
+    const bobContext = await browser.newContext();
+    const alicePage = await aliceContext.newPage();
+    const bobPage = await bobContext.newPage();
+
+    try {
+      await authenticateTestUser(alicePage, 'test1', {
+        displayName: 'Alice',
+        avatarEmoji: '🦊',
+      });
+      const roomCode = await createRoomViaSocket(alicePage, 'Alice');
+
+      const roomRoutePattern = `${FRONTEND_URL}/room/*`;
+      await bobPage.route(roomRoutePattern, async (route) => {
+        const response = await bobPage.request.get(FRONTEND_URL);
+        const body = await response.text();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body,
+        });
+      });
+      await bobPage.goto(`${FRONTEND_URL}/room/${roomCode}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await bobPage.unroute(roomRoutePattern);
+      await bobPage.waitForSelector('[data-testid="auth-page"]');
+      await expect(bobPage).toHaveURL(
+        new RegExp(`/auth\\?roomId=${roomCode}$`),
+      );
+
+      await authenticateTestUser(bobPage, 'test2', {
+        displayName: 'Bob',
+        avatarEmoji: '🐻',
+      });
+
+      await bobPage.evaluate((nextRoomCode) => {
+        window.history.pushState({}, '', `/auth?roomId=${nextRoomCode}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, roomCode);
+
+      await bobPage.waitForSelector('[data-testid="home-panel"]');
+      await expect(bobPage).toHaveURL(
+        new RegExp(`\\/\\?roomId=${roomCode}$`),
+      );
+      await expect(bobPage.locator('[data-testid="room-id-input"]')).toHaveValue(
+        roomCode,
+      );
+      await expect(bobPage.locator('[data-testid="room-id-input"]')).toBeDisabled();
+
+      await bobPage.click('[data-testid="join-room-button"]');
+      await bobPage.waitForSelector('[data-testid="room-title"]');
+      await expect(bobPage.locator('[data-testid="room-title"]')).toContainText(
+        roomCode,
+      );
+    } finally {
+      await Promise.allSettled([aliceContext.close(), bobContext.close()]);
+    }
+  });
+
   test('8.4b: Home Reuses Saved Profile After Leaving Room', async ({
     browser,
   }) => {
@@ -7001,7 +7064,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="desktop-right-rail"]'),
       ).toBeVisible();
-      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="open-live-audio-button"]')).toBeVisible();
       await expect(alicePage.locator('[data-testid="chat-panel"]')).toBeVisible();
       await expect(
         alicePage.locator('[data-testid="desktop-side-status"]'),
@@ -7009,6 +7072,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="chat-preview-strip"]'),
       ).toHaveCount(0);
+      await alicePage.click('[data-testid="open-live-audio-button"]');
+      await expect(alicePage.locator('[data-testid="live-audio-popover"]')).toBeVisible();
+      await expect(alicePage.locator('[data-testid="live-audio-panel"]')).toBeVisible();
 
       const layout = await alicePage.evaluate(() => {
         const gameColumn = document.querySelector<HTMLElement>(
@@ -7021,14 +7087,25 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const flyout = document.querySelector<HTMLElement>(
           '[data-testid="your-cards-flyout"]',
         );
-        const liveAudio = document.querySelector<HTMLElement>(
-          '[data-testid="live-audio-panel"]',
+        const liveAudioButton = document.querySelector<HTMLElement>(
+          '[data-testid="open-live-audio-button"]',
+        );
+        const liveAudioPopover = document.querySelector<HTMLElement>(
+          '[data-testid="live-audio-popover"]',
         );
         const chatPanel = document.querySelector<HTMLElement>(
           '[data-testid="chat-panel"]',
         );
 
-        if (!gameColumn || !rightRail || !felt || !flyout || !liveAudio || !chatPanel) {
+        if (
+          !gameColumn ||
+          !rightRail ||
+          !felt ||
+          !flyout ||
+          !liveAudioButton ||
+          !liveAudioPopover ||
+          !chatPanel
+        ) {
           return null;
         }
 
@@ -7036,19 +7113,22 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         const railRect = rightRail.getBoundingClientRect();
         const feltRect = felt.getBoundingClientRect();
         const flyoutRect = flyout.getBoundingClientRect();
-        const liveAudioRect = liveAudio.getBoundingClientRect();
+        const liveAudioButtonRect = liveAudioButton.getBoundingClientRect();
+        const liveAudioPopoverRect = liveAudioPopover.getBoundingClientRect();
         const chatRect = chatPanel.getBoundingClientRect();
 
         return {
           railStartsAfterGameColumn: railRect.left >= gameRect.right - 1,
-          liveAudioSitsAboveChat: liveAudioRect.bottom <= chatRect.top + 1,
+          liveAudioPopoverOpensBelowButton: liveAudioPopoverRect.top >= liveAudioButtonRect.bottom - 1,
+          liveAudioPopoverStaysLeftOfRightRail: liveAudioPopoverRect.right <= chatRect.left + 1,
           cardsStayOutOfRightRail: flyoutRect.right <= railRect.left + 1,
         };
       });
 
       expect(layout).not.toBeNull();
       expect(layout?.railStartsAfterGameColumn).toBe(true);
-      expect(layout?.liveAudioSitsAboveChat).toBe(true);
+      expect(layout?.liveAudioPopoverOpensBelowButton).toBe(true);
+      expect(layout?.liveAudioPopoverStaysLeftOfRightRail).toBe(true);
       expect(layout?.cardsStayOutOfRightRail).toBe(true);
       await expectYourCardsFlyoutLeftOfActionArea(alicePage, 'desktop-dock-anchor');
     } finally {
@@ -8306,6 +8386,81 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.12h: Host Ownership Transfers Only After Hand Settlement Following Disconnect Timeout', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      roomConfig: { reconnectGracePeriod: 1200 },
+    });
+
+    try {
+      const { alicePage, bobPage, aliceContext } = session;
+      const aliceIdentity = await getPagePlayerIdentity(alicePage);
+      const bobIdentity = await getPagePlayerIdentity(bobPage);
+      if (!aliceIdentity || !bobIdentity) {
+        throw new Error('Missing player identity for host transfer assertion');
+      }
+
+      await startGameFromLobby(alicePage, bobPage);
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+      await waitForPlayerTurn(alicePage, 'Alice');
+
+      const disconnectedPromise = captureNextSocketEvent(
+        bobPage,
+        'PLAYER_DISCONNECTED',
+        5000,
+      );
+      const autoFoldPromise = captureNextSocketEvent(
+        bobPage,
+        'PLAYER_AUTO_FOLDED',
+        8000,
+      );
+      const hostChangedPromise = captureNextSocketEvent(
+        bobPage,
+        'HOST_CHANGED',
+        12000,
+      );
+      const handCompletePromise = captureNextHandComplete(bobPage, 12000, [
+        bobPage,
+      ]);
+
+      await aliceContext.close();
+
+      const disconnectedEvent = await disconnectedPromise;
+      expect(disconnectedEvent.playerId).toBe(aliceIdentity.id);
+
+      await bobPage.waitForTimeout(600);
+      const hostBeforeSettlement = await bobPage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        return room?.hostId ?? null;
+      });
+      expect(hostBeforeSettlement).toBe(aliceIdentity.id);
+
+      const autoFoldEvent = await autoFoldPromise;
+      expect(autoFoldEvent.playerId).toBe(aliceIdentity.id);
+
+      await handCompletePromise;
+
+      const hostChangedEvent = await hostChangedPromise;
+      expect(hostChangedEvent.newHostId).toBe(bobIdentity.id);
+      expect(hostChangedEvent.newHostName).toBe('Bob');
+
+      await bobPage.waitForFunction(
+        (playerId) => {
+          const room = (window as any).pokerDebug?.getRoom?.();
+          return room?.hostId === playerId;
+        },
+        bobIdentity.id,
+        { timeout: 5000 },
+      );
+      const endGameResponse = await emitSocketEventAck(bobPage, 'END_GAME');
+      expect(endGameResponse.success).toBe(true);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.13: Street Reveal Hides Turn Dock And One Click Advances', async ({
     browser,
   }) => {
@@ -9164,7 +9319,10 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         '[data-testid^="your-card-"]',
       );
       await expect(resultCardLocator).toHaveCount(2);
-      await expect(flyoutCardLocator).toHaveCount(2);
+      await expect(flyoutCardLocator).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
 
       const resultCards = await resultCardLocator.evaluateAll((nodes) =>
         nodes.map((node) => ({
@@ -9172,13 +9330,11 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           suit: node.getAttribute('data-suit'),
         })),
       );
-      const flyoutCards = await flyoutCardLocator.evaluateAll((nodes) =>
-        nodes.map((node) => ({
-          rank: node.getAttribute('data-rank'),
-          suit: node.getAttribute('data-suit'),
-        })),
-      );
-      expect(flyoutCards).toEqual(resultCards);
+      expect(
+        resultCards
+          .map((card) => `${card.rank}-${card.suit}`)
+          .sort(),
+      ).toEqual(['A-hearts', 'K-hearts']);
 
       await alicePage
         .locator('[data-testid="close-hand-results-button"]')
@@ -9272,6 +9428,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(gameExport.handCount).toBe(1);
       expect(gameExport.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
 
+      await bobPage.setViewportSize({ width: 390, height: 844 });
       await bobPage.click('[data-testid="open-saved-history-button"]');
       await expect(
         bobPage.locator('[data-testid="saved-game-detail-page"]'),
@@ -9280,8 +9437,49 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.getByRole('heading', { name: `Room ${roomCode}` }),
       ).toBeVisible();
-      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
       await expect(bobPage.getByRole('button', { name: 'Hand #1' })).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-hand-strip"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-selected-hand"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-section-tabs"]'),
+      ).toBeVisible();
+      const mobileHistoryLayout = await bobPage.evaluate(() => {
+        const handStrip = document.querySelector(
+          '[data-testid="saved-history-mobile-hand-strip"]',
+        );
+        const selectedHand = document.querySelector(
+          '[data-testid="saved-history-mobile-selected-hand"]',
+        );
+        if (!handStrip || !selectedHand) {
+          return null;
+        }
+
+        const handStripRect = handStrip.getBoundingClientRect();
+        const selectedHandRect = selectedHand.getBoundingClientRect();
+        return {
+          handStripTop: handStripRect.top,
+          selectedHandTop: selectedHandRect.top,
+        };
+      });
+      expect(mobileHistoryLayout).not.toBeNull();
+      expect(
+        (mobileHistoryLayout?.handStripTop ?? Number.POSITIVE_INFINITY) <
+          (mobileHistoryLayout?.selectedHandTop ?? Number.NEGATIVE_INFINITY),
+      ).toBe(true);
+      await bobPage.click('[data-testid="saved-history-mobile-tab-session"]');
+      await expect(
+        bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
+      ).toBeVisible();
+      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
+      await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
+      await bobPage.setViewportSize({ width: 1440, height: 900 });
+      await expect(
+        bobPage.getByRole('columnheader', { name: 'Buy-in' }),
+      ).toBeVisible();
       const savedHandDetail = bobPage
         .locator('section')
         .filter({ has: bobPage.getByRole('heading', { name: 'Hand #1' }) });

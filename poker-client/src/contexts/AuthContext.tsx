@@ -14,6 +14,7 @@ import {
 } from "@simplewebauthn/browser";
 import type { AuthModes, AuthUser } from "poker-types";
 import { authService } from "@/services/auth.service";
+import { clearPendingInviteRoom } from "@/utils/pending-invite-room";
 
 type AuthContextType = {
   user: AuthUser | null;
@@ -173,6 +174,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     } catch (error) {
       console.warn("Logout request failed", error);
     } finally {
+      if (typeof window !== "undefined") {
+        clearPendingInviteRoom(window.sessionStorage);
+      }
       clearSession();
     }
   }, [clearSession]);

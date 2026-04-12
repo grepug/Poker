@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TableTopBar } from "./table-top-bar";
 
 describe("TableTopBar", () => {
-  it("renders the live audio action and joined indicator", () => {
+  it("renders the slashed mic indicator when live audio is muted", () => {
     const html = renderToStaticMarkup(
       React.createElement(TableTopBar, {
         roomTitle: "Room: CR54ZE",
@@ -20,6 +20,7 @@ describe("TableTopBar", () => {
         chatLabel: "Chat",
         liveAudioLabel: "Live Audio",
         liveAudioJoined: true,
+        liveAudioMuted: true,
         finalResultsLabel: "Final Results",
         startLabel: "Start",
         hiddenHudCopy: {
@@ -49,6 +50,9 @@ describe("TableTopBar", () => {
     expect(html).toContain("data-testid=\"open-live-audio-button\"");
     expect(html).toContain("Live Audio");
     expect(html).toContain("data-testid=\"live-audio-joined-indicator\"");
+    expect(html).toContain("lucide-mic-off");
+    expect(html).toContain("table-top-bar__live-audio-badge");
+    expect(html).toContain("live-audio-status-badge--muted");
     expect(html).toContain("Rules");
   });
 });

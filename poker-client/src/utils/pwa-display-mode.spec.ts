@@ -69,6 +69,25 @@ describe("getPwaDisplayModeState", () => {
     });
   });
 
+  it("treats iPad desktop mode as iOS standalone when touch-capable MacIntel is installed", () => {
+    expect(
+      getPwaDisplayModeState(
+        createWindowLike({
+          standaloneDisplayMode: true,
+          navigator: {
+            userAgent:
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
+            platform: "MacIntel",
+            maxTouchPoints: 5,
+          },
+        }),
+      ),
+    ).toEqual({
+      displayMode: "standalone",
+      isIosStandalone: true,
+    });
+  });
+
   it("handles missing matchMedia and still falls back to navigator.standalone", () => {
     const legacyIosWindow = createWindowLike({
       includeMatchMedia: false,

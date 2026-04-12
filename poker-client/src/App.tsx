@@ -3,6 +3,7 @@ import {
   BrowserRouter as Router,
   Navigate,
   useLocation,
+  useParams,
   Routes,
   Route,
   useNavigate,
@@ -19,6 +20,18 @@ import { SavedGamesPage } from "./pages/SavedGames";
 import { SavedGameDetailPage } from "./pages/SavedGameDetail";
 import { GameRoom } from "./components/GameRoom";
 import { IosInstallPrompt } from "./components/IosInstallPrompt";
+import { WeChatBrowserGate } from "./components/WeChatBrowserGate";
+import {
+  getCurrentBrowserUrl,
+  isWeChatInAppBrowser,
+} from "./utils/browser-detection";
+import {
+  buildPendingInviteAuthPath,
+  consumePendingInviteRoom,
+  normalizePendingInviteRoomId,
+  syncPendingInviteRoomFromSearch,
+  writePendingInviteRoom,
+} from "@/utils/pending-invite-room";
 
 const JUST_LEFT_ROOM_STORAGE_KEY = "poker.justLeftRoom";
 
@@ -32,15 +45,35 @@ const UrlStateSync: React.FC = () => {
     if (isAuthenticated) {
       return;
     }
-    if (location.pathname !== "/auth") {
-      navigate("/auth", { replace: true });
+
+    const sessionStorage =
+      typeof window !== "undefined" ? window.sessionStorage : null;
+
+    if (location.pathname === "/auth") {
+      syncPendingInviteRoomFromSearch(location.search, sessionStorage);
+      return;
     }
-  }, [isAuthenticated, location.pathname, navigate]);
+
+    const roomPathMatch = location.pathname.match(/^\/room\/([^/]+)$/i);
+    const roomIdFromPath = normalizePendingInviteRoomId(roomPathMatch?.[1]);
+    if (roomIdFromPath) {
+      writePendingInviteRoom(roomIdFromPath, sessionStorage);
+      const targetPath = buildPendingInviteAuthPath(roomIdFromPath);
+      const currentPathAndSearch = `${location.pathname}${location.search}`;
+      if (currentPathAndSearch !== targetPath) {
+        navigate(targetPath, { replace: true });
+      }
+      return;
+    }
+
+    navigate("/auth", { replace: true });
+  }, [isAuthenticated, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
+
     const activeRoomId = room?.id?.toUpperCase();
     const hasActiveSession = Boolean(activeRoomId && player?.id);
     const roomPathMatch = location.pathname.match(/^\/room\/([^/]+)$/i);
@@ -94,12 +127,33 @@ const UrlStateSync: React.FC = () => {
   return null;
 };
 
+const AuthenticatedAuthRedirect: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const sessionStorage =
+      typeof window !== "undefined" ? window.sessionStorage : null;
+    const pendingRoomId = consumePendingInviteRoom(location.search, sessionStorage);
+    const targetPath = pendingRoomId
+      ? `/?roomId=${encodeURIComponent(pendingRoomId)}`
+      : "/";
+    navigate(targetPath, { replace: true });
+  }, [location.search, navigate]);
+
+  return null;
+};
+
 const RoomRoute: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const { room, player } = useGame();
+  const { roomId } = useParams();
 
   if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
+    const targetPath = roomId
+      ? buildPendingInviteAuthPath(roomId)
+      : "/auth";
+    return <Navigate to={targetPath} replace />;
   }
 
   if (!room || !player) {
@@ -130,7 +184,7 @@ const AppRoutes: React.FC = () => {
             <Route
               path="/auth"
               element={
-                isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
+                isAuthenticated ? <AuthenticatedAuthRedirect /> : <AuthPage />
               }
             />
             <Route
@@ -178,13 +232,29 @@ const AppRoutes: React.FC = () => {
   );
 };
 
+export const AppShell: React.FC<{
+  blockWeChatBrowser?: boolean;
+  currentUrl?: string;
+}> = ({
+  blockWeChatBrowser = isWeChatInAppBrowser(),
+  currentUrl = getCurrentBrowserUrl(),
+}) => {
+  if (blockWeChatBrowser) {
+    return <WeChatBrowserGate currentUrl={currentUrl} />;
+  }
+
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  );
+};
+
 function App() {
   return (
     <LocalizationProvider>
       <Router>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
+        <AppShell />
       </Router>
     </LocalizationProvider>
   );

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LiveAudioPanel } from "./live-audio-panel";
 
 describe("LiveAudioPanel", () => {
-  it("renders the local participant suffix from props instead of hard-coding English copy", () => {
+  it("renders compact controls without the old participant roster", () => {
     const html = renderToStaticMarkup(
       React.createElement(LiveAudioPanel, {
         title: "Realtime Audio",
@@ -19,8 +19,6 @@ describe("LiveAudioPanel", () => {
         reconnectingLabel: "Reconnecting",
         mutedLabel: "Muted",
         unavailableLabel: "Unavailable",
-        rosterLabel: "Roster",
-        localParticipantLabel: "（你）",
         error: null,
         available: true,
         isConfigLoaded: true,
@@ -29,16 +27,6 @@ describe("LiveAudioPanel", () => {
         isMuted: true,
         isAudioPlaybackBlocked: false,
         isReconnecting: false,
-        participants: [
-          {
-            identity: "user-1:player-1",
-            displayName: "Alice",
-            avatarEmoji: "🦊",
-            isLocal: true,
-            isMuted: true,
-            isSpeaking: false,
-          },
-        ],
         onJoin: vi.fn(),
         onLeave: vi.fn(),
         onMute: vi.fn(),
@@ -47,7 +35,9 @@ describe("LiveAudioPanel", () => {
       }),
     );
 
-    expect(html).toContain("Alice （你）");
-    expect(html).not.toContain("(You)");
+    expect(html).toContain("data-testid=\"live-audio-panel\"");
+    expect(html).toContain("data-testid=\"live-audio-mute-button\"");
+    expect(html).not.toContain("data-testid=\"live-audio-participant-roster\"");
+    expect(html).not.toContain("Alice （你）");
   });
 });

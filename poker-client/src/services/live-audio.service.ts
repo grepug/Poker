@@ -521,14 +521,23 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
 
       try {
         const nextRoom = deps.createRoom();
+        let microphoneEnableError: string | null = null;
         await nextRoom.startAudio?.().catch(() => undefined);
         const joinPayload = await deps.requestJoinToken(normalizedRoomId);
         localIdentity = joinPayload.participantIdentity;
         bindRoom(nextRoom);
         await nextRoom.prepareConnection(joinPayload.serverUrl, joinPayload.token);
         await nextRoom.connect(joinPayload.serverUrl, joinPayload.token);
-        if (nextRoom.localParticipant.isMicrophoneEnabled) {
-          await nextRoom.localParticipant.setMicrophoneEnabled(false);
+        if (!nextRoom.localParticipant.isMicrophoneEnabled) {
+          if (isBrowserMicrophoneApiUnavailable()) {
+            microphoneEnableError = resolveUnavailableMicrophoneApiError();
+          } else {
+            try {
+              await nextRoom.localParticipant.setMicrophoneEnabled(true);
+            } catch (error) {
+              microphoneEnableError = toLiveAudioError(error);
+            }
+          }
         }
         patchState({
           isConfigLoaded: true,
@@ -541,7 +550,7 @@ export const createLiveAudioController = (deps: LiveAudioControllerDeps) => {
           error:
             nextRoom.canPlaybackAudio === false
               ? "game.audio.error.playbackBlocked"
-              : null,
+              : microphoneEnableError,
         });
         syncParticipantsFromRoom();
       } catch (error) {

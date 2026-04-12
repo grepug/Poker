@@ -74,7 +74,7 @@ const getDisplayedCommunityCards = (
     : history.communityCardsByStreet.turn.length > 0
       ? history.communityCardsByStreet.turn
       : history.communityCardsByStreet.flop.length > 0
-      ? history.communityCardsByStreet.flop
+        ? history.communityCardsByStreet.flop
         : history.communityCardsByStreet.preFlop;
 
 const getRequestedAnalysisLocale = (locale: string) => {
@@ -139,6 +139,794 @@ const getDisplayedAnalysis = (
   };
 };
 
+type TranslationFn = (
+  key: MessageKey,
+  values?: Record<string, string | number>,
+) => string;
+
+type SavedGameDetailViewProps = {
+  detail: SavedGameDetail;
+  selectedHandNumber: number | null;
+  locale: string;
+  localeTag: string;
+  t: TranslationFn;
+  onBackToHistory: () => void;
+  onBackToLobby: () => void;
+  onSelectHandNumber: (handNumber: number) => void;
+};
+
+type SavedGameDetailShellProps = {
+  title: string;
+  subtitle?: string | null;
+  onBackToHistory: () => void;
+  onBackToLobby: () => void;
+  t: TranslationFn;
+  children: React.ReactNode;
+  testId?: string;
+};
+
+type MobileDetailSection = "overview" | "actions" | "review" | "session";
+
+const MOBILE_DETAIL_SECTIONS: Array<{
+  id: MobileDetailSection;
+  labelKey: MessageKey;
+}> = [
+  { id: "overview", labelKey: "history.mobileSection.overview" },
+  { id: "actions", labelKey: "history.actions" },
+  { id: "review", labelKey: "history.mobileSection.review" },
+  { id: "session", labelKey: "history.mobileSection.session" },
+];
+
+const SectionShell: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+  testId?: string;
+}> = ({ children, className = "", testId }) => (
+  <section
+    className={`rounded-2xl border border-emerald-700/60 bg-emerald-950/45 p-5 ${className}`.trim()}
+    data-testid={testId}
+  >
+    {children}
+  </section>
+);
+
+const SummaryStatCard: React.FC<{
+  label: string;
+  value: string | number;
+  valueClassName?: string;
+}> = ({ label, value, valueClassName = "text-xl" }) => (
+  <article className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
+    <p className="text-xs uppercase tracking-wide text-emerald-100/60">{label}</p>
+    <p className={`mt-1 font-semibold text-white ${valueClassName}`.trim()}>{value}</p>
+  </article>
+);
+
+const ParticipantStandingsTable: React.FC<{
+  detail: SavedGameDetail;
+  t: TranslationFn;
+}> = ({ detail, t }) => (
+  <div className="mt-4 overflow-x-auto rounded-xl border border-emerald-700/60">
+    <table className="min-w-full text-sm">
+      <thead className="bg-emerald-950/70 text-emerald-100/70">
+        <tr>
+          <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.buyIn")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.handsWon")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.vpipHands")}</th>
+          <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
+        </tr>
+      </thead>
+      <tbody className="bg-emerald-950/35">
+        {detail.participants.map((participant) => (
+          <tr
+            key={participant.playerId}
+            className="border-t border-emerald-800/60 text-emerald-50"
+          >
+            <td className="px-3 py-2">
+              {participant.avatarEmoji ? `${participant.avatarEmoji} ` : ""}
+              {participant.playerName}
+              {participant.playerId === detail.requesterPlayerId
+                ? ` (${t("common.you")})`
+                : ""}
+            </td>
+            <td className="px-3 py-2 text-right">${participant.finalChips}</td>
+            <td className="px-3 py-2 text-right">${participant.totalBuyIn}</td>
+            <td className="px-3 py-2 text-right">{participant.handsWonCount}</td>
+            <td className="px-3 py-2 text-right">
+              {participant.vpipHandsCount} ({Math.round(participant.vpipRate * 100)}%)
+            </td>
+            <td
+              className={`px-3 py-2 text-right font-semibold ${
+                participant.profit >= 0 ? "text-emerald-300" : "text-rose-300"
+              }`}
+            >
+              {formatCurrency(participant.profit)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+const ParticipantStandingsCards: React.FC<{
+  detail: SavedGameDetail;
+  t: TranslationFn;
+}> = ({ detail, t }) => (
+  <div className="mt-4 space-y-3">
+    {detail.participants.map((participant, index) => (
+      <div
+        key={participant.playerId}
+        className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4 text-sm text-emerald-50"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-emerald-100/50">
+              #{index + 1}
+            </p>
+            <p className="mt-1 font-semibold text-white">
+              {participant.avatarEmoji ? `${participant.avatarEmoji} ` : ""}
+              {participant.playerName}
+              {participant.playerId === detail.requesterPlayerId
+                ? ` (${t("common.you")})`
+                : ""}
+            </p>
+          </div>
+          <p
+            className={`text-base font-semibold ${
+              participant.profit >= 0 ? "text-emerald-300" : "text-rose-300"
+            }`}
+          >
+            {formatCurrency(participant.profit)}
+          </p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+              {t("game.final.finalChips")}
+            </p>
+            <p className="mt-1 font-semibold text-white">${participant.finalChips}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+              {t("game.rankings.handsWon")}
+            </p>
+            <p className="mt-1 font-semibold text-white">{participant.handsWonCount}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+              {t("game.rankings.vpipHands")}
+            </p>
+            <p className="mt-1 font-semibold text-white">
+              {participant.vpipHandsCount} ({Math.round(participant.vpipRate * 100)}%)
+            </p>
+          </div>
+          <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+              {t("game.final.summary.totalBuyIn")}
+            </p>
+            <p className="mt-1 font-semibold text-white">${participant.totalBuyIn}</p>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const SeatList: React.FC<{
+  detail: SavedGameDetail;
+  selectedHand: SavedGameDetail["hands"][number];
+  t: TranslationFn;
+}> = ({ detail, selectedHand, t }) => (
+  <div className="space-y-2">
+    {selectedHand.history.seats.map((seat) => (
+      <div
+        key={`${selectedHand.handNumber}-${seat.playerId}`}
+        className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-3 text-sm text-emerald-50"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold">
+            {seat.playerName}
+            {seat.playerId === detail.requesterPlayerId ? ` (${t("common.you")})` : ""}
+          </span>
+          <span className="text-emerald-100/70">
+            {seat.positionLabel ?? t("history.noPosition")}
+          </span>
+        </div>
+        <p className="mt-1 text-emerald-100/75">
+          {t("history.startingStack", {
+            amount: seat.startingStack,
+          })}
+        </p>
+        <p className="mt-1 text-emerald-100/75">
+          {describeSeatCards(seat, t("history.hiddenCards"))}
+        </p>
+      </div>
+    ))}
+  </div>
+);
+
+const ActionList: React.FC<{
+  selectedHand: SavedGameDetail["hands"][number];
+  t: TranslationFn;
+  compact?: boolean;
+}> = ({ selectedHand, t, compact = false }) => (
+  <div className={`space-y-2 ${compact ? "" : "max-h-80 overflow-y-auto pr-1"}`.trim()}>
+    {selectedHand.history.actions.map((action) => (
+      <div
+        key={`${selectedHand.handNumber}-${action.order}`}
+        className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-3 text-sm text-emerald-50"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold">
+            #{action.order} {action.playerName}
+          </span>
+          <span className="text-emerald-100/70">{action.street}</span>
+        </div>
+        <p className="mt-1 text-emerald-100/80">
+          {describeAction(action, t("history.blindAction"))}
+        </p>
+        <p className="mt-1 text-emerald-100/60">
+          {t("history.potAfter", { amount: action.potAfter })}
+        </p>
+      </div>
+    ))}
+  </div>
+);
+
+const NetSummary: React.FC<{
+  detail: SavedGameDetail;
+  selectedHand: SavedGameDetail["hands"][number];
+  t: TranslationFn;
+}> = ({ detail, selectedHand, t }) => (
+  <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
+    <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+      {t("history.netSummary")}
+    </p>
+    <div className="mt-3 space-y-2">
+      {Object.entries(selectedHand.history.settlement.netByPlayerId).map(
+        ([playerId, net]) => {
+          const player = detail.participants.find(
+            (participant) => participant.playerId === playerId,
+          );
+          return (
+            <div
+              key={`${selectedHand.handNumber}-${playerId}`}
+              className="flex items-center justify-between gap-3 text-sm text-emerald-50"
+            >
+              <span>{player?.playerName ?? playerId}</span>
+              <span className={net >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                {formatCurrency(net)}
+              </span>
+            </div>
+          );
+        },
+      )}
+    </div>
+  </div>
+);
+
+const AnalysisPanel: React.FC<{
+  selectedHand: SavedGameDetail["hands"][number];
+  selectedHandAnalysis: ReturnType<typeof getDisplayedAnalysis> | null;
+  t: TranslationFn;
+}> = ({ selectedHand, selectedHandAnalysis, t }) => (
+  <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
+    <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+      {t(getAnalysisStatusKey(selectedHandAnalysis?.status ?? "pending"))}
+    </p>
+    {selectedHandAnalysis?.headline || selectedHandAnalysis?.summary ? (
+      <>
+        <h3 className="mt-2 text-base font-semibold text-white">
+          {selectedHandAnalysis?.headline}
+        </h3>
+        <p className="mt-2 text-sm text-emerald-100/80">
+          {selectedHandAnalysis?.summary}
+        </p>
+        <ul className="mt-3 space-y-2 text-sm text-emerald-50">
+          {(selectedHandAnalysis?.keyAdjustments ?? []).map((adjustment) => (
+            <li
+              key={`${selectedHand.handNumber}-${adjustment}`}
+              className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-3 py-2"
+            >
+              {adjustment}
+            </li>
+          ))}
+        </ul>
+      </>
+    ) : (
+      <p className="mt-2 text-sm text-emerald-100/80">
+        {selectedHandAnalysis?.failureReason || t("history.analysisPending")}
+      </p>
+    )}
+  </div>
+);
+
+const MobileSectionTabButton: React.FC<{
+  id: MobileDetailSection;
+  isActive: boolean;
+  label: string;
+  onClick: (id: MobileDetailSection) => void;
+}> = ({ id, isActive, label, onClick }) => (
+  <button
+    type="button"
+    onClick={() => onClick(id)}
+    data-testid={`saved-history-mobile-tab-${id}`}
+    aria-pressed={isActive}
+    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+      isActive
+        ? "border-emerald-300 bg-emerald-400/15 text-white"
+        : "border-emerald-700/60 bg-emerald-900/20 text-emerald-100/75"
+    }`}
+  >
+    {label}
+  </button>
+);
+
+const MobileHandStripButton: React.FC<{
+  hand: SavedGameDetail["hands"][number];
+  isActive: boolean;
+  statusLabel: string;
+  t: TranslationFn;
+  onSelect: (handNumber: number) => void;
+}> = ({ hand, isActive, statusLabel, t, onSelect }) => (
+  <button
+    type="button"
+    onClick={() => onSelect(hand.handNumber)}
+    aria-pressed={isActive}
+    className={`min-w-[9rem] snap-start rounded-2xl border px-4 py-3 text-left transition ${
+      isActive
+        ? "border-emerald-300 bg-emerald-400/15 text-white"
+        : "border-emerald-700/60 bg-emerald-900/25 text-emerald-100/80"
+    }`}
+  >
+    <div className="flex items-center justify-between gap-2">
+      <span className="font-semibold">
+        {t("history.handLabel", { handNumber: hand.handNumber })}
+      </span>
+      <span className="text-[11px] uppercase tracking-wide text-emerald-200/75">
+        {statusLabel}
+      </span>
+    </div>
+    <p className="mt-2 text-xs text-emerald-100/60">
+      {t("history.handPot", { amount: hand.history.settlement.totalPot })}
+    </p>
+  </button>
+);
+
+const SessionMetaCards: React.FC<{
+  detail: SavedGameDetail;
+  localeTag: string;
+  t: TranslationFn;
+}> = ({ detail, localeTag, t }) => (
+  <div className="grid gap-2 sm:grid-cols-2">
+    <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-3">
+      <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+        {t("history.started")}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-white">
+        {formatDateTime(detail.startedAt, localeTag)}
+      </p>
+    </div>
+    <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-3">
+      <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+        {t("history.concluded")}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-white">
+        {formatDateTime(detail.concludedAt, localeTag)}
+      </p>
+    </div>
+  </div>
+);
+
+export const SavedGameDetailShell: React.FC<SavedGameDetailShellProps> = ({
+  title,
+  subtitle,
+  onBackToHistory,
+  onBackToLobby,
+  t,
+  children,
+  testId,
+}) => (
+  <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
+    <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
+      <section className="surface-panel w-full space-y-6 p-6 md:p-8" data-testid={testId}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={onBackToHistory}
+              className="text-sm font-semibold text-emerald-300 transition hover:text-emerald-200"
+            >
+              {t("history.backToHistory")}
+            </button>
+            <h1 className="text-3xl font-black tracking-tight text-white">{title}</h1>
+            {subtitle ? (
+              <p className="text-sm text-emerald-100/75">{subtitle}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onBackToLobby}
+            className="rounded-xl border border-emerald-500/70 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
+          >
+            {t("history.backToLobby")}
+          </button>
+        </div>
+
+        {children}
+      </section>
+    </div>
+  </main>
+);
+
+export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
+  detail,
+  selectedHandNumber,
+  locale,
+  localeTag,
+  t,
+  onBackToHistory,
+  onBackToLobby,
+  onSelectHandNumber,
+}) => {
+  const [mobileSection, setMobileSection] = useState<MobileDetailSection>("overview");
+
+  const selectedHand =
+    detail.hands.find((hand) => hand.handNumber === selectedHandNumber) ?? null;
+  const selectedHandAnalysis = selectedHand
+    ? getDisplayedAnalysis(selectedHand.analysis, locale)
+    : null;
+
+  return (
+    <SavedGameDetailShell
+      title={t("history.roomLabel", { roomId: detail.roomId })}
+      subtitle={formatDateTime(detail.concludedAt, localeTag)}
+      onBackToHistory={onBackToHistory}
+      onBackToLobby={onBackToLobby}
+      t={t}
+      testId="saved-game-detail-page"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryStatCard label={t("history.hands")} value={detail.handCount} />
+            <SummaryStatCard
+              label={t("history.blinds")}
+              value={`${detail.blinds.smallBlind}/${detail.blinds.bigBlind}`}
+            />
+            <SummaryStatCard
+              label={t("history.started")}
+              value={formatDateTime(detail.startedAt, localeTag)}
+              valueClassName="text-sm leading-5"
+            />
+            <SummaryStatCard
+              label={t("history.concluded")}
+              value={formatDateTime(detail.concludedAt, localeTag)}
+              valueClassName="text-sm leading-5"
+            />
+      </div>
+
+      <div className="space-y-4 lg:hidden">
+            <SectionShell testId="saved-history-mobile-hand-strip">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-white">{t("history.handList")}</h2>
+                  <p className="mt-1 text-sm text-emerald-100/70">
+                    {t("history.playerCount", { count: detail.participants.length })}
+                  </p>
+                </div>
+                {selectedHand && (
+                  <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-2 text-sm text-emerald-100/80">
+                    {t("history.actionsCount", {
+                      count: selectedHand.history.actions.length,
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 -mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+                {detail.hands.map((hand) => (
+                  <MobileHandStripButton
+                    key={`${detail.archiveId}-${hand.handNumber}`}
+                    hand={hand}
+                    isActive={hand.handNumber === selectedHandNumber}
+                    statusLabel={t(
+                      getAnalysisStatusKey(getDisplayedAnalysis(hand.analysis, locale).status),
+                    )}
+                    t={t}
+                    onSelect={onSelectHandNumber}
+                  />
+                ))}
+              </div>
+            </SectionShell>
+
+            {selectedHand && (
+              <>
+                <SectionShell testId="saved-history-mobile-selected-hand">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">
+                        {t("history.handLabel", { handNumber: selectedHand.handNumber })}
+                      </h2>
+                      <p className="mt-1 text-sm text-emerald-100/70">
+                        {t("history.handPot", {
+                          amount: selectedHand.history.settlement.totalPot,
+                        })}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-2 text-sm text-emerald-100/80">
+                      {t(getAnalysisStatusKey(selectedHandAnalysis?.status ?? "pending"))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                      {t("game.communityCards")}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getDisplayedCommunityCards(selectedHand.history).map((card, index) => (
+                        <Card
+                          key={`${selectedHand.handNumber}-${card.rank}-${card.suit}-${index}`}
+                          card={card}
+                          size="small"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+                        {t("history.seats")}
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {selectedHand.history.seats.length}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+                        {t("history.actions")}
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {selectedHand.history.actions.length}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-emerald-100/50">
+                        {t("history.analysisTitle")}
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {t(getAnalysisStatusKey(selectedHandAnalysis?.status ?? "pending"))}
+                      </p>
+                    </div>
+                  </div>
+                </SectionShell>
+
+                <SectionShell>
+                  <div
+                    className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                    data-testid="saved-history-mobile-section-tabs"
+                  >
+                    {MOBILE_DETAIL_SECTIONS.map((section) => (
+                      <MobileSectionTabButton
+                        key={section.id}
+                        id={section.id}
+                        isActive={mobileSection === section.id}
+                        label={t(section.labelKey)}
+                        onClick={setMobileSection}
+                      />
+                    ))}
+                  </div>
+                </SectionShell>
+
+                {mobileSection === "overview" && (
+                  <SectionShell testId="saved-history-mobile-overview-panel">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                        {t("history.seats")}
+                      </p>
+                      <div className="mt-2">
+                        <SeatList
+                          detail={detail}
+                          selectedHand={selectedHand}
+                          t={t}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <NetSummary detail={detail} selectedHand={selectedHand} t={t} />
+                    </div>
+                  </SectionShell>
+                )}
+
+                {mobileSection === "actions" && (
+                  <SectionShell>
+                    <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                      {t("history.actions")}
+                    </p>
+                    <div className="mt-2">
+                      <ActionList selectedHand={selectedHand} t={t} compact />
+                    </div>
+                  </SectionShell>
+                )}
+
+                {mobileSection === "review" && (
+                  <SectionShell>
+                    <h2 className="text-lg font-bold text-white">
+                      {t("history.analysisTitle")}
+                    </h2>
+                    <div className="mt-4">
+                      <AnalysisPanel
+                        selectedHand={selectedHand}
+                        selectedHandAnalysis={selectedHandAnalysis}
+                        t={t}
+                      />
+                    </div>
+                  </SectionShell>
+                )}
+
+                {mobileSection === "session" && (
+                  <SectionShell testId="saved-history-mobile-session-panel">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-lg font-bold text-white">{t("history.standings")}</h2>
+                      <span className="text-xs uppercase tracking-wide text-emerald-100/60">
+                        {t("history.playerCount", { count: detail.participants.length })}
+                      </span>
+                    </div>
+                    <div className="mt-4">
+                      <SessionMetaCards detail={detail} localeTag={localeTag} t={t} />
+                    </div>
+                    <ParticipantStandingsCards detail={detail} t={t} />
+                  </SectionShell>
+                )}
+              </>
+            )}
+      </div>
+
+      <div className="hidden gap-6 lg:grid lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-6">
+              <SectionShell testId="saved-history-desktop-standings">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-white">{t("history.standings")}</h2>
+                  <span className="text-xs uppercase tracking-wide text-emerald-100/60">
+                    {t("history.playerCount", { count: detail.participants.length })}
+                  </span>
+                </div>
+                <ParticipantStandingsTable detail={detail} t={t} />
+              </SectionShell>
+
+              {selectedHand && (
+                <SectionShell>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">
+                        {t("history.handLabel", { handNumber: selectedHand.handNumber })}
+                      </h2>
+                      <p className="mt-1 text-sm text-emerald-100/70">
+                        {t("history.handPot", {
+                          amount: selectedHand.history.settlement.totalPot,
+                        })}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-2 text-sm text-emerald-100/80">
+                      {t("history.actionsCount", {
+                        count: selectedHand.history.actions.length,
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                      {t("game.communityCards")}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getDisplayedCommunityCards(selectedHand.history).map((card, index) => (
+                        <Card
+                          key={`${selectedHand.handNumber}-${card.rank}-${card.suit}-${index}`}
+                          card={card}
+                          size="small"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                        {t("history.seats")}
+                      </p>
+                      <div className="mt-2">
+                        <SeatList detail={detail} selectedHand={selectedHand} t={t} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-emerald-100/60">
+                        {t("history.actions")}
+                      </p>
+                      <div className="mt-2">
+                        <ActionList selectedHand={selectedHand} t={t} />
+                      </div>
+                    </div>
+                  </div>
+                </SectionShell>
+              )}
+            </div>
+
+            <aside className="space-y-6">
+              <SectionShell testId="saved-history-desktop-hand-list">
+                <h2 className="text-lg font-bold text-white">{t("history.handList")}</h2>
+                <div className="mt-4 space-y-2">
+                  {detail.hands.map((hand) => (
+                    <button
+                      key={`${detail.archiveId}-${hand.handNumber}`}
+                      type="button"
+                      onClick={() => onSelectHandNumber(hand.handNumber)}
+                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                        hand.handNumber === selectedHandNumber
+                          ? "border-emerald-300 bg-emerald-400/15 text-white"
+                          : "border-emerald-700/60 bg-emerald-900/25 text-emerald-100/80 hover:bg-emerald-800/35"
+                      }`}
+                    >
+                      {(() => {
+                        const displayedAnalysis = getDisplayedAnalysis(
+                          hand.analysis,
+                          locale,
+                        );
+                        return (
+                          <>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold">
+                                {t("history.handLabel", { handNumber: hand.handNumber })}
+                              </span>
+                              <span
+                                className={`text-xs uppercase tracking-wide ${
+                                  displayedAnalysis.status === "ready"
+                                    ? "text-emerald-300"
+                                    : displayedAnalysis.status === "failed"
+                                      ? "text-rose-300"
+                                      : "text-amber-200"
+                                }`}
+                              >
+                                {t(getAnalysisStatusKey(displayedAnalysis.status))}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-emerald-100/60">
+                              {t("history.handPot", {
+                                amount: hand.history.settlement.totalPot,
+                              })}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </button>
+                  ))}
+                </div>
+              </SectionShell>
+
+              {selectedHand && (
+                <SectionShell>
+                  <h2 className="text-lg font-bold text-white">
+                    {t("history.analysisTitle")}
+                  </h2>
+                  <div className="mt-4">
+                    <AnalysisPanel
+                      selectedHand={selectedHand}
+                      selectedHandAnalysis={selectedHandAnalysis}
+                      t={t}
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <NetSummary detail={detail} selectedHand={selectedHand} t={t} />
+                  </div>
+                </SectionShell>
+              )}
+            </aside>
+      </div>
+    </SavedGameDetailShell>
+  );
+};
+
 export const SavedGameDetailPage: React.FC = () => {
   const { archiveId = "" } = useParams();
   const navigate = useNavigate();
@@ -200,373 +988,46 @@ export const SavedGameDetailPage: React.FC = () => {
     [locale],
   );
 
-  const selectedHand =
-    detail?.hands.find((hand) => hand.handNumber === selectedHandNumber) ?? null;
-  const selectedHandAnalysis = selectedHand
-    ? getDisplayedAnalysis(selectedHand.analysis, locale)
-    : null;
-
   return (
-    <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-6 md:py-12">
-      <div className="relative mx-auto flex min-h-[85vh] w-full max-w-7xl items-start justify-center">
-        <section className="surface-panel w-full space-y-6 p-6 md:p-8" data-testid="saved-game-detail-page">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => navigate("/history")}
-                className="text-sm font-semibold text-emerald-300 transition hover:text-emerald-200"
-              >
-                {t("history.backToHistory")}
-              </button>
-              <h1 className="text-3xl font-black tracking-tight text-white">
-                {detail
-                  ? t("history.roomLabel", { roomId: detail.roomId })
-                  : t("history.detailTitle")}
-              </h1>
-              {detail && (
-                <p className="text-sm text-emerald-100/75">
-                  {formatDateTime(detail.concludedAt, localeTag)}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/", { replace: true })}
-              className="rounded-xl border border-emerald-500/70 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
-            >
-              {t("history.backToLobby")}
-            </button>
+    <>
+      {isLoading && (
+        <SavedGameDetailShell
+          title={t("history.detailTitle")}
+          onBackToHistory={() => navigate("/history")}
+          onBackToLobby={() => navigate("/", { replace: true })}
+          t={t}
+        >
+          <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/35 px-4 py-5 text-sm text-emerald-100/80">
+            {t("history.detailLoading")}
           </div>
+        </SavedGameDetailShell>
+      )}
 
-          {isLoading && (
-            <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/35 px-4 py-5 text-sm text-emerald-100/80">
-              {t("history.detailLoading")}
-            </div>
-          )}
+      {error && !isLoading && (
+        <SavedGameDetailShell
+          title={t("history.detailTitle")}
+          onBackToHistory={() => navigate("/history")}
+          onBackToLobby={() => navigate("/", { replace: true })}
+          t={t}
+        >
+          <div className="rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-5 text-sm text-rose-100">
+            {error}
+          </div>
+        </SavedGameDetailShell>
+      )}
 
-          {error && (
-            <div className="rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-5 text-sm text-rose-100">
-              {error}
-            </div>
-          )}
-
-          {!isLoading && !error && detail && (
-            <>
-              <div className="grid gap-3 lg:grid-cols-4">
-                <article className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
-                  <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                    {t("history.hands")}
-                  </p>
-                  <p className="mt-1 text-xl font-semibold text-white">{detail.handCount}</p>
-                </article>
-                <article className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
-                  <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                    {t("history.blinds")}
-                  </p>
-                  <p className="mt-1 text-xl font-semibold text-white">
-                    {detail.blinds.smallBlind}/{detail.blinds.bigBlind}
-                  </p>
-                </article>
-                <article className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
-                  <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                    {t("history.started")}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {formatDateTime(detail.startedAt, localeTag)}
-                  </p>
-                </article>
-                <article className="rounded-xl border border-emerald-700/60 bg-emerald-950/45 p-4">
-                  <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                    {t("history.concluded")}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {formatDateTime(detail.concludedAt, localeTag)}
-                  </p>
-                </article>
-              </div>
-
-              <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-                <div className="space-y-6">
-                  <section className="rounded-2xl border border-emerald-700/60 bg-emerald-950/45 p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="text-lg font-bold text-white">{t("history.standings")}</h2>
-                      <span className="text-xs uppercase tracking-wide text-emerald-100/60">
-                        {t("history.playerCount", { count: detail.participants.length })}
-                      </span>
-                    </div>
-                    <div className="mt-4 overflow-hidden rounded-xl border border-emerald-700/60">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-emerald-950/70 text-emerald-100/70">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-semibold">{t("game.rankings.player")}</th>
-                            <th className="px-3 py-2 text-right font-semibold">{t("game.final.finalChips")}</th>
-                            <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.handsWon")}</th>
-                            <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.vpipHands")}</th>
-                            <th className="px-3 py-2 text-right font-semibold">{t("game.rankings.net")}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-emerald-950/35">
-                          {detail.participants.map((participant) => (
-                            <tr
-                              key={participant.playerId}
-                              className="border-t border-emerald-800/60 text-emerald-50"
-                            >
-                              <td className="px-3 py-2">
-                                {participant.avatarEmoji ? `${participant.avatarEmoji} ` : ""}
-                                {participant.playerName}
-                                {participant.playerId === detail.requesterPlayerId
-                                  ? ` (${t("common.you")})`
-                                  : ""}
-                              </td>
-                              <td className="px-3 py-2 text-right">${participant.finalChips}</td>
-                              <td className="px-3 py-2 text-right">{participant.handsWonCount}</td>
-                              <td className="px-3 py-2 text-right">
-                                {participant.vpipHandsCount} ({Math.round(participant.vpipRate * 100)}%)
-                              </td>
-                              <td
-                                className={`px-3 py-2 text-right font-semibold ${
-                                  participant.profit >= 0 ? "text-emerald-300" : "text-rose-300"
-                                }`}
-                              >
-                                {participant.profit >= 0 ? "+" : ""}${participant.profit}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-
-                  {selectedHand && (
-                    <section className="rounded-2xl border border-emerald-700/60 bg-emerald-950/45 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-lg font-bold text-white">
-                            {t("history.handLabel", { handNumber: selectedHand.handNumber })}
-                          </h2>
-                          <p className="mt-1 text-sm text-emerald-100/70">
-                            {t("history.handPot", {
-                              amount: selectedHand.history.settlement.totalPot,
-                            })}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-2 text-sm text-emerald-100/80">
-                          {t("history.actionsCount", {
-                            count: selectedHand.history.actions.length,
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
-                        <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                          {t("game.communityCards")}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {getDisplayedCommunityCards(selectedHand.history).map(
-                            (card, index) => (
-                              <Card
-                                key={`${selectedHand.handNumber}-${card.rank}-${card.suit}-${index}`}
-                                card={card}
-                                size="small"
-                              />
-                            ),
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                            {t("history.seats")}
-                          </p>
-                          <div className="mt-2 space-y-2">
-                            {selectedHand.history.seats.map((seat) => (
-                              <div
-                                key={`${selectedHand.handNumber}-${seat.playerId}`}
-                                className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-3 text-sm text-emerald-50"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="font-semibold">
-                                    {seat.playerName}
-                                    {seat.playerId === detail.requesterPlayerId
-                                      ? ` (${t("common.you")})`
-                                      : ""}
-                                  </span>
-                                  <span className="text-emerald-100/70">
-                                    {seat.positionLabel ?? t("history.noPosition")}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-emerald-100/75">
-                                  {t("history.startingStack", {
-                                    amount: seat.startingStack,
-                                  })}
-                                </p>
-                                <p className="mt-1 text-emerald-100/75">
-                                  {describeSeatCards(seat, t("history.hiddenCards"))}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                            {t("history.actions")}
-                          </p>
-                          <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
-                            {selectedHand.history.actions.map((action) => (
-                              <div
-                                key={`${selectedHand.handNumber}-${action.order}`}
-                                className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 px-3 py-3 text-sm text-emerald-50"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="font-semibold">
-                                    #{action.order} {action.playerName}
-                                  </span>
-                                  <span className="text-emerald-100/70">
-                                    {action.street}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-emerald-100/80">
-                                  {describeAction(action, t("history.blindAction"))}
-                                </p>
-                                <p className="mt-1 text-emerald-100/60">
-                                  {t("history.potAfter", { amount: action.potAfter })}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                  )}
-                </div>
-
-                <aside className="space-y-6">
-                  <section className="rounded-2xl border border-emerald-700/60 bg-emerald-950/45 p-5">
-                    <h2 className="text-lg font-bold text-white">{t("history.handList")}</h2>
-                    <div className="mt-4 space-y-2">
-                      {detail.hands.map((hand) => (
-                        <button
-                          key={`${detail.archiveId}-${hand.handNumber}`}
-                          type="button"
-                          onClick={() => setSelectedHandNumber(hand.handNumber)}
-                          className={`w-full rounded-xl border px-4 py-3 text-left transition ${
-                            hand.handNumber === selectedHandNumber
-                              ? "border-emerald-300 bg-emerald-400/15 text-white"
-                              : "border-emerald-700/60 bg-emerald-900/25 text-emerald-100/80 hover:bg-emerald-800/35"
-                          }`}
-                        >
-                          {(() => {
-                            const displayedAnalysis = getDisplayedAnalysis(
-                              hand.analysis,
-                              locale,
-                            );
-                            return (
-                              <>
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="font-semibold">
-                                    {t("history.handLabel", { handNumber: hand.handNumber })}
-                                  </span>
-                                  <span
-                                    className={`text-xs uppercase tracking-wide ${
-                                      displayedAnalysis.status === "ready"
-                                        ? "text-emerald-300"
-                                        : displayedAnalysis.status === "failed"
-                                          ? "text-rose-300"
-                                          : "text-amber-200"
-                                    }`}
-                                  >
-                                    {t(getAnalysisStatusKey(displayedAnalysis.status))}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-xs text-emerald-100/60">
-                                  {t("history.handPot", {
-                                    amount: hand.history.settlement.totalPot,
-                                  })}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-
-                  {selectedHand && (
-                    <section className="rounded-2xl border border-emerald-700/60 bg-emerald-950/45 p-5">
-                      <h2 className="text-lg font-bold text-white">
-                        {t("history.analysisTitle")}
-                      </h2>
-                      <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
-                        <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                          {t(getAnalysisStatusKey(selectedHandAnalysis?.status ?? "pending"))}
-                        </p>
-                        {selectedHandAnalysis?.headline || selectedHandAnalysis?.summary ? (
-                          <>
-                            <h3 className="mt-2 text-base font-semibold text-white">
-                              {selectedHandAnalysis?.headline}
-                            </h3>
-                            <p className="mt-2 text-sm text-emerald-100/80">
-                              {selectedHandAnalysis?.summary}
-                            </p>
-                            <ul className="mt-3 space-y-2 text-sm text-emerald-50">
-                              {(selectedHandAnalysis?.keyAdjustments ?? []).map((adjustment) => (
-                                <li
-                                  key={`${selectedHand.handNumber}-${adjustment}`}
-                                  className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-3 py-2"
-                                >
-                                  {adjustment}
-                                </li>
-                              ))}
-                            </ul>
-                          </>
-                        ) : (
-                          <p className="mt-2 text-sm text-emerald-100/80">
-                            {selectedHandAnalysis?.failureReason ||
-                              t("history.analysisPending")}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="mt-4 rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
-                        <p className="text-xs uppercase tracking-wide text-emerald-100/60">
-                          {t("history.netSummary")}
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {Object.entries(selectedHand.history.settlement.netByPlayerId).map(
-                            ([playerId, net]) => {
-                              const player = detail.participants.find(
-                                (participant) => participant.playerId === playerId,
-                              );
-                              return (
-                                <div
-                                  key={`${selectedHand.handNumber}-${playerId}`}
-                                  className="flex items-center justify-between gap-3 text-sm text-emerald-50"
-                                >
-                                  <span>{player?.playerName ?? playerId}</span>
-                                  <span
-                                    className={
-                                      net >= 0 ? "text-emerald-300" : "text-rose-300"
-                                    }
-                                  >
-                                    {formatCurrency(net)}
-                                  </span>
-                                </div>
-                              );
-                            },
-                          )}
-                        </div>
-                      </div>
-                    </section>
-                  )}
-                </aside>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
-    </main>
+      {!isLoading && !error && detail && (
+        <SavedGameDetailView
+          detail={detail}
+          selectedHandNumber={selectedHandNumber}
+          locale={locale}
+          localeTag={localeTag}
+          t={t}
+          onBackToHistory={() => navigate("/history")}
+          onBackToLobby={() => navigate("/", { replace: true })}
+          onSelectHandNumber={setSelectedHandNumber}
+        />
+      )}
+    </>
   );
 };
