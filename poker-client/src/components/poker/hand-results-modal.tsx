@@ -21,9 +21,14 @@ export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalPr
       layout="page"
       testId="hand-results-modal"
       zIndexClassName="z-[74]"
-      contentClassName="mx-auto w-full max-w-4xl"
     >
-      <div className="mx-auto w-full max-w-4xl">
+      <PokerModalPanel
+        ref={ref}
+        className="mx-auto max-w-4xl p-4 md:p-6"
+        testId="hand-results-panel"
+        ariaLabel={ariaLabel}
+        viewportBounded={false}
+      >
         <div className="mb-3 flex justify-end">
           <button
             onClick={onClose}
@@ -33,17 +38,9 @@ export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalPr
             {t("common.close")}
           </button>
         </div>
-        <PokerModalPanel
-          ref={ref}
-          className="p-4 md:p-6"
-          testId="hand-results-panel"
-          ariaLabel={ariaLabel}
-          viewportBounded={false}
-        >
-          {children}
-        </PokerModalPanel>
+        {children}
         {footer ? <div className="mt-3">{footer}</div> : null}
-      </div>
+      </PokerModalPanel>
     </PokerModalShell>
   ),
 );

@@ -33,6 +33,8 @@ import {
   EndGameConfirmModal,
   FinalSummaryModal,
   gameRoomModalReducer,
+  type GameRoomConfirmModal,
+  type GameRoomPrimaryModal,
   HandResultsContent,
   HandResultsModal,
   INITIAL_GAME_ROOM_MODAL_STATE,
@@ -1961,7 +1963,7 @@ const useGameRoomElement = () => {
   );
 
   const openPrimaryModal = useCallback(
-    (modal: "settings" | "rankings" | "rules" | "handResults" | "finalSummary") => {
+    (modal: GameRoomPrimaryModal) => {
       dispatchDialogState({
         type: "openPrimary",
         modal,
@@ -1971,7 +1973,7 @@ const useGameRoomElement = () => {
   );
 
   const closePrimaryModal = useCallback(
-    (modal?: "settings" | "rankings" | "rules" | "handResults" | "finalSummary") => {
+    (modal?: GameRoomPrimaryModal) => {
       dispatchDialogState({
         type: "closePrimary",
         modal,
@@ -1981,7 +1983,7 @@ const useGameRoomElement = () => {
   );
 
   const openConfirmModal = useCallback(
-    (modal: "endGameConfirm" | "leaveConfirm") => {
+    (modal: GameRoomConfirmModal) => {
       dispatchDialogState({
         type: "openConfirm",
         modal,
@@ -1991,7 +1993,7 @@ const useGameRoomElement = () => {
   );
 
   const closeConfirmModal = useCallback(
-    (modal?: "endGameConfirm" | "leaveConfirm") => {
+    (modal?: GameRoomConfirmModal) => {
       dispatchDialogState({
         type: "closeConfirm",
         modal,

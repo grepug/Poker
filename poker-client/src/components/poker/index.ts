@@ -4,6 +4,7 @@ export { ChipComposerDock } from "./chip-composer-dock";
 export { EndGameConfirmModal } from "./end-game-confirm-modal";
 export { FinalSummaryModal } from "./final-summary-modal";
 export { gameRoomModalReducer, INITIAL_GAME_ROOM_MODAL_STATE } from "./game-room-modal-state";
+export type { GameRoomConfirmModal, GameRoomPrimaryModal } from "./game-room-modal-state";
 export { HandResultsContent } from "./hand-results-content";
 export { HandResultsModal } from "./hand-results-modal";
 export { HandResultsPanel } from "./hand-results-panel";
