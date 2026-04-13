@@ -6,6 +6,14 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-poker}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-poker}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -18,7 +26,8 @@ services:
     image: poker-app:latest
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "${HOST_PORT:-3000}:3000"
     environment:

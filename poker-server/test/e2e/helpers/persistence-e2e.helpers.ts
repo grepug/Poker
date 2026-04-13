@@ -42,6 +42,16 @@ function getPool(): Pool {
   return pool;
 }
 
+export async function closePersistencePool(): Promise<void> {
+  if (!pool) {
+    return;
+  }
+
+  const currentPool = pool;
+  pool = null;
+  await currentPool.end();
+}
+
 export type PersistedRoomSnapshotMatch = {
   event: PersistedRoomEventRecord;
   room: Room;

@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import {
+  closePersistencePool,
   buildChipRanking,
   DEFAULT_BIG_BLIND,
   DEFAULT_OPENING_POT,
@@ -31,6 +32,10 @@ const liveRobotConfigured = Boolean(
     process.env.AI_ROBOT_BASE_URL?.trim() &&
     process.env.AI_ROBOT_MODEL_ID?.trim(),
 );
+
+test.afterAll(async () => {
+  await closePersistencePool();
+});
 
 async function createRoomViaSocket(page: Page, playerName: string) {
   await waitForPokerDebug(page);
