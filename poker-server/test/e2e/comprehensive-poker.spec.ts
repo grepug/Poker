@@ -9488,11 +9488,20 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           .locator('[data-testid="saved-history-mobile-session-panel"]')
           .getByRole('heading', { name: 'Session Statistics' }),
       ).toBeVisible();
-      await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
+      await expect(
+        bobPage
+          .locator('[data-testid="saved-history-mobile-session-panel"]')
+          .getByText(/^Robot\b/),
+      ).toHaveCount(0);
       await bobPage.setViewportSize({ width: 1440, height: 900 });
       await expect(
         bobPage.getByRole('columnheader', { name: 'Buy-in' }),
       ).toBeVisible();
+      await expect(
+        bobPage
+          .locator('[data-testid="saved-history-desktop-standings"]')
+          .getByText(/^Robot\b/),
+      ).toHaveCount(0);
 
       await bobPage.getByRole('button', { name: 'Back to History' }).click();
       await expect(

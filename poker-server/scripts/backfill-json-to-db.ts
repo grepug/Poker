@@ -50,18 +50,28 @@ type LegacyChatRoomData = {
 };
 
 type BackfillExecutor = any;
+export type RunBackfillOptions = {
+  connectionString?: string;
+  dataDir?: string;
+};
 
 const serverRoot = path.resolve(__dirname, '..');
 
-async function main() {
+export async function runBackfill(
+  options: RunBackfillOptions = {},
+): Promise<void> {
   loadRepoEnv();
 
-  const connectionString = process.env.DATABASE_URL?.trim();
+  const connectionString =
+    options.connectionString?.trim() ?? process.env.DATABASE_URL?.trim();
   if (!connectionString) {
     throw new Error('DATABASE_URL is required for db:backfill');
   }
 
-  const dataDir = path.resolve(serverRoot, process.env.DATA_DIR || './data');
+  const dataDir = path.resolve(
+    serverRoot,
+    options.dataDir ?? process.env.DATA_DIR ?? './data',
+  );
   const pool = new Pool({ connectionString });
   const db = drizzle(pool, { schema });
 
@@ -100,6 +110,10 @@ async function main() {
   } finally {
     await pool.end();
   }
+}
+
+async function main() {
+  await runBackfill();
 }
 
 async function assertBackfillTargetIsSafe(db: BackfillExecutor): Promise<void> {
@@ -607,7 +621,9 @@ function resolveMigrationsFolder(): string | null {
   );
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
