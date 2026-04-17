@@ -1,19 +1,21 @@
 import { test, expect, Page } from '@playwright/test';
-import * as path from 'path';
 import {
+  closePersistencePool,
   buildChipRanking,
   DEFAULT_BIG_BLIND,
   DEFAULT_OPENING_POT,
   DEFAULT_SMALL_BLIND_CALL_GAP,
-  E2E_DATA_DIR,
   FRONTEND_URL,
   authenticateTestUser,
   getChatMessagesFromDebug,
   getRoomSnapshot,
   openChatPanel,
-  pathExists,
-  readJsonFileValue,
-  readJsonlFile,
+  readPersistedAuthState,
+  readPersistedChatEvents,
+  readPersistedChatIndex,
+  readPersistedHandEvents,
+  readPersistedRoomEvents,
+  readPersistedRoomProjection,
   sendChatMessagesViaSocket,
   sendVoiceMessageViaUpload,
   setupTwoPlayerSession,
@@ -31,26 +33,9 @@ const liveRobotConfigured = Boolean(
     process.env.AI_ROBOT_MODEL_ID?.trim(),
 );
 
-async function waitForJsonFileMatch<T>(
-  filePath: string,
-  predicate: (value: T) => boolean,
-  timeoutMs = 10000,
-): Promise<T> {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await pathExists(filePath)) {
-      const value = await readJsonFileValue<T>(filePath);
-      if (predicate(value)) {
-        return value;
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  throw new Error(`Timed out waiting for ${filePath}`);
-}
+test.afterAll(async () => {
+  await closePersistencePool();
+});
 
 async function createRoomViaSocket(page: Page, playerName: string) {
   await waitForPokerDebug(page);
@@ -171,36 +156,18 @@ async function waitForRobotProgress(
 }
 
 test.describe('Poker E2E - Persistence Storage', () => {
-  test('1.1: Auth, room, hand, and chat storage use JSONL layouts without legacy files', async ({
+  test('1.1: Auth, room, hand, and chat storage persist through Postgres-backed ledgers and projections', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
 
     try {
       const { alicePage, bobPage, roomCode } = session;
-
-      const authLogPath = path.join(E2E_DATA_DIR, 'auth', 'auth.jsonl');
-      const authStatePath = path.join(E2E_DATA_DIR, 'auth', 'auth.state.json');
-      expect(await pathExists(authLogPath)).toBe(true);
-      expect(await pathExists(authStatePath)).toBe(true);
-      expect(await pathExists(path.join(E2E_DATA_DIR, 'auth', 'users.json'))).toBe(
-        false,
-      );
+      const authState = await readPersistedAuthState();
       expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'auth', 'sessions.json')),
-      ).toBe(false);
-
-      const authRecords = await readJsonlFile<any>(authLogPath);
-      expect(
-        authRecords.some(
-          (record) =>
-            record.type === 'USER_UPSERTED' &&
-            ['test1', 'test2'].includes(record.user?.accountId),
-        ),
+        authState.users.some((user) => ['test1', 'test2'].includes(user.accountId)),
       ).toBe(true);
-      expect(
-        authRecords.some((record) => record.type === 'SESSION_UPSERTED'),
-      ).toBe(true);
+      expect(authState.sessions.length).toBeGreaterThanOrEqual(2);
 
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
@@ -232,22 +199,9 @@ test.describe('Poker E2E - Persistence Storage', () => {
       );
       expect(persistedRoom.event.seq).toBeGreaterThan(0);
 
-      const roomDir = path.join(E2E_DATA_DIR, 'rooms', roomCode);
-      const roomEventsPath = path.join(roomDir, 'room-events.jsonl');
-      const roomSnapshotPath = path.join(roomDir, 'room.snapshot.json');
-      const handEventsPath = path.join(
-        roomDir,
-        'hands',
-        `${liveState.handNumber}.jsonl`,
-      );
-      expect(await pathExists(roomEventsPath)).toBe(true);
-      expect(await pathExists(roomSnapshotPath)).toBe(true);
-      expect(await pathExists(handEventsPath)).toBe(true);
-      expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'rooms', `${roomCode}.json`)),
-      ).toBe(false);
-
-      const roomEvents = await readJsonlFile<any>(roomEventsPath);
+      const roomProjection = await readPersistedRoomProjection(roomCode);
+      const roomEvents = await readPersistedRoomEvents(roomCode);
+      const handEvents = await readPersistedHandEvents(roomCode, liveState.handNumber);
       expect(roomEvents.some((record) => record.type === 'HAND_STARTED')).toBe(
         true,
       );
@@ -258,7 +212,6 @@ test.describe('Poker E2E - Persistence Storage', () => {
         roomEvents.some((record) => record.type === 'ROOM_STATE_UPDATED'),
       ).toBe(true);
 
-      const handEvents = await readJsonlFile<any>(handEventsPath);
       expect(handEvents.some((record) => record.type === 'HAND_STARTED')).toBe(
         true,
       );
@@ -266,20 +219,10 @@ test.describe('Poker E2E - Persistence Storage', () => {
         true,
       );
 
-      const roomProjection = await readJsonFileValue<any>(roomSnapshotPath);
-      expect(roomProjection.room?.id).toBe(roomCode);
-      expect(roomProjection.room?.currentHand?.pot).toBe(liveState.pot);
+      expect(roomProjection?.room.id).toBe(roomCode);
+      expect(roomProjection?.room.currentHand?.pot).toBe(liveState.pot);
 
-      const chatDir = path.join(E2E_DATA_DIR, 'chat', roomCode);
-      const chatLogPath = path.join(chatDir, 'messages.jsonl');
-      const chatIndexPath = path.join(chatDir, 'chat.index.json');
-      expect(await pathExists(chatLogPath)).toBe(true);
-      expect(await pathExists(chatIndexPath)).toBe(true);
-      expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'chat', `${roomCode}.json`)),
-      ).toBe(false);
-
-      const chatRecords = await readJsonlFile<any>(chatLogPath);
+      const chatRecords = await readPersistedChatEvents(roomCode);
       expect(
         chatRecords.some(
           (record) =>
@@ -289,9 +232,9 @@ test.describe('Poker E2E - Persistence Storage', () => {
         ),
       ).toBe(true);
 
-      const chatIndex = await readJsonFileValue<any>(chatIndexPath);
+      const chatIndex = await readPersistedChatIndex(roomCode);
       expect(
-        chatIndex.latestMessages.some(
+        chatIndex?.latestMessages.some(
           (message: any) =>
             message.kind === 'TEXT' && message.text === messageText,
         ),
@@ -301,7 +244,7 @@ test.describe('Poker E2E - Persistence Storage', () => {
     }
   });
 
-  test('1.1b: robot fallback decisions are persisted in room history JSONL', async ({
+  test('1.1b: robot fallback decisions are persisted in Postgres room history', async ({
     browser,
   }) => {
     test.skip(
@@ -401,18 +344,14 @@ test.describe('Poker E2E - Persistence Storage', () => {
         });
       }
 
-      const roomEventsPath = path.join(
-        E2E_DATA_DIR,
-        'rooms',
-        roomCode,
-        'room-events.jsonl',
-      );
       const startedAt = Date.now();
       let persistedRobotAction: any = null;
 
       while (Date.now() - startedAt < 10000) {
-        if (await pathExists(roomEventsPath)) {
-          const roomEvents = await readJsonlFile<any>(roomEventsPath);
+        const projection = await readPersistedRoomProjection(roomCode);
+        const handNumber = projection?.room.currentHand?.handNumber ?? 0;
+        if (handNumber > 0) {
+          const roomEvents = await readPersistedHandEvents(roomCode, handNumber);
           persistedRobotAction = roomEvents.find(
             (record) =>
               record.type === 'PLAYER_ACTION' &&
@@ -607,7 +546,7 @@ test.describe('Poker E2E - Persistence Storage', () => {
     }
   });
 
-  test('1.3: JSONL ledgers append auth, room, and chat records without legacy files', async ({
+  test('1.3: Postgres ledgers append auth, room, and chat records consistently', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -618,58 +557,21 @@ test.describe('Poker E2E - Persistence Storage', () => {
 
       await sendChatMessagesViaSocket(alicePage, messages, 'ledger');
 
-      const authStatePath = path.join(E2E_DATA_DIR, 'auth', 'auth.state.json');
-      const authState = await waitForJsonFileMatch<any>(
-        authStatePath,
-        (state) =>
-          state.users?.some(
-            (user: any) =>
-              user.accountId === 'test1' && user.displayName === 'Alice',
-          ) &&
-          state.users?.some(
-            (user: any) =>
-              user.accountId === 'test2' && user.displayName === 'Bob',
-          ) &&
-          Array.isArray(state.sessions) &&
-          state.sessions.length >= 2,
-      );
-
-      const authLogPath = path.join(E2E_DATA_DIR, 'auth', 'auth.jsonl');
-      const roomEventsPath = path.join(
-        E2E_DATA_DIR,
-        'rooms',
-        roomCode,
-        'room-events.jsonl',
-      );
-      const chatLogPath = path.join(
-        E2E_DATA_DIR,
-        'chat',
-        roomCode,
-        'messages.jsonl',
-      );
-
-      const authLog = await readJsonlFile<any>(authLogPath);
-      const roomLog = await readJsonlFile<any>(roomEventsPath);
-      const chatLog = await readJsonlFile<any>(chatLogPath);
+      const authState = await readPersistedAuthState();
+      const roomLog = await readPersistedRoomEvents(roomCode);
+      const chatLog = await readPersistedChatEvents(roomCode);
 
       expect(
-        authLog.some(
-          (record) =>
-            record.type === 'USER_UPSERTED' &&
-            record.user?.accountId === 'test1' &&
-            record.user?.displayName === 'Alice',
+        authState.users.some(
+          (user) =>
+            user.accountId === 'test1' && user.displayName === 'Alice',
         ),
       ).toBe(true);
       expect(
-        authLog.some(
-          (record) =>
-            record.type === 'USER_UPSERTED' &&
-            record.user?.accountId === 'test2' &&
-            record.user?.displayName === 'Bob',
+        authState.users.some(
+          (user) =>
+            user.accountId === 'test2' && user.displayName === 'Bob',
         ),
-      ).toBe(true);
-      expect(
-        authLog.some((record) => record.type === 'SESSION_UPSERTED'),
       ).toBe(true);
       expect(authState.sessions.length).toBeGreaterThanOrEqual(2);
 
@@ -690,25 +592,12 @@ test.describe('Poker E2E - Persistence Storage', () => {
         )
         .filter((text): text is string => Boolean(text));
       expect(appendedTexts).toEqual(expect.arrayContaining(messages));
-
-      expect(await pathExists(path.join(E2E_DATA_DIR, 'auth', 'users.json'))).toBe(
-        false,
-      );
-      expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'auth', 'sessions.json')),
-      ).toBe(false);
-      expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'rooms', `${roomCode}.json`)),
-      ).toBe(false);
-      expect(
-        await pathExists(path.join(E2E_DATA_DIR, 'chat', `${roomCode}.json`)),
-      ).toBe(false);
     } finally {
       await teardownTwoPlayerSession(session);
     }
   });
 
-  test('1.4: Chat JSONL ledger stays sequential and chat index tracks appended history', async ({
+  test('1.4: Chat event ledger stays sequential and chat index tracks appended history', async ({
     browser,
   }) => {
     const session = await setupTwoPlayerSession(browser);
@@ -734,13 +623,7 @@ test.describe('Poker E2E - Persistence Storage', () => {
         { timeout: 10000 },
       );
 
-      const chatLogPath = path.join(
-        E2E_DATA_DIR,
-        'chat',
-        roomCode,
-        'messages.jsonl',
-      );
-      const chatLog = await readJsonlFile<any>(chatLogPath);
+      const chatLog = await readPersistedChatEvents(roomCode);
       const appendedRecords = chatLog.filter(
         (record) => record.type === 'MESSAGE_APPENDED',
       );
@@ -758,23 +641,21 @@ test.describe('Poker E2E - Persistence Storage', () => {
         [...appendedSeqs].sort((left, right) => left - right),
       );
 
-      const chatIndexPath = path.join(
-        E2E_DATA_DIR,
-        'chat',
-        roomCode,
-        'chat.index.json',
-      );
-      const chatIndex = await waitForJsonFileMatch<any>(
-        chatIndexPath,
-        (index) =>
-          index.latestMessages?.some(
-            (message: any) =>
-              message.kind === 'TEXT' &&
-              message.text === messages[messages.length - 1],
-          ),
-      );
+      let chatIndex = await readPersistedChatIndex(roomCode);
+      const startedAt = Date.now();
+      while (
+        Date.now() - startedAt < 10000 &&
+        !chatIndex?.latestMessages?.some(
+          (message: any) =>
+            message.kind === 'TEXT' &&
+            message.text === messages[messages.length - 1],
+        )
+      ) {
+        await bobPage.waitForTimeout(100);
+        chatIndex = await readPersistedChatIndex(roomCode);
+      }
 
-      const latestTexts = (chatIndex.latestMessages ?? [])
+      const latestTexts = (chatIndex?.latestMessages ?? [])
         .map((message: any) =>
           message.kind === 'TEXT' ? message.text : null,
         )
@@ -782,8 +663,8 @@ test.describe('Poker E2E - Persistence Storage', () => {
       expect(latestTexts.slice(-messages.length)).toEqual(messages);
 
       const lastIndexedMessage =
-        chatIndex.latestMessages?.[chatIndex.latestMessages.length - 1];
-      expect(chatIndex.nextSeq).toBe((lastIndexedMessage?.seq ?? 0) + 1);
+        chatIndex?.latestMessages?.[chatIndex.latestMessages.length - 1];
+      expect(chatIndex?.nextSeq).toBe((lastIndexedMessage?.seq ?? 0) + 1);
     } finally {
       await teardownTwoPlayerSession(session);
     }

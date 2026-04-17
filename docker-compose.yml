@@ -1,15 +1,39 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-poker}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-poker}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - poker_postgres:/var/lib/postgresql/data
+
   poker:
     build:
       context: .
       dockerfile: Dockerfile
     image: poker-app:latest
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${HOST_PORT:-3000}:3000"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-poker}"
       DATA_DIR: "/app/data"
       FRONTEND_DIST_PATH: "/app/poker-client/dist"
     healthcheck:
@@ -28,3 +52,5 @@ services:
 volumes:
   poker_data:
     name: "${POKER_DATA_VOLUME:-poker_data}"
+  poker_postgres:
+    name: "${POKER_POSTGRES_VOLUME:-poker_postgres}"

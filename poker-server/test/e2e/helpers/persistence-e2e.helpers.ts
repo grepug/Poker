@@ -1,7 +1,15 @@
 import { expect, type BrowserContext, type Page } from '@playwright/test';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { PersistedRoomEventRecord, Room } from 'poker-types';
+import { Pool } from 'pg';
+import {
+  PersistedChatIndex,
+  PersistedChatLogRecord,
+  PersistedRoomEventRecord,
+  Room,
+} from 'poker-types';
+import type {
+  AuthSessionRecord,
+  AuthUserRecord,
+} from '../../../src/common/interfaces/auth-storage.interface';
 
 export const FRONTEND_URL =
   process.env.PW_FRONTEND_URL ??
@@ -12,6 +20,9 @@ export const BACKEND_URL =
 const BACKEND_TARGET = new URL(BACKEND_URL);
 const BACKEND_STORAGE_PORT =
   BACKEND_TARGET.port || (BACKEND_TARGET.protocol === 'https:' ? '443' : '80');
+export const BACKEND_DATABASE_URL =
+  process.env.DATABASE_URL ??
+  `postgres://postgres:postgres@127.0.0.1:${process.env.PG_TEST_PORT ?? '55432'}/poker_e2e_${BACKEND_STORAGE_PORT}`;
 
 export const DEFAULT_BIG_BLIND = 10;
 export const DEFAULT_OPENING_POT = 15;
@@ -19,11 +30,27 @@ export const DEFAULT_SMALL_BLIND_CALL_GAP = 5;
 const DEFAULT_TEST_PASSWORD = 'test1234';
 const ROOM_STATE_UPDATED_EVENT = 'ROOM_STATE_UPDATED';
 
-export const E2E_DATA_DIR = path.resolve(
-  process.cwd(),
-  '.e2e-data',
-  BACKEND_STORAGE_PORT,
-);
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: BACKEND_DATABASE_URL,
+    });
+  }
+
+  return pool;
+}
+
+export async function closePersistencePool(): Promise<void> {
+  if (!pool) {
+    return;
+  }
+
+  const currentPool = pool;
+  pool = null;
+  await currentPool.end();
+}
 
 export type PersistedRoomSnapshotMatch = {
   event: PersistedRoomEventRecord;
@@ -499,38 +526,40 @@ export async function getRoomSnapshot(page: Page) {
   });
 }
 
-export async function readJsonlFile<T>(filePath: string): Promise<T[]> {
-  const raw = await fs.readFile(filePath, 'utf-8');
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as T);
-}
-
-export async function readJsonFileValue<T>(filePath: string): Promise<T> {
-  return JSON.parse(await fs.readFile(filePath, 'utf-8')) as T;
-}
-
-export async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPersistedRoomEvents(
+export async function readPersistedRoomEvents(
   roomId: string,
 ): Promise<PersistedRoomEventRecord[]> {
-  const roomEventsPath = path.join(
-    E2E_DATA_DIR,
-    'rooms',
-    roomId,
-    'room-events.jsonl',
+  const client = getPool();
+  const result = await client.query<{
+    payload: PersistedRoomEventRecord['payload'];
+    actor: PersistedRoomEventRecord['actor'];
+    room_id: string;
+    seq: number;
+    record_id: string;
+    timestamp: string;
+    type: PersistedRoomEventRecord['type'];
+    hand_number: number | null;
+    street: string | null;
+  }>(
+    `
+      select room_id, seq, record_id, timestamp, type, hand_number, street, actor, payload
+      from room_events
+      where room_id = $1
+      order by seq asc
+    `,
+    [roomId],
   );
-  return readJsonlFile<PersistedRoomEventRecord>(roomEventsPath);
+  return result.rows.map((row) => ({
+    roomId: row.room_id,
+    seq: row.seq,
+    recordId: row.record_id,
+    timestamp: Number(row.timestamp),
+    type: row.type,
+    handNumber: row.hand_number,
+    street: (row.street as PersistedRoomEventRecord['street']) ?? null,
+    actor: row.actor ?? undefined,
+    payload: row.payload,
+  }));
 }
 
 export async function waitForPersistedRoomSnapshot(
@@ -589,6 +618,161 @@ export async function waitForPersistedRoomSnapshot(
   throw new Error(`Timed out waiting for persisted room snapshot for ${roomId}`);
 }
 
+export async function readPersistedRoomProjection(
+  roomId: string,
+): Promise<{ room: Room; lastRoomEventSeq: number; updatedAt: number } | null> {
+  const client = getPool();
+  const result = await client.query<{
+    room: Room;
+    last_room_event_seq: number;
+    updated_at: string;
+  }>(
+    `
+      select room, last_room_event_seq, updated_at
+      from room_snapshots
+      where room_id = $1
+      limit 1
+    `,
+    [roomId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    room: row.room,
+    lastRoomEventSeq: row.last_room_event_seq,
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+export async function readPersistedHandEvents(
+  roomId: string,
+  handNumber: number,
+): Promise<PersistedRoomEventRecord[]> {
+  const client = getPool();
+  const result = await client.query<{ event: PersistedRoomEventRecord }>(
+    `
+      select event
+      from hand_events
+      where room_id = $1 and hand_number = $2
+      order by seq asc
+    `,
+    [roomId, handNumber],
+  );
+  return result.rows.map((row) => row.event);
+}
+
+export async function readPersistedChatEvents(
+  roomId: string,
+): Promise<PersistedChatLogRecord[]> {
+  const client = getPool();
+  const result = await client.query<{ record: PersistedChatLogRecord }>(
+    `
+      select record
+      from chat_events
+      where room_id = $1
+      order by seq asc
+    `,
+    [roomId],
+  );
+  return result.rows.map((row) => row.record);
+}
+
+export async function readPersistedChatIndex(
+  roomId: string,
+): Promise<PersistedChatIndex | null> {
+  const client = getPool();
+  const result = await client.query<{
+    room_id: string;
+    created_at: string;
+    updated_at: string;
+    next_seq: number;
+    log_seq: number;
+    latest_messages: PersistedChatIndex['latestMessages'];
+  }>(
+    `
+      select room_id, created_at, updated_at, next_seq, log_seq, latest_messages
+      from chat_indexes
+      where room_id = $1
+      limit 1
+    `,
+    [roomId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    roomId: row.room_id,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    nextSeq: row.next_seq,
+    logSeq: row.log_seq,
+    latestMessages: row.latest_messages,
+  };
+}
+
+export async function readPersistedAuthState(): Promise<{
+  users: AuthUserRecord[];
+  sessions: AuthSessionRecord[];
+}> {
+  const client = getPool();
+  const [usersResult, sessionsResult] = await Promise.all([
+    client.query<{
+      id: string;
+      account_id: string;
+      display_name: string;
+      avatar_emoji: string;
+      password_hash: string | null;
+      passkeys: AuthUserRecord['passkeys'];
+      created_at: string;
+      updated_at: string;
+    }>(
+      `
+        select id, account_id, display_name, avatar_emoji, password_hash, passkeys, created_at, updated_at
+        from auth_users
+        order by created_at asc, id asc
+      `,
+    ),
+    client.query<{
+      token_hash: string;
+      user_id: string;
+      expires_at: string;
+      last_used_at: string;
+      created_at: string;
+    }>(
+      `
+        select token_hash, user_id, expires_at, last_used_at, created_at
+        from auth_sessions
+        order by created_at asc, token_hash asc
+      `,
+    ),
+  ]);
+
+  return {
+    users: usersResult.rows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      displayName: row.display_name,
+      avatarEmoji: row.avatar_emoji,
+      passwordHash: row.password_hash ?? undefined,
+      passkeys: row.passkeys,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    })),
+    sessions: sessionsResult.rows.map((row) => ({
+      tokenHash: row.token_hash,
+      userId: row.user_id,
+      expiresAt: Number(row.expires_at),
+      lastUsedAt: Number(row.last_used_at),
+      createdAt: Number(row.created_at),
+    })),
+  };
+}
+
 export function buildChipRanking(room: Room) {
   return [...room.players]
     .sort(
@@ -603,11 +787,15 @@ export function buildChipRanking(room: Room) {
 }
 
 export async function openChatPanel(page: Page) {
-  await page.click('[data-testid="open-chat-button"]');
-  await page.waitForSelector('[data-testid="chat-panel"]', {
-    state: 'visible',
-    timeout: 5000,
-  });
+  const chatPanel = page.locator('[data-testid="chat-panel"]').first();
+  if ((await chatPanel.count()) > 0 && (await chatPanel.isVisible())) {
+    return;
+  }
+
+  const openChatButton = page.locator('[data-testid="open-chat-button"]').first();
+  await expect(openChatButton).toBeVisible({ timeout: 5000 });
+  await openChatButton.click();
+  await expect(chatPanel).toBeVisible({ timeout: 5000 });
 }
 
 export async function sendChatMessagesViaSocket(

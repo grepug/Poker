@@ -1,30 +1,32 @@
 import { Module } from '@nestjs/common';
-import { JsonStorageService } from './json-storage.service';
-import { JsonChatStorageService } from './json-chat-storage.service';
 import { JsonChatMediaStorageService } from './json-chat-media-storage.service';
-import { JsonAuthStorageService } from './json-auth-storage.service';
+import { PostgresStorageService } from './postgres-storage.service';
+import { PostgresChatStorageService } from './postgres-chat-storage.service';
+import { PostgresAuthStorageService } from './postgres-auth-storage.service';
+import { DatabaseModule } from '../db/database.module';
 
 @Module({
+  imports: [DatabaseModule],
   providers: [
-    JsonStorageService,
-    JsonChatStorageService,
+    PostgresStorageService,
+    PostgresChatStorageService,
     JsonChatMediaStorageService,
-    JsonAuthStorageService,
+    PostgresAuthStorageService,
     {
       provide: 'IStorageService',
-      useExisting: JsonStorageService,
+      useExisting: PostgresStorageService,
     },
     {
       provide: 'IHandHistoryStorageService',
-      useExisting: JsonStorageService,
+      useExisting: PostgresStorageService,
     },
     {
       provide: 'ISavedGameArchiveStorageService',
-      useExisting: JsonStorageService,
+      useExisting: PostgresStorageService,
     },
     {
       provide: 'IChatStorageService',
-      useExisting: JsonChatStorageService,
+      useExisting: PostgresChatStorageService,
     },
     {
       provide: 'IChatMediaStorageService',
@@ -32,7 +34,7 @@ import { JsonAuthStorageService } from './json-auth-storage.service';
     },
     {
       provide: 'IAuthStorageService',
-      useExisting: JsonAuthStorageService,
+      useExisting: PostgresAuthStorageService,
     },
   ],
   exports: [
