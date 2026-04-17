@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -28,21 +29,18 @@ export const RankingsModal: React.FC<RankingsModalProps> = ({
   onClose,
   t,
 }) => (
-  <div
-    className="fixed inset-0 z-[75] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-    data-testid="rankings-modal"
-    onClick={(event) => {
-      if (event.target === event.currentTarget) {
-        onClose();
-      }
-    }}
+  <PokerModalShell
+    layout="centered"
+    onBackdropClose={onClose}
+    testId="rankings-modal"
+    className="bg-emerald-950/85"
+    zIndexClassName="z-[75]"
   >
-    <section
-      className="surface-panel flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col p-4 md:p-6"
-      data-testid="rankings-modal-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rankings-modal-title"
+    <PokerModalPanel
+      className="flex max-w-2xl flex-col p-4 md:p-6"
+      testId="rankings-modal-panel"
+      ariaLabelledBy="rankings-modal-title"
+      scrollMode="content"
     >
       <div className="flex items-center justify-between gap-3">
         <h3 id="rankings-modal-title" className="text-lg font-black text-white">
@@ -101,6 +99,6 @@ export const RankingsModal: React.FC<RankingsModalProps> = ({
           </table>
         </div>
       </div>
-    </section>
-  </div>
+    </PokerModalPanel>
+  </PokerModalShell>
 );

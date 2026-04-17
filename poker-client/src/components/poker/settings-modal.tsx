@@ -1,5 +1,6 @@
 import React from "react";
 import type { Locale, MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -42,11 +43,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   t,
 }) => {
   return (
-    <div
-      className="fixed inset-0 z-[76] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-      data-testid="settings-modal"
+    <PokerModalShell
+      layout="centered"
+      testId="settings-modal"
+      className="bg-emerald-950/85"
+      zIndexClassName="z-[76]"
     >
-      <div className="surface-panel w-full max-w-xl p-4 md:p-6">
+      <PokerModalPanel
+        className="max-w-xl p-4 md:p-6"
+        ariaLabel={t("game.settings.title")}
+      >
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-black text-white">{t("game.settings.title")}</h3>
           <button
@@ -158,7 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </label>
           </div>
         )}
-      </div>
-    </div>
+      </PokerModalPanel>
+    </PokerModalShell>
   );
 };

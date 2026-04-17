@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -16,14 +17,18 @@ type HandResultsModalProps = {
 
 export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalProps>(
   ({ children, ariaLabel, footer, onClose, t }, ref) => (
-    <div
-      className="fixed inset-0 z-[74] overflow-y-auto bg-emerald-950/88 p-4 backdrop-blur-sm"
-      data-testid="hand-results-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
+    <PokerModalShell
+      layout="page"
+      testId="hand-results-modal"
+      zIndexClassName="z-[74]"
     >
-      <div className="mx-auto w-full max-w-4xl">
+      <PokerModalPanel
+        ref={ref}
+        className="mx-auto max-w-4xl p-4 md:p-6"
+        testId="hand-results-panel"
+        ariaLabel={ariaLabel}
+        viewportBounded={false}
+      >
         <div className="mb-3 flex justify-end">
           <button
             onClick={onClose}
@@ -33,16 +38,10 @@ export const HandResultsModal = React.forwardRef<HTMLElement, HandResultsModalPr
             {t("common.close")}
           </button>
         </div>
-        <section
-          ref={ref}
-          className="surface-panel p-4 md:p-6"
-          data-testid="hand-results-panel"
-        >
-          {children}
-        </section>
+        {children}
         {footer ? <div className="mt-3">{footer}</div> : null}
-      </div>
-    </div>
+      </PokerModalPanel>
+    </PokerModalShell>
   ),
 );
 
