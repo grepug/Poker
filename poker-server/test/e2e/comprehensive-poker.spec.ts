@@ -5144,8 +5144,12 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
         alicePage.locator('[data-testid^="your-card-"]'),
       ).toHaveCount(0);
       await expect(
-        alicePage.locator('[data-testid="hole-cards-hidden-state"]'),
-      ).toBeVisible();
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="start-next-hand-button"]'),
       ).toBeVisible();
@@ -5457,9 +5461,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      expect(
-        await bobPage.locator('[data-testid="action-check"]').count(),
-      ).toBe(0);
+      await expect(
+        bobPage.locator('[data-testid="action-check"]'),
+      ).toBeDisabled();
       await expect(
         bobPage.locator('[data-testid="action-call"]'),
       ).toContainText(`Call $${DEFAULT_SMALL_BLIND_CALL_GAP}`);
@@ -5480,9 +5484,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(afterBobCall.bobCurrentBet).toBe(DEFAULT_BIG_BLIND);
       expect(afterBobCall.aliceCurrentBet).toBe(DEFAULT_BIG_BLIND);
 
-      expect(
-        await alicePage.locator('[data-testid="action-check"]').count(),
-      ).toBe(1);
+      await expect(
+        alicePage.locator('[data-testid="action-check"]'),
+      ).toBeEnabled();
       expect(
         await alicePage.locator('[data-testid="action-call"]').count(),
       ).toBe(0);
@@ -6769,10 +6773,16 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.locator('[data-testid="action-confirm-modal"]'),
       ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toHaveCount(0);
 
       await bobPage.click('[data-testid="action-call"]');
       await expect(
         bobPage.locator('[data-testid="action-confirm-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
       ).toHaveCount(0);
 
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -6784,39 +6794,24 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="action-check"]'),
       ).toBeVisible();
       await expect(
+        bobPage.locator('[data-testid="action-check"]'),
+      ).toBeEnabled();
+      await expect(
         bobPage.locator('[data-testid="action-fold"]'),
       ).toBeVisible();
-      const dockScrollBehavior = await bobPage.evaluate(() => {
-        const dock = document.querySelector<HTMLElement>(
-          '[data-testid="turn-overlay"]',
-        );
-        if (!dock) return null;
-        const styles = window.getComputedStyle(dock);
-        return {
-          overflowY: styles.overflowY,
-          overflow: styles.overflow,
-        };
-      });
-      expect(dockScrollBehavior).not.toBeNull();
-      const controlsAreInViewport = await bobPage.evaluate(() => {
-        const fold = document.querySelector<HTMLElement>(
-          '[data-testid="action-fold"]',
-        );
-        const check = document.querySelector<HTMLElement>(
-          '[data-testid="action-check"]',
-        );
-        if (!fold || !check) return false;
-
-        const foldRect = fold.getBoundingClientRect();
-        const checkRect = check.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-
-        const isInsideViewport = (rect: DOMRect) =>
-          rect.top >= 0 && rect.bottom <= viewportHeight;
-
-        return isInsideViewport(foldRect) && isInsideViewport(checkRect);
-      });
-      expect(controlsAreInViewport).toBe(true);
+      await expect(
+        bobPage.locator('[data-testid="action-fold"]'),
+      ).toBeEnabled();
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        bobPage.locator('[data-testid="action-confirm-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
     }
