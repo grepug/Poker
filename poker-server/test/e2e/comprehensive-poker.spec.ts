@@ -8550,10 +8550,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="turn-overlay"]'),
       ).toHaveCount(0);
-      await expectYourCardsFlyoutAboveActionArea(
-        alicePage,
-        'reveal-next-street-action-area',
-      );
+      await expect(
+        alicePage.locator('[data-testid="your-cards-section"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="reveal-next-street-button"]'),
       ).toContainText('Reveal Next Street');
@@ -8567,12 +8569,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(
         0,
       );
-      await expectYourCardsFlyoutAboveActionArea(
-        bobPage,
-        'reveal-next-street-action-area',
-      );
+      await expect(
+        bobPage.locator('[data-testid="your-cards-section"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
 
-      await alicePage.click('[data-testid="open-chat-button"]');
       await expect(
         alicePage.locator('[data-testid="chat-panel"]'),
       ).toBeVisible();
@@ -9040,9 +9043,17 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         alicePage.setViewportSize({ width: 390, height: 844 }),
         bobPage.setViewportSize({ width: 390, height: 844 }),
       ]);
+      await Promise.all([
+        closeChatPanelIfOpen(alicePage),
+        closeChatPanelIfOpen(bobPage),
+      ]);
       await startGameFromLobby(alicePage, bobPage, {
         enableStreetReveal: true,
       });
+      await Promise.all([
+        closeChatPanelIfOpen(alicePage),
+        closeChatPanelIfOpen(bobPage),
+      ]);
 
       await waitForPlayerTurn(bobPage, 'Bob');
       await bobPage.click('[data-testid="action-call"]');
@@ -9061,6 +9072,15 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expectYourCardsFlyoutAboveActionArea(
         alicePage,
         'reveal-next-street-action-area',
+      );
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="operation-overlay"]'),
+      ).toBeVisible();
+      await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(
+        0,
       );
       await expectYourCardsFlyoutAboveActionArea(
         bobPage,
@@ -9119,10 +9139,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="turn-overlay"]'),
       ).toHaveCount(0);
-      await expectYourCardsFlyoutAboveActionArea(
-        alicePage,
-        'showdown-action-area',
-      );
+      await expect(
+        alicePage.locator('[data-testid="your-cards-section"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="showdown-action-area"]'),
       ).toBeVisible();
@@ -9161,14 +9183,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           'Missing acting player id for showdown visibility assertion',
         );
       }
-      const actingFlyoutCards = await actingPage
-        .locator('[data-testid^="your-card-"]')
-        .evaluateAll((nodes) =>
-          nodes.map((node) => ({
-            rank: node.getAttribute('data-rank'),
-            suit: node.getAttribute('data-suit'),
-          })),
-        );
+      const actingCards = await actingPage.evaluate(() =>
+        ((window as any).pokerDebug?.getCards?.() ?? []).map((card: any) => ({
+          rank: card?.rank ?? null,
+          suit: card?.suit ?? null,
+        })),
+      );
 
       await actingPage.click('[data-testid="show-my-hand-button"]');
       await expect(
@@ -9182,7 +9202,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
             suit: node.getAttribute('data-suit'),
           })),
         );
-      expect(revealedCardsOnWaitingPage).toEqual(actingFlyoutCards);
+      expect(revealedCardsOnWaitingPage).toEqual(actingCards);
 
       await waitingPage.click('[data-testid="show-my-hand-button"]');
       await expect(
@@ -9223,10 +9243,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="turn-overlay"]'),
       ).toHaveCount(0);
-      await expectYourCardsFlyoutAboveActionArea(
-        alicePage,
-        'showdown-action-area',
-      );
+      await expect(
+        alicePage.locator('[data-testid="your-cards-section"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
 
       await expect(
         bobPage.locator('[data-testid="showdown-action-area"]'),
@@ -9237,10 +9259,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(bobPage.locator('[data-testid="turn-overlay"]')).toHaveCount(
         0,
       );
-      await expectYourCardsFlyoutAboveActionArea(
-        bobPage,
-        'showdown-action-area',
-      );
+      await expect(
+        bobPage.locator('[data-testid="your-cards-section"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
 
       const aliceCanActFirst =
         (await alicePage
@@ -9267,14 +9291,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           'Missing acting player id for showdown order assertion',
         );
       }
-      const actingFlyoutCards = await actingPage
-        .locator('[data-testid^="your-card-"]')
-        .evaluateAll((nodes) =>
-          nodes.map((node) => ({
-            rank: node.getAttribute('data-rank'),
-            suit: node.getAttribute('data-suit'),
-          })),
-        );
+      const actingCards = await actingPage.evaluate(() =>
+        ((window as any).pokerDebug?.getCards?.() ?? []).map((card: any) => ({
+          rank: card?.rank ?? null,
+          suit: card?.suit ?? null,
+        })),
+      );
 
       await actingPage.click('[data-testid="show-my-hand-button"]');
       await expect(
@@ -9288,7 +9310,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
             suit: node.getAttribute('data-suit'),
           })),
         );
-      expect(revealedCardsOnWaitingPage).toEqual(actingFlyoutCards);
+      expect(revealedCardsOnWaitingPage).toEqual(actingCards);
 
       await waitingPage.click('[data-testid="show-my-hand-button"]');
       await expect(
