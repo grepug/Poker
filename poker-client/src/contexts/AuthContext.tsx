@@ -14,6 +14,12 @@ import {
 } from "@simplewebauthn/browser";
 import type { AuthModes, AuthUser } from "poker-types";
 import { authService } from "@/services/auth.service";
+import { getPasskeySupportState, type PasskeySupportIssue } from "@/utils/browser-detection";
+import {
+  createPasskeySupportError,
+  extractPasskeyRpId,
+  normalizePasskeyBrowserError,
+} from "@/utils/passkey-errors";
 import { clearPendingInviteRoom } from "@/utils/pending-invite-room";
 
 type AuthContextType = {
@@ -22,6 +28,7 @@ type AuthContextType = {
   isInitializing: boolean;
   isAuthenticated: boolean;
   passkeySupported: boolean;
+  passkeySupportIssue: PasskeySupportIssue | null;
   refreshSession: () => Promise<void>;
   registerWithPasskey: (
     displayName: string,
@@ -58,9 +65,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const [authModes, setAuthModes] = useState<AuthModes>(defaultModes);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  const passkeySupported =
-    typeof window !== "undefined" &&
-    typeof window.PublicKeyCredential !== "undefined";
+  const passkeySupportState = getPasskeySupportState();
+  const passkeySupported = passkeySupportState.supported;
+  const passkeySupportIssue = passkeySupportState.supported
+    ? null
+    : passkeySupportState.issue;
 
   const persistSession = useCallback((nextUser: AuthUser) => {
     setUser(nextUser);
@@ -103,18 +112,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const registerWithPasskey = useCallback(
     async (displayName: string, avatarEmoji: string) => {
       if (!passkeySupported) {
-        throw new Error("Passkey is not supported on this browser");
+        throw createPasskeySupportError(passkeySupportIssue);
       }
 
       const start = await authService.startPasskeyRegister(
         displayName,
         avatarEmoji,
       );
-      const passkeyResponse = await startRegistration({
-        optionsJSON: start.options as Parameters<
-          typeof startRegistration
-        >[0]["optionsJSON"],
-      });
+      let passkeyResponse: Awaited<ReturnType<typeof startRegistration>>;
+      try {
+        passkeyResponse = await startRegistration({
+          optionsJSON: start.options as Parameters<
+            typeof startRegistration
+          >[0]["optionsJSON"],
+        });
+      } catch (error) {
+        const normalizedError = normalizePasskeyBrowserError(error, {
+          rpId: extractPasskeyRpId(start.options),
+        });
+        if (normalizedError) {
+          console.warn("Passkey registration failed before server verification", {
+            code: normalizedError.code,
+            details: normalizedError.details,
+            error,
+          });
+          throw normalizedError;
+        }
+        throw error;
+      }
       const finish = await authService.finishPasskeyRegister(
         start.flowId,
         passkeyResponse,
@@ -122,27 +147,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       persistSession(finish.user);
       setAuthModes(finish.authModes);
     },
-    [passkeySupported, persistSession],
+    [passkeySupportIssue, passkeySupported, persistSession],
   );
 
   const loginWithPasskey = useCallback(async () => {
     if (!passkeySupported) {
-      throw new Error("Passkey is not supported on this browser");
+      throw createPasskeySupportError(passkeySupportIssue);
     }
 
     const start = await authService.startPasskeyLogin();
-    const passkeyResponse = await startAuthentication({
-      optionsJSON: start.options as Parameters<
-        typeof startAuthentication
-      >[0]["optionsJSON"],
-    });
+    let passkeyResponse: Awaited<ReturnType<typeof startAuthentication>>;
+    try {
+      passkeyResponse = await startAuthentication({
+        optionsJSON: start.options as Parameters<
+          typeof startAuthentication
+        >[0]["optionsJSON"],
+      });
+    } catch (error) {
+      const normalizedError = normalizePasskeyBrowserError(error, {
+        rpId: extractPasskeyRpId(start.options),
+      });
+      if (normalizedError) {
+        console.warn("Passkey login failed before server verification", {
+          code: normalizedError.code,
+          details: normalizedError.details,
+          error,
+        });
+        throw normalizedError;
+      }
+      throw error;
+    }
     const finish = await authService.finishPasskeyLogin(
       start.flowId,
       passkeyResponse,
     );
     persistSession(finish.user);
     setAuthModes(finish.authModes);
-  }, [passkeySupported, persistSession]);
+  }, [passkeySupportIssue, passkeySupported, persistSession]);
 
   const loginWithPassword = useCallback(
     async (accountId: string, password: string) => {
@@ -188,6 +229,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       isInitializing,
       isAuthenticated: Boolean(user),
       passkeySupported,
+      passkeySupportIssue,
       refreshSession,
       registerWithPasskey,
       loginWithPasskey,
@@ -200,6 +242,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       authModes,
       isInitializing,
       passkeySupported,
+      passkeySupportIssue,
       refreshSession,
       registerWithPasskey,
       loginWithPasskey,
