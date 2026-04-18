@@ -6610,6 +6610,67 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4g: Final Summary Preempts Rankings When The Host Ends The Game', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await expect(
+        alicePage.locator('[data-testid="next-hand-action-area"]'),
+      ).toBeVisible();
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="end-game-button"]'),
+      ).toBeVisible();
+
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+
+      await bobPage.click('[data-testid="open-rankings-button"]');
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="end-game-button"]');
+      await expect(
+        alicePage.locator('[data-testid="end-game-confirm-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="end-game-confirm-accept"]');
+
+      await expect(
+        bobPage.locator('[data-testid="final-summary-modal"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('@critical 8.5: Players Can Ready Next Hand After Break', async ({
     browser,
   }) => {
@@ -7557,6 +7618,152 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid="rankings-modal"]'),
       ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.9d: Rankings Can Open After Hand Results Are Dismissed At Hand End', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-rankings-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
+
+      await alicePage.click('[data-testid="open-rules-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-rules-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toHaveCount(0);
+
+      await alicePage.click('[data-testid="open-settings-button"]');
+      await expect(
+        alicePage.locator('[data-testid="settings-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="settings-modal"]'),
+      ).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.9e: Reopened Rankings Are Preempted Again When Action-Bar State Returns', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const firstHandCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await firstHandCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+
+      await bobPage.click('[data-testid="open-rankings-button"]');
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="start-next-hand-button"]');
+      await waitForHandStart(alicePage, 2);
+
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      const secondHandCompletePromise = captureNextHandComplete(bobPage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await alicePage.click('[data-testid="action-fold"]');
+
+      await expect(
+        bobPage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
+
+      await bobPage.click('[data-testid="reveal-next-street-button"]');
+      await secondHandCompletePromise;
     } finally {
       await teardownTwoPlayerSession(session);
     }
