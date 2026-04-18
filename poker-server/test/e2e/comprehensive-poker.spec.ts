@@ -9535,11 +9535,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           (mobileHistoryLayout?.selectedHandTop ?? Number.NEGATIVE_INFINITY),
       ).toBe(true);
       await bobPage.click('[data-testid="saved-history-mobile-tab-session"]');
+      const mobileSessionPanel = bobPage.locator(
+        '[data-testid="saved-history-mobile-session-panel"]',
+      );
+      await expect(mobileSessionPanel).toBeVisible();
       await expect(
-        bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
+        mobileSessionPanel.getByRole('heading', { name: 'Session Statistics' }),
       ).toBeVisible();
-      await expect(bobPage.getByText('Session Statistics')).toBeVisible();
-      await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
+      await expect(mobileSessionPanel.getByText(/^Robot\b/)).toHaveCount(0);
       await bobPage.setViewportSize({ width: 1440, height: 900 });
       await expect(
         bobPage.getByRole('columnheader', { name: 'Buy-in' }),
