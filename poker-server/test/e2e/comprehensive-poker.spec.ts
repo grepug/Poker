@@ -6606,6 +6606,67 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.4g: Final Summary Preempts Rankings When The Host Ends The Game', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+
+      await expect(
+        alicePage.locator('[data-testid="next-hand-action-area"]'),
+      ).toBeVisible();
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="end-game-button"]'),
+      ).toBeVisible();
+
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await bobPage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        bobPage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+
+      await bobPage.click('[data-testid="open-rankings-button"]');
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="end-game-button"]');
+      await expect(
+        alicePage.locator('[data-testid="end-game-confirm-modal"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="end-game-confirm-accept"]');
+
+      await expect(
+        bobPage.locator('[data-testid="final-summary-modal"]'),
+      ).toBeVisible();
+      await expect(
+        bobPage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('@critical 8.5: Players Can Ready Next Hand After Break', async ({
     browser,
   }) => {
