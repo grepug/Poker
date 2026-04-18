@@ -238,6 +238,19 @@ const buildDetail = () => ({
   ],
 });
 
+const buildSummaryOnlyDetail = () => {
+  const detail = buildDetail();
+  return {
+    ...detail,
+    hands: detail.hands.map((hand) => ({
+      handNumber: hand.handNumber,
+      totalPot: hand.history.settlement.totalPot,
+      actionCount: hand.history.actions.length,
+      analysis: hand.analysis,
+    })),
+  };
+};
+
 const t = (key: MessageKey, values?: Record<string, string | number>) => {
   if (!values) {
     return key;
@@ -247,9 +260,29 @@ const t = (key: MessageKey, values?: Record<string, string | number>) => {
 };
 
 const renderView = () =>
-  renderToStaticMarkup(
-    React.createElement(SavedGameDetailView, {
-      detail: buildDetail(),
+  (() => {
+    const detail = buildDetail();
+    return renderToStaticMarkup(
+      React.createElement(SavedGameDetailView, {
+        detail,
+        selectedHand: detail.hands[0],
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+      }),
+    );
+  })();
+
+const renderSummaryOnlyView = () => {
+  const detail = buildDetail();
+  return renderToStaticMarkup(
+    React.createElement(SavedGameDetailView as any, {
+      detail: buildSummaryOnlyDetail(),
+      selectedHand: detail.hands[0],
       selectedHandNumber: 1,
       locale: "en" satisfies Locale,
       localeTag: "en-US",
@@ -259,6 +292,7 @@ const renderView = () =>
       onSelectHandNumber: vi.fn(),
     }),
   );
+};
 
 describe("SavedGameDetailView", () => {
   it("keeps history and lobby navigation visible in shell states like loading or error", () => {
@@ -321,5 +355,13 @@ describe("SavedGameDetailView", () => {
     expect(desktopHandListStart).toBeGreaterThan(standingsSectionStart);
     expect(standingsSection).toContain("game.rankings.buyIn");
     expect(standingsSection).toContain("$1000");
+  });
+
+  it("renders selected-hand detail from a separately loaded hand while the archive hand list stays summary-only", () => {
+    const html = renderSummaryOnlyView();
+
+    expect(html).toContain("history.handLabel:{&quot;handNumber&quot;:1}");
+    expect(html).toContain("history.handPot:{&quot;amount&quot;:80}");
+    expect(html).toContain("history.handPot:{&quot;amount&quot;:15}");
   });
 });

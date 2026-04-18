@@ -8,6 +8,7 @@ import type {
   SavedGameAnalysisStatus,
   SavedGameDetail,
   SavedGameHandAnalysis,
+  SavedGameHandDetail,
   SavedGameLocalizedAnalysis,
 } from "poker-types";
 import { Card } from "@/components/Card";
@@ -146,6 +147,7 @@ type TranslationFn = (
 
 type SavedGameDetailViewProps = {
   detail: SavedGameDetail;
+  selectedHand: SavedGameHandDetail | null;
   selectedHandNumber: number | null;
   locale: string;
   localeTag: string;
@@ -316,7 +318,7 @@ const ParticipantStandingsCards: React.FC<{
 
 const SeatList: React.FC<{
   detail: SavedGameDetail;
-  selectedHand: SavedGameDetail["hands"][number];
+  selectedHand: SavedGameHandDetail;
   t: TranslationFn;
 }> = ({ detail, selectedHand, t }) => (
   <div className="space-y-2">
@@ -348,7 +350,7 @@ const SeatList: React.FC<{
 );
 
 const ActionList: React.FC<{
-  selectedHand: SavedGameDetail["hands"][number];
+  selectedHand: SavedGameHandDetail;
   t: TranslationFn;
   compact?: boolean;
 }> = ({ selectedHand, t, compact = false }) => (
@@ -377,7 +379,7 @@ const ActionList: React.FC<{
 
 const NetSummary: React.FC<{
   detail: SavedGameDetail;
-  selectedHand: SavedGameDetail["hands"][number];
+  selectedHand: SavedGameHandDetail;
   t: TranslationFn;
 }> = ({ detail, selectedHand, t }) => (
   <div className="rounded-xl border border-emerald-700/60 bg-emerald-900/25 p-4">
@@ -408,7 +410,7 @@ const NetSummary: React.FC<{
 );
 
 const AnalysisPanel: React.FC<{
-  selectedHand: SavedGameDetail["hands"][number];
+  selectedHand: SavedGameHandDetail;
   selectedHandAnalysis: ReturnType<typeof getDisplayedAnalysis> | null;
   t: TranslationFn;
 }> = ({ selectedHand, selectedHandAnalysis, t }) => (
@@ -490,7 +492,7 @@ const MobileHandStripButton: React.FC<{
       </span>
     </div>
     <p className="mt-2 text-xs text-emerald-100/60">
-      {t("history.handPot", { amount: hand.history.settlement.totalPot })}
+      {t("history.handPot", { amount: hand.totalPot })}
     </p>
   </button>
 );
@@ -563,6 +565,7 @@ export const SavedGameDetailShell: React.FC<SavedGameDetailShellProps> = ({
 
 export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
   detail,
+  selectedHand,
   selectedHandNumber,
   locale,
   localeTag,
@@ -572,9 +575,6 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
   onSelectHandNumber,
 }) => {
   const [mobileSection, setMobileSection] = useState<MobileDetailSection>("overview");
-
-  const selectedHand =
-    detail.hands.find((hand) => hand.handNumber === selectedHandNumber) ?? null;
   const selectedHandAnalysis = selectedHand
     ? getDisplayedAnalysis(selectedHand.analysis, locale)
     : null;
@@ -892,7 +892,7 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
                             </div>
                             <p className="mt-1 text-xs text-emerald-100/60">
                               {t("history.handPot", {
-                                amount: hand.history.settlement.totalPot,
+                                amount: hand.totalPot,
                               })}
                             </p>
                           </>
@@ -932,6 +932,9 @@ export const SavedGameDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { locale, t } = useLocalization();
   const [detail, setDetail] = useState<SavedGameDetail | null>(null);
+  const [handDetailsByNumber, setHandDetailsByNumber] = useState<
+    Record<number, SavedGameHandDetail>
+  >({});
   const [selectedHandNumber, setSelectedHandNumber] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -948,6 +951,7 @@ export const SavedGameDetailPage: React.FC = () => {
 
       setIsLoading(true);
       setError(null);
+      setHandDetailsByNumber({});
       try {
         const nextDetail = await savedGameHistoryService.getSavedGameDetail(
           archiveId,
@@ -983,10 +987,53 @@ export const SavedGameDetailPage: React.FC = () => {
     };
   }, [archiveId, locale, t]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSelectedHand = async () => {
+      if (!archiveId || selectedHandNumber === null) {
+        return;
+      }
+      if (handDetailsByNumber[selectedHandNumber]) {
+        return;
+      }
+
+      try {
+        const handDetail = await savedGameHistoryService.getSavedGameHandDetail(
+          archiveId,
+          selectedHandNumber,
+          locale,
+        );
+        if (!cancelled) {
+          setHandDetailsByNumber((current) => ({
+            ...current,
+            [handDetail.handNumber]: handDetail,
+          }));
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : t("history.detailLoadFailed"),
+          );
+        }
+      }
+    };
+
+    void loadSelectedHand();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [archiveId, handDetailsByNumber, locale, selectedHandNumber, t]);
+
   const localeTag = useMemo(
     () => (locale === "zh_hans" ? "zh-Hans-CN" : "en-US"),
     [locale],
   );
+  const selectedHand =
+    selectedHandNumber === null ? null : handDetailsByNumber[selectedHandNumber] ?? null;
 
   return (
     <>
@@ -1019,6 +1066,7 @@ export const SavedGameDetailPage: React.FC = () => {
       {!isLoading && !error && detail && (
         <SavedGameDetailView
           detail={detail}
+          selectedHand={selectedHand}
           selectedHandNumber={selectedHandNumber}
           locale={locale}
           localeTag={localeTag}

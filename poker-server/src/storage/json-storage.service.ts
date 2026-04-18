@@ -657,9 +657,37 @@ export class JsonStorageService
       blinds: archive.blinds,
       participants,
       hands: playerView.hands.map((hand) => ({
-        ...hand,
+        handNumber: hand.handNumber,
+        totalPot: hand.history.settlement.totalPot,
+        actionCount: hand.history.actions.length,
         analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
       })),
+    };
+  }
+
+  async getSavedGameHandDetailForUser(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandDetail | null> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return null;
+    }
+
+    const playerView = archive.playerViews[userId];
+    const hand = playerView?.hands.find(
+      (candidate) => candidate.handNumber === handNumber,
+    );
+    if (!hand) {
+      return null;
+    }
+
+    return {
+      handNumber: hand.handNumber,
+      history: hand.history,
+      analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
     };
   }
 

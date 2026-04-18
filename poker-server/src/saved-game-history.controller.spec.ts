@@ -12,6 +12,7 @@ describe('SavedGameHistoryController', () => {
   let savedGameStorageService: {
     listSavedGamesForUser: jest.Mock;
     getSavedGameDetailForUser: jest.Mock;
+    getSavedGameHandDetailForUser: jest.Mock;
   };
   let savedGameReviewService: {
     scheduleHandLocalization: jest.Mock;
@@ -24,6 +25,7 @@ describe('SavedGameHistoryController', () => {
     savedGameStorageService = {
       listSavedGamesForUser: jest.fn(),
       getSavedGameDetailForUser: jest.fn(),
+      getSavedGameHandDetailForUser: jest.fn(),
     };
     savedGameReviewService = {
       scheduleHandLocalization: jest.fn().mockResolvedValue(undefined),
@@ -81,30 +83,11 @@ describe('SavedGameHistoryController', () => {
     ]);
   });
 
-  it('returns saved game detail for the authenticated user', async () => {
+  it('returns saved game detail summary for the authenticated user without scheduling archive-wide localization', async () => {
     authService.getCurrentSession.mockResolvedValue({
       user: { id: 'user-alice' },
     });
-    savedGameStorageService.getSavedGameDetailForUser
-      .mockResolvedValueOnce({
-        archiveId: 'ROOM1',
-        roomId: 'ROOM1',
-        requesterUserId: 'user-alice',
-        requesterPlayerId: 'alice',
-        handCount: 2,
-        hands: [
-          {
-            handNumber: 1,
-            analysis: {
-              status: 'ready',
-              headline: 'Play tighter preflop',
-              summary: 'Fold more offsuit broadways.',
-              keyAdjustments: ['Fold KJo UTG'],
-            },
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
+    savedGameStorageService.getSavedGameDetailForUser.mockResolvedValue({
       archiveId: 'ROOM1',
       roomId: 'ROOM1',
       requesterUserId: 'user-alice',
@@ -113,24 +96,17 @@ describe('SavedGameHistoryController', () => {
       hands: [
         {
           handNumber: 1,
+          totalPot: 80,
+          actionCount: 3,
           analysis: {
             status: 'ready',
             headline: 'Play tighter preflop',
             summary: 'Fold more offsuit broadways.',
             keyAdjustments: ['Fold KJo UTG'],
-            localizedByLocale: {
-              zh_hans: {
-                status: 'pending',
-                headline: null,
-                summary: null,
-                keyAdjustments: [],
-              },
-            },
           },
         },
       ],
     });
-    savedGameReviewService.scheduleHandLocalization.mockResolvedValue(true);
 
     const result = await controller.getSavedGameDetail(
       'ROOM1',
@@ -144,7 +120,130 @@ describe('SavedGameHistoryController', () => {
     ).toHaveBeenNthCalledWith(1, 'ROOM1', 'user-alice');
     expect(
       savedGameStorageService.getSavedGameDetailForUser,
-    ).toHaveBeenNthCalledWith(2, 'ROOM1', 'user-alice');
+    ).toHaveBeenCalledTimes(1);
+    expect(savedGameReviewService.scheduleHandLocalization).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        archiveId: 'ROOM1',
+        requesterUserId: 'user-alice',
+        hands: [
+          expect.objectContaining({
+            totalPot: 80,
+            actionCount: 3,
+            analysis: expect.objectContaining({
+              status: 'ready',
+            }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('returns a requested hand detail and schedules localization only for that hand', async () => {
+    authService.getCurrentSession.mockResolvedValue({
+      user: { id: 'user-alice' },
+    });
+    savedGameStorageService.getSavedGameHandDetailForUser
+      .mockResolvedValueOnce({
+        handNumber: 1,
+        history: {
+          roomId: 'ROOM1',
+          handNumber: 1,
+          requesterPlayerId: 'alice',
+          version: 1,
+          dealerPosition: 1,
+          smallBlindPosition: 1,
+          bigBlindPosition: 2,
+          blinds: {
+            smallBlind: 5,
+            bigBlind: 10,
+          },
+          communityCardsByStreet: {
+            preFlop: [],
+            flop: [],
+            turn: [],
+            river: [],
+          },
+          seats: [],
+          actions: [],
+          settlement: {
+            isShowdown: false,
+            revealedPlayerIds: [],
+            totalPot: 15,
+            payouts: [],
+            winners: [],
+            netByPlayerId: {},
+          },
+        },
+        analysis: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+        },
+      })
+      .mockResolvedValueOnce({
+        handNumber: 1,
+        history: {
+          roomId: 'ROOM1',
+          handNumber: 1,
+          requesterPlayerId: 'alice',
+          version: 1,
+          dealerPosition: 1,
+          smallBlindPosition: 1,
+          bigBlindPosition: 2,
+          blinds: {
+            smallBlind: 5,
+            bigBlind: 10,
+          },
+          communityCardsByStreet: {
+            preFlop: [],
+            flop: [],
+            turn: [],
+            river: [],
+          },
+          seats: [],
+          actions: [],
+          settlement: {
+            isShowdown: false,
+            revealedPlayerIds: [],
+            totalPot: 15,
+            payouts: [],
+            winners: [],
+            netByPlayerId: {},
+          },
+        },
+        analysis: {
+          status: 'ready',
+          headline: 'Play tighter preflop',
+          summary: 'Fold more offsuit broadways.',
+          keyAdjustments: ['Fold KJo UTG'],
+          localizedByLocale: {
+            zh_hans: {
+              status: 'pending',
+              headline: null,
+              summary: null,
+              keyAdjustments: [],
+            },
+          },
+        },
+      });
+    savedGameReviewService.scheduleHandLocalization.mockResolvedValue(true);
+
+    const result = await (controller as any).getSavedGameHandDetail(
+      'ROOM1',
+      1,
+      { headers: { cookie: 'poker_session=token-alice' } } as any,
+      'zh_hans',
+      undefined,
+    );
+
+    expect(
+      savedGameStorageService.getSavedGameHandDetailForUser,
+    ).toHaveBeenNthCalledWith(1, 'ROOM1', 'user-alice', 1);
+    expect(
+      savedGameStorageService.getSavedGameHandDetailForUser,
+    ).toHaveBeenNthCalledWith(2, 'ROOM1', 'user-alice', 1);
     expect(savedGameReviewService.scheduleHandLocalization).toHaveBeenCalledWith(
       {
         archiveId: 'ROOM1',
@@ -155,19 +254,14 @@ describe('SavedGameHistoryController', () => {
     );
     expect(result).toEqual(
       expect.objectContaining({
-        archiveId: 'ROOM1',
-        requesterUserId: 'user-alice',
-        hands: [
-          expect.objectContaining({
-            analysis: expect.objectContaining({
-              localizedByLocale: expect.objectContaining({
-                zh_hans: expect.objectContaining({
-                  status: 'pending',
-                }),
-              }),
+        handNumber: 1,
+        analysis: expect.objectContaining({
+          localizedByLocale: expect.objectContaining({
+            zh_hans: expect.objectContaining({
+              status: 'pending',
             }),
           }),
-        ],
+        }),
       }),
     );
   });

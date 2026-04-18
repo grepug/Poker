@@ -141,8 +141,15 @@ export type SavedGameHandDetail = {
   analysis: SavedGameHandAnalysis;
 };
 
+export type SavedGameHandSummary = {
+  handNumber: number;
+  totalPot: number;
+  actionCount: number;
+  analysis: SavedGameHandAnalysis;
+};
+
 export type SavedGameDetail = SavedGameSummary & {
-  hands: SavedGameHandDetail[];
+  hands: SavedGameHandSummary[];
 };
 
 export type SavedGameReviewTarget = {
