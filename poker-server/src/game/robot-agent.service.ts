@@ -6,8 +6,7 @@ import {
 } from 'poker-types';
 import { z } from 'zod';
 import {
-  createVolcengineResponsesCompatFetch,
-  isVolcengineResponsesBaseUrl,
+  createResponsesCompatFetch,
 } from './openai-responses-compat';
 
 export type RobotActionCandidate = {
@@ -354,9 +353,7 @@ export class RobotAgentService {
         name: `${providerNamePrefix}-openai-responses`,
         baseURL,
         apiKey,
-        ...(isVolcengineResponsesBaseUrl(baseURL)
-          ? { fetch: createVolcengineResponsesCompatFetch() }
-          : {}),
+        fetch: createResponsesCompatFetch(),
       });
       return provider.responses(modelId);
     }
