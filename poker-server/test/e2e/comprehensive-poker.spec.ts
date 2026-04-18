@@ -131,6 +131,11 @@ type ThreePlayerSession = {
   roomCode: string;
 };
 
+type SessionViewport = {
+  width: number;
+  height: number;
+};
+
 type SetupTwoPlayerOptions = {
   roomConfig?: Record<string, unknown>;
   forceNonAutomationMode?: boolean;
@@ -489,10 +494,14 @@ async function teardownTwoPlayerSession(session: TwoPlayerSession) {
 
 async function setupThreePlayerSession(
   browser: any,
+  options?: { viewport?: SessionViewport },
 ): Promise<ThreePlayerSession> {
-  const aliceContext = await browser.newContext();
-  const bobContext = await browser.newContext();
-  const charlieContext = await browser.newContext();
+  const contextOptions = options?.viewport
+    ? { viewport: options.viewport }
+    : undefined;
+  const aliceContext = await browser.newContext(contextOptions);
+  const bobContext = await browser.newContext(contextOptions);
+  const charlieContext = await browser.newContext(contextOptions);
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
   const charliePage = await charlieContext.newPage();
@@ -8853,12 +8862,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await waitForRound(alicePage, 'FLOP', 3);
       await waitForPlayerTurn(bobPage, 'Bob');
-      const bobContinuePreset = bobPage.locator(
-        '[data-testid="chip-load-continue"]',
-      );
-      await expect(bobContinuePreset).toBeVisible();
-      await expect(bobContinuePreset).toBeEnabled();
-      await bobContinuePreset.click();
+      await expect(
+        bobPage.locator('[data-testid="chip-load-continue"]'),
+      ).toHaveCount(0);
+      const bobRaisePreset = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(bobRaisePreset).toBeVisible();
+      await expect(bobRaisePreset).toBeEnabled();
+      await bobRaisePreset.click();
       await dragTrayToPot(bobPage, { x: 0.12, y: -0.1 }, { steps: 2 });
 
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -8879,15 +8889,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
   test('8.13b1: Compact seat shows the Check action label after that seat checks', async ({
     browser,
   }) => {
-    const session = await setupThreePlayerSession(browser);
+    const session = await setupThreePlayerSession(browser, {
+      viewport: { width: 520, height: 900 },
+    });
 
     try {
       const { alicePage, bobPage, charliePage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 520, height: 900 }),
-        bobPage.setViewportSize({ width: 520, height: 900 }),
-        charliePage.setViewportSize({ width: 520, height: 900 }),
-      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -8947,15 +8954,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
   test('8.13b2: Earlier checked seat keeps the Check label after a later seat also checks', async ({
     browser,
   }) => {
-    const session = await setupThreePlayerSession(browser);
+    const session = await setupThreePlayerSession(browser, {
+      viewport: { width: 520, height: 900 },
+    });
 
     try {
       const { alicePage, bobPage, charliePage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 520, height: 900 }),
-        bobPage.setViewportSize({ width: 520, height: 900 }),
-        charliePage.setViewportSize({ width: 520, height: 900 }),
-      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
