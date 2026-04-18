@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toPng } from "html-to-image";
 import { PLAYER_EMOJI_OPTIONS } from "@/constants/player-emojis";
@@ -32,8 +32,12 @@ import {
   ChipComposerDock,
   EndGameConfirmModal,
   FinalSummaryModal,
+  gameRoomModalReducer,
+  type GameRoomConfirmModal,
+  type GameRoomPrimaryModal,
   HandResultsContent,
   HandResultsModal,
+  INITIAL_GAME_ROOM_MODAL_STATE,
   LeaveRoomConfirmModal,
   LiveAudioPopover,
   NextHandActionArea,
@@ -226,17 +230,11 @@ type RuleVariant = "standard" | "shortDeck";
 
 type HandScopedUiState = {
   key: string;
-  showRankingsModal: boolean;
-  showRulesModal: boolean;
-  showEndGameConfirmModal: boolean;
   isCardsFlyoutOpen: boolean;
 };
 
 const createDefaultHandScopedUiState = (key: string): HandScopedUiState => ({
   key,
-  showRankingsModal: false,
-  showRulesModal: false,
-  showEndGameConfirmModal: false,
   isCardsFlyoutOpen: true,
 });
 
@@ -1776,15 +1774,15 @@ const useGameRoomElement = () => {
   const [trayInputValue, setTrayInputValue] = useState("0");
   const [mobileChipDraftValue, setMobileChipDraftValue] = useState("0");
   const [showMobileChipPopover, setShowMobileChipPopover] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showLiveAudioPopover, setShowLiveAudioPopover] = useState(false);
   const [profileDisplayNameDraft, setProfileDisplayNameDraft] = useState("");
   const [profileAvatarEmojiDraft, setProfileAvatarEmojiDraft] = useState("🙂");
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
-  const [showHandResultsModal, setShowHandResultsModal] = useState(false);
-  const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
+  const [dialogState, dispatchDialogState] = useReducer(
+    gameRoomModalReducer,
+    INITIAL_GAME_ROOM_MODAL_STATE,
+  );
   const [isExportingHandHistory, setIsExportingHandHistory] = useState(false);
   const [isOpeningHandReview, setIsOpeningHandReview] = useState(false);
   const [isExportingGameHistory, setIsExportingGameHistory] = useState(false);
@@ -1815,6 +1813,14 @@ const useGameRoomElement = () => {
     }
     return window.matchMedia(COMPACT_MOBILE_DOCK_QUERY).matches;
   });
+
+  const showSettingsModal = dialogState.primary === "settings";
+  const showRankingsModal = dialogState.primary === "rankings";
+  const showRulesModal = dialogState.primary === "rules";
+  const showHandResultsModal = dialogState.primary === "handResults";
+  const showFinalSummaryModal = dialogState.primary === "finalSummary";
+  const showEndGameConfirmModal = dialogState.confirm === "endGameConfirm";
+  const showLeaveConfirmModal = dialogState.confirm === "leaveConfirm";
   const [dismissedPreviewMessageId, setDismissedPreviewMessageId] = useState<string | null>(null);
   const [relativeNow, setRelativeNow] = useState(() => Date.now());
 
@@ -1943,42 +1949,7 @@ const useGameRoomElement = () => {
     [handScopedUiStateKey],
   );
 
-  const showRankingsModal = resolvedHandScopedUiState.showRankingsModal;
-  const showRulesModal = resolvedHandScopedUiState.showRulesModal;
-  const showEndGameConfirmModal = resolvedHandScopedUiState.showEndGameConfirmModal;
   const isCardsFlyoutOpen = resolvedHandScopedUiState.isCardsFlyoutOpen;
-
-  const setShowRankingsModal = useCallback(
-    (nextValue: React.SetStateAction<boolean>) => {
-      updateHandScopedUiState((state) => ({
-        ...state,
-        showRankingsModal:
-          typeof nextValue === "function" ? nextValue(state.showRankingsModal) : nextValue,
-      }));
-    },
-    [updateHandScopedUiState],
-  );
-
-  const setShowRulesModal = useCallback(
-    (nextValue: React.SetStateAction<boolean>) => {
-      updateHandScopedUiState((state) => ({
-        ...state,
-        showRulesModal: typeof nextValue === "function" ? nextValue(state.showRulesModal) : nextValue,
-      }));
-    },
-    [updateHandScopedUiState],
-  );
-
-  const setShowEndGameConfirmModal = useCallback(
-    (nextValue: React.SetStateAction<boolean>) => {
-      updateHandScopedUiState((state) => ({
-        ...state,
-        showEndGameConfirmModal:
-          typeof nextValue === "function" ? nextValue(state.showEndGameConfirmModal) : nextValue,
-      }));
-    },
-    [updateHandScopedUiState],
-  );
 
   const setIsCardsFlyoutOpen = useCallback(
     (nextValue: React.SetStateAction<boolean>) => {
@@ -1989,6 +1960,46 @@ const useGameRoomElement = () => {
       }));
     },
     [updateHandScopedUiState],
+  );
+
+  const openPrimaryModal = useCallback(
+    (modal: GameRoomPrimaryModal) => {
+      dispatchDialogState({
+        type: "openPrimary",
+        modal,
+      });
+    },
+    [],
+  );
+
+  const closePrimaryModal = useCallback(
+    (modal?: GameRoomPrimaryModal) => {
+      dispatchDialogState({
+        type: "closePrimary",
+        modal,
+      });
+    },
+    [],
+  );
+
+  const openConfirmModal = useCallback(
+    (modal: GameRoomConfirmModal) => {
+      dispatchDialogState({
+        type: "openConfirm",
+        modal,
+      });
+    },
+    [],
+  );
+
+  const closeConfirmModal = useCallback(
+    (modal?: GameRoomConfirmModal) => {
+      dispatchDialogState({
+        type: "closeConfirm",
+        modal,
+      });
+    },
+    [],
   );
 
   const latestUnreadIncomingChatMessage = useMemo(() => {
@@ -2207,6 +2218,8 @@ const useGameRoomElement = () => {
     readyActionPhase === "START_GAME" ? canReadyPreGame : canReadyNextHand;
   const showOperationBar =
     isRunCountDecisionStep || showShowdownDecisionArea || showNextStreetActionArea;
+  const shouldPreemptInformationalModals =
+    showOperationBar || showNextHandActionArea || showHandResultsModal || showFinalSummaryModal;
   const operationBarMode = isRunCountDecisionStep
     ? "runCount"
     : showShowdownDecisionArea
@@ -2327,8 +2340,8 @@ const useGameRoomElement = () => {
     }
 
     markReady();
-    setShowHandResultsModal(false);
-  }, [canReadyNextHand, hasReadiedCurrentPhase, markReady]);
+    closePrimaryModal("handResults");
+  }, [canReadyNextHand, closePrimaryModal, hasReadiedCurrentPhase, markReady]);
 
   const payoutBreakdownRows = useMemo(() => {
     if (!lastHandResult) return [];
@@ -2994,7 +3007,7 @@ const useGameRoomElement = () => {
   useEffect(() => {
     if (!lastHandResult) {
       lastDisplayedHandResultRef.current = null;
-      setShowHandResultsModal(false);
+      closePrimaryModal("handResults");
       return;
     }
 
@@ -3003,8 +3016,8 @@ const useGameRoomElement = () => {
     }
 
     lastDisplayedHandResultRef.current = lastHandResult;
-    setShowHandResultsModal(true);
-  }, [lastHandResult]);
+    openPrimaryModal("handResults");
+  }, [closePrimaryModal, lastHandResult, openPrimaryModal]);
 
   useEffect(() => {
     if (!lastHandResult) {
@@ -3211,17 +3224,42 @@ const useGameRoomElement = () => {
 
   useEffect(() => {
     if (!finalGameResult) return;
-    setShowHandResultsModal(false);
-    setShowEndGameConfirmModal(false);
-    setShowLeaveConfirmModal(false);
-    setShowFinalSummaryModal(true);
-  }, [finalGameResult]);
+    closePrimaryModal("handResults");
+    closeConfirmModal();
+    openPrimaryModal("finalSummary");
+  }, [closeConfirmModal, closePrimaryModal, finalGameResult, openPrimaryModal]);
 
   useEffect(() => {
     if (!isGameEnded || !finalGameResult) return;
-    setShowHandResultsModal(false);
-    setShowFinalSummaryModal(true);
-  }, [finalGameResult, isGameEnded]);
+    closePrimaryModal("handResults");
+    openPrimaryModal("finalSummary");
+  }, [closePrimaryModal, finalGameResult, isGameEnded, openPrimaryModal]);
+
+  useEffect(() => {
+    if (!shouldPreemptInformationalModals) {
+      return;
+    }
+
+    if (showRankingsModal) {
+      closePrimaryModal("rankings");
+      return;
+    }
+
+    if (showRulesModal) {
+      closePrimaryModal("rules");
+      return;
+    }
+
+    if (showSettingsModal) {
+      closePrimaryModal("settings");
+    }
+  }, [
+    closePrimaryModal,
+    shouldPreemptInformationalModals,
+    showRankingsModal,
+    showRulesModal,
+    showSettingsModal,
+  ]);
 
   useEffect(() => {
     previousIsYourTurnRef.current = applyTurnNotificationTransition({
@@ -3304,33 +3342,31 @@ const useGameRoomElement = () => {
 
   const dismissTransientOverlays = useCallback(() => {
     if (showLeaveConfirmModal) {
-      setShowLeaveConfirmModal(false);
+      closeConfirmModal("leaveConfirm");
       return;
     }
     if (lastError) clearError();
-    if (showRankingsModal) setShowRankingsModal(false);
-    if (showRulesModal) setShowRulesModal(false);
-    if (showSettingsModal) setShowSettingsModal(false);
+    if (showRankingsModal) closePrimaryModal("rankings");
+    if (showRulesModal) closePrimaryModal("rules");
+    if (showSettingsModal) closePrimaryModal("settings");
     if (showLiveAudioPopover) setShowLiveAudioPopover(false);
-    if (showEndGameConfirmModal) setShowEndGameConfirmModal(false);
-    if (showHandResultsModal) setShowHandResultsModal(false);
-    if (showFinalSummaryModal && !isGameEnded) setShowFinalSummaryModal(false);
+    if (showEndGameConfirmModal) closeConfirmModal("endGameConfirm");
+    if (showHandResultsModal) closePrimaryModal("handResults");
+    if (showFinalSummaryModal && !isGameEnded) closePrimaryModal("finalSummary");
     if (showMobileChipPopover) closeMobileChipPopover();
     if (quickConfirmAction) setQuickConfirmAction(null);
     if (showTrayConfirm) setShowTrayConfirm(false);
   }, [
     clearError,
+    closeConfirmModal,
     closeMobileChipPopover,
+    closePrimaryModal,
     isGameEnded,
     lastError,
     quickConfirmAction,
     showMobileChipPopover,
     showTrayConfirm,
-    setShowLeaveConfirmModal,
-    setShowEndGameConfirmModal,
     showHandResultsModal,
-    setShowRankingsModal,
-    setShowRulesModal,
     showLeaveConfirmModal,
     showEndGameConfirmModal,
     showFinalSummaryModal,
@@ -3975,16 +4011,16 @@ const useGameRoomElement = () => {
 
   const handleConfirmEndGame = () => {
     if (!canHostEndGame) return;
-    setShowEndGameConfirmModal(false);
+    closeConfirmModal("endGameConfirm");
     endGame();
   };
 
   const handleRequestLeave = () => {
-    setShowLeaveConfirmModal(true);
+    openConfirmModal("leaveConfirm");
   };
 
   const handleConfirmLeave = async () => {
-    setShowLeaveConfirmModal(false);
+    closeConfirmModal("leaveConfirm");
     const didLeave = await leaveRoom();
     if (didLeave) {
       navigate("/");
@@ -4254,13 +4290,13 @@ const useGameRoomElement = () => {
                 setProfileAvatarEmojiDraft(user.avatarEmoji);
               }
               setProfileFeedback(null);
-              setShowSettingsModal(true);
+              openPrimaryModal("settings");
             }}
-            onOpenRules={() => setShowRulesModal(true)}
-            onOpenRankings={() => setShowRankingsModal(true)}
+            onOpenRules={() => openPrimaryModal("rules")}
+            onOpenRankings={() => openPrimaryModal("rankings")}
             onToggleChat={() => setChatPanelOpen(!isChatPanelOpen)}
             onOpenLiveAudio={handleToggleLiveAudioPopover}
-            onOpenFinalResults={() => setShowFinalSummaryModal(true)}
+            onOpenFinalResults={() => openPrimaryModal("finalSummary")}
             onStartGame={markReady}
             onOpenChatFromPreview={handleOpenChatFromPreview}
             onDismissPreview={handleDismissPreview}
@@ -4445,7 +4481,7 @@ const useGameRoomElement = () => {
                 onReady={markReady}
                 onOpenEndGameConfirm={() => {
                   if (!canHostEndGame) return;
-                  setShowEndGameConfirmModal(true);
+                  openConfirmModal("endGameConfirm");
                 }}
                 onAddRobot={() => addRobotPlayer()}
                 onRemoveRobot={(robotPlayerId) => removeRobotPlayer(robotPlayerId)}
@@ -4467,7 +4503,7 @@ const useGameRoomElement = () => {
                 onReadyNextHand={markReady}
                 onOpenEndGameConfirm={() => {
                   if (!canHostEndGame) return;
-                  setShowEndGameConfirmModal(true);
+                  openConfirmModal("endGameConfirm");
                 }}
                 t={t}
               />
@@ -4595,13 +4631,13 @@ const useGameRoomElement = () => {
                 onReadyNextHand={handleReadyFromHandResultsModal}
                 onOpenEndGameConfirm={() => {
                   if (!canHostEndGame) return;
-                  setShowEndGameConfirmModal(true);
+                  openConfirmModal("endGameConfirm");
                 }}
                 t={t}
               />
             ) : null
           }
-          onClose={() => setShowHandResultsModal(false)}
+          onClose={() => closePrimaryModal("handResults")}
           t={t}
         >
           <HandResultsContent
@@ -4673,7 +4709,7 @@ const useGameRoomElement = () => {
           onStreetRevealChange={(enabled) =>
             updateRoomConfig({ allowPlayerStreetReveal: enabled })
           }
-          onClose={() => setShowSettingsModal(false)}
+          onClose={() => closePrimaryModal("settings")}
           t={t}
         />
       )}
@@ -4731,7 +4767,7 @@ const useGameRoomElement = () => {
         <RankingsModal
           playerRankings={playerRankings}
           currentPlayerId={player.id}
-          onClose={() => setShowRankingsModal(false)}
+          onClose={() => closePrimaryModal("rankings")}
           t={t}
         />
       )}
@@ -4740,14 +4776,14 @@ const useGameRoomElement = () => {
         <RulesModal
           rulesCopy={rulesCopy}
           rankingRows={rulesRankingRows}
-          onClose={() => setShowRulesModal(false)}
+          onClose={() => closePrimaryModal("rules")}
           t={t}
         />
       )}
 
       {showEndGameConfirmModal && (
         <EndGameConfirmModal
-          onCancel={() => setShowEndGameConfirmModal(false)}
+          onCancel={() => closeConfirmModal("endGameConfirm")}
           onConfirm={handleConfirmEndGame}
           t={t}
         />
@@ -4767,7 +4803,7 @@ const useGameRoomElement = () => {
               ? undefined
               : t("game.leaveConfirm.blockedWarning")
           }
-          onCancel={() => setShowLeaveConfirmModal(false)}
+          onCancel={() => closeConfirmModal("leaveConfirm")}
           onConfirm={handleConfirmLeave}
           t={t}
         />
@@ -4786,7 +4822,7 @@ const useGameRoomElement = () => {
           onOpenSavedHistory={handleOpenSavedHistory}
           onSaveScreenshot={handleSaveFinalSummaryScreenshot}
           onLeave={handleRequestLeave}
-          onClose={() => setShowFinalSummaryModal(false)}
+          onClose={() => closePrimaryModal("finalSummary")}
           t={t}
         />
       )}

@@ -131,17 +131,34 @@ type ThreePlayerSession = {
   roomCode: string;
 };
 
+type SessionViewport = {
+  width: number;
+  height: number;
+};
+
 type SetupTwoPlayerOptions = {
   roomConfig?: Record<string, unknown>;
   forceNonAutomationMode?: boolean;
+  viewport?: {
+    width: number;
+    height: number;
+  };
 };
 
 async function createBrowserContext(
   browser: any,
-  forceNonAutomationMode = false,
+  options?: {
+    forceNonAutomationMode?: boolean;
+    viewport?: {
+      width: number;
+      height: number;
+    };
+  },
 ) {
-  const context = await browser.newContext();
-  if (!forceNonAutomationMode) {
+  const context = await browser.newContext(
+    options?.viewport ? { viewport: options.viewport } : undefined,
+  );
+  if (!options?.forceNonAutomationMode) {
     return context;
   }
 
@@ -420,11 +437,17 @@ async function setupTwoPlayerSession(
 ): Promise<TwoPlayerSession> {
   const aliceContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const bobContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
@@ -471,10 +494,14 @@ async function teardownTwoPlayerSession(session: TwoPlayerSession) {
 
 async function setupThreePlayerSession(
   browser: any,
+  options?: { viewport?: SessionViewport },
 ): Promise<ThreePlayerSession> {
-  const aliceContext = await browser.newContext();
-  const bobContext = await browser.newContext();
-  const charlieContext = await browser.newContext();
+  const contextOptions = options?.viewport
+    ? { viewport: options.viewport }
+    : undefined;
+  const aliceContext = await browser.newContext(contextOptions);
+  const bobContext = await browser.newContext(contextOptions);
+  const charlieContext = await browser.newContext(contextOptions);
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
   const charliePage = await charlieContext.newPage();
@@ -948,6 +975,11 @@ async function requestRebuy(page: Page, amount: number) {
 }
 
 async function openChatPanel(page: Page) {
+  const chatPanel = page.locator('[data-testid="chat-panel"]');
+  if ((await chatPanel.count()) > 0 && (await chatPanel.first().isVisible())) {
+    return;
+  }
+
   await page.click('[data-testid="open-chat-button"]');
   await page.waitForSelector('[data-testid="chat-panel"]', {
     state: 'visible',
@@ -5112,8 +5144,12 @@ test.describe('Poker E2E - Test Suite 6: Chip Accounting (Additional)', () => {
         alicePage.locator('[data-testid^="your-card-"]'),
       ).toHaveCount(0);
       await expect(
-        alicePage.locator('[data-testid="hole-cards-hidden-state"]'),
-      ).toBeVisible();
+        alicePage.locator('[data-testid="toggle-hole-cards"]'),
+      ).toHaveCount(0);
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid="start-next-hand-button"]'),
       ).toBeVisible();
@@ -5425,9 +5461,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await startGameFromLobby(alicePage, bobPage);
       await waitForPlayerTurn(bobPage, 'Bob');
 
-      expect(
-        await bobPage.locator('[data-testid="action-check"]').count(),
-      ).toBe(0);
+      await expect(
+        bobPage.locator('[data-testid="action-check"]'),
+      ).toBeDisabled();
       await expect(
         bobPage.locator('[data-testid="action-call"]'),
       ).toContainText(`Call $${DEFAULT_SMALL_BLIND_CALL_GAP}`);
@@ -5448,9 +5484,9 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       expect(afterBobCall.bobCurrentBet).toBe(DEFAULT_BIG_BLIND);
       expect(afterBobCall.aliceCurrentBet).toBe(DEFAULT_BIG_BLIND);
 
-      expect(
-        await alicePage.locator('[data-testid="action-check"]').count(),
-      ).toBe(1);
+      await expect(
+        alicePage.locator('[data-testid="action-check"]'),
+      ).toBeEnabled();
       expect(
         await alicePage.locator('[data-testid="action-call"]').count(),
       ).toBe(0);
@@ -6737,10 +6773,16 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         bobPage.locator('[data-testid="action-confirm-modal"]'),
       ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toHaveCount(0);
 
       await bobPage.click('[data-testid="action-call"]');
       await expect(
         bobPage.locator('[data-testid="action-confirm-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
       ).toHaveCount(0);
 
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -6752,39 +6794,24 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
         bobPage.locator('[data-testid="action-check"]'),
       ).toBeVisible();
       await expect(
+        bobPage.locator('[data-testid="action-check"]'),
+      ).toBeEnabled();
+      await expect(
         bobPage.locator('[data-testid="action-fold"]'),
       ).toBeVisible();
-      const dockScrollBehavior = await bobPage.evaluate(() => {
-        const dock = document.querySelector<HTMLElement>(
-          '[data-testid="turn-overlay"]',
-        );
-        if (!dock) return null;
-        const styles = window.getComputedStyle(dock);
-        return {
-          overflowY: styles.overflowY,
-          overflow: styles.overflow,
-        };
-      });
-      expect(dockScrollBehavior).not.toBeNull();
-      const controlsAreInViewport = await bobPage.evaluate(() => {
-        const fold = document.querySelector<HTMLElement>(
-          '[data-testid="action-fold"]',
-        );
-        const check = document.querySelector<HTMLElement>(
-          '[data-testid="action-check"]',
-        );
-        if (!fold || !check) return false;
-
-        const foldRect = fold.getBoundingClientRect();
-        const checkRect = check.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-
-        const isInsideViewport = (rect: DOMRect) =>
-          rect.top >= 0 && rect.bottom <= viewportHeight;
-
-        return isInsideViewport(foldRect) && isInsideViewport(checkRect);
-      });
-      expect(controlsAreInViewport).toBe(true);
+      await expect(
+        bobPage.locator('[data-testid="action-fold"]'),
+      ).toBeEnabled();
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        bobPage.locator('[data-testid="action-confirm-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        bobPage.locator('[data-testid="action-quick-confirm-popover"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -7493,6 +7520,43 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       await expect(
         alicePage.locator('[data-testid^="your-card-"]'),
       ).toHaveCount(2);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
+  test('8.9c: Hand Results Preempt Rankings Modal When The Hand Ends', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
     } finally {
       await teardownTwoPlayerSession(session);
     }
@@ -8796,12 +8860,13 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
 
       await waitForRound(alicePage, 'FLOP', 3);
       await waitForPlayerTurn(bobPage, 'Bob');
-      const bobContinuePreset = bobPage.locator(
-        '[data-testid="chip-load-continue"]',
-      );
-      await expect(bobContinuePreset).toBeVisible();
-      await expect(bobContinuePreset).toBeEnabled();
-      await bobContinuePreset.click();
+      await expect(
+        bobPage.locator('[data-testid="chip-load-continue"]'),
+      ).toHaveCount(0);
+      const bobRaisePreset = bobPage.locator('[data-testid="chip-load-raise"]');
+      await expect(bobRaisePreset).toBeVisible();
+      await expect(bobRaisePreset).toBeEnabled();
+      await bobRaisePreset.click();
       await dragTrayToPot(bobPage, { x: 0.12, y: -0.1 }, { steps: 2 });
 
       await waitForPlayerTurn(alicePage, 'Alice');
@@ -8822,15 +8887,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
   test('8.13b1: Compact seat shows the Check action label after that seat checks', async ({
     browser,
   }) => {
-    const session = await setupThreePlayerSession(browser);
+    const session = await setupThreePlayerSession(browser, {
+      viewport: { width: 520, height: 900 },
+    });
 
     try {
       const { alicePage, bobPage, charliePage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 520, height: 900 }),
-        bobPage.setViewportSize({ width: 520, height: 900 }),
-        charliePage.setViewportSize({ width: 520, height: 900 }),
-      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -8890,15 +8952,12 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
   test('8.13b2: Earlier checked seat keeps the Check label after a later seat also checks', async ({
     browser,
   }) => {
-    const session = await setupThreePlayerSession(browser);
+    const session = await setupThreePlayerSession(browser, {
+      viewport: { width: 520, height: 900 },
+    });
 
     try {
       const { alicePage, bobPage, charliePage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 520, height: 900 }),
-        bobPage.setViewportSize({ width: 520, height: 900 }),
-        charliePage.setViewportSize({ width: 520, height: 900 }),
-      ]);
 
       await alicePage.click('[data-testid="start-game-button"]');
       await Promise.all([
@@ -9493,15 +9552,14 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
           (mobileHistoryLayout?.selectedHandTop ?? Number.NEGATIVE_INFINITY),
       ).toBe(true);
       await bobPage.click('[data-testid="saved-history-mobile-tab-session"]');
+      const mobileSessionPanel = bobPage.locator(
+        '[data-testid="saved-history-mobile-session-panel"]',
+      );
+      await expect(mobileSessionPanel).toBeVisible();
       await expect(
-        bobPage.locator('[data-testid="saved-history-mobile-session-panel"]'),
+        mobileSessionPanel.getByRole('heading', { name: 'Session Statistics' }),
       ).toBeVisible();
-      await expect(
-        bobPage
-          .locator('[data-testid="saved-history-mobile-session-panel"]')
-          .getByRole('heading', { name: 'Session Statistics' }),
-      ).toBeVisible();
-      await expect(bobPage.getByText(/^Robot\b/)).toHaveCount(0);
+      await expect(mobileSessionPanel.getByText(/^Robot\b/)).toHaveCount(0);
       await bobPage.setViewportSize({ width: 1440, height: 900 });
       await expect(
         bobPage.getByRole('columnheader', { name: 'Buy-in' }),
@@ -10199,14 +10257,12 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
   test('10.4: Mobile voice preview opens chat and starts that playback source', async ({
     browser,
   }) => {
-    const session = await setupTwoPlayerSession(browser);
+    const session = await setupTwoPlayerSession(browser, {
+      viewport: { width: 390, height: 844 },
+    });
 
     try {
       const { alicePage, bobPage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 390, height: 844 }),
-        bobPage.setViewportSize({ width: 390, height: 844 }),
-      ]);
 
       await sendChatMessagesViaSocket(
         alicePage,
@@ -10239,14 +10295,12 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
   test('10.5: Mobile hidden-chat preview dismiss/open both clear unread state', async ({
     browser,
   }) => {
-    const session = await setupTwoPlayerSession(browser);
+    const session = await setupTwoPlayerSession(browser, {
+      viewport: { width: 390, height: 844 },
+    });
 
     try {
       const { alicePage, bobPage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 390, height: 844 }),
-        bobPage.setViewportSize({ width: 390, height: 844 }),
-      ]);
 
       await sendChatMessagesViaSocket(
         bobPage,

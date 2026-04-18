@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -43,11 +44,16 @@ export const RulesModal: React.FC<RulesModalProps> = ({
   onClose,
   t,
 }) => (
-  <div
-    className="fixed inset-0 z-[77] flex items-center justify-center bg-emerald-950/85 p-4 backdrop-blur-sm"
-    data-testid="rules-modal"
+  <PokerModalShell
+    layout="centered"
+    testId="rules-modal"
+    className="bg-emerald-950/85"
+    zIndexClassName="z-[77]"
   >
-    <section className="surface-panel max-h-[85vh] w-full max-w-3xl overflow-y-auto p-4 md:p-6">
+    <PokerModalPanel
+      className="max-w-3xl p-4 md:p-6"
+      ariaLabel={rulesCopy.modalTitle}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-black text-white">{rulesCopy.modalTitle}</h3>
@@ -126,6 +132,6 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           </ol>
         </section>
       </div>
-    </section>
-  </div>
+    </PokerModalPanel>
+  </PokerModalShell>
 );

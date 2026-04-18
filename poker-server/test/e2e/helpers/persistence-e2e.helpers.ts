@@ -48,6 +48,10 @@ export type TwoPlayerSession = {
 type SetupTwoPlayerOptions = {
   roomConfig?: Record<string, unknown>;
   forceNonAutomationMode?: boolean;
+  viewport?: {
+    width: number;
+    height: number;
+  };
 };
 
 export async function waitForPokerDebug(page: Page) {
@@ -58,10 +62,18 @@ export async function waitForPokerDebug(page: Page) {
 
 async function createBrowserContext(
   browser: any,
-  forceNonAutomationMode = false,
+  options?: {
+    forceNonAutomationMode?: boolean;
+    viewport?: {
+      width: number;
+      height: number;
+    };
+  },
 ) {
-  const context = await browser.newContext();
-  if (!forceNonAutomationMode) {
+  const context = await browser.newContext(
+    options?.viewport ? { viewport: options.viewport } : undefined,
+  );
+  if (!options?.forceNonAutomationMode) {
     return context;
   }
 
@@ -324,11 +336,17 @@ export async function setupTwoPlayerSession(
 ): Promise<TwoPlayerSession> {
   const aliceContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const bobContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
@@ -603,6 +621,11 @@ export function buildChipRanking(room: Room) {
 }
 
 export async function openChatPanel(page: Page) {
+  const chatPanel = page.locator('[data-testid="chat-panel"]');
+  if ((await chatPanel.count()) > 0 && (await chatPanel.first().isVisible())) {
+    return;
+  }
+
   await page.click('[data-testid="open-chat-button"]');
   await page.waitForSelector('[data-testid="chat-panel"]', {
     state: 'visible',

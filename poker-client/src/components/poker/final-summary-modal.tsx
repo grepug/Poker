@@ -1,6 +1,7 @@
 import React from "react";
 import type { GameEndedData } from "poker-types";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -53,15 +54,19 @@ export const FinalSummaryModal = React.forwardRef<
     },
     ref,
   ) => (
-    <div
-      className="fixed inset-0 z-[78] overflow-y-auto bg-emerald-950/88 p-4 backdrop-blur-sm"
-      data-testid="final-summary-modal"
+    <PokerModalShell
+      layout="page"
+      testId="final-summary-modal"
+      zIndexClassName="z-[78]"
     >
-      <section
-        ref={ref}
-        className="surface-panel mx-auto w-full max-w-4xl p-4 md:p-6"
-        data-testid="final-summary-panel"
-      >
+      <div className="mx-auto w-full max-w-4xl">
+        <PokerModalPanel
+          ref={ref}
+          className="p-4 md:p-6"
+          testId="final-summary-panel"
+          ariaLabel={t("game.final.title")}
+          viewportBounded={false}
+        >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-black text-white">{t("game.final.title")}</h3>
@@ -198,8 +203,9 @@ export const FinalSummaryModal = React.forwardRef<
             </tbody>
           </table>
         </div>
-      </section>
-    </div>
+        </PokerModalPanel>
+      </div>
+    </PokerModalShell>
   ),
 );
 

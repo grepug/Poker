@@ -1,5 +1,6 @@
 import React from "react";
 import type { MessageKey } from "@/i18n/messages";
+import { PokerModalPanel, PokerModalShell } from "./modal-shell";
 
 type Translate = (
   key: MessageKey,
@@ -28,15 +29,14 @@ export const LeaveRoomConfirmModal: React.FC<LeaveRoomConfirmModalProps> = ({
   const titleId = React.useId();
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-emerald-950/88 p-4 backdrop-blur-sm"
-      data-testid="leave-room-confirm-modal"
+    <PokerModalShell
+      layout="centered"
+      testId="leave-room-confirm-modal"
+      zIndexClassName="z-[80]"
     >
-      <div
-        className="surface-panel w-full max-w-md p-5"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
+      <PokerModalPanel
+        className="max-w-md p-5"
+        ariaLabelledBy={titleId}
       >
         <h3 id={titleId} className="text-lg font-black text-white">
           {t("game.leaveConfirm.title")}
@@ -74,7 +74,7 @@ export const LeaveRoomConfirmModal: React.FC<LeaveRoomConfirmModalProps> = ({
             {t("game.leaveConfirm.confirm")}
           </button>
         </div>
-      </div>
-    </div>
+      </PokerModalPanel>
+    </PokerModalShell>
   );
 };
