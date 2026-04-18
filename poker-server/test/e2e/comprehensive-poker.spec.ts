@@ -134,14 +134,26 @@ type ThreePlayerSession = {
 type SetupTwoPlayerOptions = {
   roomConfig?: Record<string, unknown>;
   forceNonAutomationMode?: boolean;
+  viewport?: {
+    width: number;
+    height: number;
+  };
 };
 
 async function createBrowserContext(
   browser: any,
-  forceNonAutomationMode = false,
+  options?: {
+    forceNonAutomationMode?: boolean;
+    viewport?: {
+      width: number;
+      height: number;
+    };
+  },
 ) {
-  const context = await browser.newContext();
-  if (!forceNonAutomationMode) {
+  const context = await browser.newContext(
+    options?.viewport ? { viewport: options.viewport } : undefined,
+  );
+  if (!options?.forceNonAutomationMode) {
     return context;
   }
 
@@ -420,11 +432,17 @@ async function setupTwoPlayerSession(
 ): Promise<TwoPlayerSession> {
   const aliceContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const bobContext = await createBrowserContext(
     browser,
-    options?.forceNonAutomationMode ?? false,
+    {
+      forceNonAutomationMode: options?.forceNonAutomationMode ?? false,
+      viewport: options?.viewport,
+    },
   );
   const alicePage = await aliceContext.newPage();
   const bobPage = await bobContext.newPage();
@@ -948,6 +966,11 @@ async function requestRebuy(page: Page, amount: number) {
 }
 
 async function openChatPanel(page: Page) {
+  const chatPanel = page.locator('[data-testid="chat-panel"]');
+  if ((await chatPanel.count()) > 0 && (await chatPanel.first().isVisible())) {
+    return;
+  }
+
   await page.click('[data-testid="open-chat-button"]');
   await page.waitForSelector('[data-testid="chat-panel"]', {
     state: 'visible',
@@ -10210,14 +10233,12 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
   test('10.4: Mobile voice preview opens chat and starts that playback source', async ({
     browser,
   }) => {
-    const session = await setupTwoPlayerSession(browser);
+    const session = await setupTwoPlayerSession(browser, {
+      viewport: { width: 390, height: 844 },
+    });
 
     try {
       const { alicePage, bobPage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 390, height: 844 }),
-        bobPage.setViewportSize({ width: 390, height: 844 }),
-      ]);
 
       await sendChatMessagesViaSocket(
         alicePage,
@@ -10250,14 +10271,12 @@ test.describe('Poker E2E - Test Suite 10: Chat History & Concurrency', () => {
   test('10.5: Mobile hidden-chat preview dismiss/open both clear unread state', async ({
     browser,
   }) => {
-    const session = await setupTwoPlayerSession(browser);
+    const session = await setupTwoPlayerSession(browser, {
+      viewport: { width: 390, height: 844 },
+    });
 
     try {
       const { alicePage, bobPage } = session;
-      await Promise.all([
-        alicePage.setViewportSize({ width: 390, height: 844 }),
-        bobPage.setViewportSize({ width: 390, height: 844 }),
-      ]);
 
       await sendChatMessagesViaSocket(
         bobPage,
