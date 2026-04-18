@@ -2218,8 +2218,9 @@ const useGameRoomElement = () => {
     readyActionPhase === "START_GAME" ? canReadyPreGame : canReadyNextHand;
   const showOperationBar =
     isRunCountDecisionStep || showShowdownDecisionArea || showNextStreetActionArea;
-  const shouldPreemptInformationalModals =
-    showOperationBar || showNextHandActionArea || showHandResultsModal || showFinalSummaryModal;
+  // Hand/final result dialogs already replace the current primary modal when they open.
+  // Keep blanket preemption only for active in-hand action states that need table focus.
+  const shouldPreemptInformationalModals = showOperationBar;
   const operationBarMode = isRunCountDecisionStep
     ? "runCount"
     : showShowdownDecisionArea

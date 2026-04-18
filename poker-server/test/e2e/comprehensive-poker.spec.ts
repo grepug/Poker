@@ -7567,6 +7567,79 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.9d: Rankings Can Open After Hand Results Are Dismissed At Hand End', async ({ browser }) => {
+    const session = await setupTwoPlayerSession(browser);
+
+    try {
+      const { alicePage, bobPage } = session;
+      await startGameFromLobby(alicePage, bobPage);
+
+      await waitForPlayerTurn(bobPage, 'Bob');
+      const handCompletePromise = captureNextHandComplete(alicePage, 20000, [
+        alicePage,
+        bobPage,
+      ]);
+      await bobPage.click('[data-testid="action-fold"]');
+      await expect(
+        alicePage.locator('[data-testid="reveal-next-street-action-area"]'),
+      ).toBeVisible();
+      await alicePage.click('[data-testid="reveal-next-street-button"]');
+      await handCompletePromise;
+
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-hand-results-button"]');
+      await expect(
+        alicePage.locator('[data-testid="hand-results-modal"]'),
+      ).toHaveCount(0);
+      await expect(
+        alicePage.locator('[data-testid="start-next-hand-button"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="open-rankings-button"]');
+
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-rankings-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rankings-modal"]'),
+      ).toHaveCount(0);
+
+      await alicePage.click('[data-testid="open-rules-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toBeVisible();
+
+      await alicePage.click('[data-testid="close-rules-button"]');
+      await expect(
+        alicePage.locator('[data-testid="rules-modal"]'),
+      ).toHaveCount(0);
+
+      await alicePage.click('[data-testid="open-settings-button"]');
+      await expect(
+        alicePage.locator('[data-testid="settings-modal"]'),
+      ).toBeVisible();
+      await alicePage.waitForTimeout(300);
+      await expect(
+        alicePage.locator('[data-testid="settings-modal"]'),
+      ).toBeVisible();
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.10: Rejected Action Shows Detailed Error Modal', async ({
     browser,
   }) => {
