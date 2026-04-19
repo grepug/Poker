@@ -1,4 +1,8 @@
-import type { SavedGameDetail, SavedGameSummary } from "poker-types";
+import type {
+  SavedGameDetail,
+  SavedGameHandDetail,
+  SavedGameSummary,
+} from "poker-types";
 import { resolveServerResourceUrl } from "./socket.service";
 
 async function requestJson<T>(path: string): Promise<T> {
@@ -28,6 +32,17 @@ export const savedGameHistoryService = {
     const query = new URLSearchParams({ locale });
     return requestJson<SavedGameDetail>(
       `/api/history/games/${archiveId}?${query.toString()}`,
+    );
+  },
+
+  getSavedGameHandDetail(
+    archiveId: string,
+    handNumber: number,
+    locale: string,
+  ): Promise<SavedGameHandDetail> {
+    const query = new URLSearchParams({ locale });
+    return requestJson<SavedGameHandDetail>(
+      `/api/history/games/${archiveId}/hands/${handNumber}?${query.toString()}`,
     );
   },
 };

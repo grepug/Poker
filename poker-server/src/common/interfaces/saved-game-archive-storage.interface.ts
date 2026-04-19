@@ -1,6 +1,7 @@
 import type {
   SavedGameDetail,
   SavedGameHandAnalysis,
+  SavedGameHandDetail,
   SavedGameReviewTargets,
   SavedGameSummary,
 } from 'poker-types';
@@ -12,6 +13,11 @@ export interface ISavedGameArchiveStorageService {
     archiveId: string,
     userId: string,
   ): Promise<SavedGameDetail | null>;
+  getSavedGameHandDetailForUser(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandDetail | null>;
   getSavedGameReviewTargets(
     archiveId: string,
   ): Promise<SavedGameReviewTargets | null>;

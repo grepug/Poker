@@ -1336,14 +1336,25 @@ describe('JsonStorageService', () => {
           ) => Promise<any | null>;
         }
       ).getSavedGameDetailForUser;
+      const getSavedGameHandDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameHandDetailForUser?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameHandDetailForUser;
 
       expect(typeof archiveEndedRoom).toBe('function');
       expect(typeof listSavedGamesForUser).toBe('function');
       expect(typeof getSavedGameDetailForUser).toBe('function');
+      expect(typeof getSavedGameHandDetailForUser).toBe('function');
       if (
         typeof archiveEndedRoom !== 'function' ||
         typeof listSavedGamesForUser !== 'function' ||
-        typeof getSavedGameDetailForUser !== 'function'
+        typeof getSavedGameDetailForUser !== 'function' ||
+        typeof getSavedGameHandDetailForUser !== 'function'
       ) {
         return;
       }
@@ -1381,9 +1392,8 @@ describe('JsonStorageService', () => {
           hands: expect.arrayContaining([
             expect.objectContaining({
               handNumber: 1,
-              history: expect.objectContaining({
-                requesterPlayerId: 'alice',
-              }),
+              totalPot: 40,
+              actionCount: 4,
               analysis: expect.objectContaining({
                 status: 'pending',
               }),
@@ -1392,6 +1402,14 @@ describe('JsonStorageService', () => {
         }),
       );
 
+      const aliceHandDetail = await getSavedGameHandDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+      );
+      expect(aliceHandDetail?.history.requesterPlayerId).toBe('alice');
+
       await service.deleteRoom(roomId);
 
       const archivedAfterDelete = await getSavedGameDetailForUser.call(
@@ -1399,9 +1417,22 @@ describe('JsonStorageService', () => {
         archived!.archiveId,
         'user-alice',
       );
-      expect(archivedAfterDelete?.hands[0].history.requesterPlayerId).toBe('alice');
+      expect(archivedAfterDelete?.hands[0]).toEqual(
+        expect.objectContaining({
+          handNumber: 1,
+          totalPot: 40,
+          actionCount: 4,
+        }),
+      );
+      const archivedHandAfterDelete = await getSavedGameHandDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+      );
+      expect(archivedHandAfterDelete?.history.requesterPlayerId).toBe('alice');
       expect(
-        archivedAfterDelete?.hands[0].history.seats.find(
+        archivedHandAfterDelete?.history.seats.find(
           (seat: any) => seat.playerId === 'bob',
         ),
       ).toEqual(
