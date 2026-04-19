@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getCurrentBrowserUrl,
+  getPasskeySupportState,
+  isHostnameCompatibleWithRpId,
   isIosDevice,
   isSafariOnIos,
   isWeChatInAppBrowser,
@@ -64,5 +66,79 @@ describe("browser-detection", () => {
     });
 
     expect(getCurrentBrowserUrl()).toBe("https://poker.example.com/room/ABCD?seat=2");
+  });
+
+  it("treats insecure contexts as passkey-unsupported even when WebAuthn exists", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        isSecureContext: false,
+        self: {},
+        top: {},
+      },
+    });
+    Object.defineProperty(globalThis, "PublicKeyCredential", {
+      configurable: true,
+      value: class PublicKeyCredential {},
+    });
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        credentials: {
+          create() {
+            return Promise.resolve(null);
+          },
+          get() {
+            return Promise.resolve(null);
+          },
+        },
+      },
+    });
+
+    expect(getPasskeySupportState()).toEqual({
+      supported: false,
+      issue: "insecure-context",
+    });
+  });
+
+  it("treats embedded contexts as passkey-unsupported", () => {
+    const topWindow = {};
+    const selfWindow = {};
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        isSecureContext: true,
+        self: selfWindow,
+        top: topWindow,
+      },
+    });
+    Object.defineProperty(globalThis, "PublicKeyCredential", {
+      configurable: true,
+      value: class PublicKeyCredential {},
+    });
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        credentials: {
+          create() {
+            return Promise.resolve(null);
+          },
+          get() {
+            return Promise.resolve(null);
+          },
+        },
+      },
+    });
+
+    expect(getPasskeySupportState()).toEqual({
+      supported: false,
+      issue: "embedded-context",
+    });
+  });
+
+  it("accepts exact rp ids and parent-domain rp ids for the current hostname", () => {
+    expect(isHostnameCompatibleWithRpId("localhost", "localhost")).toBe(true);
+    expect(isHostnameCompatibleWithRpId("app.poker.example.com", "poker.example.com")).toBe(true);
+    expect(isHostnameCompatibleWithRpId("127.0.0.1", "localhost")).toBe(false);
   });
 });

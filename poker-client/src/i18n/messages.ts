@@ -45,6 +45,16 @@ export const EN_MESSAGES = {
   "auth.error.displayNameRequired": "Please enter a display name first",
   "auth.error.registerFailed": "Registration failed",
   "auth.error.passkeyLoginFailed": "Passkey login failed",
+  "auth.error.passkeyInsecureContext":
+    "Passkey requires a secure browser context. Open Poker from HTTPS or localhost, not from an insecure page.",
+  "auth.error.passkeyEmbeddedContext":
+    "Passkey must run in a top-level browser tab or window. Open Poker directly in Chrome, Safari, or another system browser.",
+  "auth.error.passkeyRpIdMismatch":
+    "This page is using a different host than the passkey's site. Open Poker on the same host you used when registering the passkey.",
+  "auth.error.passkeyNotAllowed":
+    "Chrome did not complete the passkey request. Approve the system prompt if it appears; otherwise make sure this browser profile or device already has a passkey for this host, or register again here.",
+  "auth.error.passkeyUnknownBrowserFailure":
+    "Passkey failed before the server could verify it. Try again, or use password login for a test account.",
   "auth.passkeyNeedProfileInfo":
     "No passkey registration found. Please set display name and avatar, then tap register above.",
   "auth.error.accountRequired": "Please enter a test account",
@@ -540,6 +550,16 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "auth.error.displayNameRequired": "请先输入显示用户名",
   "auth.error.registerFailed": "注册失败",
   "auth.error.passkeyLoginFailed": "Passkey 登录失败",
+  "auth.error.passkeyInsecureContext":
+    "Passkey 需要安全上下文。请通过 HTTPS 或 localhost 打开 Poker，不要在不安全页面中使用。",
+  "auth.error.passkeyEmbeddedContext":
+    "Passkey 必须在顶层浏览器标签页或窗口中运行。请直接在 Chrome、Safari 或其他系统浏览器中打开 Poker。",
+  "auth.error.passkeyRpIdMismatch":
+    "当前页面使用的主机与注册 Passkey 时的站点不一致。请回到注册该 Passkey 时使用的同一主机打开 Poker。",
+  "auth.error.passkeyNotAllowed":
+    "Chrome 没有完成这次 Passkey 请求。请先确认系统弹窗；如果没有可用 Passkey，请确认当前浏览器配置或设备上已为这个主机保存 Passkey，或者在这里重新注册。",
+  "auth.error.passkeyUnknownBrowserFailure":
+    "Passkey 在服务器校验前就失败了。请重试；如果这是测试账号，也可以先使用密码登录。",
   "auth.passkeyNeedProfileInfo": "未找到已注册的 Passkey。请先填写显示用户名和头像，再点击上方注册按钮。",
   "auth.error.accountRequired": "请输入测试账号",
   "auth.error.passwordTooShort": "密码至少 8 位",
