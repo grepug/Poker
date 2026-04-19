@@ -2,7 +2,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { MessageKey, Locale } from "@/i18n/messages";
-import { SavedGameDetailShell, SavedGameDetailView } from "./SavedGameDetail";
+import {
+  SavedGameDetailShell,
+  SavedGameDetailView,
+  shouldLoadSelectedHandDetail,
+} from "./SavedGameDetail";
 
 const buildDetail = () => ({
   archiveId: "G5V69T",
@@ -266,6 +270,7 @@ const renderView = () =>
       React.createElement(SavedGameDetailView, {
         detail,
         selectedHand: detail.hands[0],
+        selectedHandLoadError: null,
         selectedHandNumber: 1,
         locale: "en" satisfies Locale,
         localeTag: "en-US",
@@ -283,6 +288,7 @@ const renderSummaryOnlyView = () => {
     React.createElement(SavedGameDetailView as any, {
       detail: buildSummaryOnlyDetail(),
       selectedHand: detail.hands[0],
+      selectedHandLoadError: null,
       selectedHandNumber: 1,
       locale: "en" satisfies Locale,
       localeTag: "en-US",
@@ -363,5 +369,67 @@ describe("SavedGameDetailView", () => {
     expect(html).toContain("history.handLabel:{&quot;handNumber&quot;:1}");
     expect(html).toContain("history.handPot:{&quot;amount&quot;:80}");
     expect(html).toContain("history.handPot:{&quot;amount&quot;:15}");
+  });
+
+  it("keeps the archive shell visible when the selected hand fails to load", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: buildSummaryOnlyDetail(),
+        selectedHand: null,
+        selectedHandLoadError: "Saved hand unavailable",
+        selectedHandNumber: 2,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-mobile-hand-strip"');
+    expect(html).toContain('data-testid="saved-history-desktop-hand-list"');
+    expect(html).toContain("Saved hand unavailable");
+  });
+});
+
+describe("shouldLoadSelectedHandDetail", () => {
+  it("waits for the current archive summary and ignores stale or cached selections", () => {
+    const detail = buildSummaryOnlyDetail();
+
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(true);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: "NEXT",
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 999,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {
+          1: buildDetail().hands[0],
+        },
+      }),
+    ).toBe(false);
   });
 });

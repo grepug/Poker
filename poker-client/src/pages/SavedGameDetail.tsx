@@ -148,6 +148,7 @@ type TranslationFn = (
 type SavedGameDetailViewProps = {
   detail: SavedGameDetail;
   selectedHand: SavedGameHandDetail | null;
+  selectedHandLoadError?: string | null;
   selectedHandNumber: number | null;
   locale: string;
   localeTag: string;
@@ -169,6 +170,13 @@ type SavedGameDetailShellProps = {
 
 type MobileDetailSection = "overview" | "actions" | "review" | "session";
 
+type SelectedHandLoadState = {
+  archiveId: string;
+  detail: SavedGameDetail | null;
+  selectedHandNumber: number | null;
+  handDetailsByNumber: Record<number, SavedGameHandDetail>;
+};
+
 const MOBILE_DETAIL_SECTIONS: Array<{
   id: MobileDetailSection;
   labelKey: MessageKey;
@@ -178,6 +186,24 @@ const MOBILE_DETAIL_SECTIONS: Array<{
   { id: "review", labelKey: "history.mobileSection.review" },
   { id: "session", labelKey: "history.mobileSection.session" },
 ];
+
+export const shouldLoadSelectedHandDetail = ({
+  archiveId,
+  detail,
+  selectedHandNumber,
+  handDetailsByNumber,
+}: SelectedHandLoadState) => {
+  if (!archiveId || !detail || detail.archiveId !== archiveId) {
+    return false;
+  }
+  if (selectedHandNumber === null) {
+    return false;
+  }
+  if (!detail.hands.some((hand) => hand.handNumber === selectedHandNumber)) {
+    return false;
+  }
+  return !handDetailsByNumber[selectedHandNumber];
+};
 
 const SectionShell: React.FC<{
   children: React.ReactNode;
@@ -190,6 +216,22 @@ const SectionShell: React.FC<{
   >
     {children}
   </section>
+);
+
+const SelectedHandErrorPanel: React.FC<{
+  handNumber: number;
+  error: string;
+  t: TranslationFn;
+  testId?: string;
+}> = ({ handNumber, error, t, testId }) => (
+  <SectionShell testId={testId}>
+    <h2 className="text-lg font-bold text-white">
+      {t("history.handLabel", { handNumber })}
+    </h2>
+    <div className="mt-4 rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-5 text-sm text-rose-100">
+      {error}
+    </div>
+  </SectionShell>
 );
 
 const SummaryStatCard: React.FC<{
@@ -566,6 +608,7 @@ export const SavedGameDetailShell: React.FC<SavedGameDetailShellProps> = ({
 export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
   detail,
   selectedHand,
+  selectedHandLoadError = null,
   selectedHandNumber,
   locale,
   localeTag,
@@ -638,6 +681,15 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
                 ))}
               </div>
             </SectionShell>
+
+            {!selectedHand && selectedHandNumber !== null && selectedHandLoadError && (
+              <SelectedHandErrorPanel
+                handNumber={selectedHandNumber}
+                error={selectedHandLoadError}
+                t={t}
+                testId="saved-history-mobile-selected-hand-error"
+              />
+            )}
 
             {selectedHand && (
               <>
@@ -903,6 +955,15 @@ export const SavedGameDetailView: React.FC<SavedGameDetailViewProps> = ({
                 </div>
               </SectionShell>
 
+              {!selectedHand && selectedHandNumber !== null && selectedHandLoadError && (
+                <SelectedHandErrorPanel
+                  handNumber={selectedHandNumber}
+                  error={selectedHandLoadError}
+                  t={t}
+                  testId="saved-history-desktop-selected-hand-error"
+                />
+              )}
+
               {selectedHand && (
                 <SectionShell>
                   <h2 className="text-lg font-bold text-white">
@@ -935,6 +996,9 @@ export const SavedGameDetailPage: React.FC = () => {
   const [handDetailsByNumber, setHandDetailsByNumber] = useState<
     Record<number, SavedGameHandDetail>
   >({});
+  const [handLoadErrorsByNumber, setHandLoadErrorsByNumber] = useState<
+    Record<number, string>
+  >({});
   const [selectedHandNumber, setSelectedHandNumber] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -951,7 +1015,10 @@ export const SavedGameDetailPage: React.FC = () => {
 
       setIsLoading(true);
       setError(null);
+      setDetail(null);
+      setSelectedHandNumber(null);
       setHandDetailsByNumber({});
+      setHandLoadErrorsByNumber({});
       try {
         const nextDetail = await savedGameHistoryService.getSavedGameDetail(
           archiveId,
@@ -991,17 +1058,22 @@ export const SavedGameDetailPage: React.FC = () => {
     let cancelled = false;
 
     const loadSelectedHand = async () => {
-      if (!archiveId || selectedHandNumber === null) {
+      if (
+        !shouldLoadSelectedHandDetail({
+          archiveId,
+          detail,
+          selectedHandNumber,
+          handDetailsByNumber,
+        })
+      ) {
         return;
       }
-      if (handDetailsByNumber[selectedHandNumber]) {
-        return;
-      }
+      const handNumber = selectedHandNumber as number;
 
       try {
         const handDetail = await savedGameHistoryService.getSavedGameHandDetail(
           archiveId,
-          selectedHandNumber,
+          handNumber,
           locale,
         );
         if (!cancelled) {
@@ -1009,14 +1081,24 @@ export const SavedGameDetailPage: React.FC = () => {
             ...current,
             [handDetail.handNumber]: handDetail,
           }));
+          setHandLoadErrorsByNumber((current) => {
+            if (!(handDetail.handNumber in current)) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[handDetail.handNumber];
+            return next;
+          });
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : t("history.detailLoadFailed"),
-          );
+          setHandLoadErrorsByNumber((current) => ({
+            ...current,
+            [handNumber]:
+              loadError instanceof Error
+                ? loadError.message
+                : t("history.detailLoadFailed"),
+          }));
         }
       }
     };
@@ -1026,7 +1108,7 @@ export const SavedGameDetailPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [archiveId, handDetailsByNumber, locale, selectedHandNumber, t]);
+  }, [archiveId, detail, handDetailsByNumber, locale, selectedHandNumber, t]);
 
   const localeTag = useMemo(
     () => (locale === "zh_hans" ? "zh-Hans-CN" : "en-US"),
@@ -1034,6 +1116,8 @@ export const SavedGameDetailPage: React.FC = () => {
   );
   const selectedHand =
     selectedHandNumber === null ? null : handDetailsByNumber[selectedHandNumber] ?? null;
+  const selectedHandLoadError =
+    selectedHandNumber === null ? null : handLoadErrorsByNumber[selectedHandNumber] ?? null;
 
   return (
     <>
@@ -1067,6 +1151,7 @@ export const SavedGameDetailPage: React.FC = () => {
         <SavedGameDetailView
           detail={detail}
           selectedHand={selectedHand}
+          selectedHandLoadError={selectedHandLoadError}
           selectedHandNumber={selectedHandNumber}
           locale={locale}
           localeTag={localeTag}
