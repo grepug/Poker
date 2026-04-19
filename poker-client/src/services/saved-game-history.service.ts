@@ -5,9 +5,12 @@ import type {
 } from "poker-types";
 import { resolveServerResourceUrl } from "./socket.service";
 
-async function requestJson<T>(path: string): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  init?: { method?: "GET" | "POST" },
+): Promise<T> {
   const response = await fetch(resolveServerResourceUrl(path), {
-    method: "GET",
+    method: init?.method ?? "GET",
     credentials: "include",
   });
 
@@ -43,6 +46,18 @@ export const savedGameHistoryService = {
     const query = new URLSearchParams({ locale });
     return requestJson<SavedGameHandDetail>(
       `/api/history/games/${archiveId}/hands/${handNumber}?${query.toString()}`,
+    );
+  },
+
+  retrySavedGameHandReview(
+    archiveId: string,
+    handNumber: number,
+    locale: string,
+  ): Promise<SavedGameHandDetail> {
+    const query = new URLSearchParams({ locale });
+    return requestJson<SavedGameHandDetail>(
+      `/api/history/games/${archiveId}/hands/${handNumber}/retry?${query.toString()}`,
+      { method: "POST" },
     );
   },
 };

@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Post,
   Query,
   Req,
   UnauthorizedException,
@@ -87,6 +88,44 @@ export class SavedGameHistoryController {
     if (!didUpdateLocalizationState) {
       return detail;
     }
+
+    const refreshedDetail =
+      await this.savedGameArchiveStorageService.getSavedGameHandDetailForUser(
+        archiveId,
+        current.user.id,
+        handNumber,
+      );
+    if (!refreshedDetail) {
+      throw new NotFoundException('Saved hand unavailable');
+    }
+    return refreshedDetail;
+  }
+
+  @Post(':archiveId/hands/:handNumber/retry')
+  async retrySavedGameHandReview(
+    @Param('archiveId') archiveId: string,
+    @Param('handNumber', ParseIntPipe) handNumber: number,
+    @Req() request: Request,
+    @Query('locale') locale?: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const current = await this.getCurrentSession(request, authorization);
+    const detail =
+      await this.savedGameArchiveStorageService.getSavedGameHandDetailForUser(
+        archiveId,
+        current.user.id,
+        handNumber,
+      );
+    if (!detail) {
+      throw new NotFoundException('Saved hand unavailable');
+    }
+
+    await this.savedGameReviewService.retryHandReview({
+      archiveId,
+      requesterUserId: current.user.id,
+      handNumber,
+      locale,
+    });
 
     const refreshedDetail =
       await this.savedGameArchiveStorageService.getSavedGameHandDetailForUser(

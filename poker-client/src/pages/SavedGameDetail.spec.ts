@@ -391,6 +391,105 @@ describe("SavedGameDetailView", () => {
     expect(html).toContain('data-testid="saved-history-desktop-hand-list"');
     expect(html).toContain("Saved hand unavailable");
   });
+
+  it("renders a retry review action for failed selected-hand analysis", () => {
+    const detail = buildDetail();
+    const failedHand = {
+      ...detail.hands[0],
+      analysis: {
+        status: "failed" as const,
+        updatedAt: 1_710_000_950_000,
+        headline: null,
+        summary: null,
+        keyAdjustments: [],
+        failureReason: "Insufficient credits",
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: failedHand.handNumber,
+              totalPot: failedHand.history.settlement.totalPot,
+              actionCount: failedHand.history.actions.length,
+              analysis: failedHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: failedHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryReview",
+        isRetryingSelectedHandAnalysis: false,
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-retry-analysis-button"');
+    expect(html).toContain("history.retryReview");
+    expect(html).toContain("Insufficient credits");
+  });
+
+  it("renders a disabled retry translation action while retry is in flight", () => {
+    const detail = buildDetail();
+    const localizedFailureHand = {
+      ...detail.hands[0],
+      analysis: {
+        ...detail.hands[0].analysis,
+        localizedByLocale: {
+          en: detail.hands[0].analysis.localizedByLocale?.en,
+          zh_hans: {
+            status: "failed" as const,
+            updatedAt: 1_710_000_960_000,
+            headline: null,
+            summary: null,
+            keyAdjustments: [],
+            failureReason: "Insufficient credits",
+          },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: localizedFailureHand.handNumber,
+              totalPot: localizedFailureHand.history.settlement.totalPot,
+              actionCount: localizedFailureHand.history.actions.length,
+              analysis: localizedFailureHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: localizedFailureHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "zh_hans" satisfies Locale,
+        localeTag: "zh-Hans-CN",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryTranslation",
+        isRetryingSelectedHandAnalysis: true,
+      }),
+    );
+
+    expect(html).toContain("history.retryingReview");
+    expect(html).toContain('disabled=""');
+  });
 });
 
 describe("shouldLoadSelectedHandDetail", () => {
