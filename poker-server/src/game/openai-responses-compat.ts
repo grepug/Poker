@@ -114,7 +114,7 @@ export function isVolcengineResponsesBaseUrl(baseURL: string): boolean {
   }
 }
 
-export function createVolcengineResponsesCompatFetch(
+export function createResponsesCompatFetch(
   fetchImpl: CompatibleFetch = globalThis.fetch,
 ): CompatibleFetch {
   return async (input, init) => {
@@ -156,3 +156,5 @@ export function createVolcengineResponsesCompatFetch(
     });
   };
 }
+
+export const createVolcengineResponsesCompatFetch = createResponsesCompatFetch;

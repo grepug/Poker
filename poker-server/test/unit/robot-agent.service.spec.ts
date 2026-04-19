@@ -197,6 +197,26 @@ describe('RobotAgentService', () => {
     expect(capturedConfig).not.toHaveProperty('temperature');
   });
 
+  it('applies responses compatibility fetch for non-Volcengine OpenAI-compatible gateways', () => {
+    process.env.AI_ROBOT_BASE_URL = 'https://api.hanbbq.top/v1';
+
+    const responses = jest.fn().mockReturnValue('responses-model');
+    mockCreateOpenAI.mockReturnValue({ responses });
+
+    const service = new RobotAgentService();
+    const model = service.createConfiguredModel('robot');
+
+    expect(model).toBe('responses-model');
+    expect(mockCreateOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'robot-openai-responses',
+        baseURL: 'https://api.hanbbq.top/v1',
+        apiKey: 'test-key',
+        fetch: expect.any(Function),
+      }),
+    );
+  });
+
   it('falls back to the latest validated tool candidate when structured output is invalid', async () => {
     mockToolLoopAgent.mockImplementation((config) => ({
       generate: jest.fn().mockImplementation(async () => {
