@@ -52,6 +52,7 @@ export type CompletedHandHistoryExport = {
   roomId: string;
   handNumber: number;
   requesterPlayerId: string;
+  dealtPlayerIds?: string[];
   dealerPosition: number;
   smallBlindPosition: number;
   bigBlindPosition: number;

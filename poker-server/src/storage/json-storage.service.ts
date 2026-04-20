@@ -433,6 +433,7 @@ export class JsonStorageService
       roomId,
       handNumber: handStarted.handNumber,
       requesterPlayerId,
+      dealtPlayerIds: [...(handStarted.dealtPlayerIds ?? [])],
       dealerPosition: handStarted.dealerPosition,
       smallBlindPosition: handStarted.smallBlindPosition,
       bigBlindPosition: handStarted.bigBlindPosition,
@@ -1243,7 +1244,45 @@ export class JsonStorageService
     requesterPlayerId: string,
   ): SavedGameHandDetail[] {
     return hands.filter((hand) =>
-      hand.history.seats.some((seat) => seat.playerId === requesterPlayerId),
+      this.didRequesterParticipateInHand(hand.history, requesterPlayerId),
+    );
+  }
+
+  private didRequesterParticipateInHand(
+    handHistory: CompletedHandHistoryExport,
+    requesterPlayerId: string,
+  ): boolean {
+    const dealtPlayerIds = handHistory.dealtPlayerIds;
+    if (Array.isArray(dealtPlayerIds) && dealtPlayerIds.length > 0) {
+      return dealtPlayerIds.includes(requesterPlayerId);
+    }
+
+    const requesterSeat = handHistory.seats.find(
+      (seat) => seat.playerId === requesterPlayerId,
+    );
+    if (!requesterSeat) {
+      return false;
+    }
+
+    if (requesterSeat.positionLabel) {
+      return true;
+    }
+
+    if ((requesterSeat.holeCards ?? []).length > 0) {
+      return true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        handHistory.settlement.netByPlayerId,
+        requesterPlayerId,
+      )
+    ) {
+      return true;
+    }
+
+    return handHistory.actions.some(
+      (action) => action.playerId === requesterPlayerId,
     );
   }
 
