@@ -50,6 +50,8 @@ export type RobotPersonalityProfile = {
   aggression: number;
   bluff: number;
   pressure: number;
+  defend: number;
+  jam: number;
   raiseSizeBias: 'small' | 'medium' | 'large';
 };
 
@@ -67,6 +69,8 @@ const ROBOT_PERSONALITY_PROFILES: Record<
     aggression: 28,
     bluff: 12,
     pressure: 25,
+    defend: 20,
+    jam: 34,
     raiseSizeBias: 'small',
   },
   balanced: {
@@ -77,6 +81,8 @@ const ROBOT_PERSONALITY_PROFILES: Record<
     aggression: 52,
     bluff: 34,
     pressure: 48,
+    defend: 46,
+    jam: 52,
     raiseSizeBias: 'medium',
   },
   bully: {
@@ -87,6 +93,8 @@ const ROBOT_PERSONALITY_PROFILES: Record<
     aggression: 72,
     bluff: 42,
     pressure: 78,
+    defend: 58,
+    jam: 78,
     raiseSizeBias: 'large',
   },
   chaotic: {
@@ -97,6 +105,8 @@ const ROBOT_PERSONALITY_PROFILES: Record<
     aggression: 66,
     bluff: 58,
     pressure: 64,
+    defend: 54,
+    jam: 68,
     raiseSizeBias: 'medium',
   },
 };
@@ -132,6 +142,8 @@ export type RobotTurnContext = {
       aggression: number;
       bluff: number;
       pressure: number;
+      defend: number;
+      jam: number;
       raiseSizeBias: 'small' | 'medium' | 'large';
     };
   };
@@ -236,6 +248,8 @@ ACTION POLICY
 - Use the provided personality profile as a real tendency, not flavor text.
 - Higher aggression and pressure should bias toward initiative and legal raises in reasonable spots.
 - Higher bluff should allow more thin pressure or semi-bluffing, but never punt chips with clearly weak holdings.
+- Higher defend should continue more often when pot price, draw quality, or showdown value justify it.
+- Higher jam should prefer all-in over small raises in short-stack leverage spots.
 - Respect raiseSizeBias when choosing among legal raise sizes.
 - Raise amount must be integer and legal increment-over-call.
 `;

@@ -61,6 +61,8 @@ describe('RobotAgentService', () => {
         aggression: 52,
         bluff: 34,
         pressure: 48,
+        defend: 46,
+        jam: 52,
         raiseSizeBias: 'medium' as const,
       },
     },
@@ -213,6 +215,8 @@ describe('RobotAgentService', () => {
     expect(capturedConfig?.instructions).toContain('personality profile');
     expect(capturedPrompt).toContain('"key":"balanced"');
     expect(capturedPrompt).toContain('"raiseSizeBias":"medium"');
+    expect(capturedPrompt).toContain('"defend":46');
+    expect(capturedPrompt).toContain('"jam":52');
   });
 
   it('applies responses compatibility fetch for non-Volcengine OpenAI-compatible gateways', () => {

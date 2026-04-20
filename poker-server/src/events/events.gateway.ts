@@ -3591,6 +3591,8 @@ export class EventsGateway
           aggression: personalityProfile.aggression,
           bluff: personalityProfile.bluff,
           pressure: personalityProfile.pressure,
+          defend: personalityProfile.defend,
+          jam: personalityProfile.jam,
           raiseSizeBias: personalityProfile.raiseSizeBias,
         },
       },
@@ -3776,32 +3778,85 @@ export class EventsGateway
     return sizeCandidates[Math.floor(sizeCandidates.length / 2)];
   }
 
-  private resolveRobotFallbackAction(
-    context: RobotTurnContext,
-  ): RobotActionCandidate {
-    const strength = this.getRobotFallbackStrength(context);
+  private getRobotPressureMetrics(context: RobotTurnContext) {
     const amountToCall = context.legalActions.call.amountToCall;
-    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
+    const potOdds =
+      amountToCall > 0
+        ? amountToCall / Math.max(1, context.table.pot + amountToCall)
+        : 0;
     const stackPressure =
       amountToCall > 0
         ? amountToCall / Math.max(1, context.hero.chips + context.hero.currentBet)
         : 0;
+    const effectiveStackBb =
+      Math.max(0, context.hero.chips + context.hero.currentBet) /
+      Math.max(1, context.rules.bigBlind);
+
+    return {
+      amountToCall,
+      potOdds,
+      stackPressure,
+      effectiveStackBb,
+    };
+  }
+
+  private getRobotDefendPotOddsLimit(context: RobotTurnContext): number {
+    return 0.14 + context.personality.tuning.defend / 200;
+  }
+
+  private getRobotDefendStackPressureLimit(context: RobotTurnContext): number {
+    return 0.07 + context.personality.tuning.defend / 250;
+  }
+
+  private getRobotJamStackPressureThreshold(
+    context: RobotTurnContext,
+  ): number {
+    return 0.46 - context.personality.tuning.jam / 500;
+  }
+
+  private getRobotJamBbThreshold(context: RobotTurnContext): number {
+    return 5 + context.personality.tuning.jam / 25;
+  }
+
+  private resolveRobotFallbackAction(
+    context: RobotTurnContext,
+  ): RobotActionCandidate {
+    const strength = this.getRobotFallbackStrength(context);
+    const {
+      amountToCall,
+      potOdds,
+      stackPressure,
+      effectiveStackBb,
+    } = this.getRobotPressureMetrics(context);
+    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
     const raiseAmount = this.selectRobotRaiseIncrement(
       context.legalActions.raise,
       context.personality.tuning.raiseSizeBias,
     );
+    const defendPotOddsLimit = this.getRobotDefendPotOddsLimit(context);
+    const defendStackPressureLimit =
+      this.getRobotDefendStackPressureLimit(context);
+    const jamStackPressureThreshold =
+      this.getRobotJamStackPressureThreshold(context);
+    const jamBbThreshold = this.getRobotJamBbThreshold(context);
+    const canReasonablyDefend =
+      potOdds <= defendPotOddsLimit || stackPressure <= defendStackPressureLimit;
 
     if (strength === 'strong') {
       if (
         context.legalActions.allIn.enabled &&
-        (stackPressure >= 0.65 || context.hero.chips <= context.rules.bigBlind * 8)
+        (stackPressure >= jamStackPressureThreshold ||
+          effectiveStackBb <= jamBbThreshold)
       ) {
         return { action: 'all-in' };
       }
       if (
         raiseAmount !== null &&
         ((!facingBet && context.personality.tuning.pressure >= 60) ||
-          context.personality.tuning.aggression >= 60)
+          (facingBet &&
+            context.personality.tuning.aggression >= 60 &&
+            potOdds <= 0.42 &&
+            stackPressure <= 0.42))
       ) {
         return { action: 'raise', amount: raiseAmount };
       }
@@ -3828,19 +3883,23 @@ export class EventsGateway
       if (
         facingBet &&
         raiseAmount !== null &&
-        context.personality.tuning.aggression >= 75 &&
-        amountToCall <= context.rules.bigBlind * 2
+        context.personality.tuning.aggression >= 68 &&
+        potOdds <= 0.33 &&
+        stackPressure <= 0.22
       ) {
         return { action: 'raise', amount: raiseAmount };
       }
       if (
+        context.legalActions.allIn.enabled &&
+        context.personality.tuning.jam >= 70 &&
+        effectiveStackBb <= 5 &&
+        potOdds <= 0.3
+      ) {
+        return { action: 'all-in' };
+      }
+      if (
         context.legalActions.call.enabled &&
-        stackPressure <=
-          (context.personality.key === 'tight'
-            ? 0.08
-            : context.personality.key === 'chaotic'
-              ? 0.2
-              : 0.14)
+        canReasonablyDefend
       ) {
         return { action: 'call' };
       }
@@ -3855,8 +3914,9 @@ export class EventsGateway
     }
       if (
         context.legalActions.call.enabled &&
-        context.personality.tuning.bluff >= 55 &&
-        amountToCall <= context.rules.bigBlind &&
+        context.personality.tuning.defend >= 55 &&
+        context.personality.tuning.bluff >= 50 &&
+        potOdds <= 0.16 &&
         stackPressure <= 0.08
       ) {
         return { action: 'call' };
