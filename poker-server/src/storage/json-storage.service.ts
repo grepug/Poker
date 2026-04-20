@@ -48,6 +48,12 @@ type ArchivedRoomPlayer = Room['players'][number] & {
   isRobot?: boolean;
 };
 
+type SavedGameArchivePlayerView = {
+  requesterUserId: string;
+  requesterPlayerId: string;
+  hands: SavedGameHandDetail[];
+};
+
 type SavedGameArchiveRecord = {
   archiveId: string;
   roomId: string;
@@ -57,14 +63,7 @@ type SavedGameArchiveRecord = {
   handCount: number;
   blinds: SavedGameSummary['blinds'];
   participants: SavedGameParticipant[];
-  playerViews: Record<
-    string,
-    {
-      requesterUserId: string;
-      requesterPlayerId: string;
-      hands: SavedGameHandDetail[];
-    }
-  >;
+  playerViews: Record<string, SavedGameArchivePlayerView>;
 };
 
 @Injectable()
@@ -514,14 +513,7 @@ export class JsonStorageService
       }
 
       const archivedPlayers = room.players as ArchivedRoomPlayer[];
-      const participantViews = new Map<
-        string,
-        {
-          requesterUserId: string;
-          requesterPlayerId: string;
-          hands: SavedGameHandDetail[];
-        }
-      >();
+      const participantViews = new Map<string, SavedGameArchivePlayerView>();
 
       for (const player of archivedPlayers) {
         if (!player.userId) {
@@ -536,14 +528,22 @@ export class JsonStorageService
           continue;
         }
 
-        participantViews.set(player.userId, {
-          requesterUserId: player.userId,
-          requesterPlayerId: player.id,
-          hands: exportPayload.hands.map((hand) => ({
+        const normalizedHands = this.filterSavedGameHandsForRequester(
+          exportPayload.hands.map((hand) => ({
             handNumber: hand.handNumber,
             history: hand,
             analysis: this.createPendingSavedGameAnalysis(room.lastActivityAt),
           })),
+          player.id,
+        );
+        if (normalizedHands.length === 0) {
+          continue;
+        }
+
+        participantViews.set(player.userId, {
+          requesterUserId: player.userId,
+          requesterPlayerId: player.id,
+          hands: normalizedHands,
         });
       }
 
@@ -570,7 +570,10 @@ export class JsonStorageService
           }
           return left.playerName.localeCompare(right.playerName);
         });
-      const handCount = participantViews.values().next().value?.hands.length ?? 0;
+      const handCount = Array.from(participantViews.values()).reduce(
+        (max, view) => Math.max(max, view.hands.length),
+        0,
+      );
 
       const archiveRecord: SavedGameArchiveRecord = {
         archiveId,
@@ -594,18 +597,9 @@ export class JsonStorageService
 
       await Promise.all(
         Array.from(participantViews.values()).map((view) =>
-          this.writeSavedGameIndexForUser({
-            archiveId,
-            roomId,
-            requesterUserId: view.requesterUserId,
-            requesterPlayerId: view.requesterPlayerId,
-            createdAt: concludedAt,
-            startedAt,
-            concludedAt,
-            handCount,
-            blinds: archiveRecord.blinds,
-            participants,
-          }),
+          this.writeSavedGameIndexForUser(
+            this.buildSavedGameSummary(archiveRecord, view),
+          ),
         ),
       );
 
@@ -620,10 +614,30 @@ export class JsonStorageService
         this.getSavedGameUserIndexPath(userId),
       )) ?? [];
 
-    return savedGames.map((summary) => ({
-      ...summary,
-      participants: this.normalizeSavedGameParticipants(summary.participants),
-    }));
+    const normalizedSummaries = await Promise.all(
+      savedGames.map(async (summary) => {
+        const archive = await this.readSavedGameArchive(summary.archiveId);
+        if (!archive) {
+          return {
+            ...summary,
+            participants: this.normalizeSavedGameParticipants(summary.participants),
+          };
+        }
+
+        const playerView = this.getNormalizedSavedGamePlayerView(
+          archive.playerViews[userId],
+        );
+        if (!playerView) {
+          return null;
+        }
+
+        return this.buildSavedGameSummary(archive, playerView);
+      }),
+    );
+
+    return normalizedSummaries.filter(
+      (summary): summary is SavedGameSummary => Boolean(summary),
+    );
   }
 
   async getSavedGameDetailForUser(
@@ -636,7 +650,9 @@ export class JsonStorageService
       return null;
     }
 
-    const playerView = archive.playerViews[userId];
+    const playerView = this.getNormalizedSavedGamePlayerView(
+      archive.playerViews[userId],
+    );
     if (!playerView) {
       return null;
     }
@@ -653,13 +669,43 @@ export class JsonStorageService
       createdAt: archive.createdAt,
       startedAt: archive.startedAt,
       concludedAt: archive.concludedAt,
-      handCount: archive.handCount,
+      handCount: playerView.hands.length,
       blinds: archive.blinds,
       participants,
       hands: playerView.hands.map((hand) => ({
-        ...hand,
+        handNumber: hand.handNumber,
+        totalPot: hand.history.settlement.totalPot,
+        actionCount: hand.history.actions.length,
         analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
       })),
+    };
+  }
+
+  async getSavedGameHandDetailForUser(
+    archiveId: string,
+    userId: string,
+    handNumber: number,
+  ): Promise<SavedGameHandDetail | null> {
+    await this.ensureDirectories();
+    const archive = await this.readSavedGameArchive(archiveId);
+    if (!archive) {
+      return null;
+    }
+
+    const playerView = this.getNormalizedSavedGamePlayerView(
+      archive.playerViews[userId],
+    );
+    const hand = playerView?.hands.find(
+      (candidate) => candidate.handNumber === handNumber,
+    );
+    if (!hand) {
+      return null;
+    }
+
+    return {
+      handNumber: hand.handNumber,
+      history: hand.history,
+      analysis: this.normalizeSavedGameHandAnalysis(hand.analysis),
     };
   }
 
@@ -674,14 +720,17 @@ export class JsonStorageService
 
     return {
       archiveId,
-      playerViews: Object.values(archive.playerViews).map((view) => ({
-        requesterUserId: view.requesterUserId,
-        requesterPlayerId: view.requesterPlayerId,
-        hands: view.hands.map((hand) => ({
-          handNumber: hand.handNumber,
-          history: hand.history,
+      playerViews: Object.values(archive.playerViews)
+        .map((view) => this.getNormalizedSavedGamePlayerView(view))
+        .filter((view): view is SavedGameArchivePlayerView => Boolean(view))
+        .map((view) => ({
+          requesterUserId: view.requesterUserId,
+          requesterPlayerId: view.requesterPlayerId,
+          hands: view.hands.map((hand) => ({
+            handNumber: hand.handNumber,
+            history: hand.history,
+          })),
         })),
-      })),
     };
   }
 
@@ -698,7 +747,9 @@ export class JsonStorageService
         return;
       }
 
-      const playerView = archive.playerViews[userId];
+      const playerView = this.getNormalizedSavedGamePlayerView(
+        archive.playerViews[userId],
+      );
       if (!playerView) {
         return;
       }
@@ -733,7 +784,9 @@ export class JsonStorageService
       return null;
     }
 
-    const playerView = archive.playerViews[userId];
+    const playerView = this.getNormalizedSavedGamePlayerView(
+      archive.playerViews[userId],
+    );
     const hand = playerView?.hands.find((candidate) => candidate.handNumber === handNumber);
     return hand ? this.normalizeSavedGameHandAnalysis(hand.analysis) : null;
   }
@@ -754,7 +807,9 @@ export class JsonStorageService
         return;
       }
 
-      const playerView = archive.playerViews[userId];
+      const playerView = this.getNormalizedSavedGamePlayerView(
+        archive.playerViews[userId],
+      );
       if (!playerView) {
         return;
       }
@@ -1181,6 +1236,63 @@ export class JsonStorageService
     return participants.filter((participant) =>
       shouldIncludeArchivedRankingParticipant(participant),
     );
+  }
+
+  private filterSavedGameHandsForRequester(
+    hands: SavedGameHandDetail[],
+    requesterPlayerId: string,
+  ): SavedGameHandDetail[] {
+    return hands.filter((hand) =>
+      hand.history.seats.some((seat) => seat.playerId === requesterPlayerId),
+    );
+  }
+
+  private getNormalizedSavedGamePlayerView(
+    view?: SavedGameArchivePlayerView,
+  ): SavedGameArchivePlayerView | null {
+    if (!view) {
+      return null;
+    }
+
+    const hands = this.filterSavedGameHandsForRequester(
+      view.hands,
+      view.requesterPlayerId,
+    );
+    if (hands.length === 0) {
+      return null;
+    }
+
+    return {
+      ...view,
+      hands,
+    };
+  }
+
+  private buildSavedGameSummary(
+    archive: Pick<
+      SavedGameArchiveRecord,
+      | 'archiveId'
+      | 'roomId'
+      | 'createdAt'
+      | 'startedAt'
+      | 'concludedAt'
+      | 'blinds'
+      | 'participants'
+    >,
+    playerView: SavedGameArchivePlayerView,
+  ): SavedGameSummary {
+    return {
+      archiveId: archive.archiveId,
+      roomId: archive.roomId,
+      requesterUserId: playerView.requesterUserId,
+      requesterPlayerId: playerView.requesterPlayerId,
+      createdAt: archive.createdAt,
+      startedAt: archive.startedAt,
+      concludedAt: archive.concludedAt,
+      handCount: playerView.hands.length,
+      blinds: archive.blinds,
+      participants: this.normalizeSavedGameParticipants(archive.participants),
+    };
   }
 
   private async readSavedGameArchive(

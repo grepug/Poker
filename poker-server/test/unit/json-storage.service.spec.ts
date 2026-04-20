@@ -632,6 +632,239 @@ describe('JsonStorageService', () => {
     await service.persistRoom(room);
   };
 
+  const seedPostLeaveHandLeakScenario = async (roomId: string) => {
+    await seedCompletedHands(roomId);
+
+    const handTwoPath = path.join(testRoomsDir, roomId, 'hands', '2.jsonl');
+    const handTwoEvents = [
+      {
+        recordId: 'leave-hand-2-started',
+        seq: 1,
+        roomId,
+        handNumber: 2,
+        street: 'PRE_FLOP',
+        timestamp: 200,
+        type: 'HAND_STARTED',
+        actor: { source: 'HAND_SERVICE' },
+        payload: {
+          handNumber: 2,
+          dealerPosition: 1,
+          smallBlindPosition: 1,
+          bigBlindPosition: 2,
+          pot: 30,
+          currentBet: 20,
+          lastRaiseSize: 20,
+          currentPlayerTurn: 'bob',
+          activePlayerIds: ['bob', 'charlie'],
+          dealtPlayerIds: ['bob', 'charlie'],
+          positionLabelsByPlayerId: {
+            bob: 'BTN/SB',
+            charlie: 'BB',
+          },
+          potContributions: {
+            bob: 10,
+            charlie: 20,
+          },
+          communityCards: [],
+          players: [
+            {
+              playerId: 'bob',
+              playerName: 'Bob',
+              position: 1,
+              status: 'connected',
+              chips: 990,
+              currentBet: 10,
+              totalBuyIn: 1000,
+              lastAction: null,
+              isActiveInHand: true,
+              positionLabel: 'BTN/SB',
+              cards: [createCard('4', 'hearts'), createCard('3', 'diamonds')],
+            },
+            {
+              playerId: 'charlie',
+              playerName: 'Charlie',
+              position: 2,
+              status: 'connected',
+              chips: 980,
+              currentBet: 20,
+              totalBuyIn: 1000,
+              lastAction: null,
+              isActiveInHand: true,
+              positionLabel: 'BB',
+              cards: [createCard('A', 'clubs'), createCard('Q', 'clubs')],
+            },
+          ],
+        },
+      },
+      {
+        recordId: 'leave-hand-2-action',
+        seq: 2,
+        roomId,
+        handNumber: 2,
+        street: 'PRE_FLOP',
+        timestamp: 210,
+        type: 'PLAYER_ACTION',
+        actor: {
+          source: 'BETTING_SERVICE',
+          playerId: 'bob',
+          playerName: 'Bob',
+        },
+        payload: {
+          action: 'fold',
+          amount: null,
+          playerStatus: 'folded',
+          playerChips: 990,
+          playerCurrentBet: 10,
+          pot: 30,
+          currentBet: 20,
+          request: {
+            action: 'fold',
+            actionId: 'leave-hand-2-action-1',
+          },
+          decision: {
+            currentPlayerTurnBefore: 'bob',
+            playerStatusBefore: 'connected',
+            playerChipsBefore: 990,
+            playerCurrentBetBefore: 10,
+            potBefore: 30,
+            currentBetBefore: 20,
+            lastRaiseSizeBefore: 20,
+            callAmountBefore: 10,
+            minimumRaiseBy: 20,
+            minimumRaiseTo: 40,
+            maximumBetTo: 1000,
+            facingBet: true,
+            legalActions: ['fold', 'call', 'raise', 'all-in'],
+            activePlayerIds: ['bob', 'charlie'],
+            communityCards: [],
+            potContributions: { bob: 10, charlie: 20 },
+            players: [],
+          },
+          result: {
+            resolvedAction: 'fold',
+            displayKind: 'fold',
+            committedAmount: 0,
+            totalBetAfterAction: 10,
+            playerStatusAfter: 'folded',
+            playerChipsAfter: 990,
+            playerCurrentBetAfter: 10,
+            potAfter: 30,
+            currentBetAfter: 20,
+            lastRaiseSizeAfter: 20,
+            activePlayerIds: ['charlie'],
+            potContributions: { bob: 10, charlie: 20 },
+            players: [],
+          },
+        },
+      },
+      {
+        recordId: 'leave-hand-2-settled',
+        seq: 3,
+        roomId,
+        handNumber: 2,
+        street: 'PRE_FLOP',
+        timestamp: 211,
+        type: 'HAND_SETTLED',
+        actor: { source: 'EVENTS_GATEWAY' },
+        payload: {
+          handNumber: 2,
+          isShowdown: false,
+          revealedPlayerIds: [],
+          result: {
+            winners: [
+              {
+                playerId: 'charlie',
+                playerName: 'Charlie',
+                hand: null,
+                amountWon: 30,
+              },
+            ],
+            playerHands: [
+              {
+                playerId: 'bob',
+                playerName: 'Bob',
+                cards: [],
+                hand: null,
+                resultStatus: 'folded_pre_showdown',
+                cardsVisibility: 'hidden',
+                seatPosition: 1,
+              },
+              {
+                playerId: 'charlie',
+                playerName: 'Charlie',
+                cards: [],
+                hand: null,
+                resultStatus: 'hidden_contender',
+                cardsVisibility: 'hidden',
+                seatPosition: 2,
+              },
+            ],
+            totalPot: 30,
+            payouts: [
+              {
+                segmentIndex: 0,
+                potType: 'MAIN',
+                amount: 30,
+                eligiblePlayers: ['bob', 'charlie'],
+                winnerShares: [{ playerId: 'charlie', amountWon: 30 }],
+                uncontested: true,
+              },
+            ],
+            netByPlayerId: {
+              bob: -10,
+              charlie: 10,
+            },
+          },
+        },
+      },
+    ];
+    await fs.writeFile(
+      handTwoPath,
+      `${handTwoEvents.map((event) => JSON.stringify(event)).join('\n')}\n`,
+      'utf8',
+    );
+
+    const endedRoom = await service.getRoom(roomId);
+    if (!endedRoom) {
+      throw new Error('Expected ended room to exist');
+    }
+
+    const alice = endedRoom.players.find((player) => player.id === 'alice');
+    const bob = endedRoom.players.find((player) => player.id === 'bob');
+    if (!alice || !bob) {
+      throw new Error('Expected seeded players to exist');
+    }
+
+    endedRoom.players = [
+      {
+        ...alice,
+        userId: 'user-alice',
+        status: 'left',
+        socketId: '',
+        cards: null,
+        currentBet: 0,
+        lastAction: null,
+      },
+      {
+        ...bob,
+        userId: 'user-bob',
+      },
+      {
+        ...createRoomPlayer({
+          id: 'charlie',
+          name: 'Charlie',
+          position: 2,
+          chips: 1010,
+          totalBuyIn: 1000,
+        }),
+        userId: 'user-charlie',
+        emoji: '🐼',
+      },
+    ] as any;
+    endedRoom.lastActivityAt = 320;
+    await service.persistRoom(endedRoom);
+  };
+
   describe('persistRoom', () => {
     it('should save room to room snapshot file', async () => {
       const room = createMockRoom('TEST123');
@@ -1336,14 +1569,25 @@ describe('JsonStorageService', () => {
           ) => Promise<any | null>;
         }
       ).getSavedGameDetailForUser;
+      const getSavedGameHandDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameHandDetailForUser?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameHandDetailForUser;
 
       expect(typeof archiveEndedRoom).toBe('function');
       expect(typeof listSavedGamesForUser).toBe('function');
       expect(typeof getSavedGameDetailForUser).toBe('function');
+      expect(typeof getSavedGameHandDetailForUser).toBe('function');
       if (
         typeof archiveEndedRoom !== 'function' ||
         typeof listSavedGamesForUser !== 'function' ||
-        typeof getSavedGameDetailForUser !== 'function'
+        typeof getSavedGameDetailForUser !== 'function' ||
+        typeof getSavedGameHandDetailForUser !== 'function'
       ) {
         return;
       }
@@ -1381,9 +1625,8 @@ describe('JsonStorageService', () => {
           hands: expect.arrayContaining([
             expect.objectContaining({
               handNumber: 1,
-              history: expect.objectContaining({
-                requesterPlayerId: 'alice',
-              }),
+              totalPot: 40,
+              actionCount: 4,
               analysis: expect.objectContaining({
                 status: 'pending',
               }),
@@ -1392,6 +1635,14 @@ describe('JsonStorageService', () => {
         }),
       );
 
+      const aliceHandDetail = await getSavedGameHandDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+      );
+      expect(aliceHandDetail?.history.requesterPlayerId).toBe('alice');
+
       await service.deleteRoom(roomId);
 
       const archivedAfterDelete = await getSavedGameDetailForUser.call(
@@ -1399,9 +1650,22 @@ describe('JsonStorageService', () => {
         archived!.archiveId,
         'user-alice',
       );
-      expect(archivedAfterDelete?.hands[0].history.requesterPlayerId).toBe('alice');
+      expect(archivedAfterDelete?.hands[0]).toEqual(
+        expect.objectContaining({
+          handNumber: 1,
+          totalPot: 40,
+          actionCount: 4,
+        }),
+      );
+      const archivedHandAfterDelete = await getSavedGameHandDetailForUser.call(
+        service,
+        archived!.archiveId,
+        'user-alice',
+        1,
+      );
+      expect(archivedHandAfterDelete?.history.requesterPlayerId).toBe('alice');
       expect(
-        archivedAfterDelete?.hands[0].history.seats.find(
+        archivedHandAfterDelete?.history.seats.find(
           (seat: any) => seat.playerId === 'bob',
         ),
       ).toEqual(
@@ -1417,6 +1681,217 @@ describe('JsonStorageService', () => {
         'user-intruder',
       );
       expect(unauthorizedDetail).toBeNull();
+    });
+
+    it('excludes post-leave hands from saved-game ownership and review targets', async () => {
+      const roomId = 'ROOMARCHIVE-LEFT-USER';
+      await seedPostLeaveHandLeakScenario(roomId);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const listSavedGamesForUser = (
+        service as JsonStorageService & {
+          listSavedGamesForUser?: (userId: string) => Promise<any[]>;
+        }
+      ).listSavedGamesForUser;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+      const getSavedGameHandDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameHandDetailForUser?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameHandDetailForUser;
+      const getSavedGameReviewTargets = (
+        service as JsonStorageService & {
+          getSavedGameReviewTargets?: (archiveId: string) => Promise<any | null>;
+        }
+      ).getSavedGameReviewTargets;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof listSavedGamesForUser).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      expect(typeof getSavedGameHandDetailForUser).toBe('function');
+      expect(typeof getSavedGameReviewTargets).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof listSavedGamesForUser !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function' ||
+        typeof getSavedGameHandDetailForUser !== 'function' ||
+        typeof getSavedGameReviewTargets !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      const archiveId = archived?.archiveId;
+      if (!archiveId) {
+        throw new Error('Expected archive id');
+      }
+
+      const aliceGames = await listSavedGamesForUser.call(service, 'user-alice');
+      expect(aliceGames).toEqual([
+        expect.objectContaining({
+          archiveId,
+          requesterUserId: 'user-alice',
+          requesterPlayerId: 'alice',
+          handCount: 1,
+        }),
+      ]);
+
+      const aliceDetail = await getSavedGameDetailForUser.call(
+        service,
+        archiveId,
+        'user-alice',
+      );
+      expect(aliceDetail?.handCount).toBe(1);
+      expect(aliceDetail?.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
+
+      const leakedHandDetail = await getSavedGameHandDetailForUser.call(
+        service,
+        archiveId,
+        'user-alice',
+        2,
+      );
+      expect(leakedHandDetail).toBeNull();
+
+      const reviewTargets = await getSavedGameReviewTargets.call(service, archiveId);
+      const aliceReviewTarget = reviewTargets?.playerViews.find(
+        (view: any) => view.requesterUserId === 'user-alice',
+      );
+      expect(aliceReviewTarget?.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
+    });
+
+    it('suppresses leaked post-leave hands from stale archive and user-index records', async () => {
+      const roomId = 'ROOMARCHIVE-LEFT-USER-LEGACY';
+      await seedPostLeaveHandLeakScenario(roomId);
+
+      const archiveEndedRoom = (
+        service as JsonStorageService & {
+          archiveEndedRoom?: (roomId: string) => Promise<{ archiveId: string } | null>;
+        }
+      ).archiveEndedRoom;
+      const listSavedGamesForUser = (
+        service as JsonStorageService & {
+          listSavedGamesForUser?: (userId: string) => Promise<any[]>;
+        }
+      ).listSavedGamesForUser;
+      const getSavedGameDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameDetailForUser?: (
+            archiveId: string,
+            userId: string,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameDetailForUser;
+      const getSavedGameHandDetailForUser = (
+        service as JsonStorageService & {
+          getSavedGameHandDetailForUser?: (
+            archiveId: string,
+            userId: string,
+            handNumber: number,
+          ) => Promise<any | null>;
+        }
+      ).getSavedGameHandDetailForUser;
+      const getSavedGameReviewTargets = (
+        service as JsonStorageService & {
+          getSavedGameReviewTargets?: (archiveId: string) => Promise<any | null>;
+        }
+      ).getSavedGameReviewTargets;
+
+      expect(typeof archiveEndedRoom).toBe('function');
+      expect(typeof listSavedGamesForUser).toBe('function');
+      expect(typeof getSavedGameDetailForUser).toBe('function');
+      expect(typeof getSavedGameHandDetailForUser).toBe('function');
+      expect(typeof getSavedGameReviewTargets).toBe('function');
+      if (
+        typeof archiveEndedRoom !== 'function' ||
+        typeof listSavedGamesForUser !== 'function' ||
+        typeof getSavedGameDetailForUser !== 'function' ||
+        typeof getSavedGameHandDetailForUser !== 'function' ||
+        typeof getSavedGameReviewTargets !== 'function'
+      ) {
+        return;
+      }
+
+      const archived = await archiveEndedRoom.call(service, roomId);
+      const archiveId = archived?.archiveId;
+      if (!archiveId) {
+        throw new Error('Expected archive id');
+      }
+
+      const archivePath = path.join(
+        testDataDir,
+        'saved-games',
+        'archives',
+        `${archiveId}.json`,
+      );
+      const userIndexPath = path.join(
+        testDataDir,
+        'saved-games',
+        'users',
+        'user-alice.json',
+      );
+
+      const archiveRecord = JSON.parse(
+        await fs.readFile(archivePath, 'utf8'),
+      ) as {
+        handCount: number;
+        playerViews: Record<string, { hands: any[] }>;
+      };
+      const leakedHand = archiveRecord.playerViews['user-bob'].hands.find(
+        (hand) => hand.handNumber === 2,
+      );
+      if (!leakedHand) {
+        throw new Error('Expected leaked hand source');
+      }
+
+      archiveRecord.handCount = 2;
+      archiveRecord.playerViews['user-alice'].hands.push(leakedHand);
+      await fs.writeFile(archivePath, JSON.stringify(archiveRecord, null, 2));
+
+      const userIndex = JSON.parse(
+        await fs.readFile(userIndexPath, 'utf8'),
+      ) as Array<{ handCount: number }>;
+      userIndex[0].handCount = 2;
+      await fs.writeFile(userIndexPath, JSON.stringify(userIndex, null, 2));
+
+      const aliceGames = await listSavedGamesForUser.call(service, 'user-alice');
+      expect(aliceGames[0]?.handCount).toBe(1);
+
+      const aliceDetail = await getSavedGameDetailForUser.call(
+        service,
+        archiveId,
+        'user-alice',
+      );
+      expect(aliceDetail?.handCount).toBe(1);
+      expect(aliceDetail?.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
+
+      const leakedHandDetail = await getSavedGameHandDetailForUser.call(
+        service,
+        archiveId,
+        'user-alice',
+        2,
+      );
+      expect(leakedHandDetail).toBeNull();
+
+      const reviewTargets = await getSavedGameReviewTargets.call(service, archiveId);
+      const aliceReviewTarget = reviewTargets?.playerViews.find(
+        (view: any) => view.requesterUserId === 'user-alice',
+      );
+      expect(aliceReviewTarget?.hands.map((hand: any) => hand.handNumber)).toEqual([1]);
     });
 
     it('omits zero-activity left robots from archived saved-game participants', async () => {

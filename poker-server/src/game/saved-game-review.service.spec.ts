@@ -7,6 +7,7 @@ describe('SavedGameReviewService', () => {
     updateSavedGameHandAnalysis: jest.Mock;
     getSavedGameHandAnalysis: jest.Mock;
     mergeSavedGameHandLocalization: jest.Mock;
+    getSavedGameHandDetailForUser: jest.Mock;
   };
   let robotAgentService: {
     isConfigured: jest.Mock;
@@ -21,6 +22,7 @@ describe('SavedGameReviewService', () => {
       updateSavedGameHandAnalysis: jest.fn().mockResolvedValue(undefined),
       getSavedGameHandAnalysis: jest.fn(),
       mergeSavedGameHandLocalization: jest.fn().mockResolvedValue(true),
+      getSavedGameHandDetailForUser: jest.fn(),
     };
     robotAgentService = {
       isConfigured: jest.fn(),
@@ -322,5 +324,170 @@ describe('SavedGameReviewService', () => {
     expect(
       archiveStorageService.updateSavedGameHandAnalysis,
     ).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed canonical review by resetting it to pending and requeueing generation', async () => {
+    archiveStorageService.getSavedGameHandDetailForUser.mockResolvedValue({
+      handNumber: 7,
+      history: {
+        roomId: 'ROOM1',
+        handNumber: 7,
+        requesterPlayerId: 'player-alice',
+      },
+      analysis: {
+        status: 'failed',
+        failureReason: 'Insufficient credits',
+      },
+    });
+    robotAgentService.getConfigurationError.mockReturnValue(null);
+    jest
+      .spyOn(service as any, 'generateStructuredReview')
+      .mockResolvedValue({
+        headline: 'Retry succeeded',
+        summary: 'Provider recovered after retry.',
+        keyAdjustments: ['Review the hand again'],
+      });
+    jest
+      .spyOn(service as any, 'localizeReviewText')
+      .mockResolvedValue({
+        headline: '重试成功',
+        summary: '提供商恢复后已成功生成。',
+        keyAdjustments: ['重新查看这手牌'],
+      });
+
+    await expect(
+      service.retryHandReview({
+        archiveId: 'ROOM1',
+        requesterUserId: 'user-alice',
+        handNumber: 7,
+        locale: 'en',
+      }),
+    ).resolves.toBe(true);
+
+    expect(
+      archiveStorageService.updateSavedGameHandAnalysis,
+    ).toHaveBeenNthCalledWith(
+      1,
+      'ROOM1',
+      'user-alice',
+      7,
+      expect.objectContaining({
+        status: 'pending',
+        failureReason: null,
+      }),
+    );
+
+    await (service as any).reviewQueue;
+
+    expect(
+      archiveStorageService.updateSavedGameHandAnalysis,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'ROOM1',
+      'user-alice',
+      7,
+      expect.objectContaining({
+        status: 'ready',
+        headline: 'Retry succeeded',
+      }),
+    );
+  });
+
+  it('retries a failed localized review for the requested locale without rerunning canonical analysis', async () => {
+    archiveStorageService.getSavedGameHandAnalysis
+      .mockResolvedValueOnce({
+        status: 'ready',
+        headline: 'Canonical review',
+        summary: 'Keep pressure on later streets.',
+        keyAdjustments: ['Bet bigger on the turn'],
+        localizedByLocale: {
+          en: {
+            status: 'ready',
+            headline: 'Canonical review',
+            summary: 'Keep pressure on later streets.',
+            keyAdjustments: ['Bet bigger on the turn'],
+          },
+          zh_hans: {
+            status: 'failed',
+            headline: null,
+            summary: null,
+            keyAdjustments: [],
+            failureReason: 'Insufficient credits',
+          },
+        },
+      })
+      .mockResolvedValue({
+        status: 'ready',
+        headline: 'Canonical review',
+        summary: 'Keep pressure on later streets.',
+        keyAdjustments: ['Bet bigger on the turn'],
+        localizedByLocale: {
+          en: {
+            status: 'ready',
+            headline: 'Canonical review',
+            summary: 'Keep pressure on later streets.',
+            keyAdjustments: ['Bet bigger on the turn'],
+          },
+          zh_hans: {
+            status: 'pending',
+            headline: null,
+            summary: null,
+            keyAdjustments: [],
+            failureReason: null,
+          },
+        },
+      });
+    robotAgentService.getConfigurationError.mockReturnValue(null);
+    const generateStructuredReviewSpy = jest.spyOn(
+      service as any,
+      'generateStructuredReview',
+    );
+    jest
+      .spyOn(service as any, 'localizeReviewText')
+      .mockResolvedValue({
+        headline: '规范复盘',
+        summary: '在后续街道持续施压。',
+        keyAdjustments: ['转牌下注更大'],
+      });
+
+    await expect(
+      service.retryHandReview({
+        archiveId: 'ROOM1',
+        requesterUserId: 'user-alice',
+        handNumber: 8,
+        locale: 'zh_hans',
+      }),
+    ).resolves.toBe(true);
+
+    expect(generateStructuredReviewSpy).not.toHaveBeenCalled();
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      1,
+      'ROOM1',
+      'user-alice',
+      8,
+      'zh_hans',
+      expect.objectContaining({
+        status: 'pending',
+        failureReason: null,
+      }),
+    );
+
+    await (service as any).reviewQueue;
+
+    expect(
+      archiveStorageService.mergeSavedGameHandLocalization,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'ROOM1',
+      'user-alice',
+      8,
+      'zh_hans',
+      expect.objectContaining({
+        status: 'ready',
+        headline: '规范复盘',
+      }),
+    );
   });
 });

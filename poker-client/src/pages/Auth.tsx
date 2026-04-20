@@ -2,11 +2,14 @@ import React, { useMemo, useState } from "react";
 import { PLAYER_EMOJI_OPTIONS, getRandomPlayerEmoji } from "@/constants/player-emojis";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalization } from "@/contexts/LocalizationContext";
+import type { MessageKey } from "@/i18n/messages";
+import { getPasskeyErrorTranslationKey } from "@/utils/passkey-errors";
 
 export const AuthPage: React.FC = () => {
   const {
     authModes,
     passkeySupported,
+    passkeySupportIssue,
     registerWithPasskey,
     loginWithPasskey,
     loginWithPassword,
@@ -24,6 +27,26 @@ export const AuthPage: React.FC = () => {
     () => isSubmitting || !passkeySupported,
     [isSubmitting, passkeySupported],
   );
+
+  const unsupportedPasskeyMessage = useMemo(() => {
+    switch (passkeySupportIssue) {
+      case "insecure-context":
+        return t("auth.error.passkeyInsecureContext");
+      case "embedded-context":
+        return t("auth.error.passkeyEmbeddedContext");
+      default:
+        return t("auth.passkeyUnsupported");
+    }
+  }, [passkeySupportIssue, t]);
+
+  const resolvePasskeyFeedback = (error: unknown, fallbackKey: MessageKey) => {
+    const translationKey = getPasskeyErrorTranslationKey(error);
+    if (translationKey) {
+      return t(translationKey);
+    }
+
+    return error instanceof Error ? error.message : t(fallbackKey);
+  };
 
   const shouldFallbackToRegister = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
@@ -51,7 +74,7 @@ export const AuthPage: React.FC = () => {
     try {
       await registerWithPasskey(name, avatarEmoji);
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : t("auth.error.registerFailed"));
+      setFeedback(resolvePasskeyFeedback(error, "auth.error.registerFailed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -65,7 +88,7 @@ export const AuthPage: React.FC = () => {
       await loginWithPasskey();
     } catch (error) {
       if (!shouldFallbackToRegister(error)) {
-        setFeedback(error instanceof Error ? error.message : t("auth.error.passkeyLoginFailed"));
+        setFeedback(resolvePasskeyFeedback(error, "auth.error.passkeyLoginFailed"));
         return;
       }
 
@@ -166,7 +189,7 @@ export const AuthPage: React.FC = () => {
 
             {!passkeySupported && (
               <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {t("auth.passkeyUnsupported")}
+                {unsupportedPasskeyMessage}
               </p>
             )}
           </div>

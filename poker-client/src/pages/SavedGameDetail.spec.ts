@@ -2,7 +2,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { MessageKey, Locale } from "@/i18n/messages";
-import { SavedGameDetailShell, SavedGameDetailView } from "./SavedGameDetail";
+import {
+  SavedGameDetailShell,
+  SavedGameDetailView,
+  shouldLoadSelectedHandDetail,
+} from "./SavedGameDetail";
 
 const buildDetail = () => ({
   archiveId: "G5V69T",
@@ -238,6 +242,19 @@ const buildDetail = () => ({
   ],
 });
 
+const buildSummaryOnlyDetail = () => {
+  const detail = buildDetail();
+  return {
+    ...detail,
+    hands: detail.hands.map((hand) => ({
+      handNumber: hand.handNumber,
+      totalPot: hand.history.settlement.totalPot,
+      actionCount: hand.history.actions.length,
+      analysis: hand.analysis,
+    })),
+  };
+};
+
 const t = (key: MessageKey, values?: Record<string, string | number>) => {
   if (!values) {
     return key;
@@ -247,9 +264,31 @@ const t = (key: MessageKey, values?: Record<string, string | number>) => {
 };
 
 const renderView = () =>
-  renderToStaticMarkup(
-    React.createElement(SavedGameDetailView, {
-      detail: buildDetail(),
+  (() => {
+    const detail = buildDetail();
+    return renderToStaticMarkup(
+      React.createElement(SavedGameDetailView, {
+        detail,
+        selectedHand: detail.hands[0],
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+      }),
+    );
+  })();
+
+const renderSummaryOnlyView = () => {
+  const detail = buildDetail();
+  return renderToStaticMarkup(
+    React.createElement(SavedGameDetailView as any, {
+      detail: buildSummaryOnlyDetail(),
+      selectedHand: detail.hands[0],
+      selectedHandLoadError: null,
       selectedHandNumber: 1,
       locale: "en" satisfies Locale,
       localeTag: "en-US",
@@ -259,6 +298,7 @@ const renderView = () =>
       onSelectHandNumber: vi.fn(),
     }),
   );
+};
 
 describe("SavedGameDetailView", () => {
   it("keeps history and lobby navigation visible in shell states like loading or error", () => {
@@ -321,5 +361,221 @@ describe("SavedGameDetailView", () => {
     expect(desktopHandListStart).toBeGreaterThan(standingsSectionStart);
     expect(standingsSection).toContain("game.rankings.buyIn");
     expect(standingsSection).toContain("$1000");
+  });
+
+  it("renders selected-hand detail from a separately loaded hand while the archive hand list stays summary-only", () => {
+    const html = renderSummaryOnlyView();
+
+    expect(html).toContain("history.handLabel:{&quot;handNumber&quot;:1}");
+    expect(html).toContain("history.handPot:{&quot;amount&quot;:80}");
+    expect(html).toContain("history.handPot:{&quot;amount&quot;:15}");
+  });
+
+  it("keeps the archive shell visible when the selected hand fails to load", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: buildSummaryOnlyDetail(),
+        selectedHand: null,
+        selectedHandLoadError: "Saved hand unavailable",
+        selectedHandNumber: 2,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-mobile-hand-strip"');
+    expect(html).toContain('data-testid="saved-history-desktop-hand-list"');
+    expect(html).toContain("Saved hand unavailable");
+  });
+
+  it("renders a retry review action for failed selected-hand analysis", () => {
+    const detail = buildDetail();
+    const failedHand = {
+      ...detail.hands[0],
+      analysis: {
+        status: "failed" as const,
+        updatedAt: 1_710_000_950_000,
+        headline: null,
+        summary: null,
+        keyAdjustments: [],
+        failureReason: "Insufficient credits",
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: failedHand.handNumber,
+              totalPot: failedHand.history.settlement.totalPot,
+              actionCount: failedHand.history.actions.length,
+              analysis: failedHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: failedHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryReview",
+        isRetryingSelectedHandAnalysis: false,
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-retry-analysis-button"');
+    expect(html).toContain("history.retryReview");
+    expect(html).toContain("Insufficient credits");
+  });
+
+  it("renders a retry review action for unavailable selected-hand analysis", () => {
+    const detail = buildDetail();
+    const unavailableHand = {
+      ...detail.hands[0],
+      analysis: {
+        status: "unavailable" as const,
+        updatedAt: 1_710_000_955_000,
+        headline: null,
+        summary: null,
+        keyAdjustments: [],
+        failureReason: "Missing AI provider configuration",
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: unavailableHand.handNumber,
+              totalPot: unavailableHand.history.settlement.totalPot,
+              actionCount: unavailableHand.history.actions.length,
+              analysis: unavailableHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: unavailableHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryReview",
+        isRetryingSelectedHandAnalysis: false,
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-retry-analysis-button"');
+    expect(html).toContain("history.retryReview");
+    expect(html).toContain("Missing AI provider configuration");
+  });
+
+  it("renders a disabled retry translation action while retry is in flight", () => {
+    const detail = buildDetail();
+    const localizedFailureHand = {
+      ...detail.hands[0],
+      analysis: {
+        ...detail.hands[0].analysis,
+        localizedByLocale: {
+          en: detail.hands[0].analysis.localizedByLocale?.en,
+          zh_hans: {
+            status: "failed" as const,
+            updatedAt: 1_710_000_960_000,
+            headline: null,
+            summary: null,
+            keyAdjustments: [],
+            failureReason: "Insufficient credits",
+          },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: localizedFailureHand.handNumber,
+              totalPot: localizedFailureHand.history.settlement.totalPot,
+              actionCount: localizedFailureHand.history.actions.length,
+              analysis: localizedFailureHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: localizedFailureHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "zh_hans" satisfies Locale,
+        localeTag: "zh-Hans-CN",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryTranslation",
+        isRetryingSelectedHandAnalysis: true,
+      }),
+    );
+
+    expect(html).toContain("history.retryingReview");
+    expect(html).toContain('disabled=""');
+  });
+});
+
+describe("shouldLoadSelectedHandDetail", () => {
+  it("waits for the current archive summary and ignores stale or cached selections", () => {
+    const detail = buildSummaryOnlyDetail();
+
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(true);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: "NEXT",
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 999,
+        handDetailsByNumber: {},
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadSelectedHandDetail({
+        archiveId: detail.archiveId,
+        detail,
+        selectedHandNumber: 1,
+        handDetailsByNumber: {
+          1: buildDetail().hands[0],
+        },
+      }),
+    ).toBe(false);
   });
 });

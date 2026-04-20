@@ -76,8 +76,18 @@ AI_ROBOT_TEMPERATURE=0.3
 Use the provider API root for `AI_ROBOT_BASE_URL`. Do not point it directly at
 `/chat/completions` or `/responses`, because the SDK appends the required path.
 Set `AI_ROBOT_API_MODE=responses` for providers such as Volcengine/Doubao that
-require the Responses API. `AI_ROBOT_TEMPERATURE` is used in `chat` mode and is
-ignored when `AI_ROBOT_API_MODE=responses`.
+require the Responses API, including OpenAI-compatible gateways that proxy GPT-5
+models. Example:
+
+```bash
+AI_ROBOT_API_KEY=...
+AI_ROBOT_BASE_URL=https://api.hanbbq.top/v1
+AI_ROBOT_MODEL_ID=gpt-5.4
+AI_ROBOT_API_MODE=responses
+```
+
+`AI_ROBOT_TEMPERATURE` is used in `chat` mode and is ignored when
+`AI_ROBOT_API_MODE=responses`.
 
 ## Deployment
 
