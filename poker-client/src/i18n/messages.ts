@@ -459,6 +459,9 @@ export const EN_MESSAGES = {
   "history.analysisStatus.ready": "Ready",
   "history.analysisStatus.failed": "Failed",
   "history.analysisStatus.unavailable": "Unavailable",
+  "history.retryReview": "Retry Review",
+  "history.retryTranslation": "Retry Translation",
+  "history.retryingReview": "Retrying review…",
 
   "game.confirmAction.title": "Confirm Action",
   "game.confirmAction.reviewHint": "Review the hand context before committing to this move.",
@@ -955,6 +958,9 @@ const ZH_HANS_MESSAGES: Record<MessageKey, string> = {
   "history.analysisStatus.ready": "已完成",
   "history.analysisStatus.failed": "失败",
   "history.analysisStatus.unavailable": "不可用",
+  "history.retryReview": "重试复盘",
+  "history.retryTranslation": "重试翻译",
+  "history.retryingReview": "正在重试复盘…",
 
   "game.confirmAction.title": "确认操作",
   "game.confirmAction.reviewHint": "提交前先确认当前牌局信息。",

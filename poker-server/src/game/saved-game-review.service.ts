@@ -21,6 +21,7 @@ export class SavedGameReviewService {
   private readonly logger = new Logger(SavedGameReviewService.name);
   private reviewQueue: Promise<void> = Promise.resolve();
   private readonly queuedArchiveIds = new Set<string>();
+  private readonly queuedHandReviewKeys = new Set<string>();
   private readonly queuedLocalizationKeys = new Set<string>();
 
   constructor(
@@ -122,52 +123,35 @@ export class SavedGameReviewService {
 
     for (const playerView of targets.playerViews) {
       for (const hand of playerView.hands) {
-        try {
-          const review = await this.generateStructuredReview({
-            archiveId,
-            requesterPlayerId: playerView.requesterPlayerId,
-            handHistory: hand.history,
-          });
-          const localizedByLocale: SavedGameHandAnalysis['localizedByLocale'] = {
-            en: this.buildLocalizedReadyEntry(review),
-          };
-          for (const locale of PREWARMED_REVIEW_LOCALES) {
-            if (locale === 'en') {
-              continue;
-            }
-            try {
-              const localizedReview = await this.localizeReviewText({
-                locale,
-                canonicalReview: review,
-              });
-              localizedByLocale[locale] =
-                this.buildLocalizedReadyEntry(localizedReview);
-            } catch (error) {
-              localizedByLocale[locale] = this.buildLocalizedFailureEntry(
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to localize review',
-              );
-            }
-          }
-          await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
-            archiveId,
-            playerView.requesterUserId,
-            hand.handNumber,
-            this.buildCanonicalReadyAnalysis(review, localizedByLocale),
-          );
-        } catch (error) {
-          const failureReason =
-            error instanceof Error ? error.message : 'Failed to generate review';
-          await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
-            archiveId,
-            playerView.requesterUserId,
-            hand.handNumber,
-            this.buildUnavailableAnalysis('failed', failureReason),
-          );
-        }
+        await this.reviewSingleHand({
+          archiveId,
+          requesterUserId: playerView.requesterUserId,
+          requesterPlayerId: playerView.requesterPlayerId,
+          handNumber: hand.handNumber,
+          handHistory: hand.history,
+        });
       }
     }
+  }
+
+  async retryHandReview(params: {
+    archiveId: string;
+    requesterUserId: string;
+    handNumber: number;
+    locale?: string;
+  }): Promise<boolean> {
+    const locale = this.normalizeLocale(params.locale);
+    if (
+      locale !== 'en' &&
+      (await this.retryFailedLocalization({
+        ...params,
+        locale,
+      }))
+    ) {
+      return true;
+    }
+
+    return this.retryFailedCanonicalReview(params);
   }
 
   private async markArchiveUnavailable(
@@ -307,6 +291,151 @@ export class SavedGameReviewService {
     }
   }
 
+  private async retryFailedCanonicalReview(params: {
+    archiveId: string;
+    requesterUserId: string;
+    handNumber: number;
+  }): Promise<boolean> {
+    const handDetail =
+      await this.savedGameArchiveStorageService.getSavedGameHandDetailForUser(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+      );
+    if (
+      !handDetail ||
+      (handDetail.analysis.status !== 'failed' &&
+        handDetail.analysis.status !== 'unavailable')
+    ) {
+      return false;
+    }
+
+    await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+      params.archiveId,
+      params.requesterUserId,
+      params.handNumber,
+      this.buildPendingAnalysis(),
+    );
+
+    const configError = this.robotAgentService.getConfigurationError();
+    if (configError) {
+      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+        this.buildUnavailableAnalysis('unavailable', configError),
+      );
+      return true;
+    }
+
+    const queueKey = [
+      params.archiveId,
+      params.requesterUserId,
+      params.handNumber,
+    ].join(':');
+    if (this.queuedHandReviewKeys.has(queueKey)) {
+      return true;
+    }
+
+    this.queuedHandReviewKeys.add(queueKey);
+    const runReview = async () => {
+      try {
+        await this.reviewSingleHand({
+          archiveId: params.archiveId,
+          requesterUserId: params.requesterUserId,
+          requesterPlayerId: handDetail.history.requesterPlayerId,
+          handNumber: params.handNumber,
+          handHistory: handDetail.history,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown review error';
+        this.logger.error(
+          `Saved game review retry failed for ${queueKey}: ${message}`,
+        );
+      } finally {
+        this.queuedHandReviewKeys.delete(queueKey);
+      }
+    };
+
+    this.reviewQueue = this.reviewQueue
+      .catch(() => undefined)
+      .then(runReview);
+    return true;
+  }
+
+  private async retryFailedLocalization(params: {
+    archiveId: string;
+    requesterUserId: string;
+    handNumber: number;
+    locale: string;
+  }): Promise<boolean> {
+    const analysis =
+      await this.savedGameArchiveStorageService.getSavedGameHandAnalysis(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+      );
+    if (!analysis || analysis.status !== 'ready') {
+      return false;
+    }
+
+    const existingLocalization = analysis.localizedByLocale?.[params.locale];
+    if (existingLocalization?.status !== 'failed') {
+      return false;
+    }
+
+    const configError = this.robotAgentService.getConfigurationError();
+    if (configError) {
+      await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+        params.locale,
+        this.buildLocalizedFailureEntry(configError),
+      );
+      return true;
+    }
+
+    await this.savedGameArchiveStorageService.mergeSavedGameHandLocalization(
+      params.archiveId,
+      params.requesterUserId,
+      params.handNumber,
+      params.locale,
+      this.buildLocalizedPendingEntry(),
+    );
+
+    const queueKey = [
+      params.archiveId,
+      params.requesterUserId,
+      params.handNumber,
+      params.locale,
+    ].join(':');
+    if (this.queuedLocalizationKeys.has(queueKey)) {
+      return true;
+    }
+
+    this.queuedLocalizationKeys.add(queueKey);
+    const runLocalization = async () => {
+      try {
+        await this.finishQueuedHandLocalization(params);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown localization error';
+        this.logger.error(
+          `Saved game localization retry failed for ${queueKey}: ${message}`,
+        );
+      } finally {
+        this.queuedLocalizationKeys.delete(queueKey);
+      }
+    };
+
+    this.reviewQueue = this.reviewQueue
+      .catch(() => undefined)
+      .then(runLocalization);
+    return true;
+  }
+
   private async generateStructuredReview(params: {
     archiveId: string;
     requesterPlayerId: string;
@@ -423,6 +552,19 @@ export class SavedGameReviewService {
     };
   }
 
+  private buildPendingAnalysis(): SavedGameHandAnalysis {
+    return {
+      status: 'pending',
+      updatedAt: Date.now(),
+      provider: 'ai-robot-config',
+      headline: null,
+      summary: null,
+      keyAdjustments: [],
+      failureReason: null,
+      localizedByLocale: {},
+    };
+  }
+
   private buildLocalizedPendingEntry(): SavedGameLocalizedAnalysis {
     return {
       status: 'pending',
@@ -509,6 +651,59 @@ export class SavedGameReviewService {
       return 'Simplified Chinese (zh_hans)';
     }
     return locale;
+  }
+
+  private async reviewSingleHand(params: {
+    archiveId: string;
+    requesterUserId: string;
+    requesterPlayerId: string;
+    handNumber: number;
+    handHistory: CompletedHandHistoryExport;
+  }): Promise<void> {
+    try {
+      const review = await this.generateStructuredReview({
+        archiveId: params.archiveId,
+        requesterPlayerId: params.requesterPlayerId,
+        handHistory: params.handHistory,
+      });
+      const localizedByLocale: SavedGameHandAnalysis['localizedByLocale'] = {
+        en: this.buildLocalizedReadyEntry(review),
+      };
+      for (const locale of PREWARMED_REVIEW_LOCALES) {
+        if (locale === 'en') {
+          continue;
+        }
+        try {
+          const localizedReview = await this.localizeReviewText({
+            locale,
+            canonicalReview: review,
+          });
+          localizedByLocale[locale] =
+            this.buildLocalizedReadyEntry(localizedReview);
+        } catch (error) {
+          localizedByLocale[locale] = this.buildLocalizedFailureEntry(
+            error instanceof Error
+              ? error.message
+              : 'Failed to localize review',
+          );
+        }
+      }
+      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+        this.buildCanonicalReadyAnalysis(review, localizedByLocale),
+      );
+    } catch (error) {
+      const failureReason =
+        error instanceof Error ? error.message : 'Failed to generate review';
+      await this.savedGameArchiveStorageService.updateSavedGameHandAnalysis(
+        params.archiveId,
+        params.requesterUserId,
+        params.handNumber,
+        this.buildUnavailableAnalysis('failed', failureReason),
+      );
+    }
   }
 
 }

@@ -16,6 +16,7 @@ describe('SavedGameHistoryController', () => {
   };
   let savedGameReviewService: {
     scheduleHandLocalization: jest.Mock;
+    retryHandReview: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -29,6 +30,7 @@ describe('SavedGameHistoryController', () => {
     };
     savedGameReviewService = {
       scheduleHandLocalization: jest.fn().mockResolvedValue(undefined),
+      retryHandReview: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -272,5 +274,108 @@ describe('SavedGameHistoryController', () => {
     await expect(
       controller.listSavedGames({ headers: {} } as any, undefined),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('retries a failed hand review for the authenticated user and returns refreshed hand detail', async () => {
+    authService.getCurrentSession.mockResolvedValue({
+      user: { id: 'user-alice' },
+    });
+    savedGameStorageService.getSavedGameHandDetailForUser
+      .mockResolvedValueOnce({
+        handNumber: 2,
+        history: {
+          roomId: 'ROOM1',
+          handNumber: 2,
+          requesterPlayerId: 'alice',
+          version: 1,
+          dealerPosition: 1,
+          smallBlindPosition: 1,
+          bigBlindPosition: 2,
+          blinds: { smallBlind: 5, bigBlind: 10 },
+          communityCardsByStreet: {
+            preFlop: [],
+            flop: [],
+            turn: [],
+            river: [],
+          },
+          seats: [],
+          actions: [],
+          settlement: {
+            isShowdown: false,
+            revealedPlayerIds: [],
+            totalPot: 15,
+            payouts: [],
+            winners: [],
+            netByPlayerId: {},
+          },
+        },
+        analysis: {
+          status: 'failed',
+          failureReason: 'Insufficient credits',
+        },
+      })
+      .mockResolvedValueOnce({
+        handNumber: 2,
+        history: {
+          roomId: 'ROOM1',
+          handNumber: 2,
+          requesterPlayerId: 'alice',
+          version: 1,
+          dealerPosition: 1,
+          smallBlindPosition: 1,
+          bigBlindPosition: 2,
+          blinds: { smallBlind: 5, bigBlind: 10 },
+          communityCardsByStreet: {
+            preFlop: [],
+            flop: [],
+            turn: [],
+            river: [],
+          },
+          seats: [],
+          actions: [],
+          settlement: {
+            isShowdown: false,
+            revealedPlayerIds: [],
+            totalPot: 15,
+            payouts: [],
+            winners: [],
+            netByPlayerId: {},
+          },
+        },
+        analysis: {
+          status: 'pending',
+          failureReason: null,
+        },
+      });
+    savedGameReviewService.retryHandReview.mockResolvedValue(true);
+
+    const result = await (controller as any).retrySavedGameHandReview(
+      'ROOM1',
+      2,
+      { headers: { cookie: 'poker_session=token-alice' } } as any,
+      'en',
+      undefined,
+    );
+
+    expect(savedGameReviewService.retryHandReview).toHaveBeenCalledWith({
+      archiveId: 'ROOM1',
+      requesterUserId: 'user-alice',
+      handNumber: 2,
+      locale: 'en',
+    });
+    expect(
+      savedGameStorageService.getSavedGameHandDetailForUser,
+    ).toHaveBeenNthCalledWith(1, 'ROOM1', 'user-alice', 2);
+    expect(
+      savedGameStorageService.getSavedGameHandDetailForUser,
+    ).toHaveBeenNthCalledWith(2, 'ROOM1', 'user-alice', 2);
+    expect(result).toEqual(
+      expect.objectContaining({
+        handNumber: 2,
+        analysis: expect.objectContaining({
+          status: 'pending',
+        }),
+      }),
+    );
   });
 });
