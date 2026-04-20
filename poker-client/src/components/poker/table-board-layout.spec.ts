@@ -305,4 +305,68 @@ describe("buildDenseMobileSeatBorderLayout", () => {
     expect(seatGaps[1]).toBeGreaterThan(84);
     expect(seatGaps[11]).toBeGreaterThan(84);
   });
+
+  it("reserves extra top-right border space for corner role badges on mobile seats", () => {
+    const seatWidth = 66.45;
+    const seatHeight = 52.74;
+    const layout = buildDenseMobileSeatBorderLayout({
+      feltWidth: SYNTHETIC_FELT_WIDTH_PX,
+      feltHeight: SYNTHETIC_FELT_HEIGHT_PX,
+      seats: [
+        { x: 177.78, y: 407.99, width: seatWidth, height: seatHeight },
+        { x: 84.37, y: 376.69, width: seatWidth, height: seatHeight },
+        { x: 42.17, y: 287.24, width: seatWidth, height: seatHeight },
+        { x: 42.17, y: 169.57, width: seatWidth, height: seatHeight },
+        { x: 84.37, y: 80.12, width: seatWidth, height: seatHeight },
+        { x: 177.78, y: 42.44, width: seatWidth, height: seatHeight },
+        {
+          x: 271.19,
+          y: 80.12,
+          width: seatWidth,
+          height: seatHeight,
+          rightOverflowPx: 3,
+          topOverflowPx: 4,
+        } as any,
+        { x: 313.39, y: 169.57, width: seatWidth, height: seatHeight },
+        { x: 313.39, y: 287.24, width: seatWidth, height: seatHeight },
+        { x: 271.19, y: 376.69, width: seatWidth, height: seatHeight },
+      ],
+      horizontalGapPx: 8,
+      verticalGapPx: 8,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout?.safe).toBe(true);
+
+    const cornerSeat = layout?.points[6];
+    const expandedCorners = [
+      {
+        x: (cornerSeat?.x ?? 0) - seatWidth / 2,
+        y: (cornerSeat?.y ?? 0) - seatHeight / 2 - 4,
+      },
+      {
+        x: (cornerSeat?.x ?? 0) + seatWidth / 2 + 3,
+        y: (cornerSeat?.y ?? 0) - seatHeight / 2 - 4,
+      },
+      {
+        x: (cornerSeat?.x ?? 0) - seatWidth / 2,
+        y: (cornerSeat?.y ?? 0) + seatHeight / 2,
+      },
+      {
+        x: (cornerSeat?.x ?? 0) + seatWidth / 2 + 3,
+        y: (cornerSeat?.y ?? 0) + seatHeight / 2,
+      },
+    ];
+
+    expect(
+      expandedCorners.every((corner) =>
+        isPointInsideSyntheticRoundedRect({
+          x: corner.x,
+          y: corner.y,
+          horizontalGapPx: CORNER_INSET_TEST_HORIZONTAL_GAP_PX,
+          verticalGapPx: CORNER_INSET_TEST_VERTICAL_GAP_PX,
+        }),
+      ),
+    ).toBe(true);
+  });
 });

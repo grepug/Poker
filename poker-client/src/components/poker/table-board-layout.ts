@@ -3,6 +3,10 @@ type SeatLayoutInput = {
   y: number;
   width: number;
   height: number;
+  leftOverflowPx?: number;
+  rightOverflowPx?: number;
+  topOverflowPx?: number;
+  bottomOverflowPx?: number;
 };
 
 type LayoutPoint = {
@@ -26,6 +30,8 @@ const VERTICALLY_BALANCED_DENSE_MOBILE_SEAT_COUNTS = new Set([8, 10, 12, 13, 14,
 const CORNER_PROJECTED_DENSE_MOBILE_SEAT_COUNT_THRESHOLD = 12;
 const CORNER_CLEARANCE_DENSE_MOBILE_SEAT_COUNT_THRESHOLD = 12;
 const CORNER_CLEARANCE_TARGET_INSET_PX = 1;
+const DECORATIVE_OVERFLOW_BUFFER_RIGHT_PX = 2;
+const DECORATIVE_OVERFLOW_BUFFER_TOP_PX = 2;
 const CORNER_CLEARANCE_GAP_BOOST_COMBINATIONS = [
   { horizontalGapBoostPx: 1.5, verticalGapBoostPx: 1.5 },
   { horizontalGapBoostPx: 1.5, verticalGapBoostPx: 3 },
@@ -34,6 +40,19 @@ const CORNER_CLEARANCE_GAP_BOOST_COMBINATIONS = [
 ];
 const CORNER_CLEARANCE_FINAL_NUDGE_PX = 1;
 const CORNER_CLEARANCE_FINAL_NUDGE_STEPS = 3;
+
+const getSeatExtents = (seat: SeatLayoutInput) => ({
+  left: seat.width / 2 + (seat.leftOverflowPx ?? 0),
+  right:
+    seat.width / 2 +
+    (seat.rightOverflowPx ?? 0) +
+    ((seat.rightOverflowPx ?? 0) > 0 ? DECORATIVE_OVERFLOW_BUFFER_RIGHT_PX : 0),
+  top:
+    seat.height / 2 +
+    (seat.topOverflowPx ?? 0) +
+    ((seat.topOverflowPx ?? 0) > 0 ? DECORATIVE_OVERFLOW_BUFFER_TOP_PX : 0),
+  bottom: seat.height / 2 + (seat.bottomOverflowPx ?? 0),
+});
 
 const rectanglesOverlap = (
   first: { left: number; right: number; top: number; bottom: number },
@@ -45,22 +64,26 @@ const rectanglesOverlap = (
 const getRoundedRectInsetMetrics = ({
   feltWidth,
   feltHeight,
-  seatWidth,
-  seatHeight,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
   horizontalGapPx,
   verticalGapPx,
 }: {
   feltWidth: number;
   feltHeight: number;
-  seatWidth: number;
-  seatHeight: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
   horizontalGapPx: number;
   verticalGapPx: number;
 }) => {
-  const left = horizontalGapPx + seatWidth / 2;
-  const right = feltWidth - horizontalGapPx - seatWidth / 2;
-  const top = verticalGapPx + seatHeight / 2;
-  const bottom = feltHeight - verticalGapPx - seatHeight / 2;
+  const left = horizontalGapPx + leftExtent;
+  const right = feltWidth - horizontalGapPx - rightExtent;
+  const top = verticalGapPx + topExtent;
+  const bottom = feltHeight - verticalGapPx - bottomExtent;
   const radiusX = Math.max(
     0,
     Math.min((right - left) / 2, feltWidth * FELT_BORDER_RADIUS_X_RATIO - left),
@@ -85,8 +108,10 @@ const getRoundedRectInsetMetrics = ({
 const resolveRoundedRectBoundaryX = ({
   feltWidth,
   feltHeight,
-  seatWidth,
-  seatHeight,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
   horizontalGapPx,
   verticalGapPx,
   y,
@@ -94,8 +119,10 @@ const resolveRoundedRectBoundaryX = ({
 }: {
   feltWidth: number;
   feltHeight: number;
-  seatWidth: number;
-  seatHeight: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
   horizontalGapPx: number;
   verticalGapPx: number;
   y: number;
@@ -104,8 +131,10 @@ const resolveRoundedRectBoundaryX = ({
   const metrics = getRoundedRectInsetMetrics({
     feltWidth,
     feltHeight,
-    seatWidth,
-    seatHeight,
+    leftExtent,
+    rightExtent,
+    topExtent,
+    bottomExtent,
     horizontalGapPx,
     verticalGapPx,
   });
@@ -135,8 +164,10 @@ const resolveRoundedRectBoundaryX = ({
 const resolveRoundedRectBoundaryY = ({
   feltWidth,
   feltHeight,
-  seatWidth,
-  seatHeight,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
   horizontalGapPx,
   verticalGapPx,
   x,
@@ -144,8 +175,10 @@ const resolveRoundedRectBoundaryY = ({
 }: {
   feltWidth: number;
   feltHeight: number;
-  seatWidth: number;
-  seatHeight: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
   horizontalGapPx: number;
   verticalGapPx: number;
   x: number;
@@ -154,8 +187,10 @@ const resolveRoundedRectBoundaryY = ({
   const metrics = getRoundedRectInsetMetrics({
     feltWidth,
     feltHeight,
-    seatWidth,
-    seatHeight,
+    leftExtent,
+    rightExtent,
+    topExtent,
+    bottomExtent,
     horizontalGapPx,
     verticalGapPx,
   });
@@ -187,8 +222,10 @@ const resolveRoundedRectBoundaryY = ({
 const resolveRoundedRectBoundaryPointOnRay = ({
   feltWidth,
   feltHeight,
-  seatWidth,
-  seatHeight,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
   horizontalGapPx,
   verticalGapPx,
   fromX,
@@ -198,8 +235,10 @@ const resolveRoundedRectBoundaryPointOnRay = ({
 }: {
   feltWidth: number;
   feltHeight: number;
-  seatWidth: number;
-  seatHeight: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
   horizontalGapPx: number;
   verticalGapPx: number;
   fromX: number;
@@ -223,8 +262,10 @@ const resolveRoundedRectBoundaryPointOnRay = ({
       feltHeight,
       x: fromX + deltaX * scale,
       y: fromY + deltaY * scale,
-      seatWidth,
-      seatHeight,
+      leftExtent,
+      rightExtent,
+      topExtent,
+      bottomExtent,
       horizontalGapPx,
       verticalGapPx,
     });
@@ -263,8 +304,10 @@ const isSeatCenterInsideRoundedRect = ({
   feltHeight,
   x,
   y,
-  seatWidth,
-  seatHeight,
+  leftExtent,
+  rightExtent,
+  topExtent,
+  bottomExtent,
   horizontalGapPx,
   verticalGapPx,
 }: {
@@ -272,16 +315,20 @@ const isSeatCenterInsideRoundedRect = ({
   feltHeight: number;
   x: number;
   y: number;
-  seatWidth: number;
-  seatHeight: number;
+  leftExtent: number;
+  rightExtent: number;
+  topExtent: number;
+  bottomExtent: number;
   horizontalGapPx: number;
   verticalGapPx: number;
 }) => {
   const metrics = getRoundedRectInsetMetrics({
     feltWidth,
     feltHeight,
-    seatWidth,
-    seatHeight,
+    leftExtent,
+    rightExtent,
+    topExtent,
+    bottomExtent,
     horizontalGapPx,
     verticalGapPx,
   });
@@ -339,8 +386,10 @@ const isPointInsideRoundedRect = ({
   const metrics = getRoundedRectInsetMetrics({
     feltWidth,
     feltHeight,
-    seatWidth: 0,
-    seatHeight: 0,
+    leftExtent: 0,
+    rightExtent: 0,
+    topExtent: 0,
+    bottomExtent: 0,
     horizontalGapPx,
     verticalGapPx,
   });
@@ -395,12 +444,15 @@ const getSeatCornersOutsideRoundedRect = ({
   horizontalGapPx: number;
   verticalGapPx: number;
 }) =>
-  [
-    { x: point.x - seat.width / 2, y: point.y - seat.height / 2 },
-    { x: point.x + seat.width / 2, y: point.y - seat.height / 2 },
-    { x: point.x - seat.width / 2, y: point.y + seat.height / 2 },
-    { x: point.x + seat.width / 2, y: point.y + seat.height / 2 },
-  ].filter(
+  (() => {
+    const extents = getSeatExtents(seat);
+    return [
+      { x: point.x - extents.left, y: point.y - extents.top },
+      { x: point.x + extents.right, y: point.y - extents.top },
+      { x: point.x - extents.left, y: point.y + extents.bottom },
+      { x: point.x + extents.right, y: point.y + extents.bottom },
+    ];
+  })().filter(
     (corner) =>
       !isPointInsideRoundedRect({
         feltWidth,
@@ -450,6 +502,7 @@ export const buildDenseMobileSeatBorderLayout = ({
   }) => {
     const offsetX = seat.x - centerX;
     const offsetY = seat.y - centerY;
+    const extents = getSeatExtents(seat);
     const isSideBiased = Math.abs(offsetX) >= Math.abs(offsetY) * SIDE_BIAS_THRESHOLD;
     const isVerticalBiased =
       useDenseMobileVerticalBalancing &&
@@ -466,8 +519,10 @@ export const buildDenseMobileSeatBorderLayout = ({
       return resolveRoundedRectBoundaryPointOnRay({
         feltWidth,
         feltHeight,
-        seatWidth: seat.width,
-        seatHeight: seat.height,
+        leftExtent: extents.left,
+        rightExtent: extents.right,
+        topExtent: extents.top,
+        bottomExtent: extents.bottom,
         horizontalGapPx: resolvedHorizontalGapPx,
         verticalGapPx: resolvedVerticalGapPx,
         fromX: centerX,
@@ -481,8 +536,10 @@ export const buildDenseMobileSeatBorderLayout = ({
       targetX = resolveRoundedRectBoundaryX({
         feltWidth,
         feltHeight,
-        seatWidth: seat.width,
-        seatHeight: seat.height,
+        leftExtent: extents.left,
+        rightExtent: extents.right,
+        topExtent: extents.top,
+        bottomExtent: extents.bottom,
         horizontalGapPx: resolvedHorizontalGapPx,
         verticalGapPx: resolvedVerticalGapPx,
         y: seat.y,
@@ -494,8 +551,10 @@ export const buildDenseMobileSeatBorderLayout = ({
       targetY = resolveRoundedRectBoundaryY({
         feltWidth,
         feltHeight,
-        seatWidth: seat.width,
-        seatHeight: seat.height,
+        leftExtent: extents.left,
+        rightExtent: extents.right,
+        topExtent: extents.top,
+        bottomExtent: extents.bottom,
         horizontalGapPx: resolvedHorizontalGapPx,
         verticalGapPx: resolvedVerticalGapPx,
         x: targetX,
@@ -515,8 +574,16 @@ export const buildDenseMobileSeatBorderLayout = ({
       resolvedHorizontalGapPx: horizontalGapPx,
       resolvedVerticalGapPx: verticalGapPx,
     });
+    const hasDecorativeOverflow =
+      (seat.leftOverflowPx ?? 0) > 0 ||
+      (seat.rightOverflowPx ?? 0) > 0 ||
+      (seat.topOverflowPx ?? 0) > 0 ||
+      (seat.bottomOverflowPx ?? 0) > 0;
 
-    if (seats.length < CORNER_CLEARANCE_DENSE_MOBILE_SEAT_COUNT_THRESHOLD) {
+    if (
+      seats.length < CORNER_CLEARANCE_DENSE_MOBILE_SEAT_COUNT_THRESHOLD &&
+      !hasDecorativeOverflow
+    ) {
       return basePoint;
     }
 
@@ -594,8 +661,10 @@ export const buildDenseMobileSeatBorderLayout = ({
           feltHeight,
           x: nextPoint.x,
           y: nextPoint.y,
-          seatWidth: seat.width,
-          seatHeight: seat.height,
+          leftExtent: getSeatExtents(seat).left,
+          rightExtent: getSeatExtents(seat).right,
+          topExtent: getSeatExtents(seat).top,
+          bottomExtent: getSeatExtents(seat).bottom,
           horizontalGapPx,
           verticalGapPx,
         })
@@ -666,8 +735,10 @@ export const buildDenseMobileSeatBorderLayout = ({
                 feltHeight,
                 x: nextPoint.x,
                 y: nextPoint.y,
-                seatWidth: seats[index].width,
-                seatHeight: seats[index].height,
+                leftExtent: getSeatExtents(seats[index]).left,
+                rightExtent: getSeatExtents(seats[index]).right,
+                topExtent: getSeatExtents(seats[index]).top,
+                bottomExtent: getSeatExtents(seats[index]).bottom,
                 horizontalGapPx,
                 verticalGapPx,
               })
@@ -687,19 +758,24 @@ export const buildDenseMobileSeatBorderLayout = ({
       feltHeight,
       x: point.x,
       y: point.y,
-      seatWidth: seats[index].width,
-      seatHeight: seats[index].height,
+      leftExtent: getSeatExtents(seats[index]).left,
+      rightExtent: getSeatExtents(seats[index]).right,
+      topExtent: getSeatExtents(seats[index]).top,
+      bottomExtent: getSeatExtents(seats[index]).bottom,
       horizontalGapPx,
       verticalGapPx,
     }),
   ) &&
     resolvedPoints
-      .map((point, index) => ({
-        left: point.x - seats[index].width / 2,
-        right: point.x + seats[index].width / 2,
-        top: point.y - seats[index].height / 2,
-        bottom: point.y + seats[index].height / 2,
-      }))
+      .map((point, index) => {
+        const extents = getSeatExtents(seats[index]);
+        return {
+          left: point.x - extents.left,
+          right: point.x + extents.right,
+          top: point.y - extents.top,
+          bottom: point.y + extents.bottom,
+        };
+      })
       .every((rect, index, rects) =>
         rects.slice(index + 1).every((otherRect) => !rectanglesOverlap(rect, otherRect)),
       );
