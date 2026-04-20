@@ -3655,31 +3655,35 @@ export class EventsGateway
       );
       const isPair = firstCard.rank === secondCard.rank;
       const isSuited = firstCard.suit === secondCard.suit;
+      const highRank = getRankValue(firstCard.rank);
+      const lowRank = getRankValue(secondCard.rank);
       const rankGap = Math.abs(
-        getRankValue(firstCard.rank) - getRankValue(secondCard.rank),
+        highRank - lowRank,
       );
+      const isBroadwayCombo =
+        highRank >= getRankValue('J') && lowRank >= getRankValue('10');
+      const isSuitedAce =
+        firstCard.rank === 'A' && isSuited && lowRank >= getRankValue('5');
+      const isSuitedConnector =
+        isSuited && rankGap <= 1 && lowRank >= getRankValue('8');
+      const isHighSuitedCombo =
+        isSuited &&
+        highRank >= getRankValue('10') &&
+        lowRank >= getRankValue('8');
 
       if (isPair) {
-        return getRankValue(firstCard.rank) >= getRankValue('7')
-          ? 'strong'
-          : 'medium';
+        return highRank >= getRankValue('7') ? 'strong' : 'medium';
       }
       if (
-        (firstCard.rank === 'A' && getRankValue(secondCard.rank) >= getRankValue('10')) ||
-        (getRankValue(firstCard.rank) >= getRankValue('K') &&
-          getRankValue(secondCard.rank) >= getRankValue('J')) ||
+        (firstCard.rank === 'A' && lowRank >= getRankValue('10')) ||
+        (highRank >= getRankValue('K') && lowRank >= getRankValue('J')) ||
         (isSuited &&
-          getRankValue(firstCard.rank) >= getRankValue('Q') &&
-          getRankValue(secondCard.rank) >= getRankValue('10'))
+          highRank >= getRankValue('Q') &&
+          lowRank >= getRankValue('10'))
       ) {
         return 'strong';
       }
-      if (
-        isSuited ||
-        rankGap <= 1 ||
-        (getRankValue(firstCard.rank) >= getRankValue('10') &&
-          getRankValue(secondCard.rank) >= getRankValue('9'))
-      ) {
+      if (isBroadwayCombo || isSuitedAce || isSuitedConnector || isHighSuitedCombo) {
         return 'medium';
       }
       return 'weak';
@@ -3808,6 +3812,17 @@ export class EventsGateway
     return 0.07 + context.personality.tuning.defend / 250;
   }
 
+  private getRobotStrongPotOddsLimit(context: RobotTurnContext): number {
+    return Math.min(0.46, this.getRobotDefendPotOddsLimit(context) + 0.08);
+  }
+
+  private getRobotStrongStackPressureLimit(context: RobotTurnContext): number {
+    return Math.min(
+      0.33,
+      this.getRobotDefendStackPressureLimit(context) + 0.08,
+    );
+  }
+
   private getRobotJamStackPressureThreshold(
     context: RobotTurnContext,
   ): number {
@@ -3836,17 +3851,24 @@ export class EventsGateway
     const defendPotOddsLimit = this.getRobotDefendPotOddsLimit(context);
     const defendStackPressureLimit =
       this.getRobotDefendStackPressureLimit(context);
+    const strongPotOddsLimit = this.getRobotStrongPotOddsLimit(context);
+    const strongStackPressureLimit =
+      this.getRobotStrongStackPressureLimit(context);
     const jamStackPressureThreshold =
       this.getRobotJamStackPressureThreshold(context);
     const jamBbThreshold = this.getRobotJamBbThreshold(context);
     const canReasonablyDefend =
-      potOdds <= defendPotOddsLimit || stackPressure <= defendStackPressureLimit;
+      potOdds <= defendPotOddsLimit &&
+      stackPressure <= defendStackPressureLimit;
+    const canStrongContinue =
+      potOdds <= strongPotOddsLimit &&
+      stackPressure <= strongStackPressureLimit;
 
     if (strength === 'strong') {
       if (
         context.legalActions.allIn.enabled &&
-        (stackPressure >= jamStackPressureThreshold ||
-          effectiveStackBb <= jamBbThreshold)
+        (effectiveStackBb <= jamBbThreshold ||
+          (stackPressure >= jamStackPressureThreshold && canStrongContinue))
       ) {
         return { action: 'all-in' };
       }
@@ -3863,11 +3885,17 @@ export class EventsGateway
       if (!facingBet && context.legalActions.check.enabled) {
         return { action: 'check' };
       }
-      if (context.legalActions.call.enabled) {
+      if (context.legalActions.call.enabled && canStrongContinue) {
         return { action: 'call' };
       }
       if (context.legalActions.check.enabled) {
         return { action: 'check' };
+      }
+      if (context.legalActions.fold.enabled) {
+        return { action: 'fold' };
+      }
+      if (context.legalActions.call.enabled) {
+        return { action: 'call' };
       }
       return { action: 'fold' };
     }
@@ -3912,15 +3940,16 @@ export class EventsGateway
     if (!facingBet && context.legalActions.check.enabled) {
       return { action: 'check' };
     }
-      if (
-        context.legalActions.call.enabled &&
-        context.personality.tuning.defend >= 55 &&
-        context.personality.tuning.bluff >= 50 &&
-        potOdds <= 0.16 &&
-        stackPressure <= 0.08
-      ) {
-        return { action: 'call' };
-      }
+    if (
+      context.legalActions.call.enabled &&
+      context.personality.tuning.defend >= 54 &&
+      (context.personality.tuning.bluff >= 50 ||
+        context.personality.tuning.pressure >= 70) &&
+      potOdds <= 0.16 &&
+      stackPressure <= 0.08
+    ) {
+      return { action: 'call' };
+    }
     if (context.legalActions.check.enabled) {
       return { action: 'check' };
     }
