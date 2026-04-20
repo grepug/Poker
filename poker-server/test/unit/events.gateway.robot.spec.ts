@@ -492,6 +492,146 @@ describe('EventsGateway robot player controls', () => {
     );
   });
 
+  it('normalizes provider-backed minimum re-raises upward in contested pots', async () => {
+    bettingService.calculateMinRaise.mockReturnValue(10);
+    bettingService.validateAction.mockImplementation(
+      (room: any, playerId: string, action: string, amount?: number) => {
+        void room;
+        void playerId;
+        if (action === 'check') {
+          return { valid: false, reason: 'Cannot check facing a bet' };
+        }
+        if (action === 'raise') {
+          return amount === 10 || amount === 20
+            ? { valid: true }
+            : { valid: false, reason: 'Raise must use 10 or 20 chips' };
+        }
+        return { valid: true };
+      },
+    );
+
+    const robot = {
+      ...createPlayer({
+        id: 'p-robot',
+        socketId: '',
+        name: 'Robot 1',
+        status: 'connected',
+        position: 0,
+        robotPersonality: 'chaotic',
+      }),
+      isRobot: true,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'Q', suit: 'hearts' },
+      ],
+      currentBet: 0,
+    };
+    const villain = {
+      ...createPlayer({
+        id: 'p-villain',
+        socketId: '',
+        name: 'Robot 2',
+        status: 'connected',
+        position: 1,
+        robotPersonality: 'bully',
+      }),
+      isRobot: true,
+      currentBet: 10,
+      cards: [
+        { rank: 'K', suit: 'clubs' },
+        { rank: 'J', suit: 'clubs' },
+      ],
+    };
+    const room = {
+      id: 'ROOM1',
+      hostId: 'p-villain',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [robot, villain],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 9_1,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-robot',
+        pot: 55,
+        communityCards: [
+          { rank: 'Q', suit: 'diamonds' },
+          { rank: '7', suit: 'spades' },
+          { rank: '2', suit: 'clubs' },
+        ],
+        bettingRound: 'FLOP',
+        currentBet: 10,
+        lastRaiseSize: 10,
+        activePlayers: ['p-robot', 'p-villain'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: { 'p-robot': 0, 'p-villain': 10 },
+        vpipPlayerIds: ['p-robot', 'p-villain'],
+        revealedPlayerIds: [],
+      },
+      readyPhase: null,
+      readyPlayerIds: [],
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+    const updatedRoom = {
+      ...room,
+      players: [
+        { ...robot, lastAction: 'raise', currentBet: 30, chips: 970 },
+        villain,
+      ],
+      currentHand: {
+        ...room.currentHand,
+        pot: 85,
+        currentBet: 30,
+      },
+    };
+
+    storageService.getRoom
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(updatedRoom);
+    robotAgentService.isConfigured.mockReturnValue(true);
+    robotAgentService.decideAction.mockResolvedValue({
+      action: 'raise',
+      amount: 10,
+      persistedDecision: {
+        source: 'provider-output',
+        summary: 'Provider final output accepted.',
+        validationRetryCount: 0,
+      },
+    });
+    jest
+      .spyOn(gateway as any, 'handleBettingRoundComplete')
+      .mockResolvedValue(undefined);
+
+    await (gateway as any).executeRobotTurn('ROOM1', 'p-robot', 91);
+
+    expect(bettingService.processAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ROOM1',
+      }),
+      'p-robot',
+      'raise',
+      20,
+      expect.objectContaining({
+        robotDecision: {
+          source: 'provider-output',
+          summary: 'Provider final output accepted.',
+          validationRetryCount: 0,
+        },
+      }),
+    );
+  });
+
   it('passes fallback robot decision metadata into persisted player actions when provider execution fails', async () => {
     const robot = {
       ...createPlayer({
@@ -720,6 +860,132 @@ describe('EventsGateway robot player controls', () => {
       'p-robot',
       'raise',
       20,
+      expect.objectContaining({
+        robotDecision: expect.objectContaining({
+          source: 'deterministic-fallback',
+          fallbackCause: 'provider-unavailable',
+        }),
+      }),
+    );
+  });
+
+  it('uses a larger-than-minimum fallback raise when the pot is already contested', async () => {
+    bettingService.calculateMinRaise.mockReturnValue(10);
+    bettingService.validateAction.mockImplementation(
+      (room: any, playerId: string, action: string, amount?: number) => {
+        void room;
+        void playerId;
+        if (action === 'raise') {
+          return amount === 10 || amount === 20
+            ? { valid: true }
+            : { valid: false, reason: 'Raise must use 10 or 20 chips' };
+        }
+        return { valid: action !== 'fold' };
+      },
+    );
+
+    const robot = {
+      ...createPlayer({
+        id: 'p-robot',
+        socketId: '',
+        name: 'Robot 1',
+        status: 'connected',
+        position: 0,
+        isRobot: true,
+        robotPersonality: 'bully',
+      }),
+      cards: [
+        { rank: 'Q', suit: 'clubs' },
+        { rank: '7', suit: 'hearts' },
+      ],
+      currentBet: 0,
+    };
+    const villain = {
+      ...createPlayer({
+        id: 'p-villain',
+        socketId: '',
+        name: 'Robot 2',
+        status: 'connected',
+        position: 1,
+      }),
+      isRobot: true,
+      currentBet: 0,
+      cards: [
+        { rank: 'A', suit: 'diamonds' },
+        { rank: 'K', suit: 'diamonds' },
+      ],
+    };
+    const room = {
+      id: 'ROOM1',
+      hostId: 'p-villain',
+      config: {
+        startingChips: 1000,
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 10,
+        reconnectGracePeriod: 120000,
+        allowPlayerStreetReveal: true,
+      },
+      players: [robot, villain],
+      gameState: 'IN_PROGRESS',
+      currentHand: {
+        handNumber: 11_1,
+        dealerPosition: 0,
+        smallBlindPosition: 1,
+        bigBlindPosition: 0,
+        currentPlayerTurn: 'p-robot',
+        pot: 45,
+        communityCards: [
+          { rank: 'Q', suit: 'diamonds' },
+          { rank: '7', suit: 'spades' },
+          { rank: '2', suit: 'clubs' },
+        ],
+        bettingRound: 'FLOP',
+        currentBet: 0,
+        lastRaiseSize: 10,
+        activePlayers: ['p-robot', 'p-villain'],
+        roundActions: {},
+        sidePots: [],
+        potContributions: { 'p-robot': 20, 'p-villain': 25 },
+        vpipPlayerIds: ['p-robot', 'p-villain'],
+        revealedPlayerIds: [],
+      },
+      readyPhase: null,
+      readyPlayerIds: [],
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+    const updatedRoom = {
+      ...room,
+      players: [
+        { ...robot, lastAction: 'raise', currentBet: 20, chips: 980 },
+        villain,
+      ],
+      currentHand: {
+        ...room.currentHand,
+        pot: 65,
+        currentBet: 20,
+      },
+    };
+
+    storageService.getRoom
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(room)
+      .mockResolvedValueOnce(updatedRoom);
+    robotAgentService.isConfigured.mockReturnValue(false);
+    jest
+      .spyOn(gateway as any, 'handleBettingRoundComplete')
+      .mockResolvedValue(undefined);
+
+    await (gateway as any).executeRobotTurn('ROOM1', 'p-robot', 111);
+
+    const latestCall = bettingService.processAction.mock.calls.at(-1);
+    expect(latestCall?.[0]).toEqual(expect.objectContaining({ id: 'ROOM1' }));
+    expect(latestCall?.[1]).toBe('p-robot');
+    expect(latestCall?.[2]).toBe('raise');
+    expect(latestCall?.[3]).toBeGreaterThan(10);
+    expect(latestCall?.[3]).toBeLessThanOrEqual(30);
+    expect(latestCall?.[4]).toEqual(
       expect.objectContaining({
         robotDecision: expect.objectContaining({
           source: 'deterministic-fallback',

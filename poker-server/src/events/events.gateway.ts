@@ -3787,44 +3787,186 @@ export class EventsGateway
     return 'weak';
   }
 
-  private selectRobotRaiseIncrement(
-    legalRaise: RobotTurnContext['legalActions']['raise'],
-    raiseSizeBias: RobotTurnContext['personality']['tuning']['raiseSizeBias'],
-  ): number | null {
-    if (!legalRaise.enabled) {
-      return null;
+  private roundRobotRaiseIncrementUp(value: number, minIncrement: number): number {
+    if (!Number.isFinite(value) || value <= 0) {
+      return minIncrement;
     }
 
-    const candidates = legalRaise.suggestedIncrements.length
-      ? legalRaise.suggestedIncrements
-      : [legalRaise.minIncrement, legalRaise.maxIncrement];
-    const uniqueCandidates = [...new Set(candidates)]
+    return Math.ceil(value / minIncrement) * minIncrement;
+  }
+
+  private getRobotMeaningfulRaiseFloor(
+    context: RobotTurnContext,
+    legalRaise: RobotTurnContext['legalActions']['raise'],
+  ): number {
+    const amountToCall = context.legalActions.call.amountToCall;
+    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
+    let floor = legalRaise.minIncrement;
+
+    if (facingBet) {
+      floor = Math.max(
+        floor,
+        Math.min(
+          legalRaise.maxIncrement,
+          this.roundRobotRaiseIncrementUp(
+            legalRaise.minIncrement * 2,
+            legalRaise.minIncrement,
+          ),
+        ),
+      );
+    } else if (context.table.pot >= context.rules.bigBlind * 4) {
+      floor = Math.max(
+        floor,
+        Math.min(
+          legalRaise.maxIncrement,
+          this.roundRobotRaiseIncrementUp(
+            Math.max(legalRaise.minIncrement * 2, context.table.pot / 3),
+            legalRaise.minIncrement,
+          ),
+        ),
+      );
+    }
+
+    return floor;
+  }
+
+  private getRobotRaiseCandidates(
+    context: RobotTurnContext,
+    legalRaise: RobotTurnContext['legalActions']['raise'],
+    requestedAmount?: number,
+  ): number[] {
+    const amountToCall = context.legalActions.call.amountToCall;
+    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
+    const includeEscalationCandidates =
+      facingBet || context.table.pot >= context.rules.bigBlind * 4;
+    const derivedCandidates = [
+      legalRaise.minIncrement,
+      ...(includeEscalationCandidates
+        ? [legalRaise.minIncrement * 2, legalRaise.minIncrement * 3]
+        : []),
+      ...legalRaise.suggestedIncrements,
+      requestedAmount,
+      legalRaise.maxIncrement,
+    ];
+
+    return [...new Set(derivedCandidates)]
+      .filter((value): value is number => Number.isFinite(value))
+      .map((value) => Math.floor(value))
       .filter(
         (value) =>
           value >= legalRaise.minIncrement && value <= legalRaise.maxIncrement,
       )
       .sort((left, right) => left - right);
+  }
+
+  private getRobotRaiseCeiling(
+    context: RobotTurnContext,
+    legalRaise: RobotTurnContext['legalActions']['raise'],
+    meaningfulFloor: number,
+  ): number {
+    const amountToCall = context.legalActions.call.amountToCall;
+    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
+
+    if (facingBet) {
+      return Math.max(
+        meaningfulFloor,
+        Math.min(legalRaise.maxIncrement, legalRaise.minIncrement * 3),
+      );
+    }
+
+    if (context.table.pot >= context.rules.bigBlind * 4) {
+      return Math.max(
+        meaningfulFloor,
+        Math.min(
+          legalRaise.maxIncrement,
+          this.roundRobotRaiseIncrementUp(
+            Math.max(meaningfulFloor, context.table.pot / 2),
+            legalRaise.minIncrement,
+          ),
+        ),
+      );
+    }
+
+    return Math.max(
+      meaningfulFloor,
+      Math.min(legalRaise.maxIncrement, legalRaise.minIncrement * 3),
+    );
+  }
+
+  private selectRobotRaiseIncrement(
+    context: RobotTurnContext,
+    raiseSizeBias: RobotTurnContext['personality']['tuning']['raiseSizeBias'],
+  ): number | null {
+    const legalRaise = context.legalActions.raise;
+    if (!legalRaise.enabled) {
+      return null;
+    }
+
+    const uniqueCandidates = this.getRobotRaiseCandidates(context, legalRaise);
     if (!uniqueCandidates.length) {
       return legalRaise.minIncrement;
     }
-    const boundedPressureCap = Math.max(
-      legalRaise.minIncrement,
-      Math.min(legalRaise.maxIncrement, legalRaise.minIncrement * 3),
+    const meaningfulFloor = this.getRobotMeaningfulRaiseFloor(context, legalRaise);
+    const meaningfulCeiling = this.getRobotRaiseCeiling(
+      context,
+      legalRaise,
+      meaningfulFloor,
     );
-    const boundedCandidates = uniqueCandidates.filter(
-      (value) => value <= boundedPressureCap,
+    const sizeCandidates = uniqueCandidates.filter(
+      (value) => value >= meaningfulFloor,
     );
-    const sizeCandidates = boundedCandidates.length
+    const boundedCandidates = sizeCandidates.filter(
+      (value) => value <= meaningfulCeiling,
+    );
+    const candidateWindow = boundedCandidates.length
       ? boundedCandidates
-      : uniqueCandidates;
+      : sizeCandidates.length
+        ? sizeCandidates
+        : uniqueCandidates;
 
     if (raiseSizeBias === 'small') {
-      return sizeCandidates[0];
+      return candidateWindow[0];
     }
     if (raiseSizeBias === 'large') {
-      return sizeCandidates[sizeCandidates.length - 1];
+      return candidateWindow[candidateWindow.length - 1];
     }
-    return sizeCandidates[Math.floor(sizeCandidates.length / 2)];
+    return candidateWindow[Math.floor(candidateWindow.length / 2)];
+  }
+
+  private normalizeRobotActionCandidate(
+    context: RobotTurnContext,
+    action: RobotActionCandidate,
+  ): RobotActionCandidate {
+    if (action.action !== 'raise') {
+      return action;
+    }
+
+    const legalRaise = context.legalActions.raise;
+    if (!legalRaise.enabled) {
+      return action;
+    }
+
+    const requestedAmount = Math.max(
+      legalRaise.minIncrement,
+      Math.min(legalRaise.maxIncrement, Math.floor(action.amount ?? legalRaise.minIncrement)),
+    );
+    const meaningfulFloor = this.getRobotMeaningfulRaiseFloor(context, legalRaise);
+    const candidates = this.getRobotRaiseCandidates(
+      context,
+      legalRaise,
+      requestedAmount,
+    );
+    const normalizedAmount =
+      candidates.find(
+        (value) => value >= Math.max(requestedAmount, meaningfulFloor),
+      ) ??
+      candidates[candidates.length - 1] ??
+      requestedAmount;
+
+    return {
+      action: 'raise',
+      amount: normalizedAmount,
+    };
   }
 
   private getRobotPressureMetrics(context: RobotTurnContext) {
@@ -3890,7 +4032,7 @@ export class EventsGateway
     } = this.getRobotPressureMetrics(context);
     const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
     const raiseAmount = this.selectRobotRaiseIncrement(
-      context.legalActions.raise,
+      context,
       context.personality.tuning.raiseSizeBias,
     );
     const defendPotOddsLimit = this.getRobotDefendPotOddsLimit(context);
@@ -4078,6 +4220,10 @@ export class EventsGateway
         }
       }
 
+      const normalizedAction = this.normalizeRobotActionCandidate(
+        context,
+        selectedAction,
+      );
       const actionId = `robot-${hand.handNumber}-${Date.now()}`;
       const tempSocketId = `robot:${roomId}:${robotPlayerId}:${Date.now()}`;
       this.pendingRobotActionDecisions.set(
@@ -4093,8 +4239,8 @@ export class EventsGateway
             emit: () => undefined,
           } as unknown as Socket,
           {
-            action: selectedAction.action,
-            amount: selectedAction.amount,
+            action: normalizedAction.action,
+            amount: normalizedAction.amount,
             actionId,
           },
         );
