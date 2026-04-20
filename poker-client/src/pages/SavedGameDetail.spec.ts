@@ -439,6 +439,53 @@ describe("SavedGameDetailView", () => {
     expect(html).toContain("Insufficient credits");
   });
 
+  it("renders a retry review action for unavailable selected-hand analysis", () => {
+    const detail = buildDetail();
+    const unavailableHand = {
+      ...detail.hands[0],
+      analysis: {
+        status: "unavailable" as const,
+        updatedAt: 1_710_000_955_000,
+        headline: null,
+        summary: null,
+        keyAdjustments: [],
+        failureReason: "Missing AI provider configuration",
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(SavedGameDetailView as any, {
+        detail: {
+          ...detail,
+          hands: [
+            {
+              handNumber: unavailableHand.handNumber,
+              totalPot: unavailableHand.history.settlement.totalPot,
+              actionCount: unavailableHand.history.actions.length,
+              analysis: unavailableHand.analysis,
+            },
+            detail.hands[1],
+          ],
+        },
+        selectedHand: unavailableHand,
+        selectedHandLoadError: null,
+        selectedHandNumber: 1,
+        locale: "en" satisfies Locale,
+        localeTag: "en-US",
+        t,
+        onBackToHistory: vi.fn(),
+        onBackToLobby: vi.fn(),
+        onSelectHandNumber: vi.fn(),
+        onRetrySelectedHandAnalysis: vi.fn(),
+        retryActionLabelKey: "history.retryReview",
+        isRetryingSelectedHandAnalysis: false,
+      }),
+    );
+
+    expect(html).toContain('data-testid="saved-history-retry-analysis-button"');
+    expect(html).toContain("history.retryReview");
+    expect(html).toContain("Missing AI provider configuration");
+  });
+
   it("renders a disabled retry translation action while retry is in flight", () => {
     const detail = buildDetail();
     const localizedFailureHand = {

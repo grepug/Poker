@@ -144,7 +144,7 @@ const getRetryActionLabelKey = (
   analysis: SavedGameHandAnalysis,
   locale: string,
 ): MessageKey | null => {
-  if (analysis.status === "failed") {
+  if (analysis.status === "failed" || analysis.status === "unavailable") {
     return "history.retryReview";
   }
 
