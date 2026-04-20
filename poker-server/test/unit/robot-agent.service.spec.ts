@@ -53,6 +53,17 @@ describe('RobotAgentService', () => {
       bettingRound: 'FLOP' as const,
       raiseFormat: 'increment_over_call' as const,
     },
+    personality: {
+      key: 'balanced' as const,
+      summary:
+        'Mix value betting, pot control, and selective pressure without drifting too passive.',
+      tuning: {
+        aggression: 52,
+        bluff: 34,
+        pressure: 48,
+        raiseSizeBias: 'medium' as const,
+      },
+    },
     hero: {
       playerId: 'robot-1',
       name: 'Robot 1',
@@ -153,11 +164,15 @@ describe('RobotAgentService', () => {
 
   it('uses structured output with the responses model and returns a validated final action', async () => {
     let capturedConfig: Record<string, unknown> | undefined;
+    let capturedPrompt: string | undefined;
     mockToolLoopAgent.mockImplementation((config) => {
       capturedConfig = config;
       return {
-        generate: jest.fn().mockResolvedValue({
-          output: { action: 'check' },
+        generate: jest.fn().mockImplementation(async ({ prompt }) => {
+          capturedPrompt = prompt;
+          return {
+            output: { action: 'check' },
+          };
         }),
       };
     });
@@ -195,6 +210,9 @@ describe('RobotAgentService', () => {
       (capturedConfig?.tools as Record<string, unknown>)?.done,
     ).toBeUndefined();
     expect(capturedConfig).not.toHaveProperty('temperature');
+    expect(capturedConfig?.instructions).toContain('personality profile');
+    expect(capturedPrompt).toContain('"key":"balanced"');
+    expect(capturedPrompt).toContain('"raiseSizeBias":"medium"');
   });
 
   it('applies responses compatibility fetch for non-Volcengine OpenAI-compatible gateways', () => {

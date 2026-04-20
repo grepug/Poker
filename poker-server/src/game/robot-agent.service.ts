@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  Card,
   PersistedRobotDecisionMetadata,
   PersistedRobotFallbackCause,
   PlayerAction,
+  ROBOT_PERSONALITIES,
+  RobotPersonality,
 } from 'poker-types';
 import { z } from 'zod';
 import {
@@ -40,6 +43,76 @@ export class RobotDecisionError extends Error {
   }
 }
 
+export type RobotPersonalityProfile = {
+  key: RobotPersonality;
+  label: string;
+  summary: string;
+  aggression: number;
+  bluff: number;
+  pressure: number;
+  raiseSizeBias: 'small' | 'medium' | 'large';
+};
+
+export const DEFAULT_ROBOT_PERSONALITY: RobotPersonality = 'balanced';
+
+const ROBOT_PERSONALITY_PROFILES: Record<
+  RobotPersonality,
+  RobotPersonalityProfile
+> = {
+  tight: {
+    key: 'tight',
+    label: 'Tight',
+    summary:
+      'Protect chips, avoid marginal bluffs, and pressure mostly with strong value.',
+    aggression: 28,
+    bluff: 12,
+    pressure: 25,
+    raiseSizeBias: 'small',
+  },
+  balanced: {
+    key: 'balanced',
+    label: 'Balanced',
+    summary:
+      'Mix value betting, pot control, and selective pressure without drifting too passive.',
+    aggression: 52,
+    bluff: 34,
+    pressure: 48,
+    raiseSizeBias: 'medium',
+  },
+  bully: {
+    key: 'bully',
+    label: 'Bully',
+    summary:
+      'Pressure capped ranges, lean toward initiative, and prefer forcing decisions when the risk is reasonable.',
+    aggression: 72,
+    bluff: 42,
+    pressure: 78,
+    raiseSizeBias: 'large',
+  },
+  chaotic: {
+    key: 'chaotic',
+    label: 'Chaotic',
+    summary:
+      'Take more swings and occasional thin aggression, but stay bounded by stack, street, and legal action limits.',
+    aggression: 66,
+    bluff: 58,
+    pressure: 64,
+    raiseSizeBias: 'medium',
+  },
+};
+
+export const resolveRobotPersonality = (
+  personality?: string | null,
+): RobotPersonality =>
+  ROBOT_PERSONALITIES.includes(personality as RobotPersonality)
+    ? (personality as RobotPersonality)
+    : DEFAULT_ROBOT_PERSONALITY;
+
+export const getRobotPersonalityProfile = (
+  personality?: string | null,
+): RobotPersonalityProfile =>
+  ROBOT_PERSONALITY_PROFILES[resolveRobotPersonality(personality)];
+
 export type RobotTurnContext = {
   schemaVersion: '1.0';
   roomId: string;
@@ -52,6 +125,16 @@ export type RobotTurnContext = {
     bettingRound: 'PRE_FLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN';
     raiseFormat: 'increment_over_call';
   };
+  personality: {
+    key: RobotPersonality;
+    summary: string;
+    tuning: {
+      aggression: number;
+      bluff: number;
+      pressure: number;
+      raiseSizeBias: 'small' | 'medium' | 'large';
+    };
+  };
   hero: {
     playerId: string;
     name: string;
@@ -59,13 +142,13 @@ export type RobotTurnContext = {
     chips: number;
     currentBet: number;
     status: string;
-    holeCards: Array<{ rank: string; suit: string }>;
+    holeCards: Card[];
   };
   table: {
     pot: number;
     currentBet: number;
     minRaise: number;
-    communityCards: Array<{ rank: string; suit: string }>;
+    communityCards: Card[];
     playersPublic: Array<{
       playerId: string;
       name: string;
@@ -78,10 +161,7 @@ export type RobotTurnContext = {
       isBigBlind: boolean;
       lastAction: PlayerAction | null;
     }>;
-    revealedHoleCardsByPlayerId: Record<
-      string,
-      Array<{ rank: string; suit: string }>
-    >;
+    revealedHoleCardsByPlayerId: Record<string, Card[]>;
   };
   legalActions: {
     fold: { enabled: boolean };
@@ -153,6 +233,10 @@ TOOL LOOP POLICY
 
 ACTION POLICY
 - Prefer check over fold when check is legal.
+- Use the provided personality profile as a real tendency, not flavor text.
+- Higher aggression and pressure should bias toward initiative and legal raises in reasonable spots.
+- Higher bluff should allow more thin pressure or semi-bluffing, but never punt chips with clearly weak holdings.
+- Respect raiseSizeBias when choosing among legal raise sizes.
 - Raise amount must be integer and legal increment-over-call.
 `;
 

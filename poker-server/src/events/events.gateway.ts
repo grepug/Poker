@@ -19,6 +19,7 @@ import {
   RobotActionDecision,
   RobotDecisionError,
   RobotTurnContext,
+  getRobotPersonalityProfile,
   toRobotFallbackCause,
 } from '../game/robot-agent.service';
 import { SavedGameReviewService } from '../game/saved-game-review.service';
@@ -82,6 +83,8 @@ import {
   RunCount,
   shouldIncludeLiveRankingPlayer,
 } from 'poker-types';
+import { getRankValue } from '../common/utils/deck';
+import { evaluateHand } from '../common/utils/hand-evaluator';
 import { roomEvent, roomWrite } from '../storage/room-write.factory';
 
 const resolveGatewayCorsOrigin = ():
@@ -3548,10 +3551,7 @@ export class EventsGateway
       throw new Error('Cannot resolve legal robot actions');
     }
 
-    const revealedHoleCardsByPlayerId: Record<
-      string,
-      Array<{ rank: string; suit: string }>
-    > = {};
+    const revealedHoleCardsByPlayerId: Record<string, Card[]> = {};
     for (const playerId of hand.revealedPlayerIds ?? []) {
       const revealedPlayer = room.players.find(
         (player: any) => player.id === playerId,
@@ -3568,6 +3568,9 @@ export class EventsGateway
         action: player.lastAction,
         bettingRound: hand.bettingRound,
       }));
+    const personalityProfile = getRobotPersonalityProfile(
+      robotPlayer.robotPersonality,
+    );
 
     return {
       schemaVersion: '1.0',
@@ -3580,6 +3583,16 @@ export class EventsGateway
         bigBlind: room.config.bigBlind,
         bettingRound: hand.bettingRound,
         raiseFormat: 'increment_over_call',
+      },
+      personality: {
+        key: personalityProfile.key,
+        summary: personalityProfile.summary,
+        tuning: {
+          aggression: personalityProfile.aggression,
+          bluff: personalityProfile.bluff,
+          pressure: personalityProfile.pressure,
+          raiseSizeBias: personalityProfile.raiseSizeBias,
+        },
       },
       hero: {
         playerId: robotPlayer.id,
@@ -3626,17 +3639,236 @@ export class EventsGateway
     };
   }
 
-  private resolveRobotFallbackAction(
-    room: any,
-    robotPlayerId: string,
-  ): RobotActionCandidate {
-    const checkValidation = this.bettingService.validateAction(
-      room,
-      robotPlayerId,
-      'check',
+  private getRobotFallbackStrength(
+    context: RobotTurnContext,
+  ): 'weak' | 'medium' | 'strong' {
+    const allCards = [
+      ...context.hero.holeCards,
+      ...context.table.communityCards,
+    ];
+
+    if (context.table.communityCards.length < 3) {
+      const [firstCard, secondCard] = [...context.hero.holeCards].sort(
+        (left, right) => getRankValue(right.rank) - getRankValue(left.rank),
+      );
+      const isPair = firstCard.rank === secondCard.rank;
+      const isSuited = firstCard.suit === secondCard.suit;
+      const rankGap = Math.abs(
+        getRankValue(firstCard.rank) - getRankValue(secondCard.rank),
+      );
+
+      if (isPair) {
+        return getRankValue(firstCard.rank) >= getRankValue('7')
+          ? 'strong'
+          : 'medium';
+      }
+      if (
+        (firstCard.rank === 'A' && getRankValue(secondCard.rank) >= getRankValue('10')) ||
+        (getRankValue(firstCard.rank) >= getRankValue('K') &&
+          getRankValue(secondCard.rank) >= getRankValue('J')) ||
+        (isSuited &&
+          getRankValue(firstCard.rank) >= getRankValue('Q') &&
+          getRankValue(secondCard.rank) >= getRankValue('10'))
+      ) {
+        return 'strong';
+      }
+      if (
+        isSuited ||
+        rankGap <= 1 ||
+        (getRankValue(firstCard.rank) >= getRankValue('10') &&
+          getRankValue(secondCard.rank) >= getRankValue('9'))
+      ) {
+        return 'medium';
+      }
+      return 'weak';
+    }
+
+    const handEvaluation = evaluateHand(allCards, {
+      useShortDeckRules: context.rules.variant === 'shortDeck',
+    });
+    if (
+      handEvaluation.rank === 'TWO_PAIR' ||
+      handEvaluation.rank === 'THREE_OF_A_KIND' ||
+      handEvaluation.rank === 'STRAIGHT' ||
+      handEvaluation.rank === 'FLUSH' ||
+      handEvaluation.rank === 'FULL_HOUSE' ||
+      handEvaluation.rank === 'FOUR_OF_A_KIND' ||
+      handEvaluation.rank === 'STRAIGHT_FLUSH' ||
+      handEvaluation.rank === 'ROYAL_FLUSH'
+    ) {
+      return 'strong';
+    }
+
+    if (handEvaluation.rank === 'ONE_PAIR') {
+      const highestBoardRank = [...context.table.communityCards]
+        .sort((left, right) => getRankValue(right.rank) - getRankValue(left.rank))[0]
+        ?.rank;
+      const isPocketPair =
+        context.hero.holeCards[0]?.rank === context.hero.holeCards[1]?.rank;
+      const isOverpair =
+        Boolean(highestBoardRank) &&
+        isPocketPair &&
+        getRankValue(context.hero.holeCards[0].rank) > getRankValue(highestBoardRank!);
+      const heroPairsBoard = context.hero.holeCards.some((card) =>
+        context.table.communityCards.some((boardCard) => boardCard.rank === card.rank),
+      );
+      const isTopPair = context.hero.holeCards.some(
+        (card) => card.rank === highestBoardRank,
+      );
+
+      return isOverpair || isTopPair || heroPairsBoard ? 'medium' : 'weak';
+    }
+
+    const suitCounts = allCards.reduce<Record<string, number>>((counts, card) => {
+      counts[card.suit] = (counts[card.suit] || 0) + 1;
+      return counts;
+    }, {});
+    if (
+      Object.entries(suitCounts).some(
+        ([suit, count]) =>
+          count >= 4 &&
+          context.hero.holeCards.some((card) => card.suit === suit),
+      )
+    ) {
+      return 'medium';
+    }
+
+    return 'weak';
+  }
+
+  private selectRobotRaiseIncrement(
+    legalRaise: RobotTurnContext['legalActions']['raise'],
+    raiseSizeBias: RobotTurnContext['personality']['tuning']['raiseSizeBias'],
+  ): number | null {
+    if (!legalRaise.enabled) {
+      return null;
+    }
+
+    const candidates = legalRaise.suggestedIncrements.length
+      ? legalRaise.suggestedIncrements
+      : [legalRaise.minIncrement, legalRaise.maxIncrement];
+    const uniqueCandidates = [...new Set(candidates)]
+      .filter(
+        (value) =>
+          value >= legalRaise.minIncrement && value <= legalRaise.maxIncrement,
+      )
+      .sort((left, right) => left - right);
+    if (!uniqueCandidates.length) {
+      return legalRaise.minIncrement;
+    }
+    const boundedPressureCap = Math.max(
+      legalRaise.minIncrement,
+      Math.min(legalRaise.maxIncrement, legalRaise.minIncrement * 3),
     );
-    if (checkValidation.valid) {
+    const boundedCandidates = uniqueCandidates.filter(
+      (value) => value <= boundedPressureCap,
+    );
+    const sizeCandidates = boundedCandidates.length
+      ? boundedCandidates
+      : uniqueCandidates;
+
+    if (raiseSizeBias === 'small') {
+      return sizeCandidates[0];
+    }
+    if (raiseSizeBias === 'large') {
+      return sizeCandidates[sizeCandidates.length - 1];
+    }
+    return sizeCandidates[Math.floor(sizeCandidates.length / 2)];
+  }
+
+  private resolveRobotFallbackAction(
+    context: RobotTurnContext,
+  ): RobotActionCandidate {
+    const strength = this.getRobotFallbackStrength(context);
+    const amountToCall = context.legalActions.call.amountToCall;
+    const facingBet = amountToCall > 0 && context.legalActions.call.enabled;
+    const stackPressure =
+      amountToCall > 0
+        ? amountToCall / Math.max(1, context.hero.chips + context.hero.currentBet)
+        : 0;
+    const raiseAmount = this.selectRobotRaiseIncrement(
+      context.legalActions.raise,
+      context.personality.tuning.raiseSizeBias,
+    );
+
+    if (strength === 'strong') {
+      if (
+        context.legalActions.allIn.enabled &&
+        (stackPressure >= 0.65 || context.hero.chips <= context.rules.bigBlind * 8)
+      ) {
+        return { action: 'all-in' };
+      }
+      if (
+        raiseAmount !== null &&
+        ((!facingBet && context.personality.tuning.pressure >= 60) ||
+          context.personality.tuning.aggression >= 60)
+      ) {
+        return { action: 'raise', amount: raiseAmount };
+      }
+      if (!facingBet && context.legalActions.check.enabled) {
+        return { action: 'check' };
+      }
+      if (context.legalActions.call.enabled) {
+        return { action: 'call' };
+      }
+      if (context.legalActions.check.enabled) {
+        return { action: 'check' };
+      }
+      return { action: 'fold' };
+    }
+
+    if (strength === 'medium') {
+      if (
+        !facingBet &&
+        raiseAmount !== null &&
+        context.personality.tuning.pressure >= 60
+      ) {
+        return { action: 'raise', amount: raiseAmount };
+      }
+      if (
+        facingBet &&
+        raiseAmount !== null &&
+        context.personality.tuning.aggression >= 75 &&
+        amountToCall <= context.rules.bigBlind * 2
+      ) {
+        return { action: 'raise', amount: raiseAmount };
+      }
+      if (
+        context.legalActions.call.enabled &&
+        stackPressure <=
+          (context.personality.key === 'tight'
+            ? 0.08
+            : context.personality.key === 'chaotic'
+              ? 0.2
+              : 0.14)
+      ) {
+        return { action: 'call' };
+      }
+      if (context.legalActions.check.enabled) {
+        return { action: 'check' };
+      }
+      return { action: 'fold' };
+    }
+
+    if (!facingBet && context.legalActions.check.enabled) {
       return { action: 'check' };
+    }
+      if (
+        context.legalActions.call.enabled &&
+        context.personality.tuning.bluff >= 55 &&
+        amountToCall <= context.rules.bigBlind &&
+        stackPressure <= 0.08
+      ) {
+        return { action: 'call' };
+      }
+    if (context.legalActions.check.enabled) {
+      return { action: 'check' };
+    }
+    if (context.legalActions.fold.enabled) {
+      return { action: 'fold' };
+    }
+    if (context.legalActions.call.enabled) {
+      return { action: 'call' };
     }
     return { action: 'fold' };
   }
@@ -3667,7 +3899,7 @@ export class EventsGateway
     let selectedAction: RobotActionDecision;
     if (!this.robotAgentService.isConfigured()) {
       selectedAction = this.buildRobotFallbackDecision(
-        this.resolveRobotFallbackAction(roomSnapshot, robotPlayerId),
+        this.resolveRobotFallbackAction(context),
         'provider-unavailable',
         0,
       );
@@ -3696,7 +3928,7 @@ export class EventsGateway
           }`,
         );
         selectedAction = this.buildRobotFallbackDecision(
-          this.resolveRobotFallbackAction(roomSnapshot, robotPlayerId),
+          this.resolveRobotFallbackAction(context),
           toRobotFallbackCause(error),
           this.getRobotFallbackRetryCount(error),
         );
