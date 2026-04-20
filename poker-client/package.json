@@ -10,6 +10,7 @@
     "test": "vitest run --config vitest.config.ts",
     "preview": "vite preview",
     "storybook": "node ./scripts/storybook-dev-fast.mjs",
+    "storybook:verify-tableboard-mobile": "node ./scripts/verify-tableboard-mobile-layout.mjs",
     "storybook:full": "STORYBOOK_FAST_MODE=0 storybook dev -p 6006",
     "build-storybook": "STORYBOOK_FAST_MODE=0 storybook build"
   },

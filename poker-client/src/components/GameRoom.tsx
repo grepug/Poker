@@ -656,11 +656,16 @@ const normalizeTrayAmountForDrop = ({
 };
 
 const SEAT_EDGE_PADDING_PX = 2;
+const MOBILE_SEAT_EDGE_PADDING_PX = 0;
 const FELT_BORDER_WIDTH_PX = 2;
 const SEAT_OUTER_TOP_OVERHANG_PX = 6;
 const SEAT_OUTER_SIDE_OVERHANG_PX = 2;
 const SEAT_OUTER_BOTTOM_OVERHANG_PX = 2;
 const SEAT_PERIMETER_CLEARANCE_PX = 10;
+const MOBILE_SEAT_OUTER_TOP_OVERHANG_PX = 2;
+const MOBILE_SEAT_OUTER_SIDE_OVERHANG_PX = 1;
+const MOBILE_SEAT_OUTER_BOTTOM_OVERHANG_PX = 1;
+const MOBILE_SEAT_PERIMETER_CLEARANCE_PX = 1;
 const SEAT_CENTER_EXCLUSION_PADDING_PX = 8;
 const SEAT_POD_WIDTH_TO_HEIGHT_RATIO = 1.26;
 
@@ -953,7 +958,10 @@ const getOrbitAnchors = ({
 
   const centerX = tableWidth / 2;
   const centerY = tableHeight / 2;
-  const tableInset = SEAT_EDGE_PADDING_PX + FELT_BORDER_WIDTH_PX;
+  const useMobileSeatPerimeter = tableWidth <= MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX;
+  const tableInset =
+    (useMobileSeatPerimeter ? MOBILE_SEAT_EDGE_PADDING_PX : SEAT_EDGE_PADDING_PX) +
+    FELT_BORDER_WIDTH_PX;
   const halfTableWidth = Math.max(tableInset + 1, centerX - tableInset);
   const halfTableHeight = Math.max(tableInset + 1, centerY - tableInset);
   const cornerRadiusX = Math.max(
@@ -964,10 +972,22 @@ const getOrbitAnchors = ({
     0,
     Math.min(halfTableHeight, tableCornerRadiusY - tableInset),
   );
-  const leftExtent = seatWidth / 2 + SEAT_OUTER_SIDE_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
-  const rightExtent = seatWidth / 2 + SEAT_OUTER_SIDE_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
-  const topExtent = seatHeight / 2 + SEAT_OUTER_TOP_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
-  const bottomExtent = seatHeight / 2 + SEAT_OUTER_BOTTOM_OVERHANG_PX + SEAT_PERIMETER_CLEARANCE_PX;
+  const perimeterClearancePx = useMobileSeatPerimeter
+    ? MOBILE_SEAT_PERIMETER_CLEARANCE_PX
+    : SEAT_PERIMETER_CLEARANCE_PX;
+  const sideOverhangPx = useMobileSeatPerimeter
+    ? MOBILE_SEAT_OUTER_SIDE_OVERHANG_PX
+    : SEAT_OUTER_SIDE_OVERHANG_PX;
+  const topOverhangPx = useMobileSeatPerimeter
+    ? MOBILE_SEAT_OUTER_TOP_OVERHANG_PX
+    : SEAT_OUTER_TOP_OVERHANG_PX;
+  const bottomOverhangPx = useMobileSeatPerimeter
+    ? MOBILE_SEAT_OUTER_BOTTOM_OVERHANG_PX
+    : SEAT_OUTER_BOTTOM_OVERHANG_PX;
+  const leftExtent = seatWidth / 2 + sideOverhangPx + perimeterClearancePx;
+  const rightExtent = seatWidth / 2 + sideOverhangPx + perimeterClearancePx;
+  const topExtent = seatHeight / 2 + topOverhangPx + perimeterClearancePx;
+  const bottomExtent = seatHeight / 2 + bottomOverhangPx + perimeterClearancePx;
 
   if (
     leftExtent + rightExtent >= halfTableWidth * 2 ||
