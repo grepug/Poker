@@ -223,6 +223,8 @@ const ACTION_OUTPUT_SCHEMA = z.object({
   amount: z.number().optional(),
 });
 
+const DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS = 45_000;
+
 const ROBOT_SYSTEM_PROMPT = `
 You are a poker robot player in a Texas Hold'em game.
 
@@ -259,9 +261,12 @@ export class RobotAgentService {
   private readonly logger = new Logger(RobotAgentService.name);
 
   private getProviderTimeoutMs(): number {
-    const parsed = Number(process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS || '15000');
+    const parsed = Number(
+      process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS ||
+        String(DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS),
+    );
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      return 15000;
+      return DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS;
     }
 
     return Math.floor(parsed);

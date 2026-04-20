@@ -340,4 +340,40 @@ describe('RobotAgentService', () => {
 
     await rejectionExpectation;
   });
+
+  it('does not time out robot provider requests at 15 seconds when the default timeout is used', async () => {
+    jest.useFakeTimers();
+    delete process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS;
+
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn(() => new Promise(() => undefined)),
+    }));
+
+    const service = new RobotAgentService();
+    const decisionPromise = service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    await jest.advanceTimersByTimeAsync(15_000);
+
+    let settled = false;
+    decisionPromise.catch(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+
+    const rejectionExpectation = expect(decisionPromise).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'provider-error',
+      }),
+    );
+
+    await jest.advanceTimersByTimeAsync(30_000);
+
+    await rejectionExpectation;
+  });
 });
