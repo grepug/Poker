@@ -149,6 +149,10 @@ export class EventsGateway
     new Map();
   private roomActionQueues: Map<string, Promise<void>> = new Map();
   private robotTurnTimers: Map<string, NodeJS.Timeout> = new Map();
+  private activeRobotTurnExecutions: Map<
+    string,
+    { playerId: string; handNumber: number }
+  > = new Map();
   private pendingRobotActionDecisions: Map<
     string,
     PersistedRobotDecisionMetadata
@@ -305,6 +309,7 @@ export class EventsGateway
       clearTimeout(timer);
     }
     this.runCountDecisionTimers.clear();
+    this.activeRobotTurnExecutions.clear();
     this.abandonedRoomSince.clear();
   }
 
@@ -1088,6 +1093,7 @@ export class EventsGateway
           connectionStatus: player.connectionStatus ?? 'connected',
         });
         this.emitReadyStateUpdated(data.roomId, room);
+        this.resumeRobotTurnIfNeeded(room);
 
         this.logger.log(
           `Player ${player.name} reconnected to room ${data.roomId}`,
@@ -3442,6 +3448,13 @@ export class EventsGateway
       Math.floor(Math.random() * (upperBound - minDelayMs + 1)) + minDelayMs,
     );
     const handNumber = room.currentHand?.handNumber;
+    if (
+      handNumber === undefined ||
+      handNumber === null ||
+      this.isRobotTurnExecutionActive(room.id, player.id, handNumber)
+    ) {
+      return;
+    }
 
     const timer = setTimeout(async () => {
       this.robotTurnTimers.delete(room.id);
@@ -3457,6 +3470,38 @@ export class EventsGateway
     }, delayMs);
 
     this.robotTurnTimers.set(room.id, timer);
+  }
+
+  private isRobotTurnExecutionActive(
+    roomId: string,
+    playerId: string,
+    handNumber: number,
+  ): boolean {
+    const activeExecution = this.activeRobotTurnExecutions.get(roomId);
+    return Boolean(
+      activeExecution &&
+        activeExecution.playerId === playerId &&
+        activeExecution.handNumber === handNumber,
+    );
+  }
+
+  private resumeRobotTurnIfNeeded(room: any): void {
+    const hand = room?.currentHand;
+    if (!room?.id || !hand?.currentPlayerTurn || this.robotTurnTimers.has(room.id)) {
+      return;
+    }
+
+    const currentPlayer = room.players.find(
+      (player: any) => player.id === hand.currentPlayerTurn,
+    );
+    if (
+      !currentPlayer?.isRobot ||
+      this.isRobotTurnExecutionActive(room.id, currentPlayer.id, hand.handNumber)
+    ) {
+      return;
+    }
+
+    this.emitPlayerTurn(room, currentPlayer);
   }
 
   private resolveRobotLegalActions(room: any, robotPlayerId: string) {
@@ -3981,74 +4026,92 @@ export class EventsGateway
     if (hand.currentPlayerTurn !== robotPlayerId) {
       return;
     }
-
-    const roomSnapshot = JSON.parse(JSON.stringify(room));
-    const context = this.buildRobotTurnContext(roomSnapshot, robotPlayerId);
-
-    let selectedAction: RobotActionDecision;
-    if (!this.robotAgentService.isConfigured()) {
-      selectedAction = this.buildRobotFallbackDecision(
-        this.resolveRobotFallbackAction(context),
-        'provider-unavailable',
-        0,
-      );
-    } else {
-      try {
-        selectedAction = await this.robotAgentService.decideAction({
-          context,
-          validateAction: (candidate) => {
-            const validation = this.bettingService.validateAction(
-              roomSnapshot,
-              robotPlayerId,
-              candidate.action,
-              candidate.action === 'raise' ? candidate.amount : undefined,
-            );
-            return {
-              valid: validation.valid,
-              reason: validation.reason,
-              legalActions: context.legalActions,
-            };
-          },
-        });
-      } catch (error) {
-        this.logger.warn(
-          `Robot agent fallback in room ${roomId}: ${
-            error instanceof Error ? error.message : 'unknown error'
-          }`,
-        );
-        selectedAction = this.buildRobotFallbackDecision(
-          this.resolveRobotFallbackAction(context),
-          toRobotFallbackCause(error),
-          this.getRobotFallbackRetryCount(error),
-        );
-      }
+    if (this.isRobotTurnExecutionActive(roomId, robotPlayerId, hand.handNumber)) {
+      return;
     }
 
-    const actionId = `robot-${hand.handNumber}-${Date.now()}`;
-    const tempSocketId = `robot:${roomId}:${robotPlayerId}:${Date.now()}`;
-    this.pendingRobotActionDecisions.set(
-      this.getPendingRobotActionDecisionKey(tempSocketId, actionId),
-      selectedAction.persistedDecision,
-    );
-    this.socketToPlayer.set(tempSocketId, { roomId, playerId: robotPlayerId });
+    this.activeRobotTurnExecutions.set(roomId, {
+      playerId: robotPlayerId,
+      handNumber: hand.handNumber,
+    });
 
     try {
-      await this.handlePlayerAction(
-        {
-          id: tempSocketId,
-          emit: () => undefined,
-        } as unknown as Socket,
-        {
-          action: selectedAction.action,
-          amount: selectedAction.amount,
-          actionId,
-        },
-      );
-    } finally {
-      this.pendingRobotActionDecisions.delete(
+      const roomSnapshot = JSON.parse(JSON.stringify(room));
+      const context = this.buildRobotTurnContext(roomSnapshot, robotPlayerId);
+
+      let selectedAction: RobotActionDecision;
+      if (!this.robotAgentService.isConfigured()) {
+        selectedAction = this.buildRobotFallbackDecision(
+          this.resolveRobotFallbackAction(context),
+          'provider-unavailable',
+          0,
+        );
+      } else {
+        try {
+          selectedAction = await this.robotAgentService.decideAction({
+            context,
+            validateAction: (candidate) => {
+              const validation = this.bettingService.validateAction(
+                roomSnapshot,
+                robotPlayerId,
+                candidate.action,
+                candidate.action === 'raise' ? candidate.amount : undefined,
+              );
+              return {
+                valid: validation.valid,
+                reason: validation.reason,
+                legalActions: context.legalActions,
+              };
+            },
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Robot agent fallback in room ${roomId}: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+          );
+          selectedAction = this.buildRobotFallbackDecision(
+            this.resolveRobotFallbackAction(context),
+            toRobotFallbackCause(error),
+            this.getRobotFallbackRetryCount(error),
+          );
+        }
+      }
+
+      const actionId = `robot-${hand.handNumber}-${Date.now()}`;
+      const tempSocketId = `robot:${roomId}:${robotPlayerId}:${Date.now()}`;
+      this.pendingRobotActionDecisions.set(
         this.getPendingRobotActionDecisionKey(tempSocketId, actionId),
+        selectedAction.persistedDecision,
       );
-      this.socketToPlayer.delete(tempSocketId);
+      this.socketToPlayer.set(tempSocketId, { roomId, playerId: robotPlayerId });
+
+      try {
+        await this.handlePlayerAction(
+          {
+            id: tempSocketId,
+            emit: () => undefined,
+          } as unknown as Socket,
+          {
+            action: selectedAction.action,
+            amount: selectedAction.amount,
+            actionId,
+          },
+        );
+      } finally {
+        this.pendingRobotActionDecisions.delete(
+          this.getPendingRobotActionDecisionKey(tempSocketId, actionId),
+        );
+        this.socketToPlayer.delete(tempSocketId);
+      }
+    } finally {
+      const activeExecution = this.activeRobotTurnExecutions.get(roomId);
+      if (
+        activeExecution?.playerId === robotPlayerId &&
+        activeExecution.handNumber === hand.handNumber
+      ) {
+        this.activeRobotTurnExecutions.delete(roomId);
+      }
     }
   }
 

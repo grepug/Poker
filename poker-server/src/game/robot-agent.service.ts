@@ -258,6 +258,15 @@ ACTION POLICY
 export class RobotAgentService {
   private readonly logger = new Logger(RobotAgentService.name);
 
+  private getProviderTimeoutMs(): number {
+    const parsed = Number(process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS || '15000');
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 15000;
+    }
+
+    return Math.floor(parsed);
+  }
+
   isConfigured(): boolean {
     return Boolean(
       process.env.AI_ROBOT_API_KEY?.trim() &&
@@ -298,6 +307,7 @@ export class RobotAgentService {
     const apiMode = this.getApiMode();
     const model = this.createConfiguredModel('robot');
     const maxProviderAttempts = apiMode === 'responses' ? 3 : 1;
+    const providerTimeoutMs = this.getProviderTimeoutMs();
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
@@ -352,8 +362,31 @@ export class RobotAgentService {
         | undefined;
 
       try {
-        result = await agent.generate({
-          prompt: this.buildTurnPrompt(params.context),
+        result = await new Promise<{
+          output?: RobotActionCandidate;
+        }>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(
+              new RobotDecisionError(
+                'provider-error',
+                `Robot provider request timed out after ${providerTimeoutMs}ms`,
+                retryCount,
+              ),
+            );
+          }, providerTimeoutMs);
+
+          agent
+            .generate({
+              prompt: this.buildTurnPrompt(params.context),
+            })
+            .then((value) => {
+              clearTimeout(timeout);
+              resolve(value);
+            })
+            .catch((error) => {
+              clearTimeout(timeout);
+              reject(error);
+            });
         });
       } catch (error) {
         const normalizedError =

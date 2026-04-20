@@ -164,6 +164,10 @@ describe('RobotAgentService', () => {
     process.env = originalEnv;
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('uses structured output with the responses model and returns a validated final action', async () => {
     let capturedConfig: Record<string, unknown> | undefined;
     let capturedPrompt: string | undefined;
@@ -310,5 +314,30 @@ describe('RobotAgentService', () => {
         validationRetryCount: 0,
       }),
     );
+  });
+
+  it('times out hung provider requests so fallback can recover the turn', async () => {
+    jest.useFakeTimers();
+    process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS = '25';
+
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn(() => new Promise(() => undefined)),
+    }));
+
+    const service = new RobotAgentService();
+    const decisionPromise = service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+    const rejectionExpectation = expect(decisionPromise).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'provider-error',
+      }),
+    );
+
+    await jest.advanceTimersByTimeAsync(25);
+
+    await rejectionExpectation;
   });
 });
