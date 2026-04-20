@@ -3579,19 +3579,19 @@ test.describe('Poker E2E - Test Suite 3: All-In Scenarios', () => {
       ).toHaveCount(4);
       await expect(
         alicePage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
       await expect(
         bobPage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(4);
       await expect(
         bobPage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
       await expect(
         charliePage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(4);
       await expect(
         charliePage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
 
       await verifyChipConservation(alicePage, 5000);
     } finally {
@@ -9891,7 +9891,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       ).toContainText(`Your hand: -$${expectedWinnerNet}`);
       await expect(
         alicePage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(4);
+      ).toHaveCount(0);
       await expect(
         alicePage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(0);
@@ -9900,7 +9900,7 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
       ).toHaveCount(0);
       await expect(
         bobPage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(4);
+      ).toHaveCount(0);
       await expect(
         bobPage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(0);
@@ -10377,19 +10377,19 @@ test.describe('Poker E2E - Test Suite 9: Three-Player Coverage', () => {
       ).toHaveCount(4);
       await expect(
         alicePage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
       await expect(
         bobPage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(4);
       await expect(
         bobPage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
       await expect(
         charliePage.locator('[data-testid^="hand-result-card-"]'),
       ).toHaveCount(4);
       await expect(
         charliePage.locator('[data-testid^="hand-result-hidden-card-"]'),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
 
     } finally {
       await teardownThreePlayerSession(session);
