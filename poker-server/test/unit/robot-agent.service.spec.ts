@@ -53,6 +53,19 @@ describe('RobotAgentService', () => {
       bettingRound: 'FLOP' as const,
       raiseFormat: 'increment_over_call' as const,
     },
+    personality: {
+      key: 'balanced' as const,
+      summary:
+        'Mix value betting, pot control, and selective pressure without drifting too passive.',
+      tuning: {
+        aggression: 52,
+        bluff: 34,
+        pressure: 48,
+        defend: 46,
+        jam: 52,
+        raiseSizeBias: 'medium' as const,
+      },
+    },
     hero: {
       playerId: 'robot-1',
       name: 'Robot 1',
@@ -151,13 +164,21 @@ describe('RobotAgentService', () => {
     process.env = originalEnv;
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('uses structured output with the responses model and returns a validated final action', async () => {
     let capturedConfig: Record<string, unknown> | undefined;
+    let capturedPrompt: string | undefined;
     mockToolLoopAgent.mockImplementation((config) => {
       capturedConfig = config;
       return {
-        generate: jest.fn().mockResolvedValue({
-          output: { action: 'check' },
+        generate: jest.fn().mockImplementation(async ({ prompt }) => {
+          capturedPrompt = prompt;
+          return {
+            output: { action: 'check' },
+          };
         }),
       };
     });
@@ -195,6 +216,11 @@ describe('RobotAgentService', () => {
       (capturedConfig?.tools as Record<string, unknown>)?.done,
     ).toBeUndefined();
     expect(capturedConfig).not.toHaveProperty('temperature');
+    expect(capturedConfig?.instructions).toContain('personality profile');
+    expect(capturedPrompt).toContain('"key":"balanced"');
+    expect(capturedPrompt).toContain('"raiseSizeBias":"medium"');
+    expect(capturedPrompt).toContain('"defend":46');
+    expect(capturedPrompt).toContain('"jam":52');
   });
 
   it('applies responses compatibility fetch for non-Volcengine OpenAI-compatible gateways', () => {
@@ -246,6 +272,91 @@ describe('RobotAgentService', () => {
     });
   });
 
+  it('uses the latest validated tool candidate when final output parsing fails after a legal tool action', async () => {
+    mockToolLoopAgent.mockImplementation((config) => ({
+      generate: jest.fn().mockImplementation(async () => {
+        const attemptAction = (config.tools as Record<string, any>).attempt_action;
+        await attemptAction.execute({ action: 'check' });
+        throw new Error('Invalid JSON response');
+      }),
+    }));
+
+    const service = new RobotAgentService();
+    const result = await service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    expect(result).toEqual({
+      action: 'check',
+      persistedDecision: {
+        source: 'validated-tool-loop',
+        summary:
+          'Used latest validated tool-loop action after provider finalization failed.',
+        validationRetryCount: 0,
+      },
+    });
+  });
+
+  it('recovers a legal provider action from the last finished step text when SDK final parsing fails before any tool action', async () => {
+    mockToolLoopAgent.mockImplementation((config) => ({
+      generate: jest.fn().mockImplementation(async () => {
+        await config.onFinish?.({
+          stepNumber: 0,
+          model: {
+            provider: 'robot-openai-responses',
+            modelId: 'doubao-seed-2-0-pro-260215',
+          },
+          functionId: undefined,
+          metadata: undefined,
+          experimental_context: undefined,
+          content: [
+            {
+              type: 'text',
+              text: '```json\n{"action":"call"}\n```',
+            },
+          ],
+          text: '```json\n{"action":"call"}\n```',
+          reasoningText: undefined,
+          reasoning: [],
+          files: [],
+          sources: [],
+          toolCalls: [],
+          staticToolCalls: [],
+          dynamicToolCalls: [],
+          toolResults: [],
+          staticToolResults: [],
+          dynamicToolResults: [],
+          finishReason: 'stop',
+          rawFinishReason: 'stop',
+          usage: {},
+          warnings: undefined,
+          request: {},
+          response: { messages: [] },
+          providerMetadata: undefined,
+          steps: [],
+          totalUsage: {},
+        });
+        throw new Error('Invalid JSON response');
+      }),
+    }));
+
+    const service = new RobotAgentService();
+    const result = await service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    expect(result).toEqual({
+      action: 'call',
+      persistedDecision: {
+        source: 'provider-output',
+        summary: 'Recovered provider final output after SDK parse failure.',
+        validationRetryCount: 0,
+      },
+    });
+  });
+
   it('throws a normalized error when the provider never produces a legal action', async () => {
     mockToolLoopAgent.mockImplementation(() => ({
       generate: jest.fn().mockResolvedValue({
@@ -288,5 +399,66 @@ describe('RobotAgentService', () => {
         validationRetryCount: 0,
       }),
     );
+  });
+
+  it('times out hung provider requests so fallback can recover the turn', async () => {
+    jest.useFakeTimers();
+    process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS = '25';
+
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn(() => new Promise(() => undefined)),
+    }));
+
+    const service = new RobotAgentService();
+    const decisionPromise = service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+    const rejectionExpectation = expect(decisionPromise).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'provider-error',
+      }),
+    );
+
+    await jest.advanceTimersByTimeAsync(25);
+
+    await rejectionExpectation;
+  });
+
+  it('does not time out robot provider requests at 15 seconds when the default timeout is used', async () => {
+    jest.useFakeTimers();
+    delete process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS;
+
+    mockToolLoopAgent.mockImplementation(() => ({
+      generate: jest.fn(() => new Promise(() => undefined)),
+    }));
+
+    const service = new RobotAgentService();
+    const decisionPromise = service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    await jest.advanceTimersByTimeAsync(15_000);
+
+    let settled = false;
+    decisionPromise.catch(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+
+    const rejectionExpectation = expect(decisionPromise).rejects.toEqual(
+      expect.objectContaining<Partial<RobotDecisionError>>({
+        name: 'RobotDecisionError',
+        code: 'provider-error',
+      }),
+    );
+
+    await jest.advanceTimersByTimeAsync(30_000);
+
+    await rejectionExpectation;
   });
 });

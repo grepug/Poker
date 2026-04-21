@@ -258,6 +258,7 @@ describe('EventsGateway membership mutation serialization', () => {
 
     bettingService = {
       isBettingRoundComplete: jest.fn().mockReturnValue(false),
+      calculateMinRaise: jest.fn().mockReturnValue(10),
     };
 
     storageService = {
@@ -1082,6 +1083,65 @@ describe('EventsGateway membership mutation serialization', () => {
 
     expect(reconnectResult).toEqual({ success: true });
     expect((gateway as any).abandonedRoomSince.has('ROOM1')).toBe(false);
+  });
+
+  it('resumes a pending robot turn when a human reconnects into a room waiting on a robot', async () => {
+    roomState.players.push({
+      ...createPlayer({
+        id: 'p-robot',
+        socketId: '',
+        name: 'Robot 1',
+        status: 'connected',
+        position: 2,
+      }),
+      isRobot: true,
+    });
+    roomState.currentHand = {
+      handNumber: 4,
+      dealerPosition: 0,
+      smallBlindPosition: 1,
+      bigBlindPosition: 2,
+      currentPlayerTurn: 'p-robot',
+      bettingRound: 'FLOP',
+      communityCards: [],
+      pot: 30,
+      currentBet: 10,
+      lastRaiseSize: 10,
+      activePlayers: ['p-host', 'p-robot'],
+      roundActions: {},
+      sidePots: [],
+      potContributions: { 'p-host': 10, 'p-bob': 0, 'p-robot': 20 },
+      vpipPlayerIds: ['p-host', 'p-robot'],
+      revealedPlayerIds: [],
+    };
+
+    const emitPlayerTurnSpy = jest
+      .spyOn(gateway as any, 'emitPlayerTurn')
+      .mockImplementation(() => undefined);
+    const reconnectClient = createClient('socket-reconnect', {
+      cookieToken: 'token-bob',
+    });
+
+    const reconnectResult = await gateway.handleReconnect(reconnectClient as any, {
+      roomId: 'ROOM1',
+      playerName: 'Bob',
+      playerId: 'p-bob',
+    });
+
+    expect(reconnectResult).toEqual({ success: true });
+    expect(emitPlayerTurnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ROOM1',
+        currentHand: expect.objectContaining({
+          handNumber: 4,
+          currentPlayerTurn: 'p-robot',
+        }),
+      }),
+      expect.objectContaining({
+        id: 'p-robot',
+        isRobot: true,
+      }),
+    );
   });
 
   it('auto-finalizes after run-count timeout resolution reaches a safe paused phase', async () => {

@@ -11,6 +11,15 @@ export type PlayerStatus =
 
 export type PlayerConnectionStatus = "connected" | "disconnected";
 
+export const ROBOT_PERSONALITIES = [
+  "tight",
+  "balanced",
+  "bully",
+  "chaotic",
+] as const;
+
+export type RobotPersonality = (typeof ROBOT_PERSONALITIES)[number];
+
 // Player actions during betting
 export type PlayerAction = "fold" | "check" | "call" | "raise" | "all-in";
 
@@ -19,6 +28,7 @@ export interface Player {
   socketId: string;
   name: string;
   isRobot?: boolean;
+  robotPersonality?: RobotPersonality;
   emoji?: string;
   chips: number;
   totalBuyIn: number;

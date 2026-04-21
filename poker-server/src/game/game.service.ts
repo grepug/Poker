@@ -6,6 +6,8 @@ import {
   Player,
   PlayerStatus,
   ReadyPhase,
+  ROBOT_PERSONALITIES,
+  RobotPersonality,
 } from 'poker-types';
 import { IStorageService } from '../common/interfaces/storage.interface';
 import { generateRoomId, generatePlayerId } from '../common/utils/id-generator';
@@ -38,6 +40,11 @@ const isDisconnected = (player: Player): boolean =>
 
 const resolveReconnectStatus = (status: PlayerStatus): PlayerStatus =>
   status === 'disconnected' ? 'connected' : status;
+
+const pickRandomRobotPersonality = (): RobotPersonality => {
+  const index = Math.floor(Math.random() * ROBOT_PERSONALITIES.length);
+  return ROBOT_PERSONALITIES[index] ?? 'balanced';
+};
 
 @Injectable()
 export class GameService {
@@ -362,6 +369,7 @@ export class GameService {
       socketId: '',
       name: uniqueName,
       isRobot: true,
+      robotPersonality: pickRandomRobotPersonality(),
       emoji: robotEmoji,
       chips: initialChips,
       totalBuyIn: initialBuyIn,

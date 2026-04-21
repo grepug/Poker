@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  Card,
   PersistedRobotDecisionMetadata,
   PersistedRobotFallbackCause,
   PlayerAction,
+  ROBOT_PERSONALITIES,
+  RobotPersonality,
 } from 'poker-types';
 import { z } from 'zod';
 import {
@@ -24,6 +27,10 @@ export type RobotActionValidation = {
   legalActions?: Record<string, unknown>;
 };
 
+type RobotFinishedStepSnapshot = {
+  text: string;
+};
+
 export type RobotDecisionFailureCode =
   | 'provider-error'
   | 'invalid-final-action'
@@ -40,6 +47,86 @@ export class RobotDecisionError extends Error {
   }
 }
 
+export type RobotPersonalityProfile = {
+  key: RobotPersonality;
+  label: string;
+  summary: string;
+  aggression: number;
+  bluff: number;
+  pressure: number;
+  defend: number;
+  jam: number;
+  raiseSizeBias: 'small' | 'medium' | 'large';
+};
+
+export const DEFAULT_ROBOT_PERSONALITY: RobotPersonality = 'balanced';
+
+const ROBOT_PERSONALITY_PROFILES: Record<
+  RobotPersonality,
+  RobotPersonalityProfile
+> = {
+  tight: {
+    key: 'tight',
+    label: 'Tight',
+    summary:
+      'Protect chips, avoid marginal bluffs, and pressure mostly with strong value.',
+    aggression: 28,
+    bluff: 12,
+    pressure: 25,
+    defend: 20,
+    jam: 34,
+    raiseSizeBias: 'small',
+  },
+  balanced: {
+    key: 'balanced',
+    label: 'Balanced',
+    summary:
+      'Mix value betting, pot control, and selective pressure without drifting too passive.',
+    aggression: 52,
+    bluff: 34,
+    pressure: 48,
+    defend: 46,
+    jam: 52,
+    raiseSizeBias: 'medium',
+  },
+  bully: {
+    key: 'bully',
+    label: 'Bully',
+    summary:
+      'Pressure capped ranges, lean toward initiative, and prefer forcing decisions when the risk is reasonable.',
+    aggression: 72,
+    bluff: 42,
+    pressure: 78,
+    defend: 58,
+    jam: 78,
+    raiseSizeBias: 'large',
+  },
+  chaotic: {
+    key: 'chaotic',
+    label: 'Chaotic',
+    summary:
+      'Take more swings and occasional thin aggression, but stay bounded by stack, street, and legal action limits.',
+    aggression: 66,
+    bluff: 58,
+    pressure: 64,
+    defend: 54,
+    jam: 68,
+    raiseSizeBias: 'medium',
+  },
+};
+
+export const resolveRobotPersonality = (
+  personality?: string | null,
+): RobotPersonality =>
+  ROBOT_PERSONALITIES.includes(personality as RobotPersonality)
+    ? (personality as RobotPersonality)
+    : DEFAULT_ROBOT_PERSONALITY;
+
+export const getRobotPersonalityProfile = (
+  personality?: string | null,
+): RobotPersonalityProfile =>
+  ROBOT_PERSONALITY_PROFILES[resolveRobotPersonality(personality)];
+
 export type RobotTurnContext = {
   schemaVersion: '1.0';
   roomId: string;
@@ -52,6 +139,18 @@ export type RobotTurnContext = {
     bettingRound: 'PRE_FLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN';
     raiseFormat: 'increment_over_call';
   };
+  personality: {
+    key: RobotPersonality;
+    summary: string;
+    tuning: {
+      aggression: number;
+      bluff: number;
+      pressure: number;
+      defend: number;
+      jam: number;
+      raiseSizeBias: 'small' | 'medium' | 'large';
+    };
+  };
   hero: {
     playerId: string;
     name: string;
@@ -59,13 +158,13 @@ export type RobotTurnContext = {
     chips: number;
     currentBet: number;
     status: string;
-    holeCards: Array<{ rank: string; suit: string }>;
+    holeCards: Card[];
   };
   table: {
     pot: number;
     currentBet: number;
     minRaise: number;
-    communityCards: Array<{ rank: string; suit: string }>;
+    communityCards: Card[];
     playersPublic: Array<{
       playerId: string;
       name: string;
@@ -78,10 +177,7 @@ export type RobotTurnContext = {
       isBigBlind: boolean;
       lastAction: PlayerAction | null;
     }>;
-    revealedHoleCardsByPlayerId: Record<
-      string,
-      Array<{ rank: string; suit: string }>
-    >;
+    revealedHoleCardsByPlayerId: Record<string, Card[]>;
   };
   legalActions: {
     fold: { enabled: boolean };
@@ -131,6 +227,8 @@ const ACTION_OUTPUT_SCHEMA = z.object({
   amount: z.number().optional(),
 });
 
+const DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS = 45_000;
+
 const ROBOT_SYSTEM_PROMPT = `
 You are a poker robot player in a Texas Hold'em game.
 
@@ -153,12 +251,30 @@ TOOL LOOP POLICY
 
 ACTION POLICY
 - Prefer check over fold when check is legal.
+- Use the provided personality profile as a real tendency, not flavor text.
+- Higher aggression and pressure should bias toward initiative and legal raises in reasonable spots.
+- Higher bluff should allow more thin pressure or semi-bluffing, but never punt chips with clearly weak holdings.
+- Higher defend should continue more often when pot price, draw quality, or showdown value justify it.
+- Higher jam should prefer all-in over small raises in short-stack leverage spots.
+- Respect raiseSizeBias when choosing among legal raise sizes.
 - Raise amount must be integer and legal increment-over-call.
 `;
 
 @Injectable()
 export class RobotAgentService {
   private readonly logger = new Logger(RobotAgentService.name);
+
+  private getProviderTimeoutMs(): number {
+    const parsed = Number(
+      process.env.AI_ROBOT_PROVIDER_TIMEOUT_MS ||
+        String(DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS),
+    );
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_ROBOT_PROVIDER_TIMEOUT_MS;
+    }
+
+    return Math.floor(parsed);
+  }
 
   isConfigured(): boolean {
     return Boolean(
@@ -200,11 +316,13 @@ export class RobotAgentService {
     const apiMode = this.getApiMode();
     const model = this.createConfiguredModel('robot');
     const maxProviderAttempts = apiMode === 'responses' ? 3 : 1;
+    const providerTimeoutMs = this.getProviderTimeoutMs();
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
       let finalizedAction: RobotActionDecision | null = null;
       let latestValidAction: RobotActionCandidate | null = null;
+      let latestFinishedStep: RobotFinishedStepSnapshot | null = null;
       let retryCount = 0;
 
       const agent = new ToolLoopAgent({
@@ -215,6 +333,11 @@ export class RobotAgentService {
         output: Output.object({
           schema: ACTION_OUTPUT_SCHEMA,
         }),
+        onFinish: (event: { text: string }) => {
+          latestFinishedStep = {
+            text: event.text,
+          };
+        },
         ...(apiMode === 'responses'
           ? {}
           : { temperature: Number(process.env.AI_ROBOT_TEMPERATURE || '0.3') }),
@@ -254,8 +377,31 @@ export class RobotAgentService {
         | undefined;
 
       try {
-        result = await agent.generate({
-          prompt: this.buildTurnPrompt(params.context),
+        result = await new Promise<{
+          output?: RobotActionCandidate;
+        }>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(
+              new RobotDecisionError(
+                'provider-error',
+                `Robot provider request timed out after ${providerTimeoutMs}ms`,
+                retryCount,
+              ),
+            );
+          }, providerTimeoutMs);
+
+          agent
+            .generate({
+              prompt: this.buildTurnPrompt(params.context),
+            })
+            .then((value) => {
+              clearTimeout(timeout);
+              resolve(value);
+            })
+            .catch((error) => {
+              clearTimeout(timeout);
+              reject(error);
+            });
         });
       } catch (error) {
         const normalizedError =
@@ -265,6 +411,34 @@ export class RobotAgentService {
           apiMode,
           normalizedError,
         );
+        const providerFinalizationError = new RobotDecisionError(
+          'provider-error',
+          normalizedError.message || 'Robot provider request failed',
+          retryCount,
+        );
+
+        if (latestValidAction) {
+          return {
+            ...latestValidAction,
+            persistedDecision: {
+              source: 'validated-tool-loop',
+              summary: this.buildValidatedToolLoopSummary(
+                providerFinalizationError,
+                retryCount,
+              ),
+              validationRetryCount: retryCount,
+            },
+          };
+        }
+
+        const recoveredProviderOutput = this.recoverProviderOutputFromFinishedStep(
+          latestFinishedStep,
+          params.validateAction,
+          retryCount,
+        );
+        if (recoveredProviderOutput) {
+          return recoveredProviderOutput;
+        }
 
         if (attempt < maxProviderAttempts && isTransientRetryable) {
           this.logger.warn(
@@ -404,10 +578,151 @@ export class RobotAgentService {
     };
   }
 
+  private recoverProviderOutputFromFinishedStep(
+    latestFinishedStep: RobotFinishedStepSnapshot | null,
+    validateAction: (candidate: RobotActionCandidate) => RobotActionValidation,
+    retryCount: number,
+  ): RobotActionDecision | null {
+    const candidate = this.extractActionCandidateFromText(
+      latestFinishedStep?.text,
+    );
+    if (!candidate) {
+      return null;
+    }
+
+    const normalizedCandidate = this.normalizeAction(candidate);
+    const validation = validateAction(normalizedCandidate);
+    if (!validation.valid) {
+      return null;
+    }
+
+    return {
+      ...normalizedCandidate,
+      persistedDecision: {
+        source: 'provider-output',
+        summary: this.buildRecoveredProviderOutputSummary(retryCount),
+        validationRetryCount: retryCount,
+      },
+    };
+  }
+
+  private extractActionCandidateFromText(
+    text: string | undefined,
+  ): RobotActionCandidate | null {
+    if (!text?.trim()) {
+      return null;
+    }
+
+    for (const candidateText of this.extractJsonCandidateTexts(text)) {
+      try {
+        const parsed = JSON.parse(candidateText) as Record<string, unknown>;
+        if (typeof parsed.action !== 'string') {
+          continue;
+        }
+
+        const candidate = ACTION_OUTPUT_SCHEMA.safeParse({
+          action: parsed.action,
+          amount:
+            parsed.amount == null ? undefined : Number(parsed.amount),
+        });
+        if (candidate.success) {
+          return candidate.data.amount == null
+            ? { action: candidate.data.action }
+            : {
+                action: candidate.data.action,
+                amount: candidate.data.amount,
+              };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private extractJsonCandidateTexts(text: string): string[] {
+    const candidates = new Set<string>();
+    const trimmed = text.trim();
+
+    if (trimmed.length > 0) {
+      candidates.add(trimmed);
+    }
+
+    for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+      const fencedBody = match[1]?.trim();
+      if (fencedBody) {
+        candidates.add(fencedBody);
+      }
+    }
+
+    const jsonObjects = this.extractBalancedJsonObjects(text);
+    for (const jsonObject of jsonObjects) {
+      candidates.add(jsonObject);
+    }
+
+    return [...candidates];
+  }
+
+  private extractBalancedJsonObjects(text: string): string[] {
+    const matches: string[] = [];
+
+    for (let start = 0; start < text.length; start += 1) {
+      if (text[start] !== '{') {
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let isEscaped = false;
+
+      for (let end = start; end < text.length; end += 1) {
+        const character = text[end];
+
+        if (isEscaped) {
+          isEscaped = false;
+          continue;
+        }
+
+        if (character === '\\') {
+          isEscaped = true;
+          continue;
+        }
+
+        if (character === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (inString) {
+          continue;
+        }
+
+        if (character === '{') {
+          depth += 1;
+        } else if (character === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            matches.push(text.slice(start, end + 1));
+            break;
+          }
+        }
+      }
+    }
+
+    return matches;
+  }
+
   private buildProviderOutputSummary(retryCount: number): string {
     return retryCount > 0
       ? `Provider final output accepted after ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}.`
       : 'Provider final output accepted.';
+  }
+
+  private buildRecoveredProviderOutputSummary(retryCount: number): string {
+    return retryCount > 0
+      ? `Recovered provider final output after SDK parse failure with ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}.`
+      : 'Recovered provider final output after SDK parse failure.';
   }
 
   private buildValidatedToolLoopSummary(

@@ -1148,10 +1148,12 @@ describe('GameService addPlayerToRoom', () => {
       ],
     });
     storageService.getRoom.mockResolvedValue(room);
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.51);
 
     const { player } = await gameService.addRobotToRoom('ROOM01', 'p-host');
 
     expect(player.isRobot).toBe(true);
+    expect(player.robotPersonality).toBe('bully');
     expect(player.socketId).toBe('');
     expect(player.status).toBe('waiting');
     expect(player.name).toContain('Robot');
@@ -1160,6 +1162,7 @@ describe('GameService addPlayerToRoom', () => {
     expect(storageService.persistRoom.mock.calls[0][1].events.map((event) => event.type)).toEqual([
       'PLAYER_JOINED',
     ]);
+    randomSpy.mockRestore();
   });
 
   it('rejects add robot for non-host player', async () => {
