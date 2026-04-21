@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveCardsFlyoutDesktopLayout,
+  shouldUseLowSeatMidMobileSeatPerimeter,
   shouldUseReducedMobileSeatPerimeter,
   shouldRenderCardsFlyoutInBoardStage,
 } from "./game-room-layout";
@@ -101,6 +102,36 @@ describe("game-room-layout", () => {
       shouldUseReducedMobileSeatPerimeter({
         tableWidth: 768,
         totalSeats: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("isolates the low-seat mid-mobile perimeter mode", () => {
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 470,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 430,
+        totalSeats: 2,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 6,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 8,
       }),
     ).toBe(false);
   });

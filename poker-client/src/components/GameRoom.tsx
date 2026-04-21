@@ -55,6 +55,7 @@ import {
 } from "@/components/poker";
 import {
   resolveCardsFlyoutDesktopLayout,
+  shouldUseLowSeatMidMobileSeatPerimeter,
   shouldUseReducedMobileSeatPerimeter,
   shouldRenderCardsFlyoutInBoardStage,
 } from "@/components/poker/game-room-layout";
@@ -963,6 +964,10 @@ const getOrbitAnchors = ({
     tableWidth,
     totalSeats: safeTotal,
   });
+  const useBalancedLowSeatMidMobilePerimeter = shouldUseLowSeatMidMobileSeatPerimeter({
+    tableWidth,
+    totalSeats: safeTotal,
+  });
   const tableInset =
     (useMobileSeatPerimeter ? MOBILE_SEAT_EDGE_PADDING_PX : SEAT_EDGE_PADDING_PX) +
     FELT_BORDER_WIDTH_PX;
@@ -983,7 +988,9 @@ const getOrbitAnchors = ({
     ? MOBILE_SEAT_OUTER_SIDE_OVERHANG_PX
     : SEAT_OUTER_SIDE_OVERHANG_PX;
   const topOverhangPx = useMobileSeatPerimeter
-    ? MOBILE_SEAT_OUTER_TOP_OVERHANG_PX
+    ? useBalancedLowSeatMidMobilePerimeter
+      ? MOBILE_SEAT_OUTER_BOTTOM_OVERHANG_PX
+      : MOBILE_SEAT_OUTER_TOP_OVERHANG_PX
     : SEAT_OUTER_TOP_OVERHANG_PX;
   const bottomOverhangPx = useMobileSeatPerimeter
     ? MOBILE_SEAT_OUTER_BOTTOM_OVERHANG_PX
