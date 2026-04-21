@@ -272,6 +272,32 @@ describe('RobotAgentService', () => {
     });
   });
 
+  it('uses the latest validated tool candidate when final output parsing fails after a legal tool action', async () => {
+    mockToolLoopAgent.mockImplementation((config) => ({
+      generate: jest.fn().mockImplementation(async () => {
+        const attemptAction = (config.tools as Record<string, any>).attempt_action;
+        await attemptAction.execute({ action: 'check' });
+        throw new Error('Invalid JSON response');
+      }),
+    }));
+
+    const service = new RobotAgentService();
+    const result = await service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    expect(result).toEqual({
+      action: 'check',
+      persistedDecision: {
+        source: 'validated-tool-loop',
+        summary:
+          'Used latest validated tool-loop action after provider finalization failed.',
+        validationRetryCount: 0,
+      },
+    });
+  });
+
   it('throws a normalized error when the provider never produces a legal action', async () => {
     mockToolLoopAgent.mockImplementation(() => ({
       generate: jest.fn().mockResolvedValue({

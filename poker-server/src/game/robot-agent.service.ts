@@ -401,6 +401,25 @@ export class RobotAgentService {
           apiMode,
           normalizedError,
         );
+        const providerFinalizationError = new RobotDecisionError(
+          'provider-error',
+          normalizedError.message || 'Robot provider request failed',
+          retryCount,
+        );
+
+        if (latestValidAction) {
+          return {
+            ...latestValidAction,
+            persistedDecision: {
+              source: 'validated-tool-loop',
+              summary: this.buildValidatedToolLoopSummary(
+                providerFinalizationError,
+                retryCount,
+              ),
+              validationRetryCount: retryCount,
+            },
+          };
+        }
 
         if (attempt < maxProviderAttempts && isTransientRetryable) {
           this.logger.warn(
