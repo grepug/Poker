@@ -4,6 +4,14 @@ type ResolveCardsFlyoutDesktopLayoutArgs = {
   showTurnActionDock: boolean;
 };
 
+type ReducedMobileSeatPerimeterArgs = {
+  tableWidth: number;
+  totalSeats: number;
+};
+
+const DENSE_MOBILE_SEAT_PERIMETER_MAX_WIDTH_PX = 430;
+const DENSE_MOBILE_SEAT_PERIMETER_MIN_SEAT_COUNT = 8;
+
 export const resolveCardsFlyoutDesktopLayout = ({
   shouldRenderCardsFlyout,
   isDesktopSideDock,
@@ -29,3 +37,11 @@ export const shouldRenderCardsFlyoutInBoardStage = ({
   isDesktopSideDock,
 }: ResolveCardsFlyoutDesktopLayoutArgs): boolean =>
   shouldRenderCardsFlyout && !isDesktopSideDock;
+
+export const shouldUseReducedMobileSeatPerimeter = ({
+  tableWidth,
+  totalSeats,
+}: ReducedMobileSeatPerimeterArgs): boolean =>
+  tableWidth > 0 &&
+  totalSeats >= DENSE_MOBILE_SEAT_PERIMETER_MIN_SEAT_COUNT &&
+  tableWidth <= DENSE_MOBILE_SEAT_PERIMETER_MAX_WIDTH_PX;

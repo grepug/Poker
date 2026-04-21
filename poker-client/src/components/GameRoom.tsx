@@ -55,6 +55,7 @@ import {
 } from "@/components/poker";
 import {
   resolveCardsFlyoutDesktopLayout,
+  shouldUseReducedMobileSeatPerimeter,
   shouldRenderCardsFlyoutInBoardStage,
 } from "@/components/poker/game-room-layout";
 import {
@@ -958,7 +959,10 @@ const getOrbitAnchors = ({
 
   const centerX = tableWidth / 2;
   const centerY = tableHeight / 2;
-  const useMobileSeatPerimeter = tableWidth <= MOBILE_BALANCED_ORBIT_MAX_WIDTH_PX;
+  const useMobileSeatPerimeter = shouldUseReducedMobileSeatPerimeter({
+    tableWidth,
+    totalSeats: safeTotal,
+  });
   const tableInset =
     (useMobileSeatPerimeter ? MOBILE_SEAT_EDGE_PADDING_PX : SEAT_EDGE_PADDING_PX) +
     FELT_BORDER_WIDTH_PX;
