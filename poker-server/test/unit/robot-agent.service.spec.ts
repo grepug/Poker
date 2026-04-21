@@ -298,6 +298,65 @@ describe('RobotAgentService', () => {
     });
   });
 
+  it('recovers a legal provider action from the last finished step text when SDK final parsing fails before any tool action', async () => {
+    mockToolLoopAgent.mockImplementation((config) => ({
+      generate: jest.fn().mockImplementation(async () => {
+        await config.onFinish?.({
+          stepNumber: 0,
+          model: {
+            provider: 'robot-openai-responses',
+            modelId: 'doubao-seed-2-0-pro-260215',
+          },
+          functionId: undefined,
+          metadata: undefined,
+          experimental_context: undefined,
+          content: [
+            {
+              type: 'text',
+              text: '```json\n{"action":"call"}\n```',
+            },
+          ],
+          text: '```json\n{"action":"call"}\n```',
+          reasoningText: undefined,
+          reasoning: [],
+          files: [],
+          sources: [],
+          toolCalls: [],
+          staticToolCalls: [],
+          dynamicToolCalls: [],
+          toolResults: [],
+          staticToolResults: [],
+          dynamicToolResults: [],
+          finishReason: 'stop',
+          rawFinishReason: 'stop',
+          usage: {},
+          warnings: undefined,
+          request: {},
+          response: { messages: [] },
+          providerMetadata: undefined,
+          steps: [],
+          totalUsage: {},
+        });
+        throw new Error('Invalid JSON response');
+      }),
+    }));
+
+    const service = new RobotAgentService();
+    const result = await service.decideAction({
+      context: createContext(),
+      validateAction,
+    });
+
+    expect(result).toEqual({
+      action: 'call',
+      persistedDecision: {
+        source: 'provider-output',
+        summary: 'Recovered provider final output after SDK parse failure.',
+        validationRetryCount: 0,
+      },
+    });
+  });
+
   it('throws a normalized error when the provider never produces a legal action', async () => {
     mockToolLoopAgent.mockImplementation(() => ({
       generate: jest.fn().mockResolvedValue({

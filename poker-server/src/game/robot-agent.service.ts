@@ -27,6 +27,10 @@ export type RobotActionValidation = {
   legalActions?: Record<string, unknown>;
 };
 
+type RobotFinishedStepSnapshot = {
+  text: string;
+};
+
 export type RobotDecisionFailureCode =
   | 'provider-error'
   | 'invalid-final-action'
@@ -318,6 +322,7 @@ export class RobotAgentService {
     for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
       let finalizedAction: RobotActionDecision | null = null;
       let latestValidAction: RobotActionCandidate | null = null;
+      let latestFinishedStep: RobotFinishedStepSnapshot | null = null;
       let retryCount = 0;
 
       const agent = new ToolLoopAgent({
@@ -328,6 +333,11 @@ export class RobotAgentService {
         output: Output.object({
           schema: ACTION_OUTPUT_SCHEMA,
         }),
+        onFinish: (event: { text: string }) => {
+          latestFinishedStep = {
+            text: event.text,
+          };
+        },
         ...(apiMode === 'responses'
           ? {}
           : { temperature: Number(process.env.AI_ROBOT_TEMPERATURE || '0.3') }),
@@ -419,6 +429,15 @@ export class RobotAgentService {
               validationRetryCount: retryCount,
             },
           };
+        }
+
+        const recoveredProviderOutput = this.recoverProviderOutputFromFinishedStep(
+          latestFinishedStep,
+          params.validateAction,
+          retryCount,
+        );
+        if (recoveredProviderOutput) {
+          return recoveredProviderOutput;
         }
 
         if (attempt < maxProviderAttempts && isTransientRetryable) {
@@ -559,10 +578,151 @@ export class RobotAgentService {
     };
   }
 
+  private recoverProviderOutputFromFinishedStep(
+    latestFinishedStep: RobotFinishedStepSnapshot | null,
+    validateAction: (candidate: RobotActionCandidate) => RobotActionValidation,
+    retryCount: number,
+  ): RobotActionDecision | null {
+    const candidate = this.extractActionCandidateFromText(
+      latestFinishedStep?.text,
+    );
+    if (!candidate) {
+      return null;
+    }
+
+    const normalizedCandidate = this.normalizeAction(candidate);
+    const validation = validateAction(normalizedCandidate);
+    if (!validation.valid) {
+      return null;
+    }
+
+    return {
+      ...normalizedCandidate,
+      persistedDecision: {
+        source: 'provider-output',
+        summary: this.buildRecoveredProviderOutputSummary(retryCount),
+        validationRetryCount: retryCount,
+      },
+    };
+  }
+
+  private extractActionCandidateFromText(
+    text: string | undefined,
+  ): RobotActionCandidate | null {
+    if (!text?.trim()) {
+      return null;
+    }
+
+    for (const candidateText of this.extractJsonCandidateTexts(text)) {
+      try {
+        const parsed = JSON.parse(candidateText) as Record<string, unknown>;
+        if (typeof parsed.action !== 'string') {
+          continue;
+        }
+
+        const candidate = ACTION_OUTPUT_SCHEMA.safeParse({
+          action: parsed.action,
+          amount:
+            parsed.amount == null ? undefined : Number(parsed.amount),
+        });
+        if (candidate.success) {
+          return candidate.data.amount == null
+            ? { action: candidate.data.action }
+            : {
+                action: candidate.data.action,
+                amount: candidate.data.amount,
+              };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private extractJsonCandidateTexts(text: string): string[] {
+    const candidates = new Set<string>();
+    const trimmed = text.trim();
+
+    if (trimmed.length > 0) {
+      candidates.add(trimmed);
+    }
+
+    for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+      const fencedBody = match[1]?.trim();
+      if (fencedBody) {
+        candidates.add(fencedBody);
+      }
+    }
+
+    const jsonObjects = this.extractBalancedJsonObjects(text);
+    for (const jsonObject of jsonObjects) {
+      candidates.add(jsonObject);
+    }
+
+    return [...candidates];
+  }
+
+  private extractBalancedJsonObjects(text: string): string[] {
+    const matches: string[] = [];
+
+    for (let start = 0; start < text.length; start += 1) {
+      if (text[start] !== '{') {
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let isEscaped = false;
+
+      for (let end = start; end < text.length; end += 1) {
+        const character = text[end];
+
+        if (isEscaped) {
+          isEscaped = false;
+          continue;
+        }
+
+        if (character === '\\') {
+          isEscaped = true;
+          continue;
+        }
+
+        if (character === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (inString) {
+          continue;
+        }
+
+        if (character === '{') {
+          depth += 1;
+        } else if (character === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            matches.push(text.slice(start, end + 1));
+            break;
+          }
+        }
+      }
+    }
+
+    return matches;
+  }
+
   private buildProviderOutputSummary(retryCount: number): string {
     return retryCount > 0
       ? `Provider final output accepted after ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}.`
       : 'Provider final output accepted.';
+  }
+
+  private buildRecoveredProviderOutputSummary(retryCount: number): string {
+    return retryCount > 0
+      ? `Recovered provider final output after SDK parse failure with ${retryCount} validation ${retryCount === 1 ? 'retry' : 'retries'}.`
+      : 'Recovered provider final output after SDK parse failure.';
   }
 
   private buildValidatedToolLoopSummary(
