@@ -95,11 +95,6 @@ const HAND_RESULT_COMMUNITY_SLOT_META = [
     hiddenTestId: "hand-results-community-back-4",
   },
 ] as const;
-const HIDDEN_HOLE_CARD_META = [
-  { id: "left", testIndex: 0 },
-  { id: "right", testIndex: 1 },
-] as const;
-
 export const HandResultsContent: React.FC<HandResultsContentProps> = ({
   currentHandNumber,
   totalPot,
@@ -342,9 +337,6 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
             const resultStatusLabel = showCards
               ? t("game.resultStatus.shown")
               : getResultStatusLabel(entry.resultStatus);
-            const isFoldedResultStatus =
-              entry.resultStatus === "folded_pre_showdown" ||
-              entry.resultStatus === "folded_at_showdown";
 
             return (
               <article
@@ -380,39 +372,29 @@ export const HandResultsContent: React.FC<HandResultsContentProps> = ({
                   )}
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {showCards
-                    ? entry.cards.map((card, idx) => (
+                {showCards && (
+                  <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {entry.cards.map((card, idx) => (
                         <Card
                           key={`${entry.playerId}-shown-${card.suit}-${card.rank}`}
                           card={card}
                           size="small"
                           dataTestId={`hand-result-card-${entry.playerId}-${idx}`}
                         />
-                      ))
-                    : HIDDEN_HOLE_CARD_META.map((slotMeta) => (
-                        <Card
-                          key={`${entry.playerId}-hidden-${slotMeta.id}`}
-                          card={null}
-                          size="small"
-                          faceDown
-                          dataTestId={`hand-result-hidden-card-${entry.playerId}-${slotMeta.testIndex}`}
-                        />
                       ))}
-                </div>
+                    </div>
 
-                <p
-                  className="mt-2 text-xs text-emerald-100/75"
-                  data-testid={`hand-result-rank-${entry.playerId}`}
-                >
-                  {showCards
-                    ? entry.hand
-                      ? describeEvaluatedHand(entry.hand)
-                      : t("game.cardsShownNoEvaluated")
-                    : isFoldedResultStatus
-                      ? `${t("game.resultStatus.folded")} · ${t("game.handHidden")}`
-                      : t("game.handHidden")}
-                </p>
+                    <p
+                      className="mt-2 text-xs text-emerald-100/75"
+                      data-testid={`hand-result-rank-${entry.playerId}`}
+                    >
+                      {entry.hand
+                        ? describeEvaluatedHand(entry.hand)
+                        : t("game.cardsShownNoEvaluated")}
+                    </p>
+                  </>
+                )}
                 {showCards && entry.runHands && entry.runHands.length > 1 && (
                   <div
                     className="mt-2 flex flex-wrap gap-2 text-[11px] text-emerald-100/75"
