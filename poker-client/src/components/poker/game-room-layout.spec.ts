@@ -69,5 +69,39 @@ describe("game-room-layout", () => {
         totalSeats: 6,
       }),
     ).toBe(false);
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 470,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 390,
+        totalSeats: 4,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 6,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 500,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 768,
+        totalSeats: 2,
+      }),
+    ).toBe(false);
   });
 });
