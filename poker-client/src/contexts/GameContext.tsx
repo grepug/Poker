@@ -1245,6 +1245,7 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
       socket.on("BETTING_ROUND_COMPLETE", (data) => {
         console.log("Betting round complete, next round:", data.nextRound);
 
+        setLastPlayerActionEvent(null);
         if (data.awaitingPlayerStreetReveal) {
           setNextStreetRevealState({
             nextRound: data.nextRound,
@@ -1279,9 +1280,22 @@ const useGameProviderElement = ({ children }: GameProviderProps) => {
                   runCountDecision: null,
                 }
               : prev.currentHand,
-            players: prev.players.map((p) => ({ ...p, currentBet: 0 })),
+            players: prev.players.map((p) => ({
+              ...p,
+              currentBet: 0,
+              lastAction: null,
+            })),
           };
         });
+        setPlayer((prev) =>
+          prev
+            ? {
+                ...prev,
+                currentBet: 0,
+                lastAction: null,
+              }
+            : prev,
+        );
       });
 
       socket.on("CHAT_HISTORY_SYNC", (data: ChatHistorySyncData) => {

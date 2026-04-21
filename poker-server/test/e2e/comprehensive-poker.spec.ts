@@ -9239,6 +9239,73 @@ test.describe('Poker E2E - Test Suite 8: UI/UX Validation', () => {
     }
   });
 
+  test('8.13b3: Seat action labels clear when a new betting street starts', async ({
+    browser,
+  }) => {
+    const session = await setupTwoPlayerSession(browser, {
+      viewport: { width: 430, height: 932 },
+    });
+
+    try {
+      const { alicePage, bobPage } = session;
+
+      await startGameFromLobby(alicePage, bobPage);
+
+      const seatIds = await alicePage.evaluate(() => {
+        const room = (window as any).pokerDebug?.getRoom?.();
+        const alice = room?.players?.find((entry: any) => entry.name === 'Alice');
+        const bob = room?.players?.find((entry: any) => entry.name === 'Bob');
+        return {
+          aliceId: alice?.id ? String(alice.id) : null,
+          bobId: bob?.id ? String(bob.id) : null,
+        };
+      });
+      if (!seatIds.aliceId || !seatIds.bobId) {
+        throw new Error('Missing Alice/Bob seat ids for cross-street action assertion');
+      }
+
+      await waitForPlayerTurn(alicePage, 'Bob');
+      await bobPage.click('[data-testid="action-call"]');
+
+      await waitForPlayerTurn(alicePage, 'Alice');
+      await alicePage.click('[data-testid="action-check"]');
+
+      await waitForRound(alicePage, 'FLOP', 3);
+
+      const flopSnapshot = await getRoomSnapshot(alicePage);
+      const firstFlopPlayerName = flopSnapshot.currentPlayerName;
+      if (firstFlopPlayerName !== 'Alice' && firstFlopPlayerName !== 'Bob') {
+        throw new Error(`Unexpected flop acting player: ${firstFlopPlayerName}`);
+      }
+      const secondFlopPlayerName =
+        firstFlopPlayerName === 'Alice' ? 'Bob' : 'Alice';
+      const firstFlopPage =
+        firstFlopPlayerName === 'Alice' ? alicePage : bobPage;
+      const secondFlopPage =
+        secondFlopPlayerName === 'Alice' ? alicePage : bobPage;
+
+      await waitForPlayerTurn(alicePage, firstFlopPlayerName);
+      await firstFlopPage.click('[data-testid="action-check"]');
+
+      await waitForPlayerTurn(alicePage, secondFlopPlayerName);
+      await secondFlopPage.click('[data-testid="action-check"]');
+
+      await waitForRound(alicePage, 'TURN', 4);
+
+      const aliceSeatAction = alicePage.locator(
+        `[data-testid="player-seat-${seatIds.aliceId}-action"]`,
+      );
+      const bobSeatAction = alicePage.locator(
+        `[data-testid="player-seat-${seatIds.bobId}-action"]`,
+      );
+
+      await expect(aliceSeatAction).not.toContainText(/Check|过牌/);
+      await expect(bobSeatAction).not.toContainText(/Check|过牌/);
+    } finally {
+      await teardownTwoPlayerSession(session);
+    }
+  });
+
   test('8.13c: Mobile Reveal Uses Operation Bar And Keeps Cards Above Actions', async ({
     browser,
   }) => {
