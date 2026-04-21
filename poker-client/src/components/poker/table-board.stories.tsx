@@ -2,7 +2,10 @@ import React from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card as PokerCard } from "poker-types";
 import { TableBoard } from "@/components/poker/table-board";
-import { buildEqualArcEllipsePercentAnchors } from "@/components/poker/seat-orbit-layout";
+import {
+  buildEqualArcEllipsePercentAnchors,
+  buildEqualPerimeterRoundedRailPercentAnchorsForFrame,
+} from "@/components/poker/seat-orbit-layout";
 
 const boardCards: Array<PokerCard | null> = [
   { rank: "A", suit: "spades" },
@@ -135,6 +138,8 @@ const seatOrbitItems: SeatOrbitItems = [
 ];
 
 const MOBILE_SEAT_SIDE_MARGIN_PERCENT = 12;
+const MOBILE_PORTRAIT_PREVIEW_FELT_WIDTH_PX = 355.56;
+const MOBILE_PORTRAIT_PREVIEW_FELT_HEIGHT_PX = 496;
 
 const clampSeatLeftPercent = (left: string): string => {
   const trimmedLeft = left.trim();
@@ -598,6 +603,119 @@ const tenHandedStatusSeatOrbitItems: SeatOrbitItems = [
   },
 ];
 
+const denseStatusSeatOrbitTemplates: SeatOrbitItems = [
+  ...tenHandedStatusSeatOrbitItems,
+  {
+    slotIndex: 10,
+    top: "50%",
+    left: "50%",
+    width: "4.15rem",
+    playerId: "t11",
+    playerEmoji: "🦋",
+    playerName: "Nia",
+    isYou: false,
+    badge: { tone: "position", text: "LJ" },
+    externalStatusLabel: "已准备",
+    externalStatusToneClass: "seat-pod__status-badge--waiting",
+    internalStatusLabel: null,
+    internalStatusToneClass: "",
+    actionLabel: null,
+    remainingLabel: "$1,460",
+    seatState: "default" as const,
+    densityClass: "seat-pod--dense",
+  },
+  {
+    slotIndex: 11,
+    top: "50%",
+    left: "50%",
+    width: "4.15rem",
+    playerId: "t12",
+    playerEmoji: "🦊",
+    playerName: "Omar",
+    isYou: false,
+    badge: { tone: "position", text: "UTG" },
+    externalStatusLabel: null,
+    externalStatusToneClass: "",
+    internalStatusLabel: null,
+    internalStatusToneClass: "",
+    actionLabel: { text: "加注到 $120", tone: "aggressive" as const },
+    remainingLabel: "$1,180",
+    seatState: "default" as const,
+    densityClass: "seat-pod--dense",
+  },
+  {
+    slotIndex: 12,
+    top: "50%",
+    left: "50%",
+    width: "4.15rem",
+    playerId: "t13",
+    playerEmoji: "🐨",
+    playerName: "Tess",
+    isYou: false,
+    badge: { tone: "position", text: "UTG+1" },
+    externalStatusLabel: null,
+    externalStatusToneClass: "",
+    internalStatusLabel: "弃牌",
+    internalStatusToneClass: "seat-pod__status-badge--folded",
+    actionLabel: { text: "Fold", tone: "pending" as const },
+    remainingLabel: "$840",
+    seatState: "folded" as const,
+    densityClass: "seat-pod--dense",
+  },
+  {
+    slotIndex: 13,
+    top: "50%",
+    left: "50%",
+    width: "4.15rem",
+    playerId: "t14",
+    playerEmoji: "🐻",
+    playerName: "Milo",
+    isYou: false,
+    badge: { tone: "position", text: "UTG+2" },
+    externalStatusLabel: "等待中",
+    externalStatusToneClass: "seat-pod__status-badge--waiting",
+    internalStatusLabel: null,
+    internalStatusToneClass: "",
+    actionLabel: { text: "下手入局", tone: "pending" as const },
+    remainingLabel: "$930",
+    seatState: "waiting" as const,
+    densityClass: "seat-pod--dense",
+  },
+  {
+    slotIndex: 14,
+    top: "50%",
+    left: "50%",
+    width: "4.15rem",
+    playerId: "t15",
+    playerEmoji: "🦅",
+    playerName: "Sora",
+    isYou: false,
+    badge: { tone: "position", text: "UTG+3" },
+    externalStatusLabel: null,
+    externalStatusToneClass: "",
+    internalStatusLabel: "ALL-IN",
+    internalStatusToneClass: "seat-pod__status-badge--allin",
+    actionLabel: { text: "All-in $960", tone: "allin" as const },
+    remainingLabel: "$0",
+    seatState: "all-in" as const,
+    densityClass: "seat-pod--dense",
+  },
+];
+
+const buildDenseStatusSeatOrbitItems = ({
+  count,
+  width,
+}: {
+  count: number;
+  width: string;
+}) =>
+  denseStatusSeatOrbitTemplates.slice(0, count).map((seat, index) => ({
+    ...seat,
+    slotIndex: index,
+    width,
+    densityClass: "seat-pod--dense" as const,
+  }));
+
 const applyPreciseEllipseSeatLayout = (
   seats: SeatOrbitItems,
   {
@@ -617,6 +735,48 @@ const applyPreciseEllipseSeatLayout = (
     radiusXPercent,
     radiusYPercent,
     centerYPercent,
+  });
+
+  return seats.map((seat, index) => ({
+    ...seat,
+    left: anchors?.[index]?.left ?? seat.left,
+    top: anchors?.[index]?.top ?? seat.top,
+    width,
+    densityClass: "seat-pod--dense",
+  }));
+};
+
+const applyPreviewRoundedRailSeatLayout = (
+  seats: SeatOrbitItems,
+  {
+    feltWidthPx,
+    feltHeightPx,
+    halfWidthPercent,
+    halfHeightPercent,
+    centerYPercent,
+    width,
+    cornerRadiusXPercent,
+    cornerRadiusYPercent,
+  }: {
+    feltWidthPx: number;
+    feltHeightPx: number;
+    halfWidthPercent: number;
+    halfHeightPercent: number;
+    centerYPercent: number;
+    width: string;
+    cornerRadiusXPercent?: number;
+    cornerRadiusYPercent?: number;
+  },
+) => {
+  const anchors = buildEqualPerimeterRoundedRailPercentAnchorsForFrame({
+    totalSeats: seats.length,
+    feltWidthPx,
+    feltHeightPx,
+    halfWidthPercent,
+    halfHeightPercent,
+    centerYPercent,
+    cornerRadiusXPercent,
+    cornerRadiusYPercent,
   });
 
   return seats.map((seat, index) => ({
@@ -685,6 +845,66 @@ const tenHandedMobileLandscapeSeatOrbitItems = applyPreciseEllipseSeatLayout(
     radiusYPercent: 35.8,
     centerYPercent: 49.5,
     width: "3.28rem",
+  },
+);
+
+const twelveHandedMobilePortraitSeatOrbitItems = applyPreviewRoundedRailSeatLayout(
+  buildDenseStatusSeatOrbitItems({
+    count: 12,
+    width: "3.18rem",
+  }),
+  {
+    feltWidthPx: MOBILE_PORTRAIT_PREVIEW_FELT_WIDTH_PX,
+    feltHeightPx: MOBILE_PORTRAIT_PREVIEW_FELT_HEIGHT_PX,
+    halfWidthPercent: 41.2,
+    halfHeightPercent: 36.7,
+    centerYPercent: 50,
+    width: "3.18rem",
+  },
+);
+
+const thirteenHandedMobilePortraitSeatOrbitItems = applyPreviewRoundedRailSeatLayout(
+  buildDenseStatusSeatOrbitItems({
+    count: 13,
+    width: "3rem",
+  }),
+  {
+    feltWidthPx: MOBILE_PORTRAIT_PREVIEW_FELT_WIDTH_PX,
+    feltHeightPx: MOBILE_PORTRAIT_PREVIEW_FELT_HEIGHT_PX,
+    halfWidthPercent: 41,
+    halfHeightPercent: 36.9,
+    centerYPercent: 50,
+    width: "3rem",
+  },
+);
+
+const fourteenHandedMobilePortraitSeatOrbitItems = applyPreviewRoundedRailSeatLayout(
+  buildDenseStatusSeatOrbitItems({
+    count: 14,
+    width: "2.9rem",
+  }),
+  {
+    feltWidthPx: MOBILE_PORTRAIT_PREVIEW_FELT_WIDTH_PX,
+    feltHeightPx: MOBILE_PORTRAIT_PREVIEW_FELT_HEIGHT_PX,
+    halfWidthPercent: 40.9,
+    halfHeightPercent: 37,
+    centerYPercent: 50,
+    width: "2.9rem",
+  },
+);
+
+const fifteenHandedMobilePortraitSeatOrbitItems = applyPreviewRoundedRailSeatLayout(
+  buildDenseStatusSeatOrbitItems({
+    count: 15,
+    width: "2.82rem",
+  }),
+  {
+    feltWidthPx: MOBILE_PORTRAIT_PREVIEW_FELT_WIDTH_PX,
+    feltHeightPx: MOBILE_PORTRAIT_PREVIEW_FELT_HEIGHT_PX,
+    halfWidthPercent: 40.8,
+    halfHeightPercent: 37.1,
+    centerYPercent: 50,
+    width: "2.82rem",
   },
 );
 
@@ -844,6 +1064,30 @@ const tenHandedMobileLandscapeArgs: TableBoardStoryArgs = {
   seatOrbitItems: tenHandedMobileLandscapeSeatOrbitItems,
 };
 
+const twelveHandedMobilePortraitArgs: TableBoardStoryArgs = {
+  ...tenHandedShowcaseArgs,
+  potValue: "$1,640",
+  seatOrbitItems: twelveHandedMobilePortraitSeatOrbitItems,
+};
+
+const thirteenHandedMobilePortraitArgs: TableBoardStoryArgs = {
+  ...tenHandedShowcaseArgs,
+  potValue: "$1,860",
+  seatOrbitItems: thirteenHandedMobilePortraitSeatOrbitItems,
+};
+
+const fourteenHandedMobilePortraitArgs: TableBoardStoryArgs = {
+  ...tenHandedShowcaseArgs,
+  potValue: "$2,040",
+  seatOrbitItems: fourteenHandedMobilePortraitSeatOrbitItems,
+};
+
+const fifteenHandedMobilePortraitArgs: TableBoardStoryArgs = {
+  ...tenHandedShowcaseArgs,
+  potValue: "$2,280",
+  seatOrbitItems: fifteenHandedMobilePortraitSeatOrbitItems,
+};
+
 const meta = {
   title: "Poker/TableBoard",
   component: TableBoard as unknown as React.ComponentType<TableBoardMetaArgs>,
@@ -927,5 +1171,41 @@ export const TenHandedStatusMobileLandscape844x390: Story = {
       width: 844,
       height: 390,
       args: tenHandedMobileLandscapeArgs,
+    }),
+};
+
+export const TwelveHandedStatusMobilePortrait393x852: Story = {
+  render: () =>
+    renderBoardFrame({
+      width: 393,
+      height: 852,
+      args: twelveHandedMobilePortraitArgs,
+    }),
+};
+
+export const ThirteenHandedStatusMobilePortrait393x852: Story = {
+  render: () =>
+    renderBoardFrame({
+      width: 393,
+      height: 852,
+      args: thirteenHandedMobilePortraitArgs,
+    }),
+};
+
+export const FourteenHandedStatusMobilePortrait393x852: Story = {
+  render: () =>
+    renderBoardFrame({
+      width: 393,
+      height: 852,
+      args: fourteenHandedMobilePortraitArgs,
+    }),
+};
+
+export const FifteenHandedStatusMobilePortrait393x852: Story = {
+  render: () =>
+    renderBoardFrame({
+      width: 393,
+      height: 852,
+      args: fifteenHandedMobilePortraitArgs,
     }),
 };

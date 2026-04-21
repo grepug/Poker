@@ -4,6 +4,7 @@ import { Card } from "@/components/Card";
 import { CommunityCardsLane } from "@/components/poker/community-cards-lane";
 import { PotDropZone } from "@/components/poker/pot-drop-zone";
 import { SeatPod, type SeatBadge, type SeatLiveAudioBadge } from "@/components/poker/seat-pod";
+import { buildDenseMobileSeatBorderLayout } from "@/components/poker/table-board-layout";
 
 type SeatMainState = "turn" | "disconnected" | "all-in" | "folded" | "waiting" | "default";
 
@@ -58,10 +59,36 @@ const BOARD_COLLISION_SELECTORS = [
   '[data-testid^="community-card-"]',
   '[data-testid^="board-back-"]',
 ];
+const SEAT_DECORATION_OVERFLOW_SELECTORS = [
+  ".seat-pod__role-icon",
+  ".seat-pod__status-badge--external",
+  ".seat-pod__live-audio-badge",
+  ".seat-pod__ready-overlay",
+];
 const SEAT_OVERFLOW_TOLERANCE_PX = 0.5;
 const SEAT_LAYOUT_MARGIN_PX = 2;
 const SEAT_LAYOUT_COLLISION_TOLERANCE_PX = 0.5;
+const MOBILE_SEAT_BORDER_OFFSET_MAX_WIDTH_PX = 430;
 const SEAT_WIDTH_SOLVER_STEPS = 12;
+const SEAT_BORDER_OFFSET_SOLVER_STEPS = 14;
+const SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 14;
+const SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 9;
+const DENSE_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 4;
+const DENSE_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 4;
+const DENSE_MOBILE_POTENTIAL_ROLE_BADGE_RIGHT_OVERFLOW_PX = 3;
+const DENSE_MOBILE_POTENTIAL_ROLE_BADGE_TOP_OVERFLOW_PX = 4;
+const EIGHT_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 9;
+const EIGHT_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 8;
+const TEN_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 8;
+const TEN_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 8;
+const TWELVE_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 7;
+const TWELVE_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 8;
+const THIRTEEN_PLUS_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX = 6;
+const THIRTEEN_PLUS_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX = 7;
+const DENSE_MOBILE_SEAT_WIDTH_TARGET_EXPANSION_RATIO = 1.18;
+const DENSE_MOBILE_SEAT_WIDTH_MAX_FELT_RATIO = 0.235;
+const ULTRA_DENSE_MOBILE_SEAT_WIDTH_TARGET_EXPANSION_RATIO = 1.26;
+const ULTRA_DENSE_MOBILE_SEAT_WIDTH_MAX_FELT_RATIO = 0.25;
 const SEAT_WIDTH_MAX_EXPANSION_RATIO = 1.4;
 const SEAT_WIDTH_EXPANSION_MULTIPLIER = 1.22;
 const SEAT_WIDTH_EXPANSION_PROBE_STEPS = 10;
@@ -184,13 +211,47 @@ const hasNonNameTextOverflow = (seatOrbitNode: HTMLElement) =>
     }),
   );
 
-const overlapExceedsTolerance = (a: DOMRect, b: DOMRect) => {
+const overlapExceedsTolerance = (
+  a: { left: number; right: number; top: number; bottom: number },
+  b: { left: number; right: number; top: number; bottom: number },
+) => {
   const overlapWidth = Math.min(a.right, b.right) - Math.max(a.left, b.left);
   const overlapHeight = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
   return (
     overlapWidth > SEAT_LAYOUT_COLLISION_TOLERANCE_PX &&
     overlapHeight > SEAT_LAYOUT_COLLISION_TOLERANCE_PX
   );
+};
+
+const getSeatDecoratedBounds = (seatNode: HTMLElement) => {
+  const seatRect = seatNode.getBoundingClientRect();
+  let left = seatRect.left;
+  let right = seatRect.right;
+  let top = seatRect.top;
+  let bottom = seatRect.bottom;
+
+  SEAT_DECORATION_OVERFLOW_SELECTORS.forEach((selector) => {
+    seatNode.querySelectorAll<HTMLElement>(selector).forEach((node) => {
+      const rect = node.getBoundingClientRect();
+      left = Math.min(left, rect.left);
+      right = Math.max(right, rect.right);
+      top = Math.min(top, rect.top);
+      bottom = Math.max(bottom, rect.bottom);
+    });
+  });
+
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    width: seatRect.width,
+    height: seatRect.height,
+    leftOverflowPx: Math.max(0, seatRect.left - left),
+    rightOverflowPx: Math.max(0, right - seatRect.right),
+    topOverflowPx: Math.max(0, seatRect.top - top),
+    bottomOverflowPx: Math.max(0, bottom - seatRect.bottom),
+  };
 };
 
 const isSeatLayoutSafe = ({
@@ -203,7 +264,7 @@ const isSeatLayoutSafe = ({
   const feltRect = feltNode.getBoundingClientRect();
   const seatRects = Array.from(
     seatOrbitNode.querySelectorAll<HTMLElement>('.seat-pod[data-testid^="player-seat-"]'),
-  ).map((node) => node.getBoundingClientRect());
+  ).map((node) => getSeatDecoratedBounds(node));
 
   if (seatRects.some((seatRect) => {
     return (
@@ -247,6 +308,309 @@ const setUniformSeatWidth = (seatOrbitNode: HTMLElement, widthPx: number | null)
     return;
   }
   seatOrbitNode.style.setProperty("--seat-slot-width-uniform", `${widthPx}px`);
+};
+
+const getSeatSlotNodes = (seatOrbitNode: HTMLElement) =>
+  Array.from(seatOrbitNode.querySelectorAll<HTMLElement>(".seat-orbit__slot"));
+
+const clearSeatSlotOffsets = (seatOrbitNode: HTMLElement) => {
+  getSeatSlotNodes(seatOrbitNode).forEach((slotNode) => {
+    slotNode.style.removeProperty("--seat-slot-offset-x");
+    slotNode.style.removeProperty("--seat-slot-offset-y");
+  });
+};
+
+const setSeatSlotOffset = ({
+  slotNode,
+  offsetX,
+  offsetY,
+}: {
+  slotNode: HTMLElement;
+  offsetX: number;
+  offsetY: number;
+}) => {
+  slotNode.style.setProperty("--seat-slot-offset-x", `${offsetX}px`);
+  slotNode.style.setProperty("--seat-slot-offset-y", `${offsetY}px`);
+};
+
+const getDenseMobileSeatBorderTargetGaps = (seatCount: number) =>
+  seatCount === 8
+    ? {
+        horizontalGapPx: EIGHT_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX,
+        verticalGapPx: EIGHT_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX,
+      }
+    : seatCount === 10
+      ? {
+          horizontalGapPx: TEN_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX,
+          verticalGapPx: TEN_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX,
+        }
+      : seatCount === 12
+        ? {
+            horizontalGapPx: TWELVE_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX,
+            verticalGapPx: TWELVE_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX,
+          }
+        : seatCount >= 13
+          ? {
+              horizontalGapPx: THIRTEEN_PLUS_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX,
+              verticalGapPx: THIRTEEN_PLUS_HANDED_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX,
+            }
+    : {
+        horizontalGapPx: DENSE_MOBILE_SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX,
+        verticalGapPx: DENSE_MOBILE_SEAT_BORDER_TARGET_GAP_VERTICAL_PX,
+      };
+
+const getDenseMobileSeatWidthTargets = (seatCount: number) =>
+  seatCount >= 12
+    ? {
+        targetExpansionRatio: ULTRA_DENSE_MOBILE_SEAT_WIDTH_TARGET_EXPANSION_RATIO,
+        maxFeltRatio: ULTRA_DENSE_MOBILE_SEAT_WIDTH_MAX_FELT_RATIO,
+      }
+    : {
+        targetExpansionRatio: DENSE_MOBILE_SEAT_WIDTH_TARGET_EXPANSION_RATIO,
+        maxFeltRatio: DENSE_MOBILE_SEAT_WIDTH_MAX_FELT_RATIO,
+      };
+
+const resolveDenseMobileSeatBorderOffsets = ({
+  feltNode,
+  seatOrbitNode,
+  seatCount,
+}: {
+  feltNode: HTMLElement;
+  seatOrbitNode: HTMLElement;
+  seatCount: number;
+}) => {
+  clearSeatSlotOffsets(seatOrbitNode);
+
+  const feltRect = feltNode.getBoundingClientRect();
+  const slotNodes = getSeatSlotNodes(seatOrbitNode)
+    .map((slotNode) => {
+      const seatNode = slotNode.querySelector<HTMLElement>('.seat-pod[data-testid^="player-seat-"]');
+      if (!seatNode) {
+        return null;
+      }
+
+      const seatRect = seatNode.getBoundingClientRect();
+      const decoratedBounds = getSeatDecoratedBounds(seatNode);
+      return {
+        slotNode,
+        seatCenterX: seatRect.left - feltRect.left + seatRect.width / 2,
+        seatCenterY: seatRect.top - feltRect.top + seatRect.height / 2,
+        width: seatRect.width,
+        height: seatRect.height,
+        leftOverflowPx: decoratedBounds.leftOverflowPx,
+        rightOverflowPx: Math.max(
+          decoratedBounds.rightOverflowPx,
+          DENSE_MOBILE_POTENTIAL_ROLE_BADGE_RIGHT_OVERFLOW_PX,
+        ),
+        topOverflowPx: Math.max(
+          decoratedBounds.topOverflowPx,
+          DENSE_MOBILE_POTENTIAL_ROLE_BADGE_TOP_OVERFLOW_PX,
+        ),
+        bottomOverflowPx: decoratedBounds.bottomOverflowPx,
+      };
+    })
+    .filter((slot): slot is {
+      slotNode: HTMLElement;
+      seatCenterX: number;
+      seatCenterY: number;
+      width: number;
+      height: number;
+      leftOverflowPx: number;
+      rightOverflowPx: number;
+      topOverflowPx: number;
+      bottomOverflowPx: number;
+    } => Boolean(slot));
+
+  const targetGaps = getDenseMobileSeatBorderTargetGaps(seatCount);
+  const layout = buildDenseMobileSeatBorderLayout({
+    feltWidth: feltRect.width,
+    feltHeight: feltRect.height,
+    seats: slotNodes.map((slotNode) => ({
+      x: slotNode.seatCenterX,
+      y: slotNode.seatCenterY,
+      width: slotNode.width,
+      height: slotNode.height,
+      leftOverflowPx: slotNode.leftOverflowPx,
+      rightOverflowPx: slotNode.rightOverflowPx,
+      topOverflowPx: slotNode.topOverflowPx,
+      bottomOverflowPx: slotNode.bottomOverflowPx,
+    })),
+    horizontalGapPx: targetGaps.horizontalGapPx,
+    verticalGapPx: targetGaps.verticalGapPx,
+  });
+
+  if (!layout || !layout.safe || layout.points.length !== slotNodes.length) {
+    clearSeatSlotOffsets(seatOrbitNode);
+    return false;
+  }
+
+  slotNodes.forEach((slotNode, index) => {
+    const targetPoint = layout.points[index];
+    setSeatSlotOffset({
+      slotNode: slotNode.slotNode,
+      offsetX: targetPoint.x - slotNode.seatCenterX,
+      offsetY: targetPoint.y - slotNode.seatCenterY,
+    });
+  });
+
+  if (!isSeatLayoutSafe({ feltNode, seatOrbitNode })) {
+    clearSeatSlotOffsets(seatOrbitNode);
+    return false;
+  }
+
+  return true;
+};
+
+const resolveSeatSlotBorderOffsets = ({
+  feltNode,
+  seatOrbitNode,
+  seatCount,
+}: {
+  feltNode: HTMLElement;
+  seatOrbitNode: HTMLElement;
+  seatCount: number;
+}) => {
+  clearSeatSlotOffsets(seatOrbitNode);
+
+  const feltRect = feltNode.getBoundingClientRect();
+  const centerX = feltRect.left + feltRect.width / 2;
+  const centerY = feltRect.top + feltRect.height / 2;
+  const maxProbeDistance = Math.max(feltRect.width, feltRect.height);
+  const slotNodes = getSeatSlotNodes(seatOrbitNode)
+    .map((slotNode) => {
+      const seatNode = slotNode.querySelector<HTMLElement>('.seat-pod[data-testid^="player-seat-"]');
+      if (!seatNode) {
+        return null;
+      }
+
+      const seatRect = seatNode.getBoundingClientRect();
+      const seatCenterX = seatRect.left + seatRect.width / 2;
+      const seatCenterY = seatRect.top + seatRect.height / 2;
+      const vectorX = seatCenterX - centerX;
+      const vectorY = seatCenterY - centerY;
+      const vectorLength = Math.hypot(vectorX, vectorY);
+
+      if (vectorLength <= SEAT_LAYOUT_COLLISION_TOLERANCE_PX) {
+        return null;
+      }
+
+      return {
+        slotNode,
+        unitX: vectorX / vectorLength,
+        unitY: vectorY / vectorLength,
+        priority: Math.abs(vectorY) - Math.abs(vectorX),
+      };
+    })
+    .filter((slot): slot is {
+      slotNode: HTMLElement;
+      unitX: number;
+      unitY: number;
+      priority: number;
+    } => Boolean(slot))
+    .sort((a, b) => b.priority - a.priority);
+
+  slotNodes.forEach(({ slotNode, unitX, unitY }) => {
+    let low = 0;
+    let high = maxProbeDistance;
+
+    for (let step = 0; step < SEAT_BORDER_OFFSET_SOLVER_STEPS; step += 1) {
+      const mid = (low + high) / 2;
+      setSeatSlotOffset({
+        slotNode,
+        offsetX: unitX * mid,
+        offsetY: unitY * mid,
+      });
+
+      if (isSeatLayoutSafe({ feltNode, seatOrbitNode })) {
+        low = mid;
+        continue;
+      }
+
+      high = mid;
+    }
+
+    const axisBlend = Math.min(1, Math.abs(unitY));
+    const denseTargetGaps = getDenseMobileSeatBorderTargetGaps(seatCount);
+    const horizontalGapPx =
+      seatCount > 6
+        ? denseTargetGaps.horizontalGapPx
+        : SEAT_BORDER_TARGET_GAP_HORIZONTAL_PX;
+    const verticalGapPx =
+      seatCount > 6
+        ? denseTargetGaps.verticalGapPx
+        : SEAT_BORDER_TARGET_GAP_VERTICAL_PX;
+    const targetGapPx = horizontalGapPx * (1 - axisBlend) + verticalGapPx * axisBlend;
+    const settledDistance = Math.max(0, low - targetGapPx);
+    setSeatSlotOffset({
+      slotNode,
+      offsetX: unitX * settledDistance,
+      offsetY: unitY * settledDistance,
+    });
+  });
+};
+
+const resolveDenseMobileSeatWidth = ({
+  feltNode,
+  seatOrbitNode,
+  seatWidthToken,
+  seatCount,
+}: {
+  feltNode: HTMLElement;
+  seatOrbitNode: HTMLElement;
+  seatWidthToken: string;
+  seatCount: number;
+}) => {
+  const baseWidthPx = resolveSeatBaseWidthPx(seatWidthToken);
+  if (!Number.isFinite(baseWidthPx) || baseWidthPx <= 0) {
+    return null;
+  }
+
+  const feltWidthPx = feltNode.getBoundingClientRect().width;
+  const widthTargets = getDenseMobileSeatWidthTargets(seatCount);
+  const maxWidthPx = Math.max(
+    baseWidthPx + SEAT_OVERFLOW_TOLERANCE_PX,
+    Math.min(
+      baseWidthPx * widthTargets.targetExpansionRatio,
+      feltWidthPx * widthTargets.maxFeltRatio,
+    ),
+  );
+
+  if (maxWidthPx <= baseWidthPx + SEAT_OVERFLOW_TOLERANCE_PX) {
+    setUniformSeatWidth(seatOrbitNode, null);
+    clearSeatSlotOffsets(seatOrbitNode);
+    return null;
+  }
+
+  let bestWidthPx = baseWidthPx;
+  let low = baseWidthPx;
+  let high = maxWidthPx;
+
+  for (let step = 0; step < SEAT_WIDTH_SOLVER_STEPS; step += 1) {
+    const candidateWidthPx = (low + high) / 2;
+    setUniformSeatWidth(seatOrbitNode, candidateWidthPx);
+    resetInlineSeatFontSizes(seatOrbitNode);
+
+    const resolvedLayout = resolveDenseMobileSeatBorderOffsets({
+      feltNode,
+      seatOrbitNode,
+      seatCount: seatOrbitNode.querySelectorAll('.seat-pod[data-testid^="player-seat-"]').length,
+    });
+    if (resolvedLayout && isSeatLayoutSafe({ feltNode, seatOrbitNode })) {
+      bestWidthPx = candidateWidthPx;
+      low = candidateWidthPx;
+      continue;
+    }
+
+    high = candidateWidthPx;
+  }
+
+  if (bestWidthPx <= baseWidthPx + SEAT_OVERFLOW_TOLERANCE_PX) {
+    setUniformSeatWidth(seatOrbitNode, null);
+    clearSeatSlotOffsets(seatOrbitNode);
+    return null;
+  }
+
+  return bestWidthPx;
 };
 
 const resolveUniformSeatWidth = ({
@@ -387,12 +751,44 @@ export const TableBoard: React.FC<TableBoardProps> = ({
 
       rafId = window.requestAnimationFrame(() => {
         rafId = 0;
-        const uniformSeatWidth = resolveUniformSeatWidth({
-          feltNode,
-          seatOrbitNode,
-          seatWidthToken: baseSeatWidthToken,
-        });
+        clearSeatSlotOffsets(seatOrbitNode);
+        const isDenseMobileSeatOrbit =
+          seatOrbitItemCount > 6 &&
+          feltNode.getBoundingClientRect().width <= MOBILE_SEAT_BORDER_OFFSET_MAX_WIDTH_PX;
+        const uniformSeatWidth = isDenseMobileSeatOrbit
+          ? resolveDenseMobileSeatWidth({
+              feltNode,
+              seatOrbitNode,
+              seatWidthToken: baseSeatWidthToken,
+              seatCount: seatOrbitItemCount,
+            }) ??
+            resolveUniformSeatWidth({
+              feltNode,
+              seatOrbitNode,
+              seatWidthToken: baseSeatWidthToken,
+            })
+          : resolveUniformSeatWidth({
+              feltNode,
+              seatOrbitNode,
+              seatWidthToken: baseSeatWidthToken,
+            });
         setUniformSeatWidth(seatOrbitNode, uniformSeatWidth);
+        if (feltNode.getBoundingClientRect().width <= MOBILE_SEAT_BORDER_OFFSET_MAX_WIDTH_PX) {
+          const resolvedDenseMobileLayout =
+            seatOrbitItemCount > 6 &&
+            resolveDenseMobileSeatBorderOffsets({
+              feltNode,
+              seatOrbitNode,
+              seatCount: seatOrbitItemCount,
+            });
+          if (!resolvedDenseMobileLayout) {
+            resolveSeatSlotBorderOffsets({
+              feltNode,
+              seatOrbitNode,
+              seatCount: seatOrbitItemCount,
+            });
+          }
+        }
       });
     };
 
@@ -436,6 +832,7 @@ export const TableBoard: React.FC<TableBoardProps> = ({
       mutationObserver.disconnect();
       window.removeEventListener("resize", scheduleSolve);
       seatOrbitNode.style.removeProperty("--seat-slot-width-uniform");
+      clearSeatSlotOffsets(seatOrbitNode);
     };
   }, [
     boardCenterStackRef,
@@ -494,7 +891,8 @@ export const TableBoard: React.FC<TableBoardProps> = ({
                 top: item.top,
                 left: item.left,
                 width: `var(--seat-slot-width-uniform, ${item.width})`,
-                transform: "translate(-50%, -50%)",
+                transform:
+                  "translate(calc(-50% + var(--seat-slot-offset-x, 0px)), calc(-50% + var(--seat-slot-offset-y, 0px)))",
               }}
             >
               <div ref={(node) => setSeatNodeRef(item.playerId, node)}>

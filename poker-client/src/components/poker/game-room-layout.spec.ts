@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveCardsFlyoutDesktopLayout,
+  shouldUseLowSeatMidMobileSeatPerimeter,
+  shouldUseReducedMobileSeatPerimeter,
   shouldRenderCardsFlyoutInBoardStage,
 } from "./game-room-layout";
 
@@ -45,5 +47,92 @@ describe("game-room-layout", () => {
         showTurnActionDock: true,
       }),
     ).toBe(true);
+  });
+
+  it("limits reduced mobile seat perimeter to dense phone-width tables", () => {
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 355.56,
+        totalSeats: 10,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 500,
+        totalSeats: 10,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 355.56,
+        totalSeats: 6,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 470,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 390,
+        totalSeats: 4,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 6,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 500,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseReducedMobileSeatPerimeter({
+        tableWidth: 768,
+        totalSeats: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("isolates the low-seat mid-mobile perimeter mode", () => {
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 470,
+        totalSeats: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 430,
+        totalSeats: 2,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 6,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldUseLowSeatMidMobileSeatPerimeter({
+        tableWidth: 560,
+        totalSeats: 8,
+      }),
+    ).toBe(false);
   });
 });
